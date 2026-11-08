@@ -44,9 +44,20 @@ public static class Instance
         await File.WriteAllTextAsync(Path.Combine(Paths.InstanceDir, "mmc-pack.json"),
             JsonSerializer.Serialize(pack, new JsonSerializerOptions { WriteIndented = true }), ct);
 
-        // Mods : on télécharge ce qui manque ou a changé, on retire ce qui n'est plus dans la version.
+        await SyncModsAsync(release, Paths.ModsDir, progress, repair, ct);
+        ApplyOptions(config.Minecraft);
+        await File.WriteAllTextAsync(InstalledVersionFile, release.Tag, ct);
+        progress.Report(("Prêt à jouer.", 1));
+    }
+
+    /// <summary>Télécharge les mods manquants ou modifiés, retire ceux qui ne sont plus dans la version.</summary>
+    public static async Task SyncModsAsync(Release release, string modsDir, IProgress<(string, double)> progress,
+        bool repair, CancellationToken ct = default)
+    {
+        var m = release.Manifest;
+        Directory.CreateDirectory(modsDir);
         var wanted = new HashSet<string>(m.Mods.Select(x => x.FileName), StringComparer.OrdinalIgnoreCase);
-        foreach (string f in Directory.GetFiles(Paths.ModsDir, "*.jar"))
+        foreach (string f in Directory.GetFiles(modsDir, "*.jar"))
         {
             if (!wanted.Contains(Path.GetFileName(f)))
             {
@@ -56,9 +67,8 @@ public static class Instance
         for (int i = 0; i < m.Mods.Count; i++)
         {
             var mod = m.Mods[i];
-            string target = Path.Combine(Paths.ModsDir, mod.FileName);
-            bool ok = File.Exists(target) && !repair && Http.Sha512(target) == mod.Sha512.ToLowerInvariant();
-            if (ok)
+            string target = Path.Combine(modsDir, mod.FileName);
+            if (File.Exists(target) && !repair && Http.Sha512(target) == mod.Sha512.ToLowerInvariant())
             {
                 continue;
             }
@@ -66,16 +76,14 @@ public static class Instance
             await Http.DownloadAsync(Releases.Resolve(release, mod), target, mod.Sha512,
                 new Progress<double>(p => progress.Report(($"Téléchargement : {mod.Name}", (index + p) / m.Mods.Count))), ct);
         }
-        ApplyOptions(config.Minecraft);
-        await File.WriteAllTextAsync(InstalledVersionFile, release.Tag, ct);
-        progress.Report(("Prêt à jouer.", 1));
     }
 
-    /// <summary>Écrit les réglages choisis dans options.txt, en gardant les autres lignes du joueur.</summary>
-    public static void ApplyOptions(MinecraftOptions o)
+    /// <summary>Écrit les réglages choisis dans options.txt (instance Prism par défaut), en gardant les autres lignes.</summary>
+    public static void ApplyOptions(MinecraftOptions o, string? gameDir = null)
     {
-        Directory.CreateDirectory(Paths.GameDir);
-        string file = Path.Combine(Paths.GameDir, "options.txt");
+        gameDir ??= Paths.GameDir;
+        Directory.CreateDirectory(gameDir);
+        string file = Path.Combine(gameDir, "options.txt");
         var lines = File.Exists(file) ? File.ReadAllLines(file).ToList() : new List<string>();
         var values = new Dictionary<string, string>
         {

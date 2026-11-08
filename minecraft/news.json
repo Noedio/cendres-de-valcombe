@@ -1,6 +1,11 @@
 [
   {
     "date": "8 nov. 2026",
+    "title": "Version 0.2.0",
+    "text": "Monde plat sans créatures, village construit automatiquement, heure qui suit la partie, cartes personnalisées. Connexion guidée dans le launcher."
+  },
+  {
+    "date": "8 nov. 2026",
     "title": "Le village est ouvert",
     "text": "La place de Valcombe, son beffroi et ses seize maisons vous attendent. Écrans sur mesure, Conteur humain, éditeur de scripts et vocal coupé la nuit."
   }

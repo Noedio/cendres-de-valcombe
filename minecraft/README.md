@@ -54,6 +54,8 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | `/vc consigne enregistrement\|chatelain\|successeur <valeur>` | Meneur | Consignes du Conteur humain |
 | `/vc note <joueur> [texte]` | Meneur | Note dans le grimoire |
 | `/vc script basculer <rôle>\|complet\|sauver <nom>\|charger <nom>\|supprimer <nom>` | Meneur | Éditeur de scripts |
-| `/vc carte construire\|oublier` | Opérateur | Construire le village sous ses pieds, ou l'oublier |
+| `/vc carte construire\|oublier` | Opérateur | Construire le village sous ses pieds, ou l'oublier (sinon il se construit seul au premier démarrage) |
+| `/vc carte nouvelle`, `/vc carte siege`, `/vc carte maison` | Opérateur | Carte personnalisée : la place ici, puis chaque siège et chaque maison à sa position |
+| `/vc carte retirer siege\|maison`, `/vc carte infos` | Opérateur | Retirer le dernier emplacement, résumé de la carte |
 | `/vc reglage <clé> <valeur>` | Meneur | `nuit_maisons`, `nuit_immobile`, `nuit_sombre`, `nuit_muette` (oui\|non), `temps_vote` |
 | `/vc grimoire`, `/vc role`, `/vc fiches`, `/vc historique`, `/vc mp <message>` | Selon le cas | Consultation, message au Conteur |

@@ -138,6 +138,11 @@ def main():
     # --- Dossier serveur ---------------------------------------------------
     server = DIST / "serveur-valcombe"
     (server / "mods").mkdir(parents=True, exist_ok=True)
+    # Une seule version de chaque mod : on retire les anciens fichiers.
+    keep = {jar.name} | {m["filename"] for m in mods.values()}
+    for old in (server / "mods").glob("*.jar"):
+        if old.name not in keep:
+            old.unlink()
     shutil.copy2(jar, server / "mods" / jar.name)
     for label, m in mods.items():
         cached = gradle_cache_jar(m["filename"].replace(".jar", "").replace("voicechat-", "simple-voice-chat-"))

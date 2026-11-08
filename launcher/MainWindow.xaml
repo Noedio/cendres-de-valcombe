@@ -157,6 +157,9 @@
               <TextBlock Style="{StaticResource Label}" Text="Adresse du serveur"/>
               <TextBox x:Name="ServerBox" LostFocus="SettingsChanged"/>
               <TextBlock Style="{StaticResource Hint}" Text="Laissez vide pour utiliser l'adresse annoncée par la version publiée."/>
+              <TextBlock Style="{StaticResource Label}" Text="ID d'application Microsoft (connexion intégrée)"/>
+              <TextBox x:Name="ClientIdBox" LostFocus="SettingsChanged"/>
+              <TextBlock Style="{StaticResource Hint}" Text="À renseigner une fois l'application validée par Microsoft : le launcher se connecte et lance alors le jeu lui-même, sans Prism."/>
               <TextBlock Style="{StaticResource Label}" x:Name="MemoryLabel"/>
               <Slider x:Name="MemorySlider" Minimum="2" Maximum="16" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="SettingsChanged"/>
               <WrapPanel Margin="0,18,0,0">
@@ -172,7 +175,12 @@
             <TextBlock x:Name="AccountText" Style="{StaticResource Label}" TextWrapping="Wrap"/>
             <TextBlock Style="{StaticResource Hint}"
                        Text="La connexion se fait une seule fois avec votre compte Microsoft, puis elle est gardée en mémoire. Elle est assurée par Prism Launcher, installé discrètement dans le dossier du launcher."/>
-            <Button Style="{StaticResource Wax}" Content="Connecter ou gérer mon compte" Click="ManageAccount" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+            <WrapPanel Margin="0,12,0,0">
+              <Button Style="{StaticResource Wax}" Content="Connecter ou gérer mon compte" Click="ManageAccount" Margin="0,0,8,8"/>
+              <Button Style="{StaticResource Wax}" x:Name="SignOutButton" Content="Se déconnecter" Click="SignOut" Margin="0,0,8,8"/>
+            </WrapPanel>
+            <TextBox x:Name="CodeBox" IsReadOnly="True" FontSize="26" FontFamily="Consolas" HorizontalAlignment="Left"
+                     Visibility="Collapsed" Margin="0,6,0,0"/>
             <TextBlock Style="{StaticResource Hint}" Margin="0,18,0,0"
                        Text="Dans la fenêtre qui s'ouvre : Comptes → Ajouter Microsoft, suivez les étapes, puis fermez-la et revenez ici."/>
           </StackPanel>

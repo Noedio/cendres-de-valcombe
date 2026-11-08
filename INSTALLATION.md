@@ -8,7 +8,7 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - **Modrinth App** : https://modrinth.com/app
    - ou **Prism Launcher** : https://prismlauncher.org
 2. Connectez votre compte Microsoft dans le launcher.
-3. Importez le fichier `Valcombe-0.1.0.mrpack` envoyé par l'hôte :
+3. Importez le fichier `Valcombe-0.2.0.mrpack` envoyé par l'hôte :
    - Modrinth App : bouton « + » puis « Importer » ;
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
@@ -29,7 +29,7 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    python tools/make_modpack.py
    ```
 
-   Vous obtenez `dist/Valcombe-0.1.0.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
+   Vous obtenez `dist/Valcombe-0.2.0.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
 3. Téléchargez le lanceur de serveur Fabric pour Minecraft 26.3 (Loader 0.20.1) sur https://fabricmc.net/use/server/ et placez-le dans `serveur-valcombe/` sous le nom `fabric-server-launch.jar`.
 4. Lancez `demarrer.bat` une première fois. Le serveur s'arrête et crée `eula.txt` : lisez le contrat https://aka.ms/MinecraftEULA, puis mettez `eula=true` si vous l'acceptez.
 5. Relancez `demarrer.bat`. Dans la console du serveur, tapez :

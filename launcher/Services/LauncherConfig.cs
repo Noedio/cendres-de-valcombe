@@ -23,6 +23,8 @@ public sealed class LauncherConfig
     public string Repository { get; set; } = "Noedio/cendres-de-valcombe";
     /// <summary>Adresse du serveur ; vide = celle annoncée par la version publiée.</summary>
     public string Server { get; set; } = "";
+    /// <summary>ID d'application Azure validé par Microsoft : active la connexion intégrée et notre moteur.</summary>
+    public string MicrosoftClientId { get; set; } = "";
     public int MaxMemoryMb { get; set; } = 4096;
     public bool CloseOnLaunch { get; set; } = true;
     public string Accent { get; set; } = "Lie-de-vin";
