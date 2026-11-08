@@ -198,12 +198,23 @@ public final class Game {
 	// ------------------------------------------------------------------
 	// Mise en place
 	// ------------------------------------------------------------------
+	private Set<Role> script = Setup.fullScript();
+
 	public void setupRandom() {
-		List<Setup.Entry> bag = Setup.drawBag(size(), rng);
-		if (bag == null) {
-			throw new GameException("Il faut entre " + Distribution.MIN_PLAYERS + " et "
-				+ Distribution.MAX_PLAYERS + " joueurs (actuellement " + size() + ").");
+		setupRandom(Setup.fullScript());
+	}
+
+	/** Tire les rôles parmi ceux du script. */
+	public void setupRandom(Set<Role> allowed) {
+		String problem = Setup.check(allowed, size());
+		if (problem != null) {
+			throw new GameException(problem);
 		}
+		List<Setup.Entry> bag = Setup.drawBag(size(), rng, allowed);
+		if (bag == null) {
+			throw new GameException("Ce script ne permet pas de distribuer les rôles pour " + size() + " joueurs.");
+		}
+		script = java.util.EnumSet.copyOf(allowed);
 		assign(rng.shuffle(bag), null, -1);
 	}
 
@@ -220,7 +231,7 @@ public final class Game {
 			seats.get(i).role = list.get(i).role();
 			seats.get(i).believed = list.get(i).believed();
 		}
-		bluffs = bluffList != null ? List.copyOf(bluffList) : Setup.pickBluffs(list, rng);
+		bluffs = bluffList != null ? List.copyOf(bluffList) : Setup.pickBluffs(list, rng, script);
 		redHerring = herring;
 		if (redHerring < 0 && wakerSeat(Role.ASTROLOGUE) >= 0) {
 			List<Integer> good = allSeats().stream().filter(s -> player(s).team() == Team.GOOD).toList();

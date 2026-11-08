@@ -93,6 +93,12 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "2-fiches");
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "3-panneau-salon");
+			world.getServer().runCommand("vc script basculer margrave");
+			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
+			shot(ctx, "3b-script");
+			world.getServer().runCommand("vc script complet");
+			ctx.setScreen(fr.valcombe.client.screen.SettingsScreen::new);
+			shot(ctx, "3c-reglages");
 
 			// Partie avec Conteur automatique
 			ctx.setScreen(() -> null);

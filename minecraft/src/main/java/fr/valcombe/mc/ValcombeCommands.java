@@ -119,6 +119,33 @@ public final class ValcombeCommands {
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("enregistrement", "chatelain", "successeur"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.policy(arg(x, "cle"), arg(x, "valeur")))))))
+			.then(Commands.literal("script").requires(leader)
+				.then(Commands.literal("basculer")
+					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
+						.executes(c -> exec(c, x -> session.toggleScriptRole(arg(x, "role"))))))
+				.then(Commands.literal("complet").executes(c -> exec(c, x -> session.useScript("Valcombe (complet)",
+					java.util.EnumSet.allOf(fr.valcombe.rules.Role.class)))))
+				.then(Commands.literal("sauver")
+					.then(Commands.argument("nom", StringArgumentType.greedyString()).executes(c -> exec(c, x -> {
+						var server = x.getSource().getServer();
+						ScriptStore.save(server, arg(x, "nom"), session.script());
+						session.setSavedScripts(ScriptStore.list(server));
+						return "Script enregistré.";
+					}))))
+				.then(Commands.literal("charger")
+					.then(Commands.argument("nom", StringArgumentType.greedyString())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ScriptStore.list(c.getSource().getServer()), b))
+						.executes(c -> exec(c, x -> session.useScript(arg(x, "nom"),
+							ScriptStore.load(x.getSource().getServer(), arg(x, "nom")))))))
+				.then(Commands.literal("supprimer")
+					.then(Commands.argument("nom", StringArgumentType.greedyString())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ScriptStore.list(c.getSource().getServer()), b))
+						.executes(c -> exec(c, x -> {
+							var server = x.getSource().getServer();
+							ScriptStore.delete(server, arg(x, "nom"));
+							session.setSavedScripts(ScriptStore.list(server));
+							return "Script supprimé.";
+						})))))
 			.then(Commands.literal("carte").requires(admin)
 				.then(Commands.literal("construire")
 					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException()))))

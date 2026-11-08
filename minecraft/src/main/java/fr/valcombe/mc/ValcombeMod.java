@@ -34,7 +34,10 @@ public final class ValcombeMod implements ModInitializer {
 	public void onInitialize() {
 		ValcombeNet.registerPayloads();
 		HOST.setUi(UI);
-		ServerLifecycleEvents.SERVER_STARTED.register(HOST::setServer);
+		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+			HOST.setServer(server);
+			SESSION.setSavedScripts(ScriptStore.list(server));
+		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HOST.setServer(null));
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			HOST.onTick();

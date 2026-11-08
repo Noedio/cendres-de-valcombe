@@ -19,8 +19,6 @@ public class StorytellerScreen extends BaseScreen {
 	private record Entry(String label, Runnable run, boolean gap) {
 	}
 
-	private int voteRowY = -1;
-
 	public StorytellerScreen() {
 		super("Panneau du Conteur");
 	}
@@ -45,10 +43,11 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Retirer les fictifs", () -> send("vc bots retirer"), false));
 			col.add(new Entry("Lancer (automatique)", () -> send("vc lancer auto"), true));
 			col.add(new Entry("Lancer (Conteur humain)", () -> send("vc lancer humain"), false));
-			col.add(new Entry("Construire le village ici", () -> {
+			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
+			button(px + 14, py + ph - 26, 150, "Construire le village ici", () -> {
 				send("vc carte construire");
 				onClose();
-			}, false));
+			});
 		} else {
 			col.add(new Entry("Faire tomber la nuit", () -> {
 				send("vc nuit");
@@ -64,21 +63,10 @@ public class StorytellerScreen extends BaseScreen {
 					() -> send("vc consigne enregistrement " + next), true));
 			}
 		}
-		boolean houses = ClientState.bool(st, "nightHouses");
-		boolean freeze = ClientState.bool(st, "nightFreeze");
-		boolean dark = ClientState.bool(st, "nightDark");
-		boolean mute = ClientState.bool(st, "nightMute");
-		col.add(new Entry("Chacun chez soi : " + (houses ? "oui" : "non"),
-			() -> send("vc reglage nuit_maisons " + (houses ? "non" : "oui")), true));
-		col.add(new Entry("Nuit immobile : " + (freeze ? "oui" : "non"),
-			() -> send("vc reglage nuit_immobile " + (freeze ? "non" : "oui")), false));
-		col.add(new Entry("Nuit sombre : " + (dark ? "oui" : "non"),
-			() -> send("vc reglage nuit_sombre " + (dark ? "non" : "oui")), false));
-		col.add(new Entry("Micros coupés la nuit : " + (mute ? "oui" : "non"),
-			() -> send("vc reglage nuit_muette " + (mute ? "non" : "oui")), false));
+		col.add(new Entry("Réglages de la nuit…", () -> minecraft.gui.setScreen(new SettingsScreen()), true));
 
 		int gaps = (int) col.stream().filter(Entry::gap).count();
-		int rows = col.size() + 2; // + ligne du vote + Retour
+		int rows = col.size() + 1; // + Retour
 		int avail = ph - 24;
 		int step = Math.max(19, Math.min(22, (avail - gaps * 6) / rows));
 		int bx = px + pw - 150;
@@ -90,11 +78,7 @@ public class StorytellerScreen extends BaseScreen {
 			button(bx, y, 136, e.label(), e.run());
 			y += step;
 		}
-		int vote = ClientState.num(st, "voteSeconds", 20);
-		voteRowY = y;
-		button(bx, y, 30, "−", () -> send("vc reglage temps_vote " + (vote - 5)));
-		button(bx + 106, y, 30, "+", () -> send("vc reglage temps_vote " + (vote + 5)));
-		button(bx, y + step, 136, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
+		button(bx, py + ph - 26, 136, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
 
 		if (!lobby && isSt) {
 			int radius = Math.max(46, Math.min(86, (ph - 84) / 2));
@@ -108,9 +92,6 @@ public class StorytellerScreen extends BaseScreen {
 		JsonObject v = view();
 		JsonObject st = ClientState.obj(v, "settings");
 		int bx = px + pw - 150;
-		if (voteRowY >= 0) {
-			Theme.centered(g, font, "Vote : " + ClientState.num(st, "voteSeconds", 20) + " s", bx + 68, voteRowY + 5, Theme.INK);
-		}
 		Theme.ink(g, font, phaseLabel(), px + 14, py + 12, Theme.WINE);
 		String mode = "HUMAIN".equals(ClientState.str(v, "mode")) ? "Conteur humain" : "Conteur automatique";
 		Theme.ink(g, font, mode, px + 14, py + 23, Theme.ASH);

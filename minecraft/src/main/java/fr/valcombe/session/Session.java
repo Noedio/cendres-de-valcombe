@@ -39,6 +39,10 @@ public final class Session {
 	/** Consignes du Conteur humain et notes par joueur. */
 	public final HumanDecisions policies = new HumanDecisions();
 	private final Map<String, String> notes = new HashMap<>();
+	/** Script de la prochaine partie : les rôles qui peuvent être tirés. */
+	private java.util.EnumSet<Role> script = java.util.EnumSet.allOf(Role.class);
+	private String scriptName = "Valcombe (complet)";
+	private List<String> savedScripts = List.of();
 	private Game game;
 	private Game lastGame;
 
@@ -301,7 +305,7 @@ public final class Session {
 			throw new GameException("Mode humain : il faut d'abord un Conteur.");
 		}
 		Game g = new Game(names, rng);
-		g.setupRandom();
+		g.setupRandom(script);
 		if (wanted == Mode.HUMAIN) {
 			g.decide = policies;
 		}
@@ -925,6 +929,49 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
+	// Script (rôles de la prochaine partie)
+	// ------------------------------------------------------------------
+	public java.util.Set<Role> script() {
+		return java.util.EnumSet.copyOf(script);
+	}
+
+	public String scriptName() {
+		return scriptName;
+	}
+
+	public String toggleScriptRole(String id) {
+		if (game != null) {
+			throw new GameException("Le script se modifie entre deux parties.");
+		}
+		Role r = parseRole(id);
+		if (!script.remove(r)) {
+			script.add(r);
+		}
+		scriptName = "Script personnalisé";
+		String problem = fr.valcombe.rules.Setup.check(script, Math.max(5, lobby.size()));
+		return r.displayName + (script.contains(r) ? " ajouté au script." : " retiré du script.")
+			+ (problem != null ? " Attention : " + problem : "");
+	}
+
+	public String useScript(String name, java.util.Collection<Role> roles) {
+		if (game != null) {
+			throw new GameException("Le script se modifie entre deux parties.");
+		}
+		if (roles.isEmpty()) {
+			throw new GameException("Script vide.");
+		}
+		script = java.util.EnumSet.copyOf(roles);
+		scriptName = name;
+		announce("Script de la prochaine partie : " + name + " (" + script.size() + " rôles).");
+		return "";
+	}
+
+	/** Noms des scripts enregistrés (fournis par le serveur). */
+	public void setSavedScripts(List<String> names) {
+		savedScripts = List.copyOf(names);
+	}
+
+	// ------------------------------------------------------------------
 	// Vue envoyée au client (écrans sur mesure)
 	// ------------------------------------------------------------------
 	private static Map<String, Object> roleView(Role r) {
@@ -952,6 +999,12 @@ public final class Session {
 		v.put("lobby", List.copyOf(lobby));
 		v.put("bots", List.copyOf(bots));
 		v.put("inLobby", lobby.contains(me));
+		Map<String, Object> sc = new LinkedHashMap<>();
+		sc.put("name", scriptName);
+		sc.put("roles", script.stream().map(Role::name).toList());
+		sc.put("saved", savedScripts);
+		sc.put("problem", fr.valcombe.rules.Setup.check(script, Math.max(5, lobby.size())));
+		v.put("script", sc);
 		v.put("feed", feed.subList(Math.max(0, feed.size() - 8), feed.size()));
 		Map<String, Object> st = new LinkedHashMap<>();
 		st.put("nightFreeze", settings.nightFreeze);

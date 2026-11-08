@@ -361,6 +361,27 @@ class GameTest {
 	}
 
 	@Test
+	void scriptRestreint() {
+		java.util.Set<Role> small = java.util.EnumSet.of(GOULE, ALCHIMISTE, MARGRAVE,
+			COMMERE, GREFFIER, VEILLEUSE, TEMPLIER, CHATELAIN, CHAPELAIN);
+		assertNull(Setup.check(small, 7), "5 Citadins, 1 Sbire, 1 Démon");
+		assertNotNull(Setup.check(small, 9), "il manque des Étrangers");
+		for (int seed = 0; seed < 60; seed++) {
+			List<Setup.Entry> bag = Setup.drawBag(7, Rng.of(new Random(seed)), small);
+			assertNotNull(bag);
+			for (Setup.Entry e : bag) {
+				assertTrue(small.contains(e.role()), "rôle hors script : " + e.role());
+				assertNotEquals(MARGRAVE, e.role(), "pas d'Étranger pour le Margrave");
+			}
+			for (Role b : Setup.pickBluffs(bag, Rng.of(new Random(seed)), small)) {
+				assertTrue(small.contains(b), "bluff hors script : " + b);
+			}
+		}
+		Game g = new Game(names(9), Rng.of(new Random(1)));
+		assertThrows(GameException.class, () -> g.setupRandom(small));
+	}
+
+	@Test
 	void consignesDuConteurHumain() {
 		Game g = withHerring(-1, GOULE, CHATELAIN, COMMERE, VEILLEUSE, ALCHIMISTE, HERITIERE);
 		fr.valcombe.session.HumanDecisions h = new fr.valcombe.session.HumanDecisions();
