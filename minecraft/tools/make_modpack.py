@@ -23,6 +23,15 @@ DIST = ROOT / "dist"
 API = "https://api.modrinth.com/v2"
 USER_AGENT = "valcombe-modpack-tool"
 
+# Monde plat et vide (biome du vide : aucune créature n'y apparaît). Les « : » sont échappés
+# comme l'exige le format server.properties.
+FLAT_WORLD = (
+    r"level-type=minecraft\:flat" "\n"
+    r'generator-settings={"layers"\:[{"block"\:"minecraft\:bedrock","height"\:1},'
+    r'{"block"\:"minecraft\:stone","height"\:3},{"block"\:"minecraft\:grass_block","height"\:1}],'
+    r'"biome"\:"minecraft\:the_void","features"\:false,"lakes"\:false,"structure_overrides"\:[]}' "\n"
+)
+
 
 def props():
     out = {}
@@ -148,7 +157,11 @@ def main():
             "enforce-whitelist=true\n"
             "online-mode=true\n"
             "difficulty=peaceful\n"
-            "spawn-protection=0\n",
+            "gamemode=adventure\n"
+            "pvp=false\n"
+            "spawn-protection=0\n"
+            "generate-structures=false\n"
+            + FLAT_WORLD,
             encoding="utf-8")
     (server / "demarrer.bat").write_text(
         "@echo off\r\n"
