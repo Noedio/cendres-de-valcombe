@@ -36,6 +36,7 @@ public final class ValcombeMod implements ModInitializer {
 		HOST.setUi(UI);
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			HOST.setServer(server);
+			HOST.prepareWorld();
 			SESSION.setSavedScripts(ScriptStore.list(server));
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HOST.setServer(null));
@@ -43,7 +44,12 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.onTick();
 			SYNC.onTick(server);
 		});
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> UI.giveMenuItem(handler.getPlayer()));
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			ServerPlayer p = handler.getPlayer();
+			UI.giveMenuItem(p);
+			var g = SESSION.game();
+			HOST.onJoin(p, g != null && g.seatOf(p.getScoreboardName()) >= 0);
+		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			String name = handler.getPlayer().getScoreboardName();
 			SYNC.forget(name);

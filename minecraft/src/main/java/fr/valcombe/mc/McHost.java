@@ -52,6 +52,93 @@ public final class McHost implements Host {
 		this.village = server == null ? null : Village.load(server);
 	}
 
+	/** Au démarrage : règles du monde, et village construit au point d'apparition s'il n'existe pas encore. */
+	public void prepareWorld() {
+		WorldSetup.apply(server);
+		ServerLevel level = server.overworld();
+		if (village == null) {
+			BlockPos spawn = level.getRespawnData().pos();
+			int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ()) - 1;
+			Village v = Village.generated(new BlockPos(spawn.getX(), y, spawn.getZ()));
+			v.build(level);
+			v.save(server);
+			village = v;
+			ValcombeMod.LOG.info("Village de Valcombe construit en {}", v.center());
+		}
+		applySpawn();
+	}
+
+	private void applySpawn() {
+		if (village != null) {
+			server.overworld().setRespawnData(
+				net.minecraft.world.level.storage.LevelData.RespawnData.of(server.overworld().dimension(), village.spawn(), 180, 0));
+		}
+	}
+
+	/** Arrivée d'un joueur : mode aventure (sauf opérateurs), sur la place si aucune partie ne le retient. */
+	public void onJoin(ServerPlayer p, boolean inGame) {
+		boolean op = p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+		if (!op) {
+			p.setGameMode(GameType.ADVENTURE);
+		}
+		if (!inGame && village != null) {
+			BlockPos s = village.spawn();
+			p.teleportTo(server.overworld(), s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Carte personnalisée : /vc carte nouvelle, siege, maison, retirer, infos
+	// ------------------------------------------------------------------
+	public String customMap(ServerPlayer p) {
+		village = Village.custom(p.blockPosition().below());
+		village.save(server);
+		applySpawn();
+		return "Nouvelle carte : la place est ici. Placez-vous sur chaque siège puis faites /vc carte siege, "
+			+ "et dans chaque maison /vc carte maison.";
+	}
+
+	private Village requireVillage() {
+		if (village == null) {
+			throw new fr.valcombe.rules.GameException("Aucune carte : /vc carte construire ou /vc carte nouvelle.");
+		}
+		return village;
+	}
+
+	public String addSeat(ServerPlayer p) {
+		Village v = requireVillage();
+		v.addSeat(p.blockPosition());
+		v.save(server);
+		return "Siège n°" + v.seatCount() + " enregistré.";
+	}
+
+	public String addHouse(ServerPlayer p) {
+		Village v = requireVillage();
+		v.addHouse(p.blockPosition());
+		v.save(server);
+		return "Maison n°" + v.houseCount() + " enregistrée.";
+	}
+
+	public String removeSeat() {
+		Village v = requireVillage();
+		boolean ok = v.removeLastSeat();
+		v.save(server);
+		return ok ? "Dernier siège retiré (" + v.seatCount() + " restants)." : "Aucun siège à retirer.";
+	}
+
+	public String removeHouse() {
+		Village v = requireVillage();
+		boolean ok = v.removeLastHouse();
+		v.save(server);
+		return ok ? "Dernière maison retirée (" + v.houseCount() + " restantes)." : "Aucune maison à retirer.";
+	}
+
+	public String mapInfo() {
+		Village v = requireVillage();
+		return (v.isGenerated() ? "Village généré" : "Carte personnalisée") + " — place en " + v.center().toShortString()
+			+ ", " + v.seatCount() + " siège(s), " + v.houseCount() + " maison(s).";
+	}
+
 	public Village village() {
 		return village;
 	}
@@ -59,10 +146,11 @@ public final class McHost implements Host {
 	/** Construit le village de Valcombe sous les pieds du joueur. */
 	public String buildVillage(ServerPlayer p) {
 		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
-		Village v = new Village(c);
+		Village v = Village.generated(c);
 		v.build(p.level());
 		v.save(server);
 		village = v;
+		applySpawn();
 		Vec3 spot = new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 4.5);
 		p.teleportTo(p.level(), spot.x, spot.y, spot.z, Set.of(), 180, 0, false);
 		return "Le village de Valcombe est construit. Les parties s'y joueront désormais.";
@@ -203,6 +291,9 @@ public final class McHost implements Host {
 		if (village != null && server != null) {
 			ServerLevel level = server.overworld();
 			int n = players.size();
+			if (village.seatCount() < n) {
+				announce("Attention : la carte n'a que " + village.seatCount() + " siège(s) pour " + n + " joueurs.");
+			}
 			seats.clear();
 			for (int i = 0; i < n; i++) {
 				Vec3 seat = village.seat(i, n);
@@ -252,6 +343,13 @@ public final class McHost implements Host {
 	@Override
 	public void nightEffects(List<String> players, boolean night, Settings settings) {
 		frozen = night && settings.nightFreeze;
+		if (server != null) {
+			if (night) {
+				WorldSetup.night(server);
+			} else {
+				WorldSetup.day(server);
+			}
+		}
 		boolean toHouses = night && settings.nightHouses && !houses.isEmpty();
 		if (toHouses != inHouses) {
 			inHouses = toHouses;
