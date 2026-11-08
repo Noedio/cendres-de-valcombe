@@ -41,3 +41,6 @@ replay_*.log
 
 # serveur de développement
 run/
+
+# modpack et dossier serveur générés
+dist/

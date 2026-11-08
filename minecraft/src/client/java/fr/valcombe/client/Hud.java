@@ -98,7 +98,7 @@ public final class Hud {
 			g.fill(vx + 1, 37, vx + 1 + (int) ((vw - 2) * frac), 38, Theme.GOLD);
 		}
 		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
-			String hint = "Une action t'attend — touche V";
+			String hint = "Une action t'attend — touche J";
 			int hw = mc.font.width(hint);
 			g.text(mc.font, hint, w / 2 - hw / 2, h - 60, Theme.GOLD, true);
 		}

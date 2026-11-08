@@ -13,7 +13,7 @@ Chaque sprint se termine par : compilation, tests au vert, et un commit Git loca
 | S6 | Conteur humain complet | Distribution manuelle, faux présage, décisions d'enregistrement et du Châtelain, marqueurs et notes | Fait |
 | S7 | Vocal de proximité | Simple Voice Chat : muet la nuit, Conteur qui chuchote, groupes privés | Fait |
 | S8 | Éditeur de scripts | Choisir les rôles d'une partie, sauvegarder des scripts | Fait |
-| S9 | Modpack et launcher | Fichier .mrpack (Modrinth App, Prism), serveur prêt à lancer, guide d'installation | À faire |
+| S9 | Modpack et launcher | Fichier .mrpack (Modrinth App, Prism), serveur prêt à lancer, guide d'installation | Fait |
 
 ## Principes
 
