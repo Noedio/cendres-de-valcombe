@@ -1,7 +1,7 @@
 """Fabrique le modpack et le dossier serveur des Cendres de Valcombe.
 
 Lancer depuis le dossier minecraft, après ./gradlew build :
-    python tools/make_modpack.py
+    python tools/make_modpack.py [--serveur=adresse:port]
 
 Produit dans dist/ :
   - Valcombe-<version>.mrpack : à importer dans Modrinth App ou Prism Launcher.
@@ -99,6 +99,32 @@ def main():
         z.writestr("modrinth.index.json", json.dumps(index, indent=2, ensure_ascii=False))
         z.write(jar, f"overrides/mods/{jar.name}")
     print(f"Modpack : {pack}")
+
+    # --- Manifeste lu par le launcher Valcombe (joint à la version GitHub) --
+    news_file = ROOT / "news.json"
+    news = json.loads(news_file.read_text(encoding="utf-8")) if news_file.exists() else []
+    server = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--serveur=")), "")
+    manifest = {
+        "version": version,
+        "minecraft": mc,
+        "loader": p["loader_version"],
+        "server": server,
+        "mods": [
+            {"name": label, "filename": m["filename"], "url": m["url"], "sha512": m["sha512"], "size": m["size"]}
+            for label, m in mods.items()
+        ] + [{
+            "name": "Les Cendres de Valcombe",
+            "filename": jar.name,
+            "url": "asset:" + jar.name,
+            "sha512": hashlib.sha512(jar.read_bytes()).hexdigest(),
+            "size": jar.stat().st_size,
+        }],
+        "news": news,
+    }
+    (DIST / "valcombe-pack.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    shutil.copy2(jar, DIST / jar.name)
+    print(f"Manifeste du launcher : {DIST / 'valcombe-pack.json'}")
+    print(f"À joindre à la version GitHub : valcombe-pack.json, {jar.name}, {pack.name}")
 
     # --- Dossier serveur ---------------------------------------------------
     server = DIST / "serveur-valcombe"
