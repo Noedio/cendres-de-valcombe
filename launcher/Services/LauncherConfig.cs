@@ -20,7 +20,7 @@ public sealed class MinecraftOptions
 public sealed class LauncherConfig
 {
     /// <summary>Dépôt GitHub qui publie les versions du mod (« propriétaire/nom »).</summary>
-    public string Repository { get; set; } = "";
+    public string Repository { get; set; } = "Noedio/cendres-de-valcombe";
     /// <summary>Adresse du serveur ; vide = celle annoncée par la version publiée.</summary>
     public string Server { get; set; } = "";
     public int MaxMemoryMb { get; set; } = 4096;
