@@ -266,9 +266,10 @@ public partial class MainWindow : Window
 
     private void RefreshAccount()
     {
+        string? name = Prism.IsInstalled && Prism.HasAccount() ? Prism.AccountName() : null;
         string text = !Prism.IsInstalled
-            ? "Pas encore installé : il le sera au premier clic sur JOUER."
-            : Prism.HasAccount() ? "Compte Microsoft enregistré." : "Aucun compte enregistré.";
+            ? "Pas encore connecté : la connexion vous sera proposée au premier clic sur JOUER."
+            : name != null ? $"Connecté : {name}." : "Aucun compte enregistré.";
         AccountText.Text = text;
         AccountShort.Text = text;
     }
@@ -281,8 +282,9 @@ public partial class MainWindow : Window
             {
                 await Prism.InstallAsync(new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)));
             }
-            Prism.OpenAccounts();
-            SetStatus("Connectez votre compte dans Prism (Comptes → Ajouter Microsoft), puis revenez ici.", 0);
+            SetStatus("Fenêtre de connexion ouverte : Comptes → Ajouter Microsoft, puis suivez les étapes.", 0);
+            string? who = await Prism.ConnectAsync();
+            SetStatus(who != null ? $"Connecté : {who}." : "Connexion annulée.", 0);
         }
         catch (Exception ex)
         {
@@ -330,9 +332,16 @@ public partial class MainWindow : Window
             Instance.ApplyOptions(_config.Minecraft);
             if (!Prism.HasAccount())
             {
-                Prism.OpenAccounts();
-                SetStatus("Première fois : connectez votre compte Microsoft dans la fenêtre qui s'ouvre, puis cliquez à nouveau sur JOUER.", 0);
-                return;
+                SetStatus("Première connexion : dans la fenêtre qui s'ouvre, Comptes → Ajouter Microsoft, puis suivez les étapes. "
+                    + "Elle se refermera toute seule.", 0);
+                string? who = await Prism.ConnectAsync();
+                if (who == null)
+                {
+                    SetStatus("Connexion annulée.", 0);
+                    return;
+                }
+                SetStatus($"Connecté : {who}.", 0);
+                RefreshAccount();
             }
             SetStatus("Lancement de Minecraft…", 1);
             Prism.Launch(ServerAddress);

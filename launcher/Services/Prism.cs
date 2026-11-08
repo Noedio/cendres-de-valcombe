@@ -81,9 +81,76 @@ public static class Prism
     }
 
     /// <summary>Ouvre Prism normalement (pour ajouter ou gérer le compte Microsoft).</summary>
-    public static void OpenAccounts()
+    public static Process? OpenAccounts()
     {
-        Process.Start(new ProcessStartInfo(Paths.PrismExe) { WorkingDirectory = Paths.PrismDir, UseShellExecute = false });
+        return Process.Start(new ProcessStartInfo(Paths.PrismExe) { WorkingDirectory = Paths.PrismDir, UseShellExecute = false });
+    }
+
+    /// <summary>Nom du profil Minecraft enregistré dans Prism, ou null.</summary>
+    public static string? AccountName()
+    {
+        string accounts = Path.Combine(Paths.PrismDir, "accounts.json");
+        if (!File.Exists(accounts))
+        {
+            return null;
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(accounts));
+            if (!doc.RootElement.TryGetProperty("accounts", out var list))
+            {
+                return null;
+            }
+            foreach (var a in list.EnumerateArray())
+            {
+                if (a.TryGetProperty("profile", out var prof) && prof.TryGetProperty("name", out var n))
+                {
+                    return n.GetString();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Connexion guidée : ouvre Prism, attend qu'un compte apparaisse, puis referme Prism.
+    /// Renvoie le nom du compte, ou null si la fenêtre a été fermée sans connexion.
+    /// </summary>
+    public static async Task<string?> ConnectAsync(CancellationToken ct = default)
+    {
+        using var proc = OpenAccounts();
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(1500, ct);
+            string? name = HasAccount() ? AccountName() ?? "compte Microsoft" : null;
+            if (name != null)
+            {
+                await Task.Delay(1500, ct); // laisser Prism finir d'écrire
+                try
+                {
+                    if (proc is { HasExited: false })
+                    {
+                        proc.CloseMainWindow();
+                        if (!proc.WaitForExit(3000))
+                        {
+                            proc.Kill();
+                        }
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                return name;
+            }
+            if (proc == null || proc.HasExited)
+            {
+                return null;
+            }
+        }
+        return null;
     }
 
     /// <summary>Indique si un compte Microsoft est enregistré dans Prism.</summary>
