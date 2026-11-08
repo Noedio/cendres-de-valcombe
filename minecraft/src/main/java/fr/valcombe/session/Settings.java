@@ -4,6 +4,8 @@ package fr.valcombe.session;
 public final class Settings {
 	public boolean nightFreeze = true;
 	public boolean nightDark = true;
+	/** La nuit, chacun dort dans sa maison du village (si le village est construit). */
+	public boolean nightHouses = true;
 	public int voteSeconds = 20;
 	public int stepDelayTicks = 30;
 }

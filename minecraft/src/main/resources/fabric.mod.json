@@ -8,7 +8,8 @@
 	"license": "All-Rights-Reserved",
 	"environment": "*",
 	"entrypoints": {
-		"main": ["fr.valcombe.mc.ValcombeMod"]
+		"main": ["fr.valcombe.mc.ValcombeMod"],
+		"client": ["fr.valcombe.client.ValcombeClient"]
 	},
 	"depends": {
 		"fabricloader": ">=0.20.1",

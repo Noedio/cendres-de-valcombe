@@ -92,6 +92,10 @@ public final class ValcombeCommands {
 				ui.openStoryteller(x.getSource().getPlayerOrException());
 				return "";
 			})))
+			.then(Commands.literal("carte").requires(admin)
+				.then(Commands.literal("construire")
+					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException()))))
+				.then(Commands.literal("oublier").executes(c -> exec(c, x -> ui.host().forgetVillage()))))
 			.then(Commands.literal("bots").requires(leader)
 				.then(Commands.literal("retirer").executes(c -> exec(c, x -> session.removeBots())))
 				.then(Commands.argument("nombre", IntegerArgumentType.integer(1, 15))
@@ -139,7 +143,7 @@ public final class ValcombeCommands {
 			.then(Commands.literal("reglage").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
-						List.of("nuit_immobile", "nuit_sombre", "temps_vote"), b))
+						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "temps_vote"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
 

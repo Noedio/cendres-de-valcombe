@@ -6,6 +6,16 @@ base {
 	archivesName = 'valcombe'
 }
 
+loom {
+	splitEnvironmentSourceSets()
+	mods {
+		"valcombe" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -39,5 +49,16 @@ test {
 	testLogging {
 		events "failed"
 		exceptionFormat "full"
+	}
+}
+
+// Tests en jeu côté client : création d'un monde, commandes, captures d'écran des écrans du mod.
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "valcombe-gametest"
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true
 	}
 }

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -41,9 +42,36 @@ public final class McHost implements Host {
 	private final Map<String, GameType> previousMode = new HashMap<>();
 	private boolean frozen;
 	private ValcombeUi ui;
+	private Village village;
+	/** Positions de nuit (maisons), quand les joueurs dorment chez eux. */
+	private final Map<String, SeatPos> houses = new HashMap<>();
+	private boolean inHouses;
 
 	public void setServer(MinecraftServer server) {
 		this.server = server;
+		this.village = server == null ? null : Village.load(server);
+	}
+
+	public Village village() {
+		return village;
+	}
+
+	/** Construit le village de Valcombe sous les pieds du joueur. */
+	public String buildVillage(ServerPlayer p) {
+		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
+		Village v = new Village(c);
+		v.build(p.level());
+		v.save(server);
+		village = v;
+		Vec3 spot = new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 4.5);
+		p.teleportTo(p.level(), spot.x, spot.y, spot.z, Set.of(), 180, 0, false);
+		return "Le village de Valcombe est construit. Les parties s'y joueront désormais.";
+	}
+
+	public String forgetVillage() {
+		Village.forget(server);
+		village = null;
+		return "Le village est oublié : les joueurs seront placés autour du Conteur.";
 	}
 
 	public void setUi(ValcombeUi ui) {
@@ -117,7 +145,8 @@ public final class McHost implements Host {
 		// Au tick suivant : on peut être en train de traiter un clic dans un autre menu.
 		schedule(1, () -> {
 			ServerPlayer p = player(name);
-			if (p != null && ui != null) {
+			// Les joueurs équipés du mod client voient l'invite dans leurs propres écrans.
+			if (p != null && ui != null && !ViewSync.hasClientMod(p)) {
 				ui.openPrompt(p, prompt);
 			}
 		});
@@ -150,7 +179,7 @@ public final class McHost implements Host {
 			}
 		}
 		if (frozen) {
-			for (Map.Entry<String, SeatPos> e : seats.entrySet()) {
+			for (Map.Entry<String, SeatPos> e : (inHouses ? houses : seats).entrySet()) {
 				ServerPlayer p = player(e.getKey());
 				SeatPos s = e.getValue();
 				if (p != null && p.position().distanceToSqr(s.pos()) > 0.36) {
@@ -163,8 +192,32 @@ public final class McHost implements Host {
 	// ------------------------------------------------------------------
 	// Placement et effets
 	// ------------------------------------------------------------------
+	private void teleport(ServerPlayer p, SeatPos s) {
+		p.teleportTo(s.level(), s.pos().x, s.pos().y, s.pos().z, Set.of(), s.yaw(), 0, false);
+	}
+
 	@Override
 	public void seatPlayers(List<String> players, String anchor) {
+		houses.clear();
+		inHouses = false;
+		if (village != null && server != null) {
+			ServerLevel level = server.overworld();
+			int n = players.size();
+			seats.clear();
+			for (int i = 0; i < n; i++) {
+				Vec3 seat = village.seat(i, n);
+				Vec3 house = village.house(i, n);
+				seats.put(players.get(i), new SeatPos(level, seat, village.yawToCenter(seat)));
+				houses.put(players.get(i), new SeatPos(level, house, village.yawToCenter(house) + 180));
+				ServerPlayer p = player(players.get(i));
+				if (p != null) {
+					previousMode.putIfAbsent(p.getScoreboardName(), p.gameMode.getGameModeForPlayer());
+					p.setGameMode(GameType.ADVENTURE);
+					teleport(p, seats.get(players.get(i)));
+				}
+			}
+			return;
+		}
 		ServerPlayer center = player(anchor);
 		if (center == null && !players.isEmpty()) {
 			center = player(players.get(0));
@@ -199,6 +252,17 @@ public final class McHost implements Host {
 	@Override
 	public void nightEffects(List<String> players, boolean night, Settings settings) {
 		frozen = night && settings.nightFreeze;
+		boolean toHouses = night && settings.nightHouses && !houses.isEmpty();
+		if (toHouses != inHouses) {
+			inHouses = toHouses;
+			for (String name : players) {
+				ServerPlayer p = player(name);
+				SeatPos target = (inHouses ? houses : seats).get(name);
+				if (p != null && target != null) {
+					teleport(p, target);
+				}
+			}
+		}
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p == null) {
@@ -215,6 +279,8 @@ public final class McHost implements Host {
 	@Override
 	public void endGame(List<String> players) {
 		frozen = false;
+		inHouses = false;
+		houses.clear();
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p != null) {

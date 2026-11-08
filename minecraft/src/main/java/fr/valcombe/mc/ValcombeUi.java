@@ -35,6 +35,10 @@ public final class ValcombeUi {
 		this.host = host;
 	}
 
+	public McHost host() {
+		return host;
+	}
+
 	// ------------------------------------------------------------------
 	// Outils
 	// ------------------------------------------------------------------
@@ -123,6 +127,10 @@ public final class ValcombeUi {
 	// Menu principal
 	// ------------------------------------------------------------------
 	public void openMain(ServerPlayer p) {
+		if (ViewSync.hasClientMod(p)) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, new fr.valcombe.net.ValcombeNet.OpenPayload("main"));
+			return;
+		}
 		String me = name(p);
 		Game g = session.game();
 		Gui gui = new Gui("main", "Les Cendres de Valcombe", 4);
@@ -331,6 +339,10 @@ public final class ValcombeUi {
 		if (!leader(p)) {
 			return;
 		}
+		if (ViewSync.hasClientMod(p)) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, new fr.valcombe.net.ValcombeNet.OpenPayload("storyteller"));
+			return;
+		}
 		Game g = session.game();
 		Gui gui = new Gui("storyteller", "Panneau du Conteur", 4);
 		boolean isSt = name(p).equals(session.storyteller());
@@ -382,6 +394,9 @@ public final class ValcombeUi {
 		gui.set(20, Gui.icon(session.settings.nightDark ? Items.WOOL.lime() : Items.WOOL.gray(),
 				"Nuit : écran noir", session.settings.nightDark ? "Activé" : "Désactivé"),
 			act(pl -> session.setting("nuit_sombre", session.settings.nightDark ? "non" : "oui"), this::openStoryteller));
+		gui.set(21, Gui.icon(session.settings.nightHouses ? Items.WOOL.lime() : Items.WOOL.gray(),
+				"Nuit : chacun chez soi", session.settings.nightHouses ? "Activé (si le village est construit)" : "Désactivé"),
+			act(pl -> session.setting("nuit_maisons", session.settings.nightHouses ? "non" : "oui"), this::openStoryteller));
 		gui.set(24, Gui.icon(Items.ARROW, "Temps de vote : -5 s", "Actuel : " + session.settings.voteSeconds + " s"),
 			act(pl -> session.setting("temps_vote", String.valueOf(session.settings.voteSeconds - 5)), this::openStoryteller));
 		gui.set(25, Gui.icon(Items.ARROW, "Temps de vote : +5 s", "Actuel : " + session.settings.voteSeconds + " s"),

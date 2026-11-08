@@ -1,0 +1,13 @@
+{
+	"schemaVersion": 1,
+	"id": "valcombe-gametest",
+	"version": "1.0.0",
+	"name": "Valcombe — tests en jeu",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": ["fr.valcombe.gametest.ScreensGameTest"]
+	},
+	"depends": {
+		"valcombe": "*"
+	}
+}

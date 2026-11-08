@@ -107,6 +107,21 @@ public final class Session {
 		return bots.contains(name) || host.online(name);
 	}
 
+	/** Annonces publiques récentes, affichées par le client. */
+	private final List<String> feed = new ArrayList<>();
+
+	private void announce(String text) {
+		feed.add(text);
+		if (feed.size() > 30) {
+			feed.remove(0);
+		}
+		host.announce(text);
+	}
+
+	public List<String> feed() {
+		return List.copyOf(feed);
+	}
+
 	private void tell(String player, String text) {
 		tell(player, Msg.of(text));
 	}
@@ -192,7 +207,7 @@ public final class Session {
 			throw new GameException("Tu es déjà inscrit.");
 		}
 		lobby.add(name);
-		host.announce(name + " rejoint la partie (" + lobby.size() + " inscrits).");
+		announce(name + " rejoint la partie (" + lobby.size() + " inscrits).");
 		return "Inscription enregistrée.";
 	}
 
@@ -203,7 +218,7 @@ public final class Session {
 		if (!lobby.remove(name)) {
 			throw new GameException("Tu n'es pas inscrit.");
 		}
-		host.announce(name + " quitte la partie (" + lobby.size() + " inscrits).");
+		announce(name + " quitte la partie (" + lobby.size() + " inscrits).");
 		return "Désinscription enregistrée.";
 	}
 
@@ -221,14 +236,14 @@ public final class Session {
 		}
 		if (name.equals(storyteller)) {
 			storyteller = null;
-			host.announce(name + " n'est plus Conteur.");
+			announce(name + " n'est plus Conteur.");
 			return "Tu n'es plus Conteur.";
 		}
 		if (lobby.contains(name)) {
 			throw new GameException("Désinscris-toi avant : le Conteur ne joue pas.");
 		}
 		storyteller = name;
-		host.announce(name + " est le Conteur.");
+		announce(name + " est le Conteur.");
 		return "Tu es le Conteur.";
 	}
 
@@ -246,7 +261,7 @@ public final class Session {
 				added++;
 			}
 		}
-		host.announce(added + " joueur(s) fictif(s) ajouté(s) (" + lobby.size() + " inscrits).");
+		announce(added + " joueur(s) fictif(s) ajouté(s) (" + lobby.size() + " inscrits).");
 		return "";
 	}
 
@@ -256,7 +271,7 @@ public final class Session {
 		}
 		lobby.removeAll(bots);
 		bots.clear();
-		host.announce("Joueurs fictifs retirés (" + lobby.size() + " inscrits).");
+		announce("Joueurs fictifs retirés (" + lobby.size() + " inscrits).");
 		return "";
 	}
 
@@ -285,7 +300,7 @@ public final class Session {
 		for (Game.Seat p : g.players()) {
 			showRole(p.name, p.believed());
 		}
-		host.announce("La partie commence à " + names.size() + " joueurs (Conteur "
+		announce("La partie commence à " + names.size() + " joueurs (Conteur "
 			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). Le Conteur fait tomber la première nuit.");
 		return "Partie lancée.";
 	}
@@ -298,7 +313,7 @@ public final class Session {
 		clearNight();
 		clearVote();
 		clearPrompts(null);
-		host.announce("La partie est interrompue.");
+		announce("La partie est interrompue.");
 		return "Partie interrompue.";
 	}
 
@@ -384,6 +399,7 @@ public final class Session {
 		switch (key) {
 			case "nuit_immobile" -> settings.nightFreeze = yes;
 			case "nuit_sombre" -> settings.nightDark = yes;
+			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "temps_vote" -> {
 				try {
 					settings.voteSeconds = Math.max(5, Math.min(120, Integer.parseInt(value)));
@@ -391,7 +407,8 @@ public final class Session {
 					throw new GameException("temps_vote attend un nombre de secondes.");
 				}
 			}
-			default -> throw new GameException("Réglages : nuit_immobile oui|non, nuit_sombre oui|non, temps_vote <secondes>.");
+			default -> throw new GameException(
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons (oui|non), temps_vote <secondes>.");
 		}
 		return "Réglage modifié.";
 	}
@@ -419,7 +436,7 @@ public final class Session {
 		}
 		g.startNight();
 		host.nightEffects(realNames(), true, settings);
-		host.announce("La nuit " + g.night() + " tombe sur Valcombe. Fermez les yeux…");
+		announce("La nuit " + g.night() + " tombe sur Valcombe. Fermez les yeux…");
 		nextLater();
 		return "";
 	}
@@ -643,16 +660,16 @@ public final class Session {
 		clearNight();
 		host.nightEffects(realNames(), false, settings);
 		if (deaths.isEmpty()) {
-			host.announce("L'aube se lève. Personne n'est mort cette nuit.");
+			announce("L'aube se lève. Personne n'est mort cette nuit.");
 		} else {
-			host.announce("L'aube se lève. Mort(s) cette nuit : "
+			announce("L'aube se lève. Mort(s) cette nuit : "
 				+ String.join(", ", deaths.stream().map(s -> g.player(s).name).toList()) + ".");
 		}
 		if (g.winner() != null) {
 			finish();
 			return;
 		}
-		host.announce("Jour " + g.day() + " : discutez, puis nominez (menu ou /vc nominer). Le Conteur clôt la journée.");
+		announce("Jour " + g.day() + " : discutez, puis nominez (menu ou /vc nominer). Le Conteur clôt la journée.");
 	}
 
 	// ------------------------------------------------------------------
@@ -677,13 +694,13 @@ public final class Session {
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		Game.Nomination nom = g.nominate(a, b);
-		host.announce(name + " nomine " + g.player(b).name + ".");
+		announce(name + " nomine " + g.player(b).name + ".");
 		if (nom.pelerine()) {
-			host.announce(name + " est exécuté sur-le-champ !");
+			announce(name + " est exécuté sur-le-champ !");
 			if (g.winner() != null) {
 				finish();
 			} else {
-				host.announce("La journée s'achève. Le Conteur fait tomber la nuit.");
+				announce("La journée s'achève. Le Conteur fait tomber la nuit.");
 			}
 			return "";
 		}
@@ -710,7 +727,7 @@ public final class Session {
 				setPrompt(p.name, new Prompt.Vote(nominee, !p.alive()));
 			}
 		}
-		host.announce("Vote sur " + nominee + " : " + settings.voteSeconds + " secondes pour lever la main.");
+		announce("Vote sur " + nominee + " : " + settings.voteSeconds + " secondes pour lever la main.");
 		int token = voteToken;
 		host.schedule(settings.voteSeconds * 20, () -> {
 			if (voteNom != null && token == voteToken) {
@@ -751,7 +768,7 @@ public final class Session {
 		}
 		clearVote();
 		Game.VoteResult r = g.vote(nom.index(), voters);
-		host.announce(r.count() + " voix (seuil " + r.threshold() + ") : "
+		announce(r.count() + " voix (seuil " + r.threshold() + ") : "
 			+ (r.onBlock() ? "en passe d'être exécuté" : "pas d'exécution pour l'instant")
 			+ ". Mains levées : " + (hands.isEmpty() ? "aucune" : String.join(", ", hands)) + ".");
 		if (!r.warnings().isEmpty() && storyteller != null) {
@@ -764,9 +781,9 @@ public final class Session {
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		boolean hit = g.slayerShot(a, b);
-		host.announce(name + " se déclare Arbalétrier et tire sur " + g.player(b).name + "…");
+		announce(name + " se déclare Arbalétrier et tire sur " + g.player(b).name + "…");
 		host.schedule(40, () -> {
-			host.announce(hit ? g.player(b).name + " s'effondre, transpercé !" : "Rien ne se passe.");
+			announce(hit ? g.player(b).name + " s'effondre, transpercé !" : "Rien ne se passe.");
 			if (game == g && g.winner() != null) {
 				finish();
 			}
@@ -780,13 +797,13 @@ public final class Session {
 			throw new GameException("Un vote est en cours.");
 		}
 		Game.DayEnd end = g.endDay();
-		host.announce(end.executed() >= 0
+		announce(end.executed() >= 0
 			? g.player(end.executed()).name + " est exécuté."
 			: "Personne n'est exécuté aujourd'hui.");
 		if (g.winner() != null) {
 			finish();
 		} else {
-			host.announce("Le soleil se couche. Le Conteur fait tomber la nuit.");
+			announce("Le soleil se couche. Le Conteur fait tomber la nuit.");
 		}
 		return "";
 	}
@@ -800,9 +817,9 @@ public final class Session {
 			return;
 		}
 		host.endGame(realNames());
-		host.announce("Fin de la partie : victoire du " + (g.winner() == Team.GOOD ? "bien" : "mal") + " ! "
+		announce("Fin de la partie : victoire du " + (g.winner() == Team.GOOD ? "bien" : "mal") + " ! "
 			+ g.winReason());
-		host.announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
+		announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
 		lastGame = g;
 		game = null;
 		clearNight();
@@ -826,6 +843,134 @@ public final class Session {
 				resolve(randomTargets(pendingStep));
 			}
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Vue envoyée au client (écrans sur mesure)
+	// ------------------------------------------------------------------
+	private static Map<String, Object> roleView(Role r) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("id", r.name());
+		m.put("name", r.displayName);
+		m.put("type", r.type.name());
+		m.put("team", Team.of(r).name());
+		m.put("text", r.text);
+		return m;
+	}
+
+	/**
+	 * Ce qu'un joueur a le droit de voir, sous forme d'arbre simple (sérialisé en JSON).
+	 * leader : opérateur ou Conteur (accès au panneau). Le grimoire n'est inclus que pour
+	 * le Conteur, ou pour le Mouchard pendant son réveil.
+	 */
+	public Map<String, Object> view(String me, boolean leader) {
+		Map<String, Object> v = new LinkedHashMap<>();
+		v.put("me", me);
+		v.put("leader", leader);
+		v.put("storyteller", storyteller);
+		v.put("isStoryteller", me.equals(storyteller));
+		v.put("mode", mode.name());
+		v.put("lobby", List.copyOf(lobby));
+		v.put("bots", List.copyOf(bots));
+		v.put("inLobby", lobby.contains(me));
+		v.put("feed", feed.subList(Math.max(0, feed.size() - 8), feed.size()));
+		Map<String, Object> st = new LinkedHashMap<>();
+		st.put("nightFreeze", settings.nightFreeze);
+		st.put("nightDark", settings.nightDark);
+		st.put("nightHouses", settings.nightHouses);
+		st.put("voteSeconds", settings.voteSeconds);
+		v.put("settings", st);
+		Game g = game;
+		if (g == null) {
+			v.put("phase", "LOBBY");
+			v.put("lastWinner", lastGame != null && lastGame.winner() != null ? lastGame.winner().name() : null);
+		} else {
+			v.put("phase", g.phase().name());
+			v.put("night", g.night());
+			v.put("day", g.day());
+			v.put("dayOver", g.dayOver());
+			int mySeat = g.seatOf(me);
+			v.put("mySeat", mySeat);
+			List<Map<String, Object>> seats = new ArrayList<>();
+			for (int i = 0; i < g.size(); i++) {
+				Game.Seat p = g.player(i);
+				Map<String, Object> s = new LinkedHashMap<>();
+				s.put("seat", i);
+				s.put("name", p.name);
+				s.put("alive", p.alive());
+				s.put("ghostVote", p.ghostVote());
+				s.put("bot", bots.contains(p.name));
+				seats.add(s);
+			}
+			v.put("seats", seats);
+			if (mySeat >= 0) {
+				v.put("role", roleView(g.player(mySeat).believed()));
+			}
+			if (voteNom != null) {
+				Map<String, Object> vote = new LinkedHashMap<>();
+				vote.put("nominator", g.player(voteNom.nominator()).name);
+				vote.put("nominee", g.player(voteNom.nominee()).name);
+				vote.put("hands", answers.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList());
+				vote.put("seconds", settings.voteSeconds);
+				v.put("vote", vote);
+			}
+			boolean spyAwake = prompts.get(me) instanceof Prompt.Grimoire;
+			if (me.equals(storyteller) || spyAwake) {
+				List<Map<String, Object>> grim = new ArrayList<>();
+				List<String> lines = g.grimoireLines();
+				for (int i = 0; i < g.size(); i++) {
+					Game.Seat p = g.player(i);
+					Map<String, Object> row = new LinkedHashMap<>();
+					row.put("seat", i);
+					row.put("role", roleView(p.role()));
+					row.put("believed", p.believed() != p.role() ? roleView(p.believed()) : null);
+					row.put("line", lines.get(i));
+					row.put("poisoned", g.poisonedSeat() == i);
+					row.put("protected", g.protectedSeat() == i);
+					row.put("redHerring", g.redHerring() == i);
+					row.put("master", g.masterSeat() == i);
+					grim.add(row);
+				}
+				v.put("grimoire", grim);
+				v.put("bluffs", g.bluffs().stream().map(Role::name).toList());
+			}
+		}
+		Prompt pr = prompts.get(me);
+		if (pr != null) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			switch (pr) {
+				case Prompt.Choose c -> {
+					m.put("type", "choose");
+					m.put("title", c.title());
+					m.put("count", c.count());
+					List<Map<String, Object>> opts = new ArrayList<>();
+					for (Prompt.Option o : c.options()) {
+						opts.add(Map.of("seat", o.seat(), "name", o.name(), "alive", o.alive(), "selected", o.selected()));
+					}
+					m.put("options", opts);
+				}
+				case Prompt.Info i -> {
+					m.put("type", "info");
+					m.put("title", i.title());
+					m.put("text", i.text());
+				}
+				case Prompt.Grimoire gr -> m.put("type", "grimoire");
+				case Prompt.Vote vo -> {
+					m.put("type", "vote");
+					m.put("nominee", vo.nominee());
+					m.put("ghost", vo.ghost());
+				}
+				case Prompt.Confirm cf -> {
+					m.put("type", "confirm");
+					m.put("title", cf.title());
+					m.put("to", cf.to());
+					m.put("text", cf.text());
+					m.put("truth", cf.truth());
+				}
+			}
+			v.put("prompt", m);
+		}
+		return v;
 	}
 
 	// ------------------------------------------------------------------
