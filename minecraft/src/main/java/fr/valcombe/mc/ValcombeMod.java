@@ -25,6 +25,11 @@ public final class ValcombeMod implements ModInitializer {
 	private static final ValcombeUi UI = new ValcombeUi(SESSION, HOST);
 	private static final ViewSync SYNC = new ViewSync(SESSION);
 
+	/** La table de jeu du serveur (utilisée par le plugin vocal). */
+	public static Session session() {
+		return SESSION;
+	}
+
 	@Override
 	public void onInitialize() {
 		ValcombeNet.registerPayloads();

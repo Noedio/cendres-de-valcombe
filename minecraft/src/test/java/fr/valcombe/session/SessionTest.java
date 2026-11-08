@@ -205,6 +205,22 @@ class SessionTest {
 	}
 
 	@Test
+	void microsCoupesLaNuitSaufLeConteur() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(3)));
+		s.toggleStoryteller("Conteur");
+		s.addBots(6);
+		s.start("Conteur", Session.Mode.AUTO);
+		assertTrue(!s.isMuted("Bot1"), "avant la nuit");
+		s.startNight();
+		assertTrue(s.isMuted("Bot1"));
+		assertTrue(!s.isMuted("Conteur"), "le Conteur parle");
+		assertTrue(!s.isMuted("Inconnu"), "un spectateur n'est pas concerné");
+		s.setting("nuit_muette", "non");
+		assertTrue(!s.isMuted("Bot1"));
+	}
+
+	@Test
 	void reglesDInscription() {
 		FakeHost h = new FakeHost();
 		Session s = new Session(h);

@@ -94,6 +94,13 @@ public final class Session {
 		return bots.contains(name);
 	}
 
+	/** Micro coupé ? La nuit, pour tous les joueurs de la partie sauf le Conteur. */
+	public boolean isMuted(String name) {
+		Game g = game;
+		return settings.nightMute && g != null && g.phase() == Game.Phase.NIGHT
+			&& !name.equals(storyteller) && g.seatOf(name) >= 0;
+	}
+
 	public boolean voteOpen() {
 		return voteNom != null;
 	}
@@ -407,6 +414,7 @@ public final class Session {
 			case "nuit_immobile" -> settings.nightFreeze = yes;
 			case "nuit_sombre" -> settings.nightDark = yes;
 			case "nuit_maisons" -> settings.nightHouses = yes;
+			case "nuit_muette" -> settings.nightMute = yes;
 			case "temps_vote" -> {
 				try {
 					settings.voteSeconds = Math.max(5, Math.min(120, Integer.parseInt(value)));
@@ -415,7 +423,7 @@ public final class Session {
 				}
 			}
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons (oui|non), temps_vote <secondes>.");
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_vote <secondes>.");
 		}
 		return "Réglage modifié.";
 	}
@@ -949,6 +957,7 @@ public final class Session {
 		st.put("nightFreeze", settings.nightFreeze);
 		st.put("nightDark", settings.nightDark);
 		st.put("nightHouses", settings.nightHouses);
+		st.put("nightMute", settings.nightMute);
 		st.put("voteSeconds", settings.voteSeconds);
 		v.put("settings", st);
 		Game g = game;

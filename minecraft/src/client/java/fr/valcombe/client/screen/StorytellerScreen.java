@@ -67,12 +67,15 @@ public class StorytellerScreen extends BaseScreen {
 		boolean houses = ClientState.bool(st, "nightHouses");
 		boolean freeze = ClientState.bool(st, "nightFreeze");
 		boolean dark = ClientState.bool(st, "nightDark");
+		boolean mute = ClientState.bool(st, "nightMute");
 		col.add(new Entry("Chacun chez soi : " + (houses ? "oui" : "non"),
 			() -> send("vc reglage nuit_maisons " + (houses ? "non" : "oui")), true));
 		col.add(new Entry("Nuit immobile : " + (freeze ? "oui" : "non"),
 			() -> send("vc reglage nuit_immobile " + (freeze ? "non" : "oui")), false));
 		col.add(new Entry("Nuit sombre : " + (dark ? "oui" : "non"),
 			() -> send("vc reglage nuit_sombre " + (dark ? "non" : "oui")), false));
+		col.add(new Entry("Micros coupés la nuit : " + (mute ? "oui" : "non"),
+			() -> send("vc reglage nuit_muette " + (mute ? "non" : "oui")), false));
 
 		int gaps = (int) col.stream().filter(Entry::gap).count();
 		int rows = col.size() + 2; // + ligne du vote + Retour

@@ -9,12 +9,16 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": ["fr.valcombe.mc.ValcombeMod"],
-		"client": ["fr.valcombe.client.ValcombeClient"]
+		"client": ["fr.valcombe.client.ValcombeClient"],
+		"voicechat": ["fr.valcombe.mc.ValcombeVoicePlugin"]
 	},
 	"depends": {
 		"fabricloader": ">=0.20.1",
 		"minecraft": "~26.3",
 		"java": ">=25",
 		"fabric-api": "*"
+	},
+	"suggests": {
+		"voicechat": "*"
 	}
 }

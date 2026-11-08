@@ -16,7 +16,29 @@ loom {
 	}
 }
 
+repositories {
+	maven {
+		name = 'Henkel (Simple Voice Chat)'
+		url = 'https://maven.maxhenkel.de/repository/public'
+	}
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = 'Modrinth'
+				url = 'https://api.modrinth.com/maven'
+			}
+		}
+		filter {
+			includeGroup 'maven.modrinth'
+		}
+	}
+}
+
 dependencies {
+	// Vocal de proximité : API pour compiler, mod complet pour les lancements de développement.
+	compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
+	localRuntime "maven.modrinth:simple-voice-chat:${project.voicechat_version}"
+
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"

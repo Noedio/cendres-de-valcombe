@@ -170,7 +170,7 @@ public final class ValcombeCommands {
 			.then(Commands.literal("reglage").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
-						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "temps_vote"), b))
+						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "temps_vote"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
 
