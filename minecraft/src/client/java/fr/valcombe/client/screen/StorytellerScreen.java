@@ -57,6 +57,12 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Clore la journée", () -> send("vc finjour"), false));
 			col.add(new Entry("Passer l'étape", () -> send("vc suivant"), false));
 			col.add(new Entry("Arrêter la partie", () -> send("vc arreter"), false));
+			if ("HUMAIN".equals(ClientState.str(v, "mode"))) {
+				String pol = ClientState.str(ClientState.obj(v, "policies"), "misregister");
+				String next = "HASARD".equals(pol) ? "toujours" : "TOUJOURS".equals(pol) ? "jamais" : "hasard";
+				col.add(new Entry("Trompe : " + (pol == null ? "hasard" : pol.toLowerCase()),
+					() -> send("vc consigne enregistrement " + next), true));
+			}
 		}
 		boolean houses = ClientState.bool(st, "nightHouses");
 		boolean freeze = ClientState.bool(st, "nightFreeze");
@@ -89,7 +95,8 @@ public class StorytellerScreen extends BaseScreen {
 
 		if (!lobby && isSt) {
 			int radius = Math.max(46, Math.min(86, (ph - 84) / 2));
-			Grimoire.place(this, px + (pw - 150) / 2, py + 54 + radius, radius, radius > 70 ? 24 : 20);
+			Grimoire.place(this, px + (pw - 150) / 2, py + 54 + radius, radius, radius > 70 ? 24 : 20,
+				name -> minecraft.gui.setScreen(new SeatScreen(name)));
 		}
 	}
 
@@ -120,7 +127,14 @@ public class StorytellerScreen extends BaseScreen {
 				bl.append(Role.valueOf(b).displayName).append(", ");
 			}
 			String text = bl.length() > 9 ? bl.substring(0, bl.length() - 2) : bl.toString();
-			Theme.paragraph(g, font, text, px + 14, py + 34, pw - 180, Theme.INK);
+			int h = Theme.paragraph(g, font, text, px + 14, py + 34, pw - 180, Theme.INK);
+			String warn = ClientState.str(v, "distWarning");
+			if (warn != null && ClientState.phase().equals("READY")) {
+				Theme.paragraph(g, font, warn, px + 14, py + 36 + h, pw - 180, Theme.BLOOD);
+			}
+			if (ClientState.phase().equals("READY")) {
+				Theme.ink(g, font, "Clique sur un jeton pour le retoucher.", px + 14, py + ph - 14, Theme.ASH);
+			}
 		}
 	}
 }

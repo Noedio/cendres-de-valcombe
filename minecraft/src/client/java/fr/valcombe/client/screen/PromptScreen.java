@@ -94,7 +94,7 @@ public class PromptScreen extends BaseScreen {
 			}
 			case "info" -> button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			case "grimoire" -> {
-				Grimoire.place(this, cx, py + 112, 84, 24);
+				Grimoire.place(this, cx, py + 112, 84, 24, null);
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "vote" -> {

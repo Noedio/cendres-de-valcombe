@@ -55,6 +55,9 @@ public class TokenWidget extends AbstractButton {
 		int cy = getY() + getHeight() / 2;
 		Theme.token(g, cx, cy, getWidth(), roleId, team, alive, selected, action != null && isHovered());
 		var font = Minecraft.getInstance().font;
+		if (name.isEmpty()) {
+			return;
+		}
 		String label = name.length() > 12 ? name.substring(0, 11) + "…" : name;
 		int tw = font.width(label);
 		g.fill(cx - tw / 2 - 2, getY() + getHeight() + 1, cx + tw / 2 + 2, getY() + getHeight() + 11, 0xB01B1214);

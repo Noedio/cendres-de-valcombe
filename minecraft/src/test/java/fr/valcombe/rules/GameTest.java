@@ -342,6 +342,42 @@ class GameTest {
 	}
 
 	@Test
+	void leConteurRetoucheLaDistributionAvantLaPremiereNuit() {
+		Game g = withHerring(-1, GOULE, COMMERE, TEMPLIER, CHATELAIN, ALCHIMISTE, VEILLEUSE);
+		assertNotNull(g.distributionWarning(), "6 joueurs sans Étranger");
+		g.reassign(1, SOMNAMBULE, ASTROLOGUE);
+		assertEquals(SOMNAMBULE, g.player(1).role());
+		assertEquals(ASTROLOGUE, g.player(1).believed());
+		assertNull(g.distributionWarning(), "3 Citadins, 1 Étranger, 1 Sbire, 1 Démon");
+		assertThrows(GameException.class, () -> g.reassign(2, SOMNAMBULE, GOULE));
+		assertThrows(GameException.class, () -> g.setRedHerring(0));
+		g.setRedHerring(3);
+		assertEquals(3, g.redHerring());
+		assertThrows(GameException.class, () -> g.setBluffs(List.of(TEMPLIER, PELERINE, MARTYR)), "Templier en jeu");
+		g.setBluffs(List.of(PELERINE, MARTYR, ECUYER));
+		assertEquals(List.of(PELERINE, MARTYR, ECUYER), g.bluffs());
+		night(g);
+		assertThrows(GameException.class, () -> g.reassign(2, GREFFIER, null), "trop tard");
+	}
+
+	@Test
+	void consignesDuConteurHumain() {
+		Game g = withHerring(-1, GOULE, CHATELAIN, COMMERE, VEILLEUSE, ALCHIMISTE, HERITIERE);
+		fr.valcombe.session.HumanDecisions h = new fr.valcombe.session.HumanDecisions();
+		h.mayorTarget = "J3";
+		h.misregister = fr.valcombe.session.HumanDecisions.Policy.JAMAIS;
+		g.decide = h;
+		night(g);
+		g.endDay();
+		NightResult r = night(g, choose(GOULE, 1));
+		assertEquals(List.of(2), r.deaths(), "la Commère meurt à la place du Châtelain");
+		h.mayorTarget = "";
+		g.endDay();
+		r = night(g, choose(GOULE, 1));
+		assertEquals(List.of(1), r.deaths(), "le Châtelain meurt lui-même");
+	}
+
+	@Test
 	void onNeNominePasUnMort() {
 		Game g = withHerring(-1, GOULE, COMMERE, TEMPLIER, CHATELAIN, ALCHIMISTE, VEILLEUSE);
 		night(g);

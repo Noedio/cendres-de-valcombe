@@ -36,6 +36,9 @@ public final class Session {
 	private final Map<String, Prompt> prompts = new HashMap<>();
 	private String storyteller;
 	private Mode mode = Mode.AUTO;
+	/** Consignes du Conteur humain et notes par joueur. */
+	public final HumanDecisions policies = new HumanDecisions();
+	private final Map<String, String> notes = new HashMap<>();
 	private Game game;
 	private Game lastGame;
 
@@ -292,6 +295,10 @@ public final class Session {
 		}
 		Game g = new Game(names, rng);
 		g.setupRandom();
+		if (wanted == Mode.HUMAIN) {
+			g.decide = policies;
+		}
+		notes.clear();
 		mode = wanted;
 		game = g;
 		clearNight();
@@ -846,6 +853,70 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
+	// Outils du Conteur humain
+	// ------------------------------------------------------------------
+	private static Role parseRole(String id) {
+		try {
+			return Role.valueOf(id.toUpperCase(java.util.Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			throw new GameException("Rôle inconnu : " + id);
+		}
+	}
+
+	/** Change le rôle d'un joueur avant la première nuit. */
+	public String assignRole(String target, String roleId, String believedId) {
+		Game g = requireGame();
+		Role r = parseRole(roleId);
+		Role believed = believedId == null ? null : parseRole(believedId);
+		g.reassign(seatByName(target), r, believed);
+		String warn = g.distributionWarning();
+		return g.player(seatByName(target)).name + " : " + r.displayName + "." + (warn != null ? " " + warn : "");
+	}
+
+	public String setRedHerring(String target) {
+		Game g = requireGame();
+		g.setRedHerring(seatByName(target));
+		return target + " est le faux présage.";
+	}
+
+	public String setBluffs(List<String> ids) {
+		if (ids.size() != 3) {
+			throw new GameException("Il faut trois rôles.");
+		}
+		requireGame().setBluffs(ids.stream().map(Session::parseRole).toList());
+		return "Bluffs du Démon modifiés.";
+	}
+
+	public String note(String target, String text) {
+		requireGame();
+		int s = seatByName(target);
+		if (text == null || text.isBlank()) {
+			notes.remove(game.player(s).name);
+			return "Note effacée.";
+		}
+		notes.put(game.player(s).name, text);
+		return "Note enregistrée.";
+	}
+
+	/** Consignes : enregistrement (hasard|toujours|jamais), chatelain (joueur|personne|hasard), successeur (joueur|hasard). */
+	public String policy(String key, String value) {
+		switch (key) {
+			case "enregistrement" -> {
+				try {
+					policies.misregister = HumanDecisions.Policy.valueOf(value.toUpperCase(java.util.Locale.ROOT));
+				} catch (IllegalArgumentException e) {
+					throw new GameException("enregistrement : hasard, toujours ou jamais.");
+				}
+			}
+			case "chatelain" -> policies.mayorTarget = value.equalsIgnoreCase("hasard") ? null
+				: value.equalsIgnoreCase("personne") ? "" : value;
+			case "successeur" -> policies.successor = value.equalsIgnoreCase("hasard") ? null : value;
+			default -> throw new GameException("Consignes : enregistrement, chatelain, successeur.");
+		}
+		return "Consigne enregistrée.";
+	}
+
+	// ------------------------------------------------------------------
 	// Vue envoyée au client (écrans sur mesure)
 	// ------------------------------------------------------------------
 	private static Map<String, Object> roleView(Role r) {
@@ -925,6 +996,7 @@ public final class Session {
 					row.put("role", roleView(p.role()));
 					row.put("believed", p.believed() != p.role() ? roleView(p.believed()) : null);
 					row.put("line", lines.get(i));
+					row.put("note", notes.get(p.name));
 					row.put("poisoned", g.poisonedSeat() == i);
 					row.put("protected", g.protectedSeat() == i);
 					row.put("redHerring", g.redHerring() == i);
@@ -933,6 +1005,12 @@ public final class Session {
 				}
 				v.put("grimoire", grim);
 				v.put("bluffs", g.bluffs().stream().map(Role::name).toList());
+				v.put("distWarning", g.distributionWarning());
+				Map<String, Object> pol = new LinkedHashMap<>();
+				pol.put("misregister", policies.misregister.name());
+				pol.put("mayorTarget", policies.mayorTarget);
+				pol.put("successor", policies.successor);
+				v.put("policies", pol);
 			}
 		}
 		Prompt pr = prompts.get(me);

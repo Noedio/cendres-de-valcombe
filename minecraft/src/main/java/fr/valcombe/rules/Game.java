@@ -231,6 +231,76 @@ public final class Game {
 		addLog("Mise en place : " + describeRoles());
 	}
 
+	// ------------------------------------------------------------------
+	// Retouches du Conteur avant la première nuit
+	// ------------------------------------------------------------------
+	private void requireReady() {
+		if (phase != Phase.READY) {
+			throw new GameException("La distribution ne se modifie qu'avant la première nuit.");
+		}
+	}
+
+	/** Change le rôle d'un joueur ; believed sert au Somnambule (rôle qu'il croit avoir). */
+	public void reassign(int seat, Role role, Role believed) {
+		requireReady();
+		if (role == Role.SOMNAMBULE && (believed == null || believed.type != RoleType.CITADIN)) {
+			throw new GameException("Le Somnambule doit croire être un Citadin.");
+		}
+		Seat p = player(seat);
+		p.role = role;
+		p.believed = role == Role.SOMNAMBULE ? believed : role;
+		if (redHerring >= 0 && player(redHerring).team() == Team.EVIL) {
+			redHerring = -1;
+		}
+		addLog("Le Conteur donne à " + p.name + " le rôle " + role.displayName
+			+ (p.believed != role ? " (croit être " + p.believed.displayName + ")" : "") + ".");
+	}
+
+	/** Désigne le faux présage de l'Astrologue (un joueur du bien). */
+	public void setRedHerring(int seat) {
+		if (player(seat).team() != Team.GOOD) {
+			throw new GameException("Le faux présage doit être un joueur du bien.");
+		}
+		redHerring = seat;
+		addLog("Le Conteur désigne " + player(seat).name + " comme faux présage.");
+	}
+
+	/** Impose les trois bluffs du Démon (rôles du bien absents). */
+	public void setBluffs(List<Role> list) {
+		requireReady();
+		for (Role r : list) {
+			if (r.evil()) {
+				throw new GameException(r.displayName + " n'est pas un rôle du bien.");
+			}
+			for (Seat p : seats) {
+				if (p.role == r || p.believed == r) {
+					throw new GameException(r.displayName + " est déjà en jeu.");
+				}
+			}
+		}
+		bluffs = List.copyOf(list);
+	}
+
+	/** Écart entre la distribution actuelle et la répartition prévue (null si conforme). */
+	public String distributionWarning() {
+		Distribution.Counts c = Distribution.counts(size());
+		if (c == null) {
+			return null;
+		}
+		int[] have = new int[4];
+		boolean margrave = false;
+		for (Seat p : seats) {
+			have[p.role.type.ordinal()]++;
+			margrave |= p.role == Role.MARGRAVE;
+		}
+		int bonus = margrave ? 2 : 0;
+		if (have[0] != c.citadin() - bonus || have[1] != c.etranger() + bonus || have[2] != c.sbire() || have[3] != c.demon()) {
+			return "Répartition inhabituelle : " + have[0] + " Citadins, " + have[1] + " Étrangers, " + have[2]
+				+ " Sbires, " + have[3] + " Démon(s).";
+		}
+		return null;
+	}
+
 	public String describeRoles() {
 		List<String> parts = new ArrayList<>();
 		for (Seat p : seats) {

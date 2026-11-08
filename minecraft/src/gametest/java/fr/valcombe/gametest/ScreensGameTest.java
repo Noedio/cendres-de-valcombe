@@ -145,6 +145,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(20);
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "6-panneau-grimoire");
+			ctx.setScreen(() -> new fr.valcombe.client.screen.SeatScreen("Bot1"));
+			shot(ctx, "10-siege");
+			ctx.setScreen(() -> new fr.valcombe.client.screen.RolePickerScreen("Bot1", null));
+			shot(ctx, "11-choix-role");
+			send(ctx, "vc attribuer Bot1 somnambule astrologue");
+			send(ctx, "vc note Bot1 Surveiller ses votes");
+			ctx.setScreen(() -> new fr.valcombe.client.screen.SeatScreen("Bot1"));
+			shot(ctx, "12-siege-retouche");
 			ctx.setScreen(() -> null);
 			world.getServer().runCommand("vc nuit");
 			ctx.waitTicks(40);

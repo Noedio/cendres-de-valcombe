@@ -15,7 +15,8 @@ final class Grimoire {
 	private Grimoire() {
 	}
 
-	static void place(BaseScreen screen, int cx, int cy, int radius, int size) {
+	static void place(BaseScreen screen, int cx, int cy, int radius, int size,
+			java.util.function.Consumer<String> onClick) {
 		JsonObject v = ClientState.view();
 		List<JsonObject> seats = BaseScreen.objects(v, "seats");
 		List<JsonObject> grim = BaseScreen.objects(v, "grimoire");
@@ -27,8 +28,10 @@ final class Grimoire {
 			JsonObject row = grim.get(i);
 			JsonObject role = ClientState.obj(row, "role");
 			JsonObject believed = ClientState.obj(row, "believed");
-			TokenWidget t = new TokenWidget(x, y, size, ClientState.str(s, "name"),
-				ClientState.str(role, "id"), ClientState.str(role, "team"), ClientState.bool(s, "alive"), false, null);
+			String name = ClientState.str(s, "name");
+			TokenWidget t = new TokenWidget(x, y, size, name,
+				ClientState.str(role, "id"), ClientState.str(role, "team"), ClientState.bool(s, "alive"), false,
+				onClick == null ? null : () -> onClick.accept(name));
 			if (ClientState.bool(row, "poisoned")) {
 				t.marker("poison");
 			}
@@ -47,7 +50,8 @@ final class Grimoire {
 			if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
 				t.marker("ghost");
 			}
-			t.setTooltip(Tooltip.create(Component.literal(ClientState.str(row, "line"))));
+			String note = ClientState.str(row, "note");
+			t.setTooltip(Tooltip.create(Component.literal(ClientState.str(row, "line") + (note != null ? "\nNote : " + note : ""))));
 			screen.token(t);
 		});
 	}

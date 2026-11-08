@@ -77,6 +77,9 @@ public final class ValcombeCommands {
 			return SharedSuggestionProvider.suggest(names, builder);
 		};
 
+		SuggestionProvider<CommandSourceStack> roleNames = (ctx, builder) -> SharedSuggestionProvider.suggest(
+			java.util.Arrays.stream(fr.valcombe.rules.Role.values()).map(r -> r.name().toLowerCase()).toList(), builder);
+
 		LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("vc")
 			.executes(c -> exec(c, x -> {
 				ui.openMain(x.getSource().getPlayerOrException());
@@ -92,6 +95,30 @@ public final class ValcombeCommands {
 				ui.openStoryteller(x.getSource().getPlayerOrException());
 				return "";
 			})))
+			.then(Commands.literal("attribuer").requires(leader)
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
+						.executes(c -> exec(c, x -> session.assignRole(arg(x, "joueur"), arg(x, "role"), null)))
+						.then(Commands.argument("cru", StringArgumentType.word()).suggests(roleNames)
+							.executes(c -> exec(c, x -> session.assignRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
+			.then(Commands.literal("presage").requires(leader)
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.executes(c -> exec(c, x -> session.setRedHerring(arg(x, "joueur"))))))
+			.then(Commands.literal("bluffs").requires(leader)
+				.then(Commands.argument("r1", StringArgumentType.word()).suggests(roleNames)
+					.then(Commands.argument("r2", StringArgumentType.word()).suggests(roleNames)
+						.then(Commands.argument("r3", StringArgumentType.word()).suggests(roleNames)
+							.executes(c -> exec(c, x -> session.setBluffs(List.of(arg(x, "r1"), arg(x, "r2"), arg(x, "r3")))))))))
+			.then(Commands.literal("note").requires(leader)
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.executes(c -> exec(c, x -> session.note(arg(x, "joueur"), null)))
+					.then(Commands.argument("texte", StringArgumentType.greedyString())
+						.executes(c -> exec(c, x -> session.note(arg(x, "joueur"), arg(x, "texte")))))))
+			.then(Commands.literal("consigne").requires(leader)
+				.then(Commands.argument("cle", StringArgumentType.word())
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("enregistrement", "chatelain", "successeur"), b))
+					.then(Commands.argument("valeur", StringArgumentType.word())
+						.executes(c -> exec(c, x -> session.policy(arg(x, "cle"), arg(x, "valeur")))))))
 			.then(Commands.literal("carte").requires(admin)
 				.then(Commands.literal("construire")
 					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException()))))
