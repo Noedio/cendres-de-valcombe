@@ -220,6 +220,78 @@ def write_item(name, model):
                          encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Coiffes des morts (portées sur la tête)
+# ---------------------------------------------------------------------------
+# Sur la tête, l'objet est réduit à 0,625 et centré sur la tête : la tête occupe
+# les coordonnées 1,6 à 14,4 du modèle. La face « north » est vue de face.
+def solid(color, noise=10, seed=1):
+    import random
+    rnd = random.Random(seed)
+    img = A.Img(16, 16)
+    for y in range(16):
+        for x in range(16):
+            d = rnd.randint(-noise, noise)
+            img.px[y][x] = [max(0, min(255, c + d)) for c in color] + [255]
+    return img
+
+
+def skull_face():
+    img = solid((226, 219, 196), 8, 3)
+    dark = [40, 30, 34, 255]
+    for x, y in [(3, 6), (4, 6), (5, 6), (3, 7), (4, 7), (5, 7), (4, 8),
+                 (10, 6), (11, 6), (12, 6), (10, 7), (11, 7), (12, 7), (11, 8)]:
+        img.px[y][x] = dark[:]
+    for x, y in [(7, 9), (8, 9), (7, 10), (8, 10)]:
+        img.px[y][x] = [90, 76, 70, 255]
+    for x in range(4, 12):
+        img.px[12][x] = dark[:] if x % 2 == 0 else [200, 192, 170, 255]
+    # Lueur d'âme au fond des orbites
+    img.px[7][4] = [110, 220, 230, 255]
+    img.px[7][11] = [110, 220, 230, 255]
+    return img
+
+
+def hat_model(candle):
+    tex = {"felt": "valcombe:item/scene/feutre", "band": "valcombe:item/scene/ruban",
+           "wax": "valcombe:item/scene/cire", "flame": "valcombe:item/scene/flamme",
+           "particle": "valcombe:item/scene/feutre"}
+    el = [
+        box([-0.5, 14.2, -0.5], [16.5, 15.2, 16.5], "#felt"),          # bord large
+        box([3, 15.2, 3], [13, 22.5, 13], "#felt"),                    # calotte
+        box([2.8, 15.2, 2.8], [13.2, 16.6, 13.2], "#band"),            # ruban d'âme
+    ]
+    if candle:
+        el += [box([7, 22.5, 7], [9, 25.5, 9], "#wax"), box([7.5, 25.5, 7.5], [8.5, 27, 8.5], "#flame")]
+    return {"textures": tex, "elements": el}
+
+
+def skull_model(candle):
+    tex = {"bone": "valcombe:item/scene/os", "face": "valcombe:item/scene/crane",
+           "wax": "valcombe:item/scene/cire", "flame": "valcombe:item/scene/flamme",
+           "particle": "valcombe:item/scene/os"}
+    el = [{"from": [1, 1, 1], "to": [15, 15, 15],
+           "faces": {"north": face("#face"), "south": face("#bone"), "east": face("#bone"),
+                     "west": face("#bone"), "up": face("#bone"), "down": face("#bone")}},
+          box([3, -1, 1], [13, 1, 6], "#bone")]                           # mâchoire
+    if candle:
+        el += [box([7, 15, 7], [9, 18, 9], "#wax"), box([7.5, 18, 7.5], [8.5, 19.5, 8.5], "#flame")]
+    return {"textures": tex, "elements": el}
+
+
+def write_hats():
+    save(solid((34, 30, 38), 6, 1), TEX / "feutre.png")
+    save(solid((92, 196, 206), 14, 2), TEX / "ruban.png")
+    save(solid((236, 228, 206), 6, 4), TEX / "cire.png")
+    save(solid((255, 190, 70), 30, 5), TEX / "flamme.png")
+    save(solid((214, 206, 184), 10, 6), TEX / "os.png")
+    save(skull_face(), TEX / "crane.png")
+    write_item("chapeau_mort", hat_model(False))
+    write_item("chapeau_mort_vote", hat_model(True))
+    write_item("crane_mort", skull_model(False))
+    write_item("crane_mort_vote", skull_model(True))
+
+
 def main():
     save(crest(), TEX / "dos.png")
     save(dead(), TEX / "mort.png")
@@ -236,6 +308,7 @@ def main():
         write_item(f"jeton_{role}", token_model(f"valcombe:item/scene/role_{role}", back))
     write_item("trone", throne_model())
     write_item("lutrin", lectern_model())
+    write_hats()
     print(f"{len(teams)} rôles, modèles écrits dans {ASSETS}")
 
 

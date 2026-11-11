@@ -120,6 +120,52 @@ public final class ValcombeUi {
 		return stack.is(Items.BLAZE_ROD) && n != null && n.getString().equals(WAND_NAME);
 	}
 
+	public static final String STAFF_NAME = "Bâton du Conteur";
+
+	/** Bâton du Conteur : viser un joueur pour voir son rôle, ouvrir sa ligne du grimoire, le prendre à part. */
+	public static ItemStack staffItem() {
+		return Gui.glow(Gui.icon(Items.BREEZE_ROD, STAFF_NAME, "Viser un joueur : son rôle s'affiche.",
+			"Clic droit : sa ligne du grimoire. Accroupi + clic droit : aparté vocal.",
+			"Clic droit dans le vide : le panneau du Conteur."));
+	}
+
+	public static boolean isStaffItem(ItemStack stack) {
+		Component n = stack.get(DataComponents.CUSTOM_NAME);
+		return stack.is(Items.BREEZE_ROD) && n != null && n.getString().equals(STAFF_NAME);
+	}
+
+	public static void staffItem(ServerPlayer p, boolean on) {
+		var inv = p.getInventory();
+		boolean has = false;
+		for (int i = 0; i < inv.getContainerSize(); i++) {
+			if (isStaffItem(inv.getItem(i))) {
+				if (on) {
+					has = true;
+				} else {
+					inv.setItem(i, ItemStack.EMPTY);
+				}
+			}
+		}
+		if (on && !has) {
+			inv.add(staffItem());
+		}
+	}
+
+	public static final String HAT_NAME = "Coiffe des âmes";
+
+	/** Coiffe d'un mort : un objet au modèle du mod, porté sur la tête. */
+	public static ItemStack deadHat(String model) {
+		ItemStack s = new ItemStack(Items.PAPER);
+		s.set(DataComponents.ITEM_MODEL, net.minecraft.resources.Identifier.fromNamespaceAndPath("valcombe", model));
+		s.set(DataComponents.CUSTOM_NAME, Component.literal(HAT_NAME));
+		return s;
+	}
+
+	public static boolean isDeadHat(ItemStack stack) {
+		Component n = stack.get(DataComponents.CUSTOM_NAME);
+		return stack.is(Items.PAPER) && n != null && n.getString().equals(HAT_NAME);
+	}
+
 	public static final String ACCUSE_NAME = "Plume d'accusation";
 
 	public static ItemStack accuseItem() {

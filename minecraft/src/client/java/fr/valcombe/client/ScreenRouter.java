@@ -17,6 +17,11 @@ public final class ScreenRouter {
 
 	public static void open(String which) {
 		Minecraft mc = Minecraft.getInstance();
+		if (which.startsWith("seat:")) {
+			// Bâton du Conteur : la ligne du grimoire du joueur visé
+			mc.gui.setScreen(new fr.valcombe.client.screen.SeatScreen(which.substring(5)));
+			return;
+		}
 		Screen s = switch (which) {
 			case "storyteller" -> new StorytellerScreen();
 			case "sheets" -> new SheetsScreen();

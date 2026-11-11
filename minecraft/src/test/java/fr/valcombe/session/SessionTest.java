@@ -335,6 +335,49 @@ class SessionTest {
 	}
 
 	@Test
+	void outilsDuConteur() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(5)));
+		for (int i = 1; i <= 6; i++) {
+			s.join("J" + i);
+		}
+		s.toggleStoryteller("Conteur");
+		s.start("Conteur", Session.Mode.HUMAIN);
+		s.startNight();
+		// La nuit, le Conteur voit dans sa vue qui est réveillé.
+		while (!h.tasks.isEmpty() && s.view("Conteur", true).get("nightStep") == null) {
+			h.tasks.poll().run();
+		}
+		assertNotNull(s.view("Conteur", true).get("nightStep"), "bandeau de nuit du Conteur");
+		assertNull(s.view("J1", false).get("nightStep"), "réservé au Conteur");
+		assertThrows(GameException.class, () -> s.setAside("J2"), "pas d'aparté la nuit");
+		pump(s, h, new Random(5));
+		// Aparté : le Conteur et J2 ne s'entendent qu'entre eux, les autres gardent le vocal normal.
+		s.setAside("J2");
+		assertEquals(List.of("J2"), s.voiceTargets("Conteur"));
+		assertEquals(List.of("Conteur"), s.voiceTargets("J2"));
+		assertNull(s.voiceTargets("J3"));
+		assertEquals("J2", s.view("J2", false).get("aside"));
+		s.setAside(null);
+		assertNull(s.aside());
+		// Appel au Conteur, sans pouvoir le harceler
+		assertEquals("Le Conteur est prévenu.", s.callStoryteller("J3"));
+		assertEquals("Le Conteur est déjà prévenu.", s.callStoryteller("J3"));
+		assertTrue(s.roleSummary("J1").startsWith("J1 — "), s.roleSummary("J1"));
+		// Coiffe des morts
+		s.setting("coiffe", "crâne");
+		assertEquals("crane", s.settings().deadHat);
+		assertThrows(GameException.class, () -> s.setting("coiffe", "couronne"));
+		s.setAside("J4");
+		s.endDay();
+		pump(s, h, new Random(5));
+		if (s.game() != null) {
+			s.startNight();
+		}
+		assertNull(s.aside(), "l'aparté s'arrête à la nuit");
+	}
+
+	@Test
 	void vocalDeNuitConteurEtJoueurReveille() {
 		FakeHost h = new FakeHost();
 		Session s = new Session(h, Rng.of(new Random(8)));

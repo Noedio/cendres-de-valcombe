@@ -45,7 +45,7 @@ public static class Instance
             JsonSerializer.Serialize(pack, new JsonSerializerOptions { WriteIndented = true }), ct);
 
         await SyncModsAsync(release, Paths.ModsDir, progress, repair, ct);
-        ApplyOptions(config.Minecraft);
+        PrepareOptions(config.Minecraft, Paths.GameDir);
         await File.WriteAllTextAsync(InstalledVersionFile, release.Tag, ct);
         progress.Report(("Prêt à jouer.", 1));
     }
@@ -76,6 +76,50 @@ public static class Instance
             await Http.DownloadAsync(Releases.Resolve(release, mod), target, mod.Sha512,
                 new Progress<double>(p => progress.Report(($"Téléchargement : {mod.Name}", (index + p) / m.Mods.Count))), ct);
         }
+    }
+
+    /// <summary>
+    /// Avant un lancement : récupère les réglages du joueur (profil ou autre moteur) ; s'il n'en a
+    /// aucun (toute première partie), écrit ceux du launcher. Les réglages faits en jeu ne sont
+    /// plus jamais écrasés.
+    /// </summary>
+    public static void PrepareOptions(MinecraftOptions o, string gameDir)
+    {
+        Profile.Sync(gameDir);
+        if (!File.Exists(Path.Combine(gameDir, "options.txt")))
+        {
+            ApplyOptions(o, gameDir);
+            Profile.Sync(gameDir);
+        }
+    }
+
+    /// <summary>Relit les réglages du jeu (les plus récents) pour les montrer dans le launcher.</summary>
+    public static void ReadOptions(MinecraftOptions o)
+    {
+        string? file = Profile.NewestOptions();
+        if (file == null)
+        {
+            return;
+        }
+        var map = new Dictionary<string, string>();
+        foreach (string line in File.ReadAllLines(file))
+        {
+            int i = line.IndexOf(':');
+            if (i > 0)
+            {
+                map[line[..i]] = line[(i + 1)..];
+            }
+        }
+        var inv = CultureInfo.InvariantCulture;
+        if (map.TryGetValue("renderDistance", out var rd) && int.TryParse(rd, inv, out int r)) o.RenderDistance = r;
+        if (map.TryGetValue("guiScale", out var gs) && int.TryParse(gs, inv, out int g)) o.GuiScale = g;
+        if (map.TryGetValue("fullscreen", out var fs)) o.Fullscreen = fs == "true";
+        if (map.TryGetValue("maxFps", out var mf) && int.TryParse(mf, inv, out int f)) o.MaxFps = f;
+        if (map.TryGetValue("fov", out var fv) && double.TryParse(fv, NumberStyles.Float, inv, out double fov))
+            o.Fov = (int)Math.Round(70 + fov * 40);
+        if (map.TryGetValue("soundCategory_master", out var mv) && double.TryParse(mv, NumberStyles.Float, inv, out double v))
+            o.MasterVolume = (int)Math.Round(v * 100);
+        if (map.TryGetValue("lang", out var lang) && lang.Length > 0) o.Language = lang;
     }
 
     /// <summary>Écrit les réglages choisis dans options.txt (instance Prism par défaut), en gardant les autres lignes.</summary>

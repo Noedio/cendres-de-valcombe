@@ -22,7 +22,11 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - **plume d'accusation** (donnée en début de partie) : viser un joueur, même à l'autre bout de la place, et faire un clic droit pour l'accuser. Pendant un vote, la plume lève ou baisse la main. La barre au-dessus de l'inventaire indique qui est visé ;
    - en haut à gauche, le **tableau du jour** : qui a accusé qui, avec combien de voix, et qui est sur le billot ; pendant le vote, une rangée de cases montre l'aiguille, les mains comptées et quand elle arrivera à vous ;
    - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
-   - menu → « Regarder » : suivre la partie en spectateur.
+   - menu → « Regarder » : suivre la partie en spectateur ;
+   - menu → « Appeler le Conteur » : il est prévenu et peut vous prendre à part (vocal seul à seul) ;
+   - une fois mort, vous portez une coiffe (chapeau de deuil ou crâne, au choix du Conteur), avec un cierge tant qu'il vous reste votre vote de fantôme.
+
+Avec le **launcher Valcombe**, vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
 
 ## Pour l'hôte (serveur)
 
@@ -63,8 +67,9 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 5. « Faire tomber la nuit », puis « Clore la journée » après les votes.
 
 6. Pendant le jour, « Discussion libre (5 min) » lance un minuteur visible de tous.
-7. Le lutrin au centre de la place ouvre aussi le grimoire. Sur un siège du grimoire, « Rappel » pose un jeton de rappel (« ivre », « a choisi Bot3 »…).
-8. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
+7. Le **bâton du Conteur** (donné en début de partie) : viser un joueur affiche son rôle, son état et ses rappels ; clic droit ouvre sa ligne du grimoire ; accroupi + clic droit le prend à part (vocal seul à seul, accroupi + clic droit dans le vide pour finir). La nuit, un bandeau indique qui est réveillé et ce qu'on attend. Dans les réglages : « Coiffe des morts » (chapeau, crâne ou aucune).
+8. Le lutrin au centre de la place ouvre aussi le grimoire. Sur un siège du grimoire, « Rappel » pose un jeton de rappel (« ivre », « a choisi Bot3 »…).
+9. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
 
 Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
 

@@ -208,6 +208,10 @@ Les sons et musiques passent par le mod (`sounds.json` et fichiers `.ogg`). Ils 
 - **Vote simplifié** : la main se lève dès la défense, avec H ou la plume ; la plume vise de loin pour accuser ; un bandeau montre l'ordre de passage de l'aiguille.
 - **Qui est nommé** : tableau du jour (accusations, voix, billot) à l'écran, et « sur le billot » au-dessus du joueur concerné.
 
+- **Réglages gardés** : le launcher ne réécrase plus les réglages faits en jeu, et garde touches, graphismes, son, micro et serveurs dans un profil durable (`%APPDATA%\Valcombe\profil`).
+- **Coiffe des morts** : chapeau de deuil ou crâne (modèles originaux), avec un cierge tant que le mort a son vote.
+- **Côté Conteur** : bâton du Conteur (rôle du joueur visé, grimoire d'un clic, aparté vocal), bandeau de nuit, appel au Conteur par les joueurs.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** avec la 0.3.0 : c'est elle qui dira quoi corriger en premier.

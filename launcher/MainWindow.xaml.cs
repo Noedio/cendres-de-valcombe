@@ -112,6 +112,15 @@ public partial class MainWindow : Window
     // ------------------------------------------------------------------
     private void LoadControls()
     {
+        // Les réglages faits en jeu sont la référence : on les récupère (profil durable) avant de les afficher.
+        try
+        {
+            Profile.Sync();
+            Instance.ReadOptions(_config.Minecraft);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
         var o = _config.Minecraft;
         RenderSlider.Value = o.RenderDistance;
         FovSlider.Value = o.Fov;
@@ -153,9 +162,11 @@ public partial class MainWindow : Window
         o.Fullscreen = FullscreenBox.IsChecked == true;
         UpdateLabels();
         _config.Save();
-        if (Directory.Exists(Paths.GameDir))
+        // Changé dans le launcher : écrit partout (jeux installés et profil), le reste du fichier est gardé.
+        Instance.ApplyOptions(o, Profile.Dir);
+        foreach (string dir in Profile.GameDirs.Where(Directory.Exists))
         {
-            Instance.ApplyOptions(o);
+            Instance.ApplyOptions(o, dir);
         }
     }
 
@@ -537,7 +548,7 @@ public partial class MainWindow : Window
             {
                 throw new InvalidOperationException("Aucune version installée : renseignez le dépôt GitHub dans les Réglages.");
             }
-            Instance.ApplyOptions(_config.Minecraft);
+            Instance.PrepareOptions(_config.Minecraft, Paths.GameDir);
             if (!Prism.HasAccount())
             {
                 SetStatus("Première connexion : dans la fenêtre qui s'ouvre, Comptes → Ajouter Microsoft, puis suivez les étapes. "
@@ -583,7 +594,7 @@ public partial class MainWindow : Window
         var plan = await Engine.PrepareAsync(release.Manifest.Minecraft, release.Manifest.Loader);
         await Engine.DownloadAsync(plan, progress);
         await Instance.SyncModsAsync(release, Engine.ModsDir, progress, repair: false);
-        Instance.ApplyOptions(_config.Minecraft, Engine.GameDir);
+        Instance.PrepareOptions(_config.Minecraft, Engine.GameDir);
         SetStatus("Lancement de Minecraft…", 1);
         var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));
         if (!_config.CloseOnLaunch)
@@ -592,6 +603,7 @@ public partial class MainWindow : Window
             game.EnableRaisingEvents = true;
             game.Exited += (_, _) => Dispatcher.Invoke(() =>
             {
+                Profile.Sync(); // les réglages faits pendant la partie partent dans le profil
                 if (game.ExitCode != 0
                     && MessageBox.Show(this, "Le jeu s'est arrêté brutalement. Préparer un rapport de plantage à envoyer à l'hôte ?",
                         "Les Cendres de Valcombe", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)

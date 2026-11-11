@@ -42,6 +42,23 @@ public final class ValcombeMod implements ModInitializer {
 	}
 
 	/** La table de jeu du serveur (utilisée par le plugin vocal). */
+	/** Bâton du Conteur : grimoire du joueur visé, aparté (accroupi), ou panneau du Conteur. */
+	private static void useStaff(ServerPlayer sp, String target) {
+		if (!SYNC.isLeader(sp)) {
+			sp.sendSystemMessage(Gui.plain("Ce bâton est celui du Conteur.", net.minecraft.ChatFormatting.GRAY));
+			return;
+		}
+		if (sp.isShiftKeyDown()) {
+			String cmd = target != null ? "vc aparte " + target : "vc aparte fin";
+			sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(), cmd);
+		} else if (target != null) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(sp,
+				new fr.valcombe.net.ValcombeNet.OpenPayload("seat:" + target));
+		} else {
+			UI.openStoryteller(sp);
+		}
+	}
+
 	public static McHost host() {
 		return HOST;
 	}
@@ -142,6 +159,12 @@ public final class ValcombeMod implements ModInitializer {
 				}
 				return InteractionResult.SUCCESS;
 			}
+			if (ValcombeUi.isStaffItem(player.getItemInHand(hand))) {
+				if (player instanceof ServerPlayer sp && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					useStaff(sp, HOST.aimedPlayer(sp));
+				}
+				return InteractionResult.SUCCESS;
+			}
 			if (ValcombeUi.isMenuItem(player.getItemInHand(hand))) {
 				if (player instanceof ServerPlayer sp) {
 					UI.openMain(sp);
@@ -155,6 +178,12 @@ public final class ValcombeMod implements ModInitializer {
 		net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
 			if (!(player instanceof ServerPlayer sp)) {
 				return InteractionResult.PASS;
+			}
+			if (entity instanceof ServerPlayer target && ValcombeUi.isStaffItem(sp.getItemInHand(hand))) {
+				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					useStaff(sp, target.getScoreboardName());
+				}
+				return InteractionResult.SUCCESS;
 			}
 			// Plume d'accusation : clic droit sur un joueur pour le nominer
 			if (entity instanceof ServerPlayer target && ValcombeUi.isAccuseItem(sp.getItemInHand(hand))) {

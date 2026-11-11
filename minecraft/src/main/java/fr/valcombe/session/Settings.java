@@ -17,4 +17,6 @@ public final class Settings {
 	public boolean fullEffects = true;
 	/** Les spectateurs voient le grimoire (pour apprendre en regardant). */
 	public boolean spectatorGrimoire;
+	/** Coiffe des morts : « chapeau », « crane » ou « aucun ». */
+	public String deadHat = "chapeau";
 }

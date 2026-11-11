@@ -214,6 +214,11 @@ public final class ValcombeCommands {
 				.then(Commands.literal("ouvrir").executes(c -> exec(c, x -> session.setNominations(true))))
 				.then(Commands.literal("fermer").executes(c -> exec(c, x -> session.setNominations(false)))))
 			.then(Commands.literal("rassembler").requires(leader).executes(c -> exec(c, x -> session.gather())))
+			.then(Commands.literal("aparte").requires(leader)
+				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.setAside(null))))
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.executes(c -> exec(c, x -> session.setAside(arg(x, "joueur"))))))
+			.then(Commands.literal("appeler").executes(c -> exec(c, x -> session.callStoryteller(name(x)))))
 			.then(Commands.literal("voter").requires(leader).executes(c -> exec(c, x -> session.startVoteNow())))
 			.then(Commands.literal("tuer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
@@ -313,7 +318,7 @@ public final class ValcombeCommands {
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
 						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "temps_defense", "temps_horloge",
-							"effets", "spectateurs_grimoire"), b))
+							"effets", "spectateurs_grimoire", "coiffe"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
 

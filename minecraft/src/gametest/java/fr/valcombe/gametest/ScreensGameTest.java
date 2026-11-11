@@ -220,6 +220,43 @@ public class ScreensGameTest implements FabricClientGameTest {
 				ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
 				ctx.waitTicks(5);
 				shot(ctx, "14c-assis");
+				// Coiffe des morts : chapeau, puis crâne (seulement si le joueur est du bien : sa mort ne finit pas la partie)
+				// Joueur du mal : il échange son rôle avec un joueur fictif du bien, pour que sa mort ne finisse pas la partie.
+				String swap = world.getServer().computeOnServer(server -> {
+					var g = fr.valcombe.mc.ValcombeMod.session().game();
+					var mine = g.player(g.seatOf(me));
+					if (mine.team() == fr.valcombe.rules.Team.GOOD) {
+						return "";
+					}
+					for (var q : g.players()) {
+						if (q.alive() && q.team() == fr.valcombe.rules.Team.GOOD && !q.name.equals(me)) {
+							return q.name + " " + q.role().name().toLowerCase() + " " + mine.role().name().toLowerCase();
+						}
+					}
+					return null;
+				});
+				if (swap != null && !swap.isEmpty()) {
+					String[] w = swap.split(" ");
+					world.getServer().runCommand("vc changer " + me + " " + w[1]);
+					world.getServer().runCommand("vc changer " + w[0] + " " + w[2]);
+					ctx.waitTicks(5);
+				}
+				if (swap != null) {
+					world.getServer().runCommand("vc tuer " + me);
+					ctx.runOnClient(mc -> {
+						if (!mc.gui.hud.isHidden()) mc.gui.hud.toggle();
+						mc.player.setXRot(10);
+					});
+					ctx.waitTicks(30);
+					shot(ctx, "17-coiffe-chapeau");
+					world.getServer().runCommand("vc reglage coiffe crane");
+					ctx.waitTicks(15);
+					shot(ctx, "17b-coiffe-crane");
+					ctx.runOnClient(mc -> { if (mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });
+					world.getServer().runCommand("vc reglage coiffe chapeau");
+					world.getServer().runCommand("vc ressusciter " + me);
+					ctx.waitTicks(10);
+				}
 				ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.FIRST_PERSON));
 				ctx.waitTicks(500);
 			}
@@ -303,9 +340,27 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 			world.getServer().runCommand("vc nuit");
 			ctx.waitTicks(40);
+			ctx.setScreen(() -> null);
+			shot(ctx, "6b-conteur-nuit");
 			playNight(ctx);
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "7-panneau-jour");
+			ctx.setScreen(() -> null);
+			// Bâton du Conteur : viser un joueur montre son rôle ; clic droit ouvre sa ligne du grimoire
+			ctx.runOnClient(mc -> {
+				var inv = mc.player.getInventory();
+				for (int i = 0; i < 9; i++) {
+					if (inv.getItem(i).is(net.minecraft.world.item.Items.BREEZE_ROD)) {
+						inv.setSelectedSlot(i);
+					}
+				}
+			});
+			world.getServer().runCommand("execute as " + me + " at @s facing entity @e[tag=vc_seat_1,limit=1] feet run tp @s ~ ~ ~ ~ ~");
+			ctx.waitTicks(20);
+			shot(ctx, "18-baton-conteur");
+			ctx.runOnClient(mc -> mc.gameMode.useItem(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND));
+			ctx.waitTicks(15);
+			shot(ctx, "18b-baton-grimoire");
 			ctx.setScreen(() -> null);
 			checkTablet(ctx);
 			send(ctx, "vc stats");

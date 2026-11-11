@@ -218,12 +218,39 @@ public final class McHost implements Host {
 		return best;
 	}
 
+	@Override
+	public void storytellerTools(String name, boolean on) {
+		ServerPlayer p = player(name);
+		if (p != null) {
+			ValcombeUi.staffItem(p, on);
+		}
+	}
+
 	private final Map<String, String> featherHint = new HashMap<>();
 
 	/** Indication dans la barre d'action quand on tient la plume : qui est visé, ou comment voter. */
 	private void featherHints() {
 		var ses = ValcombeMod.session();
 		var g = ses.game();
+		// Bâton du Conteur : le rôle du joueur visé, comme dans le grimoire
+		String st = ses.storyteller();
+		ServerPlayer sp = st == null ? null : player(st);
+		if (sp != null) {
+			String hint = "";
+			if (g != null && ValcombeUi.isStaffItem(sp.getMainHandItem())) {
+				String target = aimedPlayer(sp);
+				hint = target != null ? ses.roleSummary(target)
+					: ses.aside() != null ? "Aparté avec " + ses.aside() + " — accroupi + clic droit pour finir"
+					: "Vise un joueur pour voir son rôle";
+			}
+			String before = featherHint.getOrDefault(st, "");
+			if (!hint.equals(before) || (!hint.isEmpty() && tick % 40 == 0)) {
+				featherHint.put(st, hint);
+				if (!hint.isEmpty() || !before.isEmpty()) {
+					sp.sendSystemMessage(Component.literal(hint).withStyle(ChatFormatting.LIGHT_PURPLE), true);
+				}
+			}
+		}
 		for (String name : seats.keySet()) {
 			ServerPlayer p = player(name);
 			if (p == null) {
@@ -807,6 +834,15 @@ public final class McHost implements Host {
 				p.removeEffect(MobEffects.INVISIBILITY);
 			}
 		}
+		String hat = ValcombeMod.session().settings().deadHat;
+		for (String name : seats.keySet()) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				String model = !dead.contains(name) || "aucun".equals(hat) ? null
+					: ("crane".equals(hat) ? "crane_mort" : "chapeau_mort") + (withGhostVote.contains(name) ? "_vote" : "");
+				wearHat(p, model);
+			}
+		}
 		PlayerTeam ghosts = team(board, "valcombe_fantomes", "† ", "");
 		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
 		for (String name : seats.keySet()) {
@@ -820,6 +856,32 @@ public final class McHost implements Host {
 					board.addPlayerToTeam(name, wanted);
 				}
 			}
+		}
+	}
+
+	/** Coiffe le joueur (model) ou la lui retire (null) ; les coiffes égarées dans l'inventaire disparaissent. */
+	private static void wearHat(ServerPlayer p, String model) {
+		var slot = net.minecraft.world.entity.EquipmentSlot.HEAD;
+		var inv = p.getInventory();
+		for (int i = 0; i < inv.getContainerSize(); i++) {
+			if (ValcombeUi.isDeadHat(inv.getItem(i))) {
+				inv.setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
+			}
+		}
+		var current = p.getItemBySlot(slot);
+		var id = current.get(net.minecraft.core.component.DataComponents.ITEM_MODEL);
+		boolean ours = ValcombeUi.isDeadHat(current);
+		if (model == null) {
+			if (ours) {
+				p.setItemSlot(slot, net.minecraft.world.item.ItemStack.EMPTY);
+			}
+			return;
+		}
+		if (!ours || id == null || !id.getPath().equals(model)) {
+			if (!current.isEmpty() && !ours) {
+				inv.add(current.copy()); // un casque à soi est rangé, pas perdu
+			}
+			p.setItemSlot(slot, ValcombeUi.deadHat(model));
 		}
 	}
 

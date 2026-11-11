@@ -5,6 +5,10 @@ import java.util.Map;
 
 /** Ce que la session attend du serveur de jeu (Minecraft, ou un faux serveur en test). */
 public interface Host {
+	/** Donne (ou reprend) au Conteur ses outils en jeu (bâton du Conteur). */
+	default void storytellerTools(String name, boolean on) {
+	}
+
 	/** Message à tout le serveur. */
 	void announce(String text);
 

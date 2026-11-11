@@ -84,6 +84,12 @@ public class MainScreen extends BaseScreen {
 			onClose();
 		}));
 		actions.add(new Action("Écrire au Conteur", () -> minecraft.gui.setScreen(new ChatScreen("/vc mp ", false))));
+		if (role != null && ClientState.bool(v, "hasStoryteller") && !ClientState.bool(v, "isStoryteller")) {
+			actions.add(new Action("Appeler le Conteur", () -> {
+				send("vc appeler");
+				onClose();
+			}));
+		}
 		if (ClientState.bool(v, "leader")) {
 			actions.add(new Action("Panneau du Conteur", () -> minecraft.gui.setScreen(new StorytellerScreen())));
 		}

@@ -15,7 +15,7 @@ public class SettingsScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {300, 226};
+		return new int[] {300, 252};
 	}
 
 	private void toggle(int y, String label, String key, boolean on) {
@@ -39,6 +39,10 @@ public class SettingsScreen extends BaseScreen {
 		y += 22;
 		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_horloge " + (clock - 5)));
 		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_horloge " + (clock + 5)));
+		String hat = ClientState.str(st, "deadHat");
+		String next = "chapeau".equals(hat) ? "crane" : "crane".equals(hat) ? "aucun" : "chapeau";
+		String label = "chapeau".equals(hat) ? "chapeau" : "crane".equals(hat) ? "crâne" : "aucune";
+		button(px + pw / 2 - 90, y + 26, 180, "Coiffe des morts : " + label, () -> send("vc reglage coiffe " + next));
 		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
 

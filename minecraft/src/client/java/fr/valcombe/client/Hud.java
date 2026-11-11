@@ -322,6 +322,27 @@ public final class Hud {
 			}
 		}
 		drawToday(g, mc, v, vote == null ? 28 : 84);
+		// Conteur, la nuit : qui est réveillé et ce qu'on attend
+		JsonObject ns = ClientState.obj(v, "nightStep");
+		if (ns != null) {
+			String who = ClientState.str(ns, "player");
+			String wait = ClientState.str(ns, "waiting");
+			String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
+				+ (wait == null || wait.isEmpty() ? "" : " — " + wait);
+			int nw = mc.font.width(t) + 12;
+			g.fill(w / 2 - nw / 2, 24, w / 2 + nw / 2, 38, 0xD02A1840);
+			g.outline(w / 2 - nw / 2, 24, nw, 14, 0xFFB08CD8);
+			g.text(mc.font, t, w / 2 - nw / 2 + 6, 27, 0xFFE8DCF8, false);
+		}
+		// Aparté avec le Conteur (vocal seul à seul)
+		String aside = ClientState.str(v, "aside");
+		String me = mc.player == null ? "" : mc.player.getScoreboardName();
+		if (aside != null && !aside.isEmpty() && (aside.equals(me) || ClientState.bool(v, "isStoryteller"))) {
+			String t = aside.equals(me) ? "En aparté avec le Conteur : vous seuls vous entendez"
+				: "En aparté avec " + aside + " (accroupi + clic droit au bâton pour finir)";
+			int aw = mc.font.width(t);
+			g.text(mc.font, t, w / 2 - aw / 2, h - 72, 0xFFC8A8F0, true);
+		}
 		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
 			String hint = "Une action t'attend — touche J";
 			int hw = mc.font.width(hint);

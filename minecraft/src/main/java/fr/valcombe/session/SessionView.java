@@ -59,6 +59,7 @@ final class SessionView {
 		st.put("defenseSeconds", ses.settings.defenseSeconds);
 		st.put("clockSeconds", ses.settings.clockTicks / 20.0);
 		st.put("fullEffects", ses.settings.fullEffects);
+		st.put("deadHat", ses.settings.deadHat);
 		v.put("settings", st);
 		Game g = ses.game;
 		if (g == null) {
@@ -108,6 +109,18 @@ final class SessionView {
 				v.put("vote", vote);
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
+			v.put("aside", ses.aside);
+			v.put("hasStoryteller", ses.storyteller != null);
+			if (me.equals(ses.storyteller) && g.phase() == Game.Phase.NIGHT && ses.pendingStep != null) {
+				// Bandeau du Conteur, la nuit : qui est réveillé, et ce qu'on attend.
+				Map<String, Object> ns = new LinkedHashMap<>();
+				ns.put("title", ses.pendingStep.title());
+				ns.put("player", ses.pendingStep.seat >= 0 ? g.player(ses.pendingStep.seat).name : "");
+				ns.put("waiting", ses.pendingDecisionOpen() ? "ta décision (menu J)"
+					: ses.pendingChooser != null ? ses.pendingChooser + " choisit"
+					: ses.waitingAckName() != null ? ses.waitingAckName() + " lit son information" : "");
+				v.put("nightStep", ns);
+			}
 			if (g.phase() == Game.Phase.DAY) {
 				// Tableau du jour : qui a accusé qui, avec combien de voix, et qui est sur le billot.
 				Map<String, Object> day = new LinkedHashMap<>();

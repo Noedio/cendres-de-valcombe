@@ -132,6 +132,15 @@ public final class Session {
 	 */
 	public List<String> voiceTargets(String name) {
 		Game g = game;
+		// Aparté de jour : le Conteur et le joueur pris à part ne s'entendent qu'entre eux.
+		if (aside != null && storyteller != null && g != null && g.phase() == Game.Phase.DAY) {
+			if (name.equals(storyteller)) {
+				return List.of(aside);
+			}
+			if (name.equals(aside)) {
+				return List.of(storyteller);
+			}
+		}
 		if (!settings.nightMute || g == null || g.phase() != Game.Phase.NIGHT) {
 			return null;
 		}
@@ -151,6 +160,98 @@ public final class Session {
 			return List.of(storyteller);
 		}
 		return List.of();
+	}
+
+	/** Joueur pris à part par le Conteur (vocal privé), ou null. */
+	String aside;
+
+	public String aside() {
+		return aside;
+	}
+
+	/** Le Conteur prend un joueur à part (vocal seul à seul), ou met fin à l'aparté (target null). */
+	public String setAside(String target) {
+		Game g = requireGame();
+		if (storyteller == null) {
+			throw new GameException("Pas de Conteur dans cette partie.");
+		}
+		if (target == null || target.equals(aside)) {
+			if (aside == null) {
+				return "Aucun aparté en cours.";
+			}
+			String was = aside;
+			aside = null;
+			host.title(List.of(was), "", "Fin de l'aparté avec le Conteur");
+			announce("Le Conteur rend " + was + " au village.");
+			return "Aparté terminé.";
+		}
+		if (g.phase() != Game.Phase.DAY) {
+			throw new GameException("La nuit, le Conteur parle déjà au joueur réveillé.");
+		}
+		String name = g.player(seatByName(target)).name;
+		if (bots.contains(name)) {
+			throw new GameException(name + " est un joueur fictif.");
+		}
+		aside = name;
+		host.title(List.of(name), "Le Conteur te prend à part", "Vous vous entendez seuls à seuls");
+		host.sound(List.of(name), "bell");
+		announce("Le Conteur prend " + name + " à part.");
+		return "Tu parles seul à seul avec " + name + ". Accroupi + clic droit avec le bâton (ou /vc aparte fin) pour finir.";
+	}
+
+	private final Map<String, Long> calls = new java.util.HashMap<>();
+
+	/** Un joueur appelle le Conteur (question de règle, pouvoir à déclarer…). */
+	public String callStoryteller(String name) {
+		requireGame();
+		if (storyteller == null || !host.online(storyteller)) {
+			throw new GameException("Le Conteur est automatique dans cette partie : utilise le menu (touche J).");
+		}
+		long now = System.currentTimeMillis();
+		if (now - calls.getOrDefault(name, 0L) < 15_000) {
+			return "Le Conteur est déjà prévenu.";
+		}
+		calls.put(name, now);
+		tell(storyteller, new Msg().colored("[Appel] " + name + " demande le Conteur. ", "light_purple")
+			.button("Prendre à part", "/vc aparte " + name, "Vocal seul à seul avec " + name)
+			.button("Grimoire", "/vc grimoire", "Ouvrir le grimoire"));
+		host.sound(List.of(storyteller), "clock");
+		return "Le Conteur est prévenu.";
+	}
+
+	/** Pour le Conteur, d'un coup d'œil : rôle, état et rappels d'un joueur. */
+	public String roleSummary(String name) {
+		Game g = game;
+		int s = g == null ? -1 : g.seatOf(name);
+		if (s < 0) {
+			return name;
+		}
+		Game.Seat p = g.player(s);
+		StringBuilder b = new StringBuilder(name).append(" — ").append(p.role().displayName);
+		if (p.believed() != p.role()) {
+			b.append(" (se croit ").append(p.believed().displayName).append(")");
+		}
+		if (!p.alive()) {
+			b.append(p.ghostVote() ? " · mort, a son vote" : " · mort");
+		}
+		if (g.poisonedSeat() == s) {
+			b.append(" · empoisonné");
+		}
+		if (g.protectedSeat() == s) {
+			b.append(" · protégé");
+		}
+		for (String r : reminders.getOrDefault(name, List.of())) {
+			b.append(" · ").append(r);
+		}
+		return b.toString();
+	}
+
+	boolean pendingDecisionOpen() {
+		return pendingDecision != null;
+	}
+
+	String waitingAckName() {
+		return waitingAck;
 	}
 
 	public boolean voteOpen() {
@@ -490,6 +591,9 @@ public final class Session {
 		clearNight();
 		clearVote();
 		host.seatPlayers(names(), storyteller != null && host.online(storyteller) ? storyteller : starter);
+		if (wanted == Mode.HUMAIN && storyteller != null) {
+			host.storytellerTools(storyteller, true);
+		}
 		for (Game.Seat p : g.players()) {
 			showRole(p.name, p.believed());
 		}
@@ -504,6 +608,10 @@ public final class Session {
 		trainee = null;
 		if (game != null) {
 			host.endGame(realNames());
+		aside = null;
+		if (storyteller != null) {
+			host.storytellerTools(storyteller, false);
+		}
 		}
 		host.seatBoards(Map.of());
 		game = null;
@@ -610,11 +718,19 @@ public final class Session {
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
+			case "coiffe" -> {
+				String v = value.toLowerCase(java.util.Locale.ROOT).replace("â", "a");
+				if (!List.of("chapeau", "crane", "aucun").contains(v)) {
+					throw new GameException("Coiffe des morts : chapeau, crane ou aucun.");
+				}
+				settings.deadHat = v;
+				updateBoards();
+			}
 			case "effets" -> settings.fullEffects = !value.equalsIgnoreCase("reduits") && !value.equalsIgnoreCase("réduits")
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, "
-					+ "temps_horloge <dixièmes de seconde par siège>, effets (complets|reduits).");
+					+ "temps_horloge <dixièmes de seconde par siège>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
 		return "Réglage modifié.";
 	}
@@ -643,6 +759,7 @@ public final class Session {
 			throw new GameException("Un vote est en cours.");
 		}
 		g.startNight();
+		aside = null;
 		tip("nuit", "La nuit tombe", "La nuit, chacun dort. Quand vient ton tour, tu te réveilles : un écran s'ouvre "
 			+ "pour utiliser ton pouvoir. Les autres ne savent pas qui se réveille.");
 		discussionToken++;
@@ -974,8 +1091,6 @@ public final class Session {
 				+ (deaths.size() > 1 ? " sont morts" : " est mort") + " cette nuit");
 		}
 		updateBoards();
-		host.deadPlayers(g.players().stream().filter(p -> !p.alive()).map(p -> p.name).toList(),
-			g.players().stream().filter(p -> !p.alive() && p.ghostVote()).map(p -> p.name).toList());
 		if (deaths.isEmpty()) {
 			announce("L'aube se lève. Personne n'est mort cette nuit.");
 		} else {
@@ -1350,6 +1465,10 @@ public final class Session {
 		}
 		revealBoards(g); // avant endGame, qui oublie la place des sièges
 		host.endGame(realNames());
+		aside = null;
+		if (storyteller != null) {
+			host.storytellerTools(storyteller, false);
+		}
 		host.celebrate(realNames());
 		host.report(report(g));
 		host.title(realNames(), g.winner() == Team.GOOD ? "Victoire du bien" : "Victoire du mal", g.winReason());
@@ -1529,6 +1648,9 @@ public final class Session {
 			models.put(p.name, p.alive() ? "jeton_vivant" : p.ghostVote() ? "jeton_fantome" : "jeton_mort");
 		}
 		host.seatTokens(models, false);
+		// Morts : translucides, nom grisé, et coiffés (chapeau ou crâne, avec un cierge tant qu'ils ont leur vote).
+		host.deadPlayers(g.players().stream().filter(p -> !p.alive()).map(p -> p.name).toList(),
+			g.players().stream().filter(p -> !p.alive() && p.ghostVote()).map(p -> p.name).toList());
 	}
 
 	/** Vote en cours, tel que le monde le montre (horloge géante, mains, gibet). */
