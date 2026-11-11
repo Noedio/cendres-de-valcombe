@@ -41,12 +41,14 @@ public final class Village {
 	private static final class Data {
 		int[] center;
 		boolean generated;
+		boolean hall;
 		List<int[]> seats = new ArrayList<>();
 		List<int[]> houses = new ArrayList<>();
 	}
 
 	private final BlockPos center;
 	private final boolean generated;
+	private boolean hall;
 	private final List<BlockPos> seats = new ArrayList<>();
 	private final List<BlockPos> houses = new ArrayList<>();
 
@@ -132,7 +134,121 @@ public final class Village {
 
 	/** Point d'apparition : sur la place, un peu au sud du centre. */
 	public BlockPos spawn() {
+		if (hall) {
+			int[] h = hallCenter();
+			return center.offset(h[0], 1, h[1] + 4);
+		}
 		return generated ? center.offset(0, 1, 4) : center.above();
+	}
+
+	public boolean hasHall() {
+		return hall;
+	}
+
+	// ------------------------------------------------------------------
+	// Salle d'attente
+	// ------------------------------------------------------------------
+	private static final double HALL_ANGLE = angle(0, SEATS) + Math.PI / SEATS;
+	private static final int HALL_DISTANCE = 47;
+
+	/** Centre de la salle, relatif au centre de la place. */
+	private static int[] hallCenter() {
+		return new int[] {(int) Math.round(HALL_DISTANCE * Math.cos(HALL_ANGLE)), (int) Math.round(HALL_DISTANCE * Math.sin(HALL_ANGLE))};
+	}
+
+	/** Dalles de la salle : inscription (or), désinscription (rouge), Conteur (obsidienne). */
+	public enum Pad { JOIN, LEAVE, STORYTELLER }
+
+	public Pad padAt(BlockPos feet, ServerLevel level) {
+		if (!hall) {
+			return null;
+		}
+		var b = level.getBlockState(feet.below()).getBlock();
+		if (b == Blocks.GILDED_BLACKSTONE) {
+			return Pad.JOIN;
+		}
+		if (b == Blocks.REDSTONE_BLOCK) {
+			return Pad.LEAVE;
+		}
+		if (b == Blocks.CRYING_OBSIDIAN) {
+			return Pad.STORYTELLER;
+		}
+		return null;
+	}
+
+	/** Pavillon de 19 x 15 relié à la place par une allée pavée. */
+	public void buildHall(ServerLevel level) {
+		int[] h = hallCenter();
+		int hx = h[0];
+		int hz = h[1];
+		BlockState air = Blocks.AIR.defaultBlockState();
+		for (int x = -11; x <= 11; x++) {
+			for (int z = -9; z <= 9; z++) {
+				for (int y = -3; y < 0; y++) {
+					set(level, hx + x, y, hz + z, Blocks.STONE.defaultBlockState());
+				}
+				set(level, hx + x, 0, hz + z, Blocks.DIRT_PATH.defaultBlockState());
+				for (int y = 1; y <= 9; y++) {
+					set(level, hx + x, y, hz + z, air);
+				}
+			}
+		}
+		for (int x = -9; x <= 9; x++) {
+			for (int z = -7; z <= 7; z++) {
+				boolean edge = Math.abs(x) == 9 || Math.abs(z) == 7;
+				boolean corner = Math.abs(x) == 9 && Math.abs(z) == 7;
+				set(level, hx + x, 0, hz + z, Blocks.POLISHED_ANDESITE.defaultBlockState());
+				for (int y = 1; y <= 5; y++) {
+					if (corner) {
+						set(level, hx + x, y, hz + z, Blocks.DARK_OAK_LOG.defaultBlockState());
+					} else if (edge) {
+						boolean door = z == 7 && Math.abs(x) <= 1 && y <= 3;
+						boolean window = y == 3 && (Math.abs(x) % 3 == 0 || Math.abs(z) % 3 == 0) && !door;
+						set(level, hx + x, y, hz + z, door ? air
+							: window ? Blocks.GLASS_PANE.defaultBlockState() : Blocks.STONE_BRICKS.defaultBlockState());
+					}
+				}
+				set(level, hx + x, 6, hz + z, Blocks.DARK_OAK_PLANKS.defaultBlockState());
+			}
+		}
+		for (int[] l : new int[][] {{-5, -3}, {5, -3}, {-5, 3}, {5, 3}}) {
+			set(level, hx + l[0], 5, hz + l[1], Blocks.LANTERN.defaultBlockState());
+		}
+		// Dalles : inscription au centre, désinscription à gauche, Conteur au fond
+		for (int x = -1; x <= 1; x++) {
+			for (int z = -1; z <= 1; z++) {
+				set(level, hx + x, 0, hz + z, Blocks.GILDED_BLACKSTONE.defaultBlockState());
+			}
+		}
+		set(level, hx - 6, 0, hz, Blocks.REDSTONE_BLOCK.defaultBlockState());
+		set(level, hx, 0, hz - 5, Blocks.CRYING_OBSIDIAN.defaultBlockState());
+		// Allée vers la place
+		for (int r = PLAZA_RADIUS + 1; r < HALL_DISTANCE - 6; r++) {
+			int x = (int) Math.round(r * Math.cos(HALL_ANGLE));
+			int z = (int) Math.round(r * Math.sin(HALL_ANGLE));
+			for (int w = -1; w <= 1; w++) {
+				set(level, x + w, 0, z, Blocks.COBBLESTONE.defaultBlockState());
+				for (int y = 1; y <= 3; y++) {
+					set(level, x + w, y, z, air);
+				}
+			}
+		}
+		hall = true;
+	}
+
+	/** Positions (absolues) des panneaux flottants de la salle : texte → position. */
+	public java.util.Map<String, Vec3> hallBoards() {
+		int[] h = hallCenter();
+		var m = new java.util.LinkedHashMap<String, Vec3>();
+		m.put("Dalle dorée : s'inscrire\nDalle rouge : se désinscrire\nObsidienne : devenir Conteur",
+			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 3.2, center.getZ() + h[1] + 0.5));
+		m.put("Le bien gagne quand le Démon meurt.\nLe mal gagne quand il ne reste que deux vivants.",
+			new Vec3(center.getX() + h[0] - 8.4, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
+		m.put("La nuit, chacun dort chez soi.\nLe jour, on débat, on chuchote,\npuis on vote à l'horloge.",
+			new Vec3(center.getX() + h[0] + 8.4, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
+		m.put("Menu du jeu : touche J\nou l'horloge en main (clic droit)",
+			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.5, center.getZ() + h[1] - 6.4));
+		return m;
 	}
 
 	public float yawToCenter(Vec3 from) {
@@ -235,7 +351,7 @@ public final class Village {
 					Blocks.COBBLESTONE.defaultBlockState());
 			}
 			double mid = a + Math.PI / SEATS;
-			for (int r = PLAZA_RADIUS + 4; r < HOUSE_RADIUS + 3; r++) {
+			for (int r = PLAZA_RADIUS + 4; r < HOUSE_RADIUS + 3 && i != 0; r++) {
 				int x = (int) Math.round(r * Math.cos(mid));
 				int z = (int) Math.round(r * Math.sin(mid));
 				set(level, x, 1, z, hedge);
@@ -295,6 +411,7 @@ public final class Village {
 		Data d = new Data();
 		d.center = arr(center);
 		d.generated = generated;
+		d.hall = hall;
 		seats.forEach(p -> d.seats.add(arr(p)));
 		houses.forEach(p -> d.houses.add(arr(p)));
 		try {
@@ -312,6 +429,7 @@ public final class Village {
 			if (Files.exists(json)) {
 				Data d = GSON.fromJson(Files.readString(json), Data.class);
 				Village v = new Village(pos(d.center), d.generated);
+				v.hall = d.hall;
 				d.seats.forEach(a -> v.seats.add(pos(a)));
 				d.houses.forEach(a -> v.houses.add(pos(a)));
 				return v;

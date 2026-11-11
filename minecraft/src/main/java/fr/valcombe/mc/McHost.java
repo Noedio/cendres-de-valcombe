@@ -75,7 +75,48 @@ public final class McHost implements Host {
 			village = v;
 			ValcombeMod.LOG.info("Village de Valcombe construit en {}", v.center());
 		}
+		if (village.isGenerated() && !village.hasHall()) {
+			buildHall();
+		}
 		applySpawn();
+	}
+
+	/** Construit la salle d'attente du village et ses panneaux de règles. */
+	public String buildHall() {
+		Village v = requireVillage();
+		v.buildHall(server.overworld());
+		v.save(server);
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
+		for (var e : v.hallBoards().entrySet()) {
+			Vec3 p = e.getValue();
+			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_salle\"],billboard:\"center\","
+					+ "line_width:220,background:-1308622848,text:\"%s\"}",
+				p.x, p.y, p.z, e.getKey().replace("\"", "'").replace("\n", "\\n")));
+		}
+		applySpawn();
+		return "Salle d'attente construite : dalle dorée pour s'inscrire, rouge pour se désinscrire.";
+	}
+
+	/** Gestion des dalles de la salle : appelée avec le joueur et la dalle sur laquelle il vient de marcher. */
+	private java.util.function.BiConsumer<ServerPlayer, Village.Pad> padHandler;
+	private final Map<String, Village.Pad> lastPad = new HashMap<>();
+
+	public void setPadHandler(java.util.function.BiConsumer<ServerPlayer, Village.Pad> handler) {
+		this.padHandler = handler;
+	}
+
+	private void checkPads() {
+		if (village == null || padHandler == null || server == null) {
+			return;
+		}
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			Village.Pad pad = village.padAt(p.blockPosition(), p.level());
+			Village.Pad before = lastPad.put(p.getScoreboardName(), pad);
+			if (pad != null && pad != before) {
+				padHandler.accept(p, pad);
+			}
+		}
 	}
 
 	private void applySpawn() {
@@ -369,6 +410,9 @@ public final class McHost implements Host {
 	/** Appelé à chaque tick serveur. */
 	public void onTick() {
 		tick++;
+		if (tick % 10 == 0) {
+			checkPads();
+		}
 		List<Task> due = new ArrayList<>();
 		for (Iterator<Task> it = tasks.iterator(); it.hasNext();) {
 			Task t = it.next();

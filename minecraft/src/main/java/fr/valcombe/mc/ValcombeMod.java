@@ -34,6 +34,21 @@ public final class ValcombeMod implements ModInitializer {
 	public void onInitialize() {
 		ValcombeNet.registerPayloads();
 		HOST.setUi(UI);
+		// Dalles de la salle d'attente
+		HOST.setPadHandler((p, pad) -> {
+			String name = p.getScoreboardName();
+			try {
+				String msg = switch (pad) {
+					case JOIN -> SESSION.lobby().contains(name) ? "Tu es déjà inscrit." : SESSION.join(name);
+					case LEAVE -> SESSION.lobby().contains(name) ? SESSION.leave(name) : "Tu n'es pas inscrit.";
+					case STORYTELLER -> p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
+						? SESSION.toggleStoryteller(name) : "Seul un opérateur peut devenir Conteur.";
+				};
+				p.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
+			} catch (fr.valcombe.rules.GameException e) {
+				p.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
+			}
+		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			HOST.setServer(server);
 			HOST.prepareWorld();

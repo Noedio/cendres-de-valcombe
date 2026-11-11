@@ -82,6 +82,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(60);
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
+			ctx.waitTicks(40);
+			shot(ctx, "0-salle-attente");
+			ctx.runOnClient(mc -> mc.player.setYRot(0));
+			ctx.waitTicks(10);
+			shot(ctx, "0b-salle-dalles");
 
 			// Salon
 			send(ctx, "vc rejoindre");
