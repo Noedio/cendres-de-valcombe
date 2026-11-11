@@ -44,3 +44,6 @@ run/
 
 # modpack et dossier serveur générés
 dist/
+
+# Journaux créés par les tests
+logs/
