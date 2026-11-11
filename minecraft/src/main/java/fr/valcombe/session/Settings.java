@@ -8,6 +8,9 @@ public final class Settings {
 	public boolean nightHouses = true;
 	/** La nuit, les micros des joueurs sont coupés (Simple Voice Chat). */
 	public boolean nightMute = true;
-	public int voteSeconds = 20;
+	/** Temps de parole de l'accusé avant le vote. */
+	public int defenseSeconds = 20;
+	/** Ticks entre deux sièges pour l'aiguille du vote (20 = 1 seconde). */
+	public int clockTicks = 30;
 	public int stepDelayTicks = 30;
 }

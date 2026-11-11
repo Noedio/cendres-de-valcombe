@@ -397,10 +397,18 @@ public final class ValcombeUi {
 		gui.set(21, Gui.icon(session.settings.nightHouses ? Items.WOOL.lime() : Items.WOOL.gray(),
 				"Nuit : chacun chez soi", session.settings.nightHouses ? "Activé (si le village est construit)" : "Désactivé"),
 			act(pl -> session.setting("nuit_maisons", session.settings.nightHouses ? "non" : "oui"), this::openStoryteller));
-		gui.set(24, Gui.icon(Items.ARROW, "Temps de vote : -5 s", "Actuel : " + session.settings.voteSeconds + " s"),
-			act(pl -> session.setting("temps_vote", String.valueOf(session.settings.voteSeconds - 5)), this::openStoryteller));
-		gui.set(25, Gui.icon(Items.ARROW, "Temps de vote : +5 s", "Actuel : " + session.settings.voteSeconds + " s"),
-			act(pl -> session.setting("temps_vote", String.valueOf(session.settings.voteSeconds + 5)), this::openStoryteller));
+		gui.set(24, Gui.icon(Items.ARROW, "Temps de défense : -5 s", "Actuel : " + session.settings.defenseSeconds + " s"),
+			act(pl -> session.setting("temps_defense", String.valueOf(session.settings.defenseSeconds - 5)), this::openStoryteller));
+		gui.set(25, Gui.icon(Items.ARROW, "Temps de défense : +5 s", "Actuel : " + session.settings.defenseSeconds + " s"),
+			act(pl -> session.setting("temps_defense", String.valueOf(session.settings.defenseSeconds + 5)), this::openStoryteller));
+		if (session.game() != null) {
+			gui.set(28, Gui.icon(Items.BELL, "Rassembler le village", "Ramène tout le monde au cercle."),
+				act(pl -> session.gather()));
+			gui.set(29, Gui.icon(Items.OAK_SIGN, session.nominationsOpen() ? "Fermer les nominations" : "Ouvrir les nominations"),
+				act(pl -> session.setNominations(!session.nominationsOpen()), this::openStoryteller));
+			gui.set(30, Gui.icon(Items.CLOCK, "Lancer le vote maintenant", "Écourte la défense de l'accusé."),
+				act(pl -> session.startVoteNow()));
+		}
 		gui.set(35, Gui.icon(Items.BARRIER, "Retour"), this::openMain);
 		gui.open(p, host);
 	}

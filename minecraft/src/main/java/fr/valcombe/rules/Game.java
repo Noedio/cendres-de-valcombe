@@ -1058,6 +1058,42 @@ public final class Game {
 	}
 
 	// ------------------------------------------------------------------
+	// Interventions du Conteur
+	// ------------------------------------------------------------------
+	/** Mort décidée par le Conteur (renvoie false si le joueur était déjà mort). */
+	public boolean storytellerKill(int seat) {
+		if (winner != null) {
+			throw new GameException("La partie est terminée.");
+		}
+		boolean killed = kill(seat, "décision du Conteur");
+		checkEvilWin();
+		return killed;
+	}
+
+	public void revive(int seat) {
+		Seat p = player(seat);
+		if (p.alive) {
+			throw new GameException(p.name + " est vivant.");
+		}
+		p.alive = true;
+		p.ghostVote = true;
+		addLog(p.name + " revient à la vie (décision du Conteur).");
+	}
+
+	public void setPoisoned(int seat) {
+		poisoned = seat;
+		addLog("Le Conteur empoisonne " + player(seat).name + ".");
+	}
+
+	/** Change un rôle en cours de partie (le Conteur assume la cohérence). */
+	public void forceReassign(int seat, Role role, Role believed) {
+		Seat p = player(seat);
+		p.role = role;
+		p.believed = role == Role.SOMNAMBULE && believed != null ? believed : role;
+		addLog("Le Conteur change le rôle de " + p.name + " : " + role.displayName + ".");
+	}
+
+	// ------------------------------------------------------------------
 	// Grimoire
 	// ------------------------------------------------------------------
 	public List<String> grimoireLines() {

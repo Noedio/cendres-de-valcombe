@@ -13,6 +13,16 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.Holder;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.TeamColor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -229,6 +239,82 @@ public final class McHost implements Host {
 	}
 
 	@Override
+	public void title(List<String> players, String title, String subtitle) {
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				p.connection.send(new ClientboundSetTitlesAnimationPacket(10, 50, 15));
+				p.connection.send(new ClientboundSetSubtitleTextPacket(
+					Component.literal(subtitle).withStyle(ChatFormatting.GRAY)));
+				p.connection.send(new ClientboundSetTitleTextPacket(
+					Component.literal(title).withStyle(ChatFormatting.GOLD)));
+			}
+		}
+	}
+
+	@Override
+	public void sound(List<String> players, String sound) {
+		Holder<SoundEvent> event = switch (sound) {
+			case "death" -> Holder.direct(SoundEvents.BELL_RESONATE);
+			case "clock" -> SoundEvents.NOTE_BLOCK_HAT;
+			default -> Holder.direct(SoundEvents.BELL_BLOCK);
+		};
+		float pitch = sound.equals("death") ? 0.5f : 1f;
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				p.connection.send(new ClientboundSoundPacket(event, SoundSource.MASTER, p.getX(), p.getY(), p.getZ(),
+					1f, pitch, p.level().getRandom().nextLong()));
+			}
+		}
+	}
+
+	@Override
+	public void gather(List<String> players) {
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			SeatPos s = seats.get(name);
+			if (p != null && s != null) {
+				teleport(p, s);
+			}
+		}
+	}
+
+	/** Fantômes : nom grisé précédé d'une croix ; une main s'ils ont encore leur vote. */
+	@Override
+	public void deadPlayers(List<String> dead, List<String> withGhostVote) {
+		if (server == null) {
+			return;
+		}
+		var board = server.getScoreboard();
+		PlayerTeam ghosts = team(board, "valcombe_fantomes", "† ", "");
+		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
+		for (String name : seats.keySet()) {
+			PlayerTeam current = board.getPlayersTeam(name);
+			PlayerTeam wanted = !dead.contains(name) ? null : withGhostVote.contains(name) ? voters : ghosts;
+			if (current != wanted) {
+				if (current != null && current.getName().startsWith("valcombe_")) {
+					board.removePlayerFromTeam(name, current);
+				}
+				if (wanted != null) {
+					board.addPlayerToTeam(name, wanted);
+				}
+			}
+		}
+	}
+
+	private static PlayerTeam team(net.minecraft.server.ServerScoreboard board, String id, String prefix, String suffix) {
+		PlayerTeam t = board.getPlayerTeam(id);
+		if (t == null) {
+			t = board.addPlayerTeam(id);
+			t.setColor(java.util.Optional.of(TeamColor.GRAY));
+			t.setPlayerPrefix(Component.literal(prefix).withStyle(ChatFormatting.DARK_GRAY));
+			t.setPlayerSuffix(Component.literal(suffix).withStyle(ChatFormatting.GOLD));
+		}
+		return t;
+	}
+
+	@Override
 	public void prompt(String name, Prompt prompt) {
 		// Au tick suivant : on peut être en train de traiter un clic dans un autre menu.
 		schedule(1, () -> {
@@ -376,6 +462,7 @@ public final class McHost implements Host {
 
 	@Override
 	public void endGame(List<String> players) {
+		deadPlayers(List.of(), List.of());
 		frozen = false;
 		inHouses = false;
 		houses.clear();

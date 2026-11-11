@@ -12,6 +12,22 @@ public interface Host {
 
 	boolean online(String player);
 
+	/** Titre à l'écran pour ces joueurs. */
+	default void title(List<String> players, String title, String subtitle) {
+	}
+
+	/** Son d'ambiance : "bell" (cloche), "death" (glas), "clock" (aiguille du vote). */
+	default void sound(List<String> players, String sound) {
+	}
+
+	/** Ramène les joueurs à leur siège. */
+	default void gather(List<String> players) {
+	}
+
+	/** Met à jour l'apparence des morts (fantômes) et de ceux qui ont encore leur vote. */
+	default void deadPlayers(List<String> dead, List<String> withGhostVote) {
+	}
+
 	/** Affiche (ou retire, si prompt == null) l'invite en cours d'un joueur. */
 	default void prompt(String player, Prompt prompt) {
 	}

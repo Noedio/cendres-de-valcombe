@@ -58,8 +58,17 @@ public final class Session {
 
 	// Jour : vote en cours
 	private Game.Nomination voteNom;
+	/** Main levée ou non, modifiable jusqu'au passage de l'aiguille. */
 	private final Map<String, Boolean> answers = new LinkedHashMap<>();
 	private final Set<String> waitingVote = new LinkedHashSet<>();
+	/** Sièges dans l'ordre de passage de l'aiguille, position actuelle, mains verrouillées. */
+	private final List<Integer> clockOrder = new ArrayList<>();
+	private int clockPos = -1;
+	private final List<Integer> lockedHands = new ArrayList<>();
+	private boolean defense;
+	private int defenseLeft;
+	/** Nominations ouvertes par le Conteur (automatiquement en mode automatique). */
+	private boolean nominationsOpen;
 	private int voteToken;
 
 	public Session(Host host) {
@@ -412,6 +421,14 @@ public final class Session {
 		return "Message envoyé au Conteur.";
 	}
 
+	private static int number(String value) {
+		try {
+			return Integer.parseInt(value);
+		} catch (NumberFormatException e) {
+			throw new GameException("Nombre attendu : " + value);
+		}
+	}
+
 	public String setting(String key, String value) {
 		boolean yes = value.equalsIgnoreCase("oui");
 		switch (key) {
@@ -419,15 +436,10 @@ public final class Session {
 			case "nuit_sombre" -> settings.nightDark = yes;
 			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "nuit_muette" -> settings.nightMute = yes;
-			case "temps_vote" -> {
-				try {
-					settings.voteSeconds = Math.max(5, Math.min(120, Integer.parseInt(value)));
-				} catch (NumberFormatException e) {
-					throw new GameException("temps_vote attend un nombre de secondes.");
-				}
-			}
+			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
+			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 10));
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_vote <secondes>.");
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, temps_horloge <dixièmes de seconde par siège>.");
 		}
 		return "Réglage modifié.";
 	}
@@ -679,6 +691,15 @@ public final class Session {
 		clearNight();
 		host.nightEffects(realNames(), false, settings);
 		if (deaths.isEmpty()) {
+			host.title(realNames(), "Jour " + g.day(), "Personne n'est mort cette nuit");
+		} else {
+			host.sound(realNames(), "death");
+			host.title(realNames(), "Jour " + g.day(), String.join(", ", deaths.stream().map(s -> g.player(s).name).toList())
+				+ (deaths.size() > 1 ? " sont morts" : " est mort") + " cette nuit");
+		}
+		host.deadPlayers(g.players().stream().filter(p -> !p.alive()).map(p -> p.name).toList(),
+			g.players().stream().filter(p -> !p.alive() && p.ghostVote()).map(p -> p.name).toList());
+		if (deaths.isEmpty()) {
 			announce("L'aube se lève. Personne n'est mort cette nuit.");
 		} else {
 			announce("L'aube se lève. Mort(s) cette nuit : "
@@ -688,7 +709,8 @@ public final class Session {
 			finish();
 			return;
 		}
-		announce("Jour " + g.day() + " : discutez, puis nominez (menu ou /vc nominer). Le Conteur clôt la journée.");
+		nominationsOpen = mode == Mode.AUTO;
+		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
 	}
 
 	// ------------------------------------------------------------------
@@ -698,8 +720,42 @@ public final class Session {
 		voteNom = null;
 		answers.clear();
 		waitingVote.clear();
+		clockOrder.clear();
+		clockPos = -1;
+		lockedHands.clear();
+		defense = false;
 		voteToken++;
 		clearPrompts(Prompt.Vote.class);
+	}
+
+	public boolean nominationsOpen() {
+		return nominationsOpen;
+	}
+
+	/** Le Conteur ouvre (ou ferme) les nominations de la journée. */
+	public String setNominations(boolean open) {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
+			throw new GameException("Les nominations n'ont lieu que de jour.");
+		}
+		nominationsOpen = open;
+		if (open) {
+			host.sound(realNames(), "bell");
+			host.title(realNames(), "Les nominations sont ouvertes", "Qui accusez-vous ?");
+			announce("Les nominations sont ouvertes.");
+		} else {
+			announce("Les nominations sont closes.");
+		}
+		return "";
+	}
+
+	/** Le Conteur rassemble tout le monde à sa place sur la place du village. */
+	public String gather() {
+		requireGame();
+		host.gather(realNames());
+		host.sound(realNames(), "bell");
+		announce("La cloche sonne : tout le monde au cercle !");
+		return "";
 	}
 
 	public String nominate(String name, String target) {
@@ -707,15 +763,20 @@ public final class Session {
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne nomine que de jour.");
 		}
+		if (!nominationsOpen) {
+			throw new GameException("Les nominations ne sont pas encore ouvertes.");
+		}
 		if (voteNom != null) {
 			throw new GameException("Attends la fin du vote en cours.");
 		}
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		Game.Nomination nom = g.nominate(a, b);
-		announce(name + " nomine " + g.player(b).name + ".");
+		announce(name + " accuse " + g.player(b).name + ".");
+		host.title(realNames(), name + " accuse " + g.player(b).name, "");
 		if (nom.pelerine()) {
 			announce(name + " est exécuté sur-le-champ !");
+			host.sound(realNames(), "death");
 			if (g.winner() != null) {
 				finish();
 			} else {
@@ -723,51 +784,111 @@ public final class Session {
 			}
 			return "";
 		}
-		openVote(nom);
+		startDefense(nom);
 		return "";
 	}
 
-	private void openVote(Game.Nomination nom) {
+	/** Temps de parole de l'accusé, puis le vote à l'horloge. */
+	private void startDefense(Game.Nomination nom) {
 		voteNom = nom;
 		answers.clear();
-		waitingVote.clear();
+		lockedHands.clear();
 		voteToken++;
-		String nominee = game.player(nom.nominee()).name;
-		for (Game.Seat p : game.players()) {
-			if ((p.alive() || p.ghostVote()) && online(p.name)) {
-				waitingVote.add(p.name);
-				Msg m = new Msg().colored("[Vote] Exécuter " + nominee + " ?", "gold");
-				if (!p.alive()) {
-					m.text(" (ton unique vote de fantôme)");
-				}
-				m.button("Je lève la main", "/vc vote oui", "Voter pour l'exécution")
-					.button("Je m'abstiens", "/vc vote non", "Ne pas voter");
-				tell(p.name, m);
-				setPrompt(p.name, new Prompt.Vote(nominee, !p.alive()));
-			}
-		}
-		announce("Vote sur " + nominee + " : " + settings.voteSeconds + " secondes pour lever la main.");
+		defense = true;
+		defenseLeft = settings.defenseSeconds;
+		announce(game.player(nom.nominee()).name + " a " + defenseLeft + " secondes pour se défendre.");
 		int token = voteToken;
-		host.schedule(settings.voteSeconds * 20, () -> {
-			if (voteNom != null && token == voteToken) {
-				closeVote();
-			}
-		});
-		if (waitingVote.isEmpty()) {
-			closeVote();
-		}
+		tickDefense(token);
 	}
 
+	private void tickDefense(int token) {
+		host.schedule(20, () -> {
+			if (voteNom == null || token != voteToken || !defense) {
+				return;
+			}
+			defenseLeft--;
+			if (defenseLeft <= 0) {
+				startClock();
+			} else {
+				tickDefense(token);
+			}
+		});
+	}
+
+	/** Le Conteur écourte la défense et lance le vote. */
+	public String startVoteNow() {
+		if (voteNom == null || !defense) {
+			throw new GameException("Aucune défense en cours.");
+		}
+		startClock();
+		return "";
+	}
+
+	private void startClock() {
+		Game g = game;
+		defense = false;
+		voteToken++;
+		String nominee = g.player(voteNom.nominee()).name;
+		clockOrder.clear();
+		waitingVote.clear();
+		for (int k = 1; k <= g.size(); k++) {
+			int s = (voteNom.nominee() + k) % g.size();
+			Game.Seat p = g.player(s);
+			if (p.alive() || p.ghostVote()) {
+				clockOrder.add(s);
+				if (online(p.name)) {
+					waitingVote.add(p.name);
+					answers.putIfAbsent(p.name, false);
+					Msg m = new Msg().colored("[Vote] Exécuter " + nominee + " ? L'aiguille approche.", "gold");
+					if (!p.alive()) {
+						m.text(" (ton unique vote de fantôme)");
+					}
+					m.button("Lever la main", "/vc vote oui", "Voter pour l'exécution")
+						.button("Baisser la main", "/vc vote non", "Ne pas voter");
+					tell(p.name, m);
+					setPrompt(p.name, new Prompt.Vote(nominee, !p.alive()));
+				}
+			}
+		}
+		clockPos = 0;
+		host.sound(realNames(), "clock");
+		announce("Vote sur " + nominee + " : l'aiguille fait le tour du cercle. Levez la main avant qu'elle ne passe.");
+		int token = voteToken;
+		// Un temps de réflexion avant le premier siège, puis l'aiguille avance.
+		host.schedule(settings.clockTicks * 2, () -> advanceClock(token));
+	}
+
+	private void advanceClock(int token) {
+		Game g = game;
+		if (g == null || voteNom == null || token != voteToken) {
+			return;
+		}
+		if (clockPos >= clockOrder.size()) {
+			closeVote();
+			return;
+		}
+		int seat = clockOrder.get(clockPos);
+		String name = g.player(seat).name;
+		if (Boolean.TRUE.equals(answers.get(name))) {
+			lockedHands.add(seat);
+			announce("✋ " + name + " lève la main (" + lockedHands.size() + ").");
+		}
+		waitingVote.remove(name);
+		setPrompt(name, null);
+		clockPos++;
+		host.schedule(settings.clockTicks, () -> advanceClock(token));
+	}
+
+	/** Lever ou baisser la main, tant que l'aiguille n'est pas passée. */
 	public String vote(String name, boolean yes) {
-		if (voteNom == null || !waitingVote.remove(name)) {
-			throw new GameException("Aucun vote ne t'attend.");
+		if (voteNom == null || defense) {
+			throw new GameException("Aucun vote en cours.");
+		}
+		if (!waitingVote.contains(name)) {
+			throw new GameException("L'aiguille est déjà passée devant toi.");
 		}
 		answers.put(name, yes);
-		setPrompt(name, null);
-		if (waitingVote.isEmpty()) {
-			closeVote();
-		}
-		return yes ? "Tu lèves la main." : "Tu t'abstiens.";
+		return yes ? "Tu lèves la main." : "Tu baisses la main.";
 	}
 
 	private void closeVote() {
@@ -776,23 +897,75 @@ public final class Session {
 		if (g == null || nom == null) {
 			return;
 		}
-		List<Integer> voters = new ArrayList<>();
-		List<String> hands = new ArrayList<>();
-		for (int i = 0; i < g.size(); i++) {
-			String n = g.player(i).name;
-			if (Boolean.TRUE.equals(answers.get(n))) {
-				voters.add(i);
-				hands.add(n);
-			}
-		}
+		List<Integer> voters = new ArrayList<>(lockedHands);
 		clearVote();
 		Game.VoteResult r = g.vote(nom.index(), voters);
-		announce(r.count() + " voix (seuil " + r.threshold() + ") : "
-			+ (r.onBlock() ? "en passe d'être exécuté" : "pas d'exécution pour l'instant")
-			+ ". Mains levées : " + (hands.isEmpty() ? "aucune" : String.join(", ", hands)) + ".");
+		String nominee = g.player(nom.nominee()).name;
+		announce(r.count() + " voix contre " + nominee + " (seuil " + r.threshold() + ") : "
+			+ (r.onBlock() ? "en passe d'être exécuté." : "pas d'exécution pour l'instant."));
+		host.title(realNames(), r.count() + " voix", r.onBlock() ? nominee + " est en passe d'être exécuté" : "Pas assez de voix");
 		if (!r.warnings().isEmpty() && storyteller != null) {
 			tell(storyteller, "Avertissement : " + String.join(" ", r.warnings()));
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Chuchotements : le contenu est privé, mais le fait de chuchoter est public
+	// ------------------------------------------------------------------
+	public String whisper(String from, String to, String text) {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY) {
+			throw new GameException("On ne chuchote que de jour.");
+		}
+		int a = requireSeat(from);
+		int b = seatByName(to);
+		if (a == b) {
+			throw new GameException("Chuchoter à soi-même ?");
+		}
+		String target = g.player(b).name;
+		tell(target, new Msg().colored("[" + from + " te chuchote] ", "light_purple").text(text));
+		announce(from + " chuchote à " + target + ".");
+		return "Chuchoté à " + target + ".";
+	}
+
+	// ------------------------------------------------------------------
+	// Pouvoirs du Conteur en cours de partie
+	// ------------------------------------------------------------------
+	public String stKill(String target) {
+		Game g = requireGame();
+		int s = seatByName(target);
+		if (!g.storytellerKill(s)) {
+			throw new GameException(target + " est déjà mort.");
+		}
+		host.sound(realNames(), "death");
+		announce(g.player(s).name + " meurt.");
+		if (g.winner() != null) {
+			finish();
+		}
+		return "";
+	}
+
+	public String stRevive(String target) {
+		Game g = requireGame();
+		int s = seatByName(target);
+		g.revive(s);
+		announce(g.player(s).name + " revient parmi les vivants.");
+		return "";
+	}
+
+	public String stPoison(String target) {
+		Game g = requireGame();
+		g.setPoisoned(seatByName(target));
+		return target + " est empoisonné jusqu'au prochain crépuscule.";
+	}
+
+	public String stSwap(String target, String roleId, String believedId) {
+		Game g = requireGame();
+		int s = seatByName(target);
+		Role r = parseRole(roleId);
+		g.forceReassign(s, r, believedId == null ? null : parseRole(believedId));
+		showRole(g.player(s).name, g.player(s).believed());
+		return target + " est maintenant " + r.displayName + ".";
 	}
 
 	public String shoot(String name, String target) {
@@ -847,12 +1020,7 @@ public final class Session {
 	}
 
 	public void onDisconnect(String name) {
-		if (voteNom != null && waitingVote.remove(name)) {
-			prompts.remove(name);
-			if (waitingVote.isEmpty()) {
-				closeVote();
-			}
-		}
+		prompts.remove(name);
 		if (game != null && game.phase() == Game.Phase.NIGHT) {
 			if (name.equals(waitingAck)) {
 				sleep(name);
@@ -1011,7 +1179,8 @@ public final class Session {
 		st.put("nightDark", settings.nightDark);
 		st.put("nightHouses", settings.nightHouses);
 		st.put("nightMute", settings.nightMute);
-		st.put("voteSeconds", settings.voteSeconds);
+		st.put("defenseSeconds", settings.defenseSeconds);
+		st.put("clockSeconds", settings.clockTicks / 20.0);
 		v.put("settings", st);
 		Game g = game;
 		if (g == null) {
@@ -1043,10 +1212,17 @@ public final class Session {
 				Map<String, Object> vote = new LinkedHashMap<>();
 				vote.put("nominator", g.player(voteNom.nominator()).name);
 				vote.put("nominee", g.player(voteNom.nominee()).name);
+				vote.put("stage", defense ? "DEFENSE" : "CLOCK");
+				vote.put("defenseLeft", defenseLeft);
+				vote.put("clockSeat", clockPos >= 0 && clockPos < clockOrder.size() ? clockOrder.get(clockPos) : -1);
+				vote.put("locked", List.copyOf(lockedHands));
+				vote.put("count", lockedHands.size());
+				vote.put("threshold", (g.aliveCount() + 1) / 2);
+				vote.put("myHand", Boolean.TRUE.equals(answers.get(me)));
 				vote.put("hands", answers.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList());
-				vote.put("seconds", settings.voteSeconds);
 				v.put("vote", vote);
 			}
+			v.put("nominationsOpen", nominationsOpen);
 			boolean spyAwake = prompts.get(me) instanceof Prompt.Grimoire;
 			if (me.equals(storyteller) || spyAwake) {
 				List<Map<String, Object>> grim = new ArrayList<>();
@@ -1132,7 +1308,7 @@ public final class Session {
 				}
 				case Prompt.Info i -> sleep(bot);
 				case Prompt.Grimoire gr -> sleep(bot);
-				case Prompt.Vote v -> vote(bot, rng.chance(0.5));
+				case Prompt.Vote v -> answers.put(bot, rng.chance(0.5));
 				case Prompt.Confirm cf -> storytellerSend(bot, null);
 			}
 		} catch (GameException ignored) {

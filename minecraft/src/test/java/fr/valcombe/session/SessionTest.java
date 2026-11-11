@@ -114,6 +114,12 @@ class SessionTest {
 		throw new AssertionError("boucle sans fin");
 	}
 
+	static void openNominations(Session s) {
+		if (s.game() != null && s.game().phase() == Game.Phase.DAY && !s.game().dayOver() && !s.nominationsOpen()) {
+			s.setNominations(true);
+		}
+	}
+
 	static Game play(long seed, Session.Mode mode, int n) {
 		Random random = new Random(seed);
 		FakeHost h = new FakeHost();
@@ -146,6 +152,7 @@ class SessionTest {
 				break;
 			}
 			try {
+				openNominations(s);
 				s.nominate(a, b);
 			} catch (GameException ignored) {
 			}
@@ -188,7 +195,8 @@ class SessionTest {
 				Game g = s.game();
 				List<Integer> alive = g.aliveSeats();
 				try {
-					s.nominate(g.player(alive.get(random.nextInt(alive.size()))).name,
+					openNominations(s);
+				s.nominate(g.player(alive.get(random.nextInt(alive.size()))).name,
 						g.player(alive.get(random.nextInt(alive.size()))).name);
 				} catch (GameException ignored) {
 				}
@@ -202,6 +210,35 @@ class SessionTest {
 			assertNull(s.game(), "la partie de bots doit se terminer (graine " + seed + ")");
 			assertTrue(h.prompts.isEmpty(), "les bots ne reçoivent pas de messages");
 		}
+	}
+
+	@Test
+	void voteALHorloge() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(5)));
+		for (int i = 1; i <= 6; i++) {
+			s.join("J" + i);
+		}
+		s.toggleStoryteller("Conteur");
+		s.start("Conteur", Session.Mode.HUMAIN);
+		s.startNight();
+		pump(s, h, new Random(5));
+		assertThrows(GameException.class, () -> s.nominate("J1", "J2"), "nominations fermées");
+		s.setNominations(true);
+		s.nominate("J1", "J2");
+		assertThrows(GameException.class, () -> s.vote("J3", true), "pendant la défense");
+		s.startVoteNow();
+		h.prompts.clear();
+		s.vote("J3", true);
+		s.vote("J4", true);
+		s.vote("J4", false); // il se ravise avant le passage de l'aiguille
+		s.vote("J5", true);
+		while (!h.tasks.isEmpty() && s.voteOpen()) {
+			h.tasks.poll().run();
+		}
+		assertTrue(!s.voteOpen(), "le vote est terminé");
+		assertThrows(GameException.class, () -> s.vote("J5", false), "trop tard");
+		assertTrue(h.announces.stream().anyMatch(a -> a.startsWith("2 voix contre J2")), String.join(" | ", h.announces));
 	}
 
 	@Test
