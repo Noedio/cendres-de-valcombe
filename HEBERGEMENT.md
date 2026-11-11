@@ -127,6 +127,22 @@ Le Conteur tape `/vc tablette` dans le jeu. Un lien s'affiche : il l'ouvre sur s
 - Par défaut, la tablette ne répond qu'aux appareils du **réseau local** (même box que le serveur). Sur un serveur loué, autorisez l'accès par Internet avec `/vc tablette internet oui` (et `non` pour revenir au réseau local seul).
 - La page n'est pas chiffrée (HTTP). Hors réseau local, fermez la tablette après la partie.
 
+### L'Atelier sur un serveur loué, sans l'ouvrir à Internet
+
+L'Atelier (`/vc atelier`) sert à créer rôles, scénarios et cartes : il donne beaucoup de pouvoir et sa page n'est pas chiffrée. Sur un VPS, le plus sûr est de **ne pas ouvrir le port 25570** et de passer par un tunnel SSH depuis votre PC :
+
+```bash
+ssh -L 25570:localhost:25570 utilisateur@adresse-du-vps
+```
+
+Laissez cette fenêtre ouverte, tapez `/vc atelier` dans le jeu, puis ouvrez dans votre navigateur le lien affiché **en remplaçant l'adresse par `localhost`** (exemple : `http://localhost:25570/atelier#…`). Pour le serveur, la page vient de la machine elle-même : elle est acceptée même avec la tablette réservée au réseau local. Le même tunnel marche pour la tablette du Conteur.
+
+### Annoncer l'adresse du serveur aux launchers
+
+- Le plus simple : chaque joueur ajoute le serveur dans le launcher (Réglages › Serveurs enregistrés), puis le choisit sur l'accueil.
+- Pour tout le monde d'un coup : fabriquez la version avec `python tools/make_modpack.py --serveur=adresse-du-vps` ; après la publication, les launchers proposent cette adresse d'office (« Serveur de la version publiée »).
+- `/vc soiree vendredi 21 h` annonce la prochaine soirée : elle s'affiche dans la liste des serveurs de Minecraft et sur l'accueil du launcher.
+
 ### Compte rendu sur Discord
 
 1. Sur Discord : paramètres du salon › Intégrations › Webhooks › Nouveau webhook, puis « Copier l'URL du webhook ».

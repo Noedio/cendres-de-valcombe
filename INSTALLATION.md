@@ -33,6 +33,10 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
 
 Le **launcher Valcombe** a aussi une page « Guide » (règles et touches), des préréglages de performance (petite machine, équilibré, haute qualité), un conseil de mémoire selon votre ordinateur, un voyant d'état du serveur avec la **prochaine soirée** annoncée par l'hôte, une page **« Mon carnet »** (parties, victoires, camps, rôles joués, titre ; elle se remplit à chaque passage au salon) et l'affichage de la vitesse et du temps restant des téléchargements (un téléchargement coupé reprend où il s'était arrêté). Vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
 
+### Où ranger le launcher
+
+Le launcher est **portable** : un seul fichier, sans installation, qui range le jeu dans un dossier `ValcombeData` à côté de lui. Mettez-le dans un dossier qui ne bouge pas, par exemple `%LOCALAPPDATA%\Programs\Les Cendres de Valcombe\`, puis lancez-le : à partir de la version 0.5.1, il se range lui-même dans le **menu Démarrer** et pose un raccourci sur le **Bureau** (case « Raccourcis » dans Personnalisation). S'il est déplacé, le raccourci du menu Démarrer suit au lancement suivant.
+
 ### Au premier lancement du launcher : « Windows a protégé votre ordinateur »
 
 Le launcher n'est pas signé numériquement (un certificat de signature coûte plusieurs centaines d'euros par an). Windows SmartScreen affiche donc un écran bleu au premier lancement :
