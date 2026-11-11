@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Launcher 0.6.2 : vos touches habituelles",
+    "text": "Options du jeu › « Reprendre mes touches de Minecraft » : le launcher recopie les touches de votre Minecraft habituel (launcher officiel, CurseForge, Modrinth, Prism…). Les touches de Valcombe (J, H, G, K) restent. À la toute première partie, c'est fait d'office."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Version 0.6.1",
     "text": "Assis sur un trône, un clic droit n'affiche plus le message « hauteur maximale de construction ». Le launcher garde la sortie du jeu pour comprendre un plantage (jointe au rapport) et affiche les nouvelles proprement. Hôtes : mettez à jour le mod du serveur."
   },
