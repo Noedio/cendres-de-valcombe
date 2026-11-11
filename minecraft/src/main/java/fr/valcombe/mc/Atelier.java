@@ -59,6 +59,49 @@ final class Atelier {
 	}
 
 	// ------------------------------------------------------------------
+	// Plusieurs opérateurs à la fois : un lien (jeton) chacun, présence, modifications en cours, journal
+	// ------------------------------------------------------------------
+	private final Map<String, String> tokens = new java.util.concurrent.ConcurrentHashMap<>();
+	private final Map<String, Long> lastSeen = new java.util.concurrent.ConcurrentHashMap<>();
+	/** Création en cours de modification (« role:passeur ») → qui la modifie, et quand. */
+	private final Map<String, String[]> editing = new java.util.concurrent.ConcurrentHashMap<>();
+	private final java.util.Deque<String> activity = new java.util.concurrent.ConcurrentLinkedDeque<>();
+	private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
+	/** Jeton de l'Atelier pour cet opérateur (créé une fois par démarrage du serveur). */
+	String tokenFor(String player) {
+		for (var e : tokens.entrySet()) {
+			if (e.getValue().equals(player)) {
+				return e.getKey();
+			}
+		}
+		byte[] b = new byte[18];
+		RANDOM.nextBytes(b);
+		String t = java.util.HexFormat.of().formatHex(b);
+		tokens.put(t, player);
+		return t;
+	}
+
+	private String ownerOf(HttpExchange ex) {
+		String given = ex.getRequestHeaders().getFirst("X-Valcombe-Jeton");
+		return given == null ? null : tokens.get(given);
+	}
+
+	private void log(String who, String what) {
+		String time = java.time.LocalTime.now().withNano(0).toString().substring(0, 5);
+		activity.addFirst(time + " — " + who + " " + what);
+		while (activity.size() > 15) {
+			activity.removeLast();
+		}
+	}
+
+	/** Une action réussie est notée dans le journal de l'Atelier. */
+	private String logged(String who, String result) {
+		log(who, ": " + result);
+		return result;
+	}
+
+	// ------------------------------------------------------------------
 	// Pages
 	// ------------------------------------------------------------------
 	void page(HttpExchange ex) throws IOException {
@@ -95,29 +138,53 @@ final class Atelier {
 	// ------------------------------------------------------------------
 	// API
 	// ------------------------------------------------------------------
-	void api(HttpExchange ex, boolean allowed, String owner) throws IOException {
-		if (!allowed) {
+	void api(HttpExchange ex, boolean networkOk) throws IOException {
+		String owner = ownerOf(ex);
+		if (!networkOk || owner == null) {
 			text(ex, 403, "Lien expiré ou réservé : relancez /vc atelier dans le jeu (opérateur).");
 			return;
 		}
+		lastSeen.put(owner, System.currentTimeMillis());
 		String path = ex.getRequestURI().getPath().substring("/api/atelier/".length());
 		boolean post = ex.getRequestMethod().equals("POST");
 		String body = post ? new String(ex.getRequestBody().readNBytes(40 * 1024 * 1024), StandardCharsets.UTF_8) : "";
 		try {
 			switch (path) {
-				case "donnees" -> json(ex, onServer(this::catalogue, 5));
-				case "role" -> text(ex, 200, onServer(() -> creations.saveRole(GSON.fromJson(body, RoleDef.class)), 5));
-				case "role/supprimer" -> text(ex, 200, onServer(() -> creations.deleteRole(body.trim()), 5));
-				case "scenario" -> text(ex, 200, onServer(() -> creations.saveScenario(GSON.fromJson(body, ScenarioDef.class)), 5));
-				case "scenario/supprimer" -> text(ex, 200, onServer(() -> creations.deleteScenario(body.trim()), 5));
+				case "donnees" -> json(ex, onServer(() -> catalogue(owner), 5));
+				case "role" -> text(ex, 200, logged(owner, onServer(() -> creations.saveRole(GSON.fromJson(body, RoleDef.class)), 5)));
+				case "role/supprimer" -> text(ex, 200, logged(owner, onServer(() -> creations.deleteRole(body.trim()), 5)));
+				case "scenario" -> text(ex, 200, logged(owner, onServer(() -> creations.saveScenario(GSON.fromJson(body, ScenarioDef.class)), 5)));
+				case "scenario/supprimer" -> text(ex, 200, logged(owner, onServer(() -> creations.deleteScenario(body.trim()), 5)));
+				case "edition" -> {
+					// Ce que l'opérateur a ouvert dans l'éditeur (« role:x », « scenario:y », ou vide)
+					editing.values().removeIf(v -> v[0].equals(owner));
+					String key = body.trim();
+					if (!key.isEmpty()) {
+						editing.put(key + "|" + owner, new String[] {owner, key});
+					}
+					text(ex, 200, "");
+				}
+				case "carte/importer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					byte[] data = java.util.Base64.getDecoder().decode(o.get("donnees").getAsString());
+					String file = o.get("fichier").getAsString();
+					text(ex, 200, logged(owner, onServer(() -> host.importSchematic(file, data), 180)));
+				}
 				case "simuler" -> json(ex, simulate(body));
 				case "jouer" -> text(ex, 200, onServer(() -> play(JsonParser.parseString(body).getAsJsonObject(), owner), 10));
 				case "carte/enregistrer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60));
+					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
 				}
-				case "carte/charger" -> text(ex, 200, onServer(() -> maps.load(body.trim()), 120));
-				case "carte/supprimer" -> text(ex, 200, onServer(() -> maps.delete(body.trim()), 5));
+				case "carte/charger" -> text(ex, 200, logged(owner, onServer(() -> maps.load(body.trim()), 120)));
+				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
+				case "construction" -> text(ex, 200, onServer(() -> {
+					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+					if (p == null) {
+						throw new GameException("Connectez-vous au jeu pour construire.");
+					}
+					return host.toggleConstruction(p);
+				}, 5));
 				case "carte/generer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					text(ex, 200, onServer(() -> host.generateVillage(server.getPlayerList().getPlayerByName(owner),
@@ -151,8 +218,19 @@ final class Atelier {
 	}
 
 	/** Tout ce que la page affiche : rôles intégrés et créés, scénarios, cartes, modèles, emblèmes. */
-	private String catalogue() {
+	private String catalogue(String me) {
 		Map<String, Object> out = new LinkedHashMap<>();
+		long now = System.currentTimeMillis();
+		out.put("moi", me);
+		out.put("presents", lastSeen.entrySet().stream().filter(e -> now - e.getValue() < 20_000).map(Map.Entry::getKey).sorted().toList());
+		Map<String, String> edits = new LinkedHashMap<>();
+		for (String[] v : editing.values()) {
+			if (now - lastSeen.getOrDefault(v[0], 0L) < 20_000) {
+				edits.merge(v[1], v[0], (a, b) -> a + ", " + b);
+			}
+		}
+		out.put("editions", edits);
+		out.put("journal", List.copyOf(activity));
 		List<Map<String, Object>> builtin = new ArrayList<>();
 		for (Role r : Role.all()) {
 			if (r.custom()) {

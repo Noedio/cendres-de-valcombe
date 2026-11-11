@@ -176,6 +176,7 @@ final class SessionView {
 					m.put("by", g.player(n[0]).name);
 					m.put("target", g.player(n[1]).name);
 					m.put("votes", n[2]);
+					m.put("voters", ses.votersOf.getOrDefault(noms.size(), List.of()));
 					noms.add(m);
 				}
 				day.put("nominations", noms);
@@ -198,6 +199,12 @@ final class SessionView {
 					Map<String, Object> row = new LinkedHashMap<>();
 					row.put("seat", i);
 					row.put("role", seatRole(p, p.role()));
+					double[] pos = ses.host.seatPosition(p.name);
+					if (pos != null) {
+						row.put("pos", List.of(pos[0], pos[1], pos[2]));
+					}
+					row.put("name", p.name);
+					row.put("alive", p.alive());
 					row.put("believed", p.believed() != p.role() ? roleView(p.believed()) : null);
 					row.put("line", lines.get(i));
 					row.put("note", ses.notes.get(p.name));

@@ -79,6 +79,17 @@
 	.hint { color: var(--muted); font-size: .85rem; }
 	.hidden { display: none !important; }
 	code { color: var(--gold); }
+	.steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+	.step { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 10px;
+		border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+	.step .num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+		border: 2px solid var(--gold); color: var(--gold); font-weight: bold; }
+	.step.done .num { background: var(--gold); color: #1b1214; }
+	.step .title { color: var(--ink); font-size: 1.05rem; }
+	.step .bar { margin-top: 6px; }
+	.lock { background: #4a2a10; border: 1px solid var(--gold); border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; }
+	.journal { margin: 0; padding-left: 18px; color: var(--muted); font-size: .88rem; }
+	.badge { display: inline-block; background: var(--wine); border-radius: 999px; padding: 2px 9px; margin: 2px; font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -87,14 +98,32 @@
 	<div class="state" id="state">Connexion…</div>
 </header>
 <nav>
-	<button data-tab="roles" class="on">Rôles</button>
+	<button data-tab="accueil" class="on">Accueil</button>
+	<button data-tab="roles">Rôles</button>
 	<button data-tab="scenarios">Scénarios</button>
 	<button data-tab="cartes">Cartes</button>
 	<button data-tab="partage">Partage</button>
 </nav>
 
+<!-- Accueil -->
+<section id="tab-accueil">
+	<div class="cols">
+		<div class="card">
+			<h2>Préparer une soirée, pas à pas</h2>
+			<ol class="steps" id="steps"></ol>
+		</div>
+		<div class="card">
+			<h2>Dans l'Atelier</h2>
+			<div id="presence"></div>
+			<p class="hint">Chaque opérateur ouvre son propre lien avec <code>/vc atelier</code> : préparez la soirée à plusieurs, en même temps. La page se met à jour toute seule, et une création ouverte par quelqu'un d'autre est signalée.</p>
+			<h3>Dernières modifications</h3>
+			<ul class="journal" id="journal"></ul>
+		</div>
+	</div>
+</section>
+
 <!-- Rôles -->
-<section id="tab-roles">
+<section id="tab-roles" class="hidden">
 	<div class="cols">
 		<div class="card">
 			<h2>Rôles créés</h2>
@@ -104,6 +133,18 @@
 		</div>
 		<div class="card">
 			<h2 id="roleTitle">Nouveau rôle</h2>
+			<div class="lock hidden" id="roleLock"></div>
+			<label>Partir d'un exemple (facultatif)</label>
+			<select id="rExemple">
+				<option value="">— Choisir un exemple —</option>
+				<option value="guetteur">Le Guetteur : combien de mauvais parmi deux joueurs (Citadin)</option>
+				<option value="lanterniere">La Lanternière : protège un joueur chaque nuit (Citadin)</option>
+				<option value="fossoyeur">Le Fossoyeur : apprend le rôle de l'exécuté (Citadin)</option>
+				<option value="voyant">Le Voyant : pouvoir libre joué par le Conteur (Citadin)</option>
+				<option value="ermite">L'Ermite : aucun pouvoir, un rôle d'ambiance (Étranger)</option>
+				<option value="herboriste">L'Herboriste : empoisonne un joueur chaque nuit (Sbire)</option>
+				<option value="ogre">L'Ogre : tue un joueur chaque nuit (Démon)</option>
+			</select>
 			<div class="row">
 				<div><label>Nom</label><input id="rNom" maxlength="40" placeholder="Le Passeur"></div>
 				<div><label>Identifiant (fichier, partage)</label><input id="rId" maxlength="30" placeholder="passeur"></div>
@@ -165,6 +206,7 @@
 		</div>
 		<div class="card">
 			<h2 id="scTitle">Nouveau scénario</h2>
+			<div class="lock hidden" id="scLock"></div>
 			<div class="row">
 				<div><label>Nom</label><input id="sNom" maxlength="50" placeholder="La Nuit des Masques"></div>
 				<div><label>Identifiant</label><input id="sId" maxlength="30" placeholder="nuit-des-masques"></div>
@@ -252,7 +294,12 @@
 			</div>
 			<label class="check"><input type="checkbox" id="gMaisons" checked> Avec des maisons (la nuit, chacun chez soi)</label>
 			<div class="bar"><button id="genMap">Générer à la place de la carte actuelle</button></div>
+			<h2 style="margin-top:20px">Importer une construction</h2>
+			<p class="hint">Une place faite ailleurs : schématique WorldEdit (<code>.schem</code>), Litematica (<code>.litematic</code>) ou structure Minecraft (<code>.nbt</code>), jusqu'à 320 × 128 × 320 blocs. Elle remplace la carte actuelle ; posez ensuite les trônes et les maisons en mode construction, puis enregistrez-la ici.</p>
+			<input type="file" id="impSchem" accept=".schem,.schematic,.litematic,.nbt">
+			<div class="bar"><button id="importSchem">Importer à la place de la carte actuelle</button></div>
 			<h2 style="margin-top:20px">Construire à la main</h2>
+			<div class="bar" style="margin-top:0"><button class="main" id="buildMode">Mode construction (pour moi, dans le jeu)</button></div>
 			<p class="hint">Dans le jeu : <code>/vc carte construction</code> passe en créatif avec la baguette de carte. Clic droit sur un bloc : un trône ; accroupi : une maison ; <code>/vc carte centre</code> pose le centre de la place. Les repères brillent et une liste de contrôle s'affiche. Ensuite, enregistrez la carte ici.</p>
 			<div class="msg" id="mapMsg"></div>
 		</div>
@@ -337,10 +384,164 @@ async function load() {
 		renderScenarios();
 		renderMaps();
 		renderShare();
+		renderHome();
 	} catch (e) {
 		$("state").textContent = e.message;
 	}
 }
+
+// ---------------------------------------------------------------- Accueil
+const EXEMPLES = {
+	guetteur: { nom: "Le Guetteur", camp: "CITADIN", embleme: "e_oeil", premiereNuit: "jamais", autresNuits: "apres:veilleuse",
+		texte: "Chaque nuit sauf la première, désigne deux joueurs : tu apprends combien d'entre eux sont mauvais.",
+		pouvoir: { type: "compte", nombre: 2 } },
+	lanterniere: { nom: "La Lanternière", camp: "CITADIN", embleme: "e_lanterne", premiereNuit: "jamais", autresNuits: "avant:goule",
+		texte: "Chaque nuit sauf la première, désigne un autre joueur : le Démon ne peut pas le tuer cette nuit.",
+		pouvoir: { type: "protection" } },
+	fossoyeur: { nom: "Le Fossoyeur", camp: "CITADIN", embleme: "e_cle", premiereNuit: "jamais", autresNuits: "fin",
+		texte: "Chaque nuit sauf la première, tu apprends le rôle du joueur exécuté dans la journée.",
+		pouvoir: { type: "execute" } },
+	voyant: { nom: "Le Voyant", camp: "CITADIN", embleme: "e_etoile", premiereNuit: "fin", autresNuits: "fin",
+		texte: "Chaque nuit, désigne un joueur : le Conteur te dit s'il a menti aujourd'hui.",
+		pouvoir: { type: "libre", nombre: 1, question: "Dire au joueur si le joueur désigné a menti aujourd'hui (oui ou non)." } },
+	ermite: { nom: "L'Ermite", camp: "ETRANGER", embleme: "e_lanterne", premiereNuit: "jamais", autresNuits: "jamais",
+		texte: "Tu n'as aucun pouvoir. Tu vis à l'écart, et personne ne te croit.", pouvoir: { type: "aucun" } },
+	herboriste: { nom: "L'Herboriste", camp: "SBIRE", embleme: "e_fiole", premiereNuit: "debut", autresNuits: "debut",
+		texte: "Chaque nuit, désigne un joueur : son pouvoir ne fonctionne pas cette nuit et demain.",
+		pouvoir: { type: "poison" } },
+	ogre: { nom: "L'Ogre", camp: "DEMON", embleme: "e_corbeau", premiereNuit: "jamais", autresNuits: "apres:goule",
+		texte: "Chaque nuit sauf la première, désigne un joueur : il meurt.", pouvoir: { type: "mise_a_mort" } },
+};
+
+function go(tab) {
+	document.querySelector('nav button[data-tab="' + tab + '"]').click();
+}
+
+function renderHome() {
+	const steps = $("steps");
+	steps.innerHTML = "";
+	const cur = data.carteActuelle;
+	const items = [
+		{ done: data.roles.length > 0, title: "1. Inventer des rôles (facultatif)",
+			text: data.roles.length ? data.roles.length + " rôle(s) créé(s). Les 25 rôles intégrés restent disponibles."
+				: "Les 25 rôles intégrés suffisent pour jouer. Pour inventer les vôtres, partez d'un exemple.",
+			buttons: [["Créer un rôle", () => { go("roles"); editRole(null); }], ["Partir d'un exemple", () => { go("roles"); editRole(null); $("rExemple").focus(); }]] },
+		{ done: data.scenarios.length > 0, title: "2. Composer un scénario",
+			text: data.scenarios.length ? data.scenarios.length + " scénario(s). Un scénario regroupe les rôles, la carte, les réglages et les règles."
+				: "Choisissez les rôles de la soirée (partez des Cendres ou des Brumes), puis les réglages et un texte d'ouverture.",
+			buttons: [["Composer un scénario", () => { go("scenarios"); editSc(null); }]] },
+		{ done: !!cur && cur.sieges >= 5, title: "3. Choisir la carte",
+			text: cur ? "Carte actuelle : " + cur.sieges + " trônes, " + cur.maisons + " maisons. " + data.cartes.length + " carte(s) dans la bibliothèque."
+				: "Aucune carte sur le serveur : générez un village ou importez une construction.",
+			buttons: [["Gérer les cartes", () => go("cartes")]] },
+		{ done: false, title: "4. Tester",
+			text: "Simulez 200 parties pour vérifier l'équilibre, ou lancez une partie d'essai avec des joueurs fictifs.",
+			buttons: [["Tester un scénario", () => go("scenarios")]] },
+		{ done: !!data.scenarioActuel, title: "5. Jouer",
+			text: data.scenarioActuel ? "Prochaine partie : « " + (data.scenarios.find(x => x.id === data.scenarioActuel) || {}).nom + " ». Lancez-la depuis le jeu."
+				: "Choisissez le scénario de la prochaine partie (onglet Scénarios), puis lancez la partie dans le jeu.",
+			buttons: [] },
+	];
+	for (const it of items) {
+		const li = document.createElement("li");
+		li.className = "step" + (it.done ? " done" : "");
+		const num = document.createElement("div");
+		num.className = "num";
+		num.textContent = it.done ? "✓" : it.title[0];
+		const body = document.createElement("div");
+		const t = document.createElement("div");
+		t.className = "title";
+		t.textContent = it.title;
+		const p = document.createElement("div");
+		p.className = "hint";
+		p.textContent = it.text;
+		body.append(t, p);
+		if (it.buttons.length) {
+			const bar = document.createElement("div");
+			bar.className = "bar";
+			for (const [label, fn] of it.buttons) {
+				const b = document.createElement("button");
+				b.textContent = label;
+				b.onclick = fn;
+				bar.appendChild(b);
+			}
+			body.appendChild(bar);
+		}
+		li.append(num, body);
+		steps.appendChild(li);
+	}
+	const pres = $("presence");
+	pres.innerHTML = "";
+	for (const n of data.presents || []) {
+		const b = document.createElement("span");
+		b.className = "badge";
+		b.textContent = n + (n === data.moi ? " (vous)" : "");
+		pres.appendChild(b);
+	}
+	const j = $("journal");
+	j.innerHTML = "";
+	for (const line of data.journal || []) {
+		const li = document.createElement("li");
+		li.textContent = line;
+		j.appendChild(li);
+	}
+	if (!(data.journal || []).length) {
+		j.innerHTML = "<li>Rien pour l'instant.</li>";
+	}
+}
+
+/** Signale qu'une autre personne a ouvert la même création. */
+function renderLocks() {
+	const others = key => (data.editions[key] || "").split(", ").filter(n => n && n !== data.moi);
+	const r = editingRole ? others("role:" + editingRole) : [];
+	$("roleLock").classList.toggle("hidden", r.length === 0);
+	$("roleLock").textContent = "✎ " + r.join(", ") + " modifie aussi ce rôle : le dernier enregistrement l'emporte.";
+	const sc = editingSc ? others("scenario:" + editingSc) : [];
+	$("scLock").classList.toggle("hidden", sc.length === 0);
+	$("scLock").textContent = "✎ " + sc.join(", ") + " modifie aussi ce scénario : le dernier enregistrement l'emporte.";
+}
+
+function announceEditing() {
+	api("edition", editingRole && !$("tab-roles").classList.contains("hidden") ? "role:" + editingRole
+		: editingSc && !$("tab-scenarios").classList.contains("hidden") ? "scenario:" + editingSc : "").catch(() => {});
+}
+
+/** Actualisation régulière : listes, présence, journal ; les formulaires en cours ne sont pas touchés. */
+async function refresh() {
+	try {
+		data = JSON.parse(await api("donnees"));
+		$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon")
+			+ (data.scenarioActuel ? " · scénario : " + data.scenarioActuel : "");
+		renderHome();
+		renderRoles();
+		renderScenarios(false);
+		renderMaps();
+		renderLocks();
+	} catch (e) {
+		$("state").textContent = e.message;
+	}
+}
+
+$("rExemple").onchange = () => {
+	const ex = EXEMPLES[$("rExemple").value];
+	if (!ex) return;
+	editRole(null);
+	const p = Object.assign({ cible: "demon", nombre: 1, faussePiste: false, etrangers: 1, question: "", soiAutorise: false }, ex.pouvoir);
+	$("rNom").value = ex.nom;
+	$("rId").value = slug(ex.nom);
+	$("rCamp").value = ex.camp;
+	$("rTexte").value = ex.texte;
+	emblem = ex.embleme;
+	$("rType").value = p.type;
+	$("rCible").value = p.cible;
+	$("rNombre").value = p.nombre;
+	$("rEtrangers").value = p.etrangers;
+	$("rQuestion").value = p.question;
+	$("rPremiere").value = ex.premiereNuit;
+	$("rAutres").value = ex.autresNuits;
+	renderRoles();
+	msg("roleMsg", "Exemple chargé : adaptez-le (nom, texte, pouvoir), puis enregistrez.", true);
+};
 
 // ---------------------------------------------------------------- Rôles
 function allRoles() {
@@ -439,7 +640,10 @@ function editRole(r) {
 	$("rPremiere").value = r ? r.premiereNuit : "jamais";
 	$("rAutres").value = r ? r.autresNuits : "jamais";
 	$("roleMsg").textContent = "";
+	if (r) $("rExemple").value = "";
 	renderRoles();
+	announceEditing();
+	renderLocks();
 }
 
 function roleForm() {
@@ -491,7 +695,7 @@ $("delRole").onclick = async () => {
 };
 
 // ---------------------------------------------------------------- Scénarios
-function renderScenarios() {
+function renderScenarios(full = true) {
 	const list = $("scList");
 	list.innerHTML = "";
 	if (!data.scenarios.length) list.innerHTML = '<p class="hint">Aucun scénario pour l\'instant.</p>';
@@ -514,7 +718,9 @@ function renderScenarios() {
 	sel.add(new Option("Carte actuelle du serveur", ""));
 	for (const m of data.cartes) sel.add(new Option(m.nom + " (" + m.sieges + " trônes)", m.id));
 	sel.value = keep;
-	renderRolePicker(editingSc ? (data.scenarios.find(x => x.id === editingSc) || {}).roles || [] : currentPicked());
+	if (full) {
+		renderRolePicker(editingSc ? (data.scenarios.find(x => x.id === editingSc) || {}).roles || [] : currentPicked());
+	}
 }
 
 function currentPicked() {
@@ -587,6 +793,8 @@ function editSc(s) {
 	$("scMsg").textContent = "";
 	$("simOut").classList.add("hidden");
 	renderScenarios();
+	announceEditing();
+	renderLocks();
 	if (!s) renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
 }
 
@@ -717,6 +925,16 @@ async function mapAction(path, body, question) {
 }
 
 $("mNom").oninput = () => { $("mId").value = slug($("mNom").value); };
+$("importSchem").onclick = async () => {
+	const f = $("impSchem").files[0];
+	if (!f) { msg("mapMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
+	if (!confirm("Remplacer la carte actuelle par « " + f.name + " » ? (Enregistrez-la d'abord si vous y tenez.)")) return;
+	const bytes = new Uint8Array(await f.arrayBuffer());
+	let bin = "";
+	for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+	await mapAction("carte/importer", { fichier: f.name, donnees: btoa(bin) });
+};
+$("buildMode").onclick = () => mapAction("construction", "");
 $("saveMap").onclick = () => mapAction("carte/enregistrer", { id: $("mId").value.trim(), nom: $("mNom").value.trim() });
 $("genMap").onclick = () => mapAction("carte/generer", {
 	places: parseInt($("gPlaces").value, 10), taille: parseInt($("gTaille").value, 10),
@@ -781,13 +999,15 @@ for (const b of document.querySelectorAll("nav button")) {
 	b.onclick = () => {
 		for (const x of document.querySelectorAll("nav button")) x.classList.toggle("on", x === b);
 		for (const s of document.querySelectorAll("section")) s.classList.toggle("hidden", s.id !== "tab-" + b.dataset.tab);
+		if (data) announceEditing();
 	};
 }
 
 if (!token) {
 	$("state").textContent = "Lien incomplet : ouvrez le lien donné par /vc atelier dans le jeu.";
 } else {
-	load().then(() => { editRole(null); editSc(null); });
+	load().then(() => { editRole(null); editSc(null); renderHome(); renderLocks(); });
+	setInterval(refresh, 5000);
 }
 </script>
 </body>

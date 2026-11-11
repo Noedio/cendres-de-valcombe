@@ -172,6 +172,9 @@ public final class Session {
 		return List.of();
 	}
 
+	/** Votants de chaque nomination du jour (numéro de nomination → noms). */
+	final Map<Integer, List<String>> votersOf = new java.util.HashMap<>();
+
 	/** Version du mod sur le serveur (envoyée aux joueurs pour repérer un serveur pas à jour). */
 	public String modVersion = "?";
 
@@ -1160,6 +1163,10 @@ public final class Session {
 	private void resolveNow(List<Integer> targets) {
 		Game g = game;
 		Step step = pendingStep;
+		if ((step.kind == Step.Kind.DEMON_INFO || step.kind == Step.Kind.NEW_DEMON) && step.seat < 0) {
+			nextLater(); // aucun Démon (répartition choisie à la main) : rien à dire
+			return;
+		}
 		Info info = g.resolve(step, targets);
 		if (g.winner() != null) {
 			finish();
@@ -1302,6 +1309,7 @@ public final class Session {
 		if (scenario != null && scenario.regles.discussionMinutes > 0) {
 			discussion(scenario.regles.discussionMinutes);
 		}
+		votersOf.clear();
 		dawnFigures(g);
 		brain.dawn();
 	}
@@ -1549,6 +1557,7 @@ public final class Session {
 		List<Integer> voters = new ArrayList<>(lockedHands);
 		clearVote();
 		Game.VoteResult r = g.vote(nom.index(), voters);
+		votersOf.put(nom.index(), voters.stream().map(v -> g.player(v).name).toList());
 		save();
 		updateBoards();
 		String nominee = g.player(nom.nominee()).name;

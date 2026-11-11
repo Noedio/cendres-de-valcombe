@@ -179,8 +179,12 @@ public class PromptScreen extends BaseScreen {
 				}
 				g.fill(cx - 3, cy - 3, cx + 4, cy + 4, Theme.BRONZE);
 				Theme.centered(g, font, "Exécuter " + ClientState.str(p, "nominee") + " ?", cx, py + 14, Theme.WINE);
-				Theme.centered(g, font, ClientState.num(vote, "count", 0) + " voix / seuil " + ClientState.num(vote, "threshold", 0),
-					cx, cy + 10, Theme.INK);
+				// Le compte, sur un cartouche : lisible même quand l'aiguille passe dessous.
+				String count = ClientState.num(vote, "count", 0) + " voix / seuil " + ClientState.num(vote, "threshold", 0);
+				int cw = font.width(count) / 2 + 5;
+				g.fill(cx - cw - 1, cy + 7, cx + cw + 1, cy + 21, Theme.BRONZE);
+				g.fill(cx - cw, cy + 8, cx + cw, cy + 20, Theme.PARCH);
+				Theme.centered(g, font, count, cx, cy + 10, Theme.INK);
 				String hint = ClientState.bool(vote, "myHand") ? "Ta main est levée." : "Ta main est baissée.";
 				if (ClientState.bool(p, "ghost")) {
 					hint += " (vote de fantôme)";

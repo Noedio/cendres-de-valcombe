@@ -32,7 +32,12 @@ public class WaxButton extends AbstractButton {
 		Theme.nineSlice(g, Theme.tex(tex), getX(), getY(), getWidth(), getHeight(), 64, 20, 3);
 		var font = Minecraft.getInstance().font;
 		int color = active ? Theme.PARCH : 0xFFB0A8A0;
-		g.centeredText(font, getMessage(), getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, color);
+		// Un libellé trop long est raccourci (« … ») au lieu de déborder du bouton.
+		String label = getMessage().getString();
+		if (font.width(label) > getWidth() - 8) {
+			label = font.plainSubstrByWidth(label, getWidth() - 8 - font.width("…")) + "…";
+		}
+		g.centeredText(font, label, getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, color);
 	}
 
 	@Override

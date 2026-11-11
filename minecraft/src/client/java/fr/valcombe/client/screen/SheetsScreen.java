@@ -29,26 +29,35 @@ public class SheetsScreen extends BaseScreen {
 
 	@Override
 	protected void build() {
-		// Citadins sur deux lignes, puis Étrangers et Sbires côte à côte, puis le Démon.
+		// Jetons rangés par type, 7 par ligne au plus ; Étrangers et Sbires côte à côte s'ils tiennent.
+		// La colonne de détail, à droite, n'est jamais recouverte.
 		spots.clear();
 		int x0 = px + 24;
-		int y = py + 30;
-		List<Role> town = Role.ofType(RoleType.CITADIN);
-		for (int i = 0; i < town.size(); i++) {
-			spots.add(new Spot(town.get(i), x0 + (i % 8) * 28, y + (i / 8) * 28));
-		}
-		y += 2 * 28 + 14;
+		int y = py + 34;
+		y = row(Role.ofType(RoleType.CITADIN), x0, y);
 		List<Role> out = Role.ofType(RoleType.ETRANGER);
-		for (int i = 0; i < out.size(); i++) {
-			spots.add(new Spot(out.get(i), x0 + i * 26, y));
-		}
 		List<Role> minions = Role.ofType(RoleType.SBIRE);
-		for (int i = 0; i < minions.size(); i++) {
-			spots.add(new Spot(minions.get(i), x0 + 112 + i * 26, y));
+		if (out.size() + minions.size() <= PER_ROW - 1) {
+			row(out, x0, y);
+			y = row(minions, x0 + (out.size() + 1) * STEP, y);
+		} else {
+			y = row(out, x0, y);
+			y = row(minions, x0, y);
 		}
-		y += 28 + 14;
-		spots.add(new Spot(Role.GOULE, x0, y));
+		row(Role.ofType(RoleType.DEMON), x0, y);
 		button(px + pw - 92, py + ph - 26, 80, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
+	}
+
+	private static final int PER_ROW = 7;
+	private static final int STEP = 26;
+
+	/** Une rangée (ou plusieurs) de jetons ; renvoie le haut de la rangée suivante. */
+	private int row(List<Role> roles, int x0, int y) {
+		for (int i = 0; i < roles.size(); i++) {
+			spots.add(new Spot(roles.get(i), x0 + (i % PER_ROW) * STEP, y + (i / PER_ROW) * STEP));
+		}
+		int rows = Math.max(1, (roles.size() + PER_ROW - 1) / PER_ROW);
+		return y + rows * STEP + 14;
 	}
 
 	@Override
@@ -58,7 +67,7 @@ public class SheetsScreen extends BaseScreen {
 			if (s.role().type != last) {
 				last = s.role().type;
 				String head = last == RoleType.DEMON ? "Démon" : last.displayName + "s";
-				Theme.ink(g, font, head, s.x() - 12, s.y() - 23, Theme.WINE);
+				Theme.ink(g, font, head, s.x() - 12, s.y() - 24, Theme.WINE);
 			}
 			boolean hover = Math.abs(mouseX - s.x()) < 12 && Math.abs(mouseY - s.y()) < 12;
 			if (hover) {
@@ -66,12 +75,13 @@ public class SheetsScreen extends BaseScreen {
 			}
 			Theme.token(g, s.x(), s.y(), 24, s.role().name(), Team.of(s.role()).name(), true, s.role() == shown, hover);
 		}
-		int dx = px + 236;
+		int dx = px + 24 + PER_ROW * STEP + 6;
+		int dw = px + pw - 12 - dx;
 		int dy = py + 22;
-		Theme.token(g, dx + 60, dy + 24, 44, shown.name(), Team.of(shown).name(), true, false, false);
-		Theme.centered(g, font, shown.displayName, dx + 60, dy + 52, Theme.INK);
-		Theme.centered(g, font, shown.type.displayName + " — " + Team.of(shown).displayName, dx + 60, dy + 64,
+		Theme.token(g, dx + dw / 2, dy + 24, 44, shown.name(), Team.of(shown).name(), true, false, false);
+		Theme.centered(g, font, shown.displayName, dx + dw / 2, dy + 52, Theme.INK);
+		Theme.centered(g, font, shown.type.displayName + " — " + Team.of(shown).displayName, dx + dw / 2, dy + 64,
 			shown.evil() ? Theme.EVIL : Theme.GOOD);
-		Theme.paragraph(g, font, shown.text, dx, dy + 80, 124, Theme.INK);
+		Theme.paragraph(g, font, shown.text, dx, dy + 80, dw, Theme.INK, py + ph - 32 - (dy + 80));
 	}
 }

@@ -96,6 +96,14 @@ public abstract class BaseScreen extends Screen {
 		}
 	}
 
+	/** Place n jetons sur une ellipse (cercle aplati, pour tenir dans une zone basse). */
+	protected static void ellipse(int n, int cx, int cy, int rx, int ry, CircleSlot slot) {
+		for (int i = 0; i < n; i++) {
+			double a = -Math.PI / 2 + 2 * Math.PI * i / Math.max(1, n);
+			slot.at(i, cx + (int) Math.round(rx * Math.cos(a)), cy + (int) Math.round(ry * Math.sin(a)));
+		}
+	}
+
 	@FunctionalInterface
 	protected interface CircleSlot {
 		void at(int index, int x, int y);

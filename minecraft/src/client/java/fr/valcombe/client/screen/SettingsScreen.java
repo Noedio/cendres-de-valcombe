@@ -34,11 +34,11 @@ public class SettingsScreen extends BaseScreen {
 		int defense = ClientState.num(st, "defenseSeconds", 20);
 		int clock = (int) Math.round(ClientState.dbl(st, "clockSeconds", 1.5) * 10);
 		y += 30;
-		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_defense " + (defense - 5)));
-		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_defense " + (defense + 5)));
+		button(px + pw / 2 - 128, y, 26, "−", () -> send("vc reglage temps_defense " + (defense - 5)));
+		button(px + pw / 2 + 102, y, 26, "+", () -> send("vc reglage temps_defense " + (defense + 5)));
 		y += 22;
-		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_horloge " + (clock - 5)));
-		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_horloge " + (clock + 5)));
+		button(px + pw / 2 - 128, y, 26, "−", () -> send("vc reglage temps_horloge " + (clock - 5)));
+		button(px + pw / 2 + 102, y, 26, "+", () -> send("vc reglage temps_horloge " + (clock + 5)));
 		String hat = ClientState.str(st, "deadHat");
 		String next = "chapeau".equals(hat) ? "crane" : "crane".equals(hat) ? "aucun" : "chapeau";
 		String label = "chapeau".equals(hat) ? "chapeau" : "crane".equals(hat) ? "crâne" : "aucune";

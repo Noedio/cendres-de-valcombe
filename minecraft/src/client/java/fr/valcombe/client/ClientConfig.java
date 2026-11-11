@@ -17,6 +17,12 @@ public final class ClientConfig {
 	/** Mode daltonien : des formes en plus des couleurs (camps, votes). */
 	public boolean daltonien;
 
+	/** Conteur : rôle et camp de chaque joueur au-dessus de lui (visible à travers les murs). */
+	public boolean rolesAuDessus = true;
+
+	/** Fond sonore de la nuit (discret). Désactivable : les cloches et signaux restent. */
+	public boolean ambiance = true;
+
 	private ClientConfig() {
 	}
 

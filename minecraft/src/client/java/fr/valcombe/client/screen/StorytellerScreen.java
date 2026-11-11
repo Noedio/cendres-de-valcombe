@@ -76,6 +76,12 @@ public class StorytellerScreen extends BaseScreen {
 					col.add(new Entry("Lancer le vote", () -> send("vc voter"), false));
 				}
 			}
+			boolean over = fr.valcombe.client.ClientConfig.get().rolesAuDessus;
+			col.add(new Entry("Rôles affichés : " + (over ? "oui" : "non"), () -> {
+				fr.valcombe.client.ClientConfig.get().rolesAuDessus = !over;
+				fr.valcombe.client.ClientConfig.get().save();
+				minecraft.gui.setScreen(new StorytellerScreen());
+			}, false));
 			col.add(new Entry("Accueillir un voyageur", () -> minecraft.gui.setScreen(
 				new net.minecraft.client.gui.screens.ChatScreen("/vc voyageur ", false)), false));
 			col.add(new Entry("Arrêter la partie", () -> send("vc arreter"), false));
@@ -104,10 +110,29 @@ public class StorytellerScreen extends BaseScreen {
 		button(bx, py + ph - 26, 136, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
 
 		if (!lobby && isSt) {
-			int radius = Math.max(46, Math.min(86, (ph - 84) / 2));
-			Grimoire.place(this, px + (pw - 150) / 2, py + 54 + radius, radius, radius > 70 ? 24 : 20,
+			// Le cercle commence sous le texte des bluffs (et l'avertissement), et s'arrête au-dessus de l'aide.
+			int textH = 0;
+			int lh = font.lineHeight + 1;
+			textH += font.split(net.minecraft.network.chat.Component.literal(bluffText(view())), pw - 180).size() * lh;
+			String warn = ClientState.str(view(), "distWarning");
+			if (warn != null && ClientState.phase().equals("READY")) {
+				textH += font.split(net.minecraft.network.chat.Component.literal(warn), pw - 180).size() * lh + 2;
+			}
+			int top = py + 36 + textH;
+			int bottom = py + ph - 26;
+			int tok = bottom - top > 190 ? 24 : 20;
+			int radius = Math.max(30, Math.min(86, (bottom - top - tok - 12) / 2));
+			Grimoire.place(this, px + (pw - 150) / 2, top + tok / 2 + radius, radius, tok,
 				name -> minecraft.gui.setScreen(new SeatScreen(name)));
 		}
+	}
+
+	private static String bluffText(JsonObject v) {
+		StringBuilder bl = new StringBuilder("Bluffs : ");
+		for (String b : strings(v, "bluffs")) {
+			bl.append(Role.valueOf(b).displayName).append(", ");
+		}
+		return bl.length() > 9 ? bl.substring(0, bl.length() - 2) : bl.toString();
 	}
 
 	@Override
@@ -129,18 +154,14 @@ public class StorytellerScreen extends BaseScreen {
 			Theme.paragraph(g, font, "Le grimoire n'est visible que du Conteur. Devenez Conteur avant de lancer la partie.",
 				px + 14, py + 60, 200, Theme.ASH);
 		} else {
-			StringBuilder bl = new StringBuilder("Bluffs : ");
-			for (String b : strings(v, "bluffs")) {
-				bl.append(Role.valueOf(b).displayName).append(", ");
-			}
-			String text = bl.length() > 9 ? bl.substring(0, bl.length() - 2) : bl.toString();
+			String text = bluffText(v);
 			int h = Theme.paragraph(g, font, text, px + 14, py + 34, pw - 180, Theme.INK);
 			String warn = ClientState.str(v, "distWarning");
 			if (warn != null && ClientState.phase().equals("READY")) {
 				Theme.paragraph(g, font, warn, px + 14, py + 36 + h, pw - 180, Theme.BLOOD);
 			}
 			if (ClientState.phase().equals("READY")) {
-				Theme.ink(g, font, "Clique sur un jeton pour le retoucher.", px + 14, py + ph - 14, Theme.ASH);
+				Theme.ink(g, font, "Clique sur un jeton pour le retoucher.", px + 14, py + ph - 18, Theme.ASH);
 			}
 		}
 	}

@@ -1,0 +1,84 @@
+{
+ "cloche": {
+  "sounds": [
+   {
+    "name": "valcombe:cloche"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.cloche"
+ },
+ "glas": {
+  "sounds": [
+   {
+    "name": "valcombe:glas"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.glas"
+ },
+ "tic": {
+  "sounds": [
+   {
+    "name": "valcombe:tic"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.tic"
+ },
+ "reveil": {
+  "sounds": [
+   {
+    "name": "valcombe:reveil"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.reveil"
+ },
+ "parchemin": {
+  "sounds": [
+   {
+    "name": "valcombe:parchemin"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.parchemin"
+ },
+ "craquement": {
+  "sounds": [
+   {
+    "name": "valcombe:craquement"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.craquement"
+ },
+ "victoire_bien": {
+  "sounds": [
+   {
+    "name": "valcombe:victoire_bien"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.victoire_bien"
+ },
+ "victoire_mal": {
+  "sounds": [
+   {
+    "name": "valcombe:victoire_mal"
+   }
+  ],
+  "subtitle": "subtitles.valcombe.victoire_mal"
+ },
+ "ambiance_nuit": {
+  "sounds": [
+   {
+    "name": "valcombe:ambiance_nuit",
+    "stream": true
+   }
+  ],
+  "subtitle": "subtitles.valcombe.ambiance_nuit"
+ },
+ "ambiance_jour": {
+  "sounds": [
+   {
+    "name": "valcombe:ambiance_jour",
+    "stream": true
+   }
+  ],
+  "subtitle": "subtitles.valcombe.ambiance_jour"
+ }
+}

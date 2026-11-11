@@ -86,10 +86,10 @@ final class Stage {
 		// Aiguille de l'horloge, au repos vers le nord
 		handAngle = Math.PI;
 		run("summon minecraft:block_display " + xyz(center.x, handY, center.z) + " {Tags:[\"" + SCENE
-			+ "\",\"vc_hand\"],block_state:{Name:\"minecraft:gold_block\"},brightness:{sky:15,block:15},view_range:3f,"
+			+ "\",\"vc_hand\"],block_state:\"minecraft:gold_block\",brightness:{sky:15,block:15},view_range:3f,"
 			+ "transformation:" + handTransform(handAngle) + "}");
 		run("summon minecraft:block_display " + xyz(center.x, handY - 0.12, center.z) + " {Tags:[\"" + SCENE
-			+ "\"],block_state:{Name:\"minecraft:polished_blackstone\"},brightness:{sky:15,block:15},"
+			+ "\"],block_state:\"minecraft:polished_blackstone\",brightness:{sky:15,block:15},"
 			+ "transformation:" + transform("[-0.35f,0f,-0.35f]", quatY(0), "[0.7f,0.12f,0.7f]") + "}");
 		if (lectern) {
 			Vec3 l = new Vec3(center.x, center.y, center.z + 3.6);
@@ -110,7 +110,7 @@ final class Stage {
 			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
 				+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
 		}
-		run("summon minecraft:item_display " + xyz(p.x, p.y + 0.35, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
+		run("summon minecraft:item_display " + xyz(p.x, p.y + 0.45, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
 			+ "\"],Rotation:[" + f(s.yaw()) + "f,0f]}");
 		// Jeton et étiquette
 		run("summon minecraft:item_display " + xyz(p.x, p.y + TOKEN_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_tok_" + i
@@ -299,13 +299,13 @@ final class Stage {
 			}
 			flames.put(e.getKey(), e.getValue());
 			if (before != null) {
-				run("data merge entity @e[type=minecraft:block_display,tag=vc_flame_" + i + ",limit=1] {block_state:{Name:\""
-					+ e.getValue() + "\"}}");
+				run("data merge entity @e[type=minecraft:block_display,tag=vc_flame_" + i + ",limit=1] {block_state:\""
+					+ e.getValue() + "\"}");
 				continue;
 			}
 			Vec3 p = spots.get(e.getKey()).pos();
 			run("summon minecraft:block_display " + xyz(p.x, p.y + FLAME_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_flame_" + i
-				+ "\"],block_state:{Name:\"" + e.getValue() + "\"},brightness:{sky:15,block:15},"
+				+ "\"],block_state:\"" + e.getValue() + "\",brightness:{sky:15,block:15},"
 				+ "transformation:" + transform("[-0.225f,0f,-0.225f]", quatY(0), "[0.45f,0.45f,0.45f]") + "}");
 		}
 	}
@@ -342,7 +342,7 @@ final class Stage {
 		for (int k = 0; k < GIBET.length; k++) {
 			String[] part = GIBET[k];
 			run("summon minecraft:block_display " + xyz(gx, center.y, gz) + " {Tags:[\"" + SCENE + "\",\"vc_gibet\",\"vc_gibet_"
-				+ k + "\"],Rotation:[" + f(yaw) + "f,0f],block_state:{Name:\"" + part[0] + "\"},transformation:"
+				+ k + "\"],Rotation:[" + f(yaw) + "f,0f],block_state:\"" + part[0] + "\",transformation:"
 				+ transform(lowered(part[1]), quatY(0), part[2]) + "}");
 		}
 		scheduler.accept(3, () -> {

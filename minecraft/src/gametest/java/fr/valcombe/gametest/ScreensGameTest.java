@@ -78,10 +78,28 @@ public class ScreensGameTest implements FabricClientGameTest {
 
 	/** Grimoire sur tablette : la page répond, refuse un mauvais jeton, et exécute une commande. */
 	/** L'Atelier, par sa vraie page web : rôle et scénario créés, simulation, scénario choisi. */
+	/** Lien de l'Atelier du joueur du test (chaque opérateur a son propre jeton). */
+	/** Port de test à part : un serveur Valcombe déjà lancé sur ce PC garde le 25570. */
+	private static void testPort() {
+		if (fr.valcombe.mc.ValcombeMod.community().tabletPort() != 25591) {
+			fr.valcombe.mc.ValcombeMod.community().setTabletPort(25591);
+		}
+	}
+
+	private static String atelierLink(ClientGameTestContext ctx) {
+		testPort();
+		String me = ctx.computeOnClient(mc -> mc.player.getScoreboardName());
+		try {
+			return fr.valcombe.mc.ValcombeMod.tablet().openAtelier(me).get(0);
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+	}
+
 	private static void checkAtelier(ClientGameTestContext ctx) {
 		send(ctx, "vc atelier");
 		ctx.waitTicks(10);
-		String link = fr.valcombe.mc.ValcombeMod.tablet().links().get(0);
+		String link = atelierLink(ctx);
 		String token = link.substring(link.indexOf('#') + 1);
 		String base = "http://127.0.0.1:" + fr.valcombe.mc.ValcombeMod.community().tabletPort();
 		var http = java.net.http.HttpClient.newHttpClient();
@@ -142,7 +160,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(20);
 		try {
 			java.nio.file.Files.writeString(java.nio.file.Path.of("seance-lien.txt"),
-				String.join("\n", fr.valcombe.mc.ValcombeMod.tablet().links().stream().map(l -> l.replace("/#", "/atelier#")).toList()));
+				String.join("\n", fr.valcombe.mc.ValcombeMod.tablet().openAtelier(me)));
 			java.nio.file.Files.writeString(cmds, "");
 		} catch (java.io.IOException e) {
 			throw new AssertionError(e);
@@ -178,9 +196,15 @@ public class ScreensGameTest implements FabricClientGameTest {
 	}
 
 	private static void checkTablet(ClientGameTestContext ctx) {
+		testPort();
+		var tab = fr.valcombe.mc.ValcombeMod.tablet();
+		String before = tab.owner() == null ? "" : tab.links().get(0);
 		send(ctx, "vc tablette");
-		ctx.waitTicks(10);
-		String link = fr.valcombe.mc.ValcombeMod.tablet().links().get(0);
+		String link = before;
+		for (int i = 0; i < 100 && link.equals(before); i++) {
+			ctx.waitTicks(2); // la commande passe par le serveur : on attend le nouveau jeton
+			link = tab.owner() == null ? "" : tab.links().get(0);
+		}
 		String token = link.substring(link.indexOf('#') + 1);
 		String base = "http://127.0.0.1:" + fr.valcombe.mc.ValcombeMod.community().tabletPort();
 		try {
@@ -415,7 +439,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 			check(ctx.computeOnClient(mc -> mc.player.isPassenger()), "assis sur le trône d'un clic droit");
 			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
 			ctx.waitTicks(10);
+			ctx.runOnClient(mc -> { if (!mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });
+			ctx.waitTicks(5);
 			shot(ctx, "16-trone-libre");
+			ctx.runOnClient(mc -> { if (mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });
 			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.FIRST_PERSON));
 			world.getServer().runCommand("ride " + me + " dismount");
 			// Vue aérienne de tout le village
@@ -446,6 +473,73 @@ public class ScreensGameTest implements FabricClientGameTest {
 			world.getServer().runCommand("gamemode creative " + me);
 			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
 				center.getX(), center.getY() + 1, center.getZ() + 4));
+
+			// Import de constructions : une petite schématique WorldEdit (v2) et un fichier Litematica
+			String imported = world.getServer().computeOnServer(server -> {
+				var schem = new net.minecraft.nbt.CompoundTag();
+				schem.putShort("Width", (short) 3);
+				schem.putShort("Height", (short) 2);
+				schem.putShort("Length", (short) 3);
+				var pal = new net.minecraft.nbt.CompoundTag();
+				pal.putInt("minecraft:air", 0);
+				pal.putInt("minecraft:stone", 1);
+				pal.putInt("minecraft:oak_planks", 2);
+				schem.put("Palette", pal);
+				byte[] data = new byte[18];
+				for (int i = 0; i < 9; i++) {
+					data[i] = 1; // couche du bas : pierre
+					data[9 + i] = (byte) (i == 4 ? 2 : 0); // au-dessus : une planche au centre
+				}
+				schem.putByteArray("BlockData", data);
+				var out = new java.io.ByteArrayOutputStream();
+				try {
+					net.minecraft.nbt.NbtIo.writeCompressed(schem, out);
+				} catch (java.io.IOException e) {
+					throw new AssertionError(e);
+				}
+				String msg = fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.schem", out.toByteArray());
+				var c = fr.valcombe.mc.ValcombeMod.host().village().center();
+				var corner = c.offset(-1, 0, -1);
+				var level = server.overworld();
+				System.out.println("[valcombe-test] import schem : " + msg + " ; centre " + c + " ; coin " + level.getBlockState(corner)
+					+ " ; dessus " + level.getBlockState(corner.offset(1, 1, 1)) + " ; sous " + level.getBlockState(corner.below()));
+				boolean ok = level.getBlockState(corner).is(net.minecraft.world.level.block.Blocks.STONE)
+					&& level.getBlockState(corner.offset(1, 1, 1)).is(net.minecraft.world.level.block.Blocks.OAK_PLANKS);
+				// Litematica : une région 2 × 1 × 1, palette [air, or], états compactés sur 2 bits
+				var lit = new net.minecraft.nbt.CompoundTag();
+				var regions = new net.minecraft.nbt.CompoundTag();
+				var reg = new net.minecraft.nbt.CompoundTag();
+				var size = new net.minecraft.nbt.CompoundTag();
+				size.putInt("x", 2);
+				size.putInt("y", 1);
+				size.putInt("z", 1);
+				reg.put("Size", size);
+				var lp = new net.minecraft.nbt.ListTag();
+				var air = new net.minecraft.nbt.CompoundTag();
+				air.putString("Name", "minecraft:air");
+				var gold = new net.minecraft.nbt.CompoundTag();
+				gold.putString("Name", "minecraft:gold_block");
+				lp.add(air);
+				lp.add(gold);
+				reg.put("BlockStatePalette", lp);
+				reg.putLongArray("BlockStates", new long[] {0b0101L});
+				regions.put("place", reg);
+				lit.put("Regions", regions);
+				var out2 = new java.io.ByteArrayOutputStream();
+				try {
+					net.minecraft.nbt.NbtIo.writeCompressed(lit, out2);
+				} catch (java.io.IOException e) {
+					throw new AssertionError(e);
+				}
+				fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.litematic", out2.toByteArray());
+				var c2 = fr.valcombe.mc.ValcombeMod.host().village().center();
+				System.out.println("[valcombe-test] import litematic : " + level.getBlockState(c2.offset(-1, 0, 0)) + " ; " + level.getBlockState(c2));
+				ok &= level.getBlockState(c2.offset(-1, 0, 0)).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)
+					&& level.getBlockState(c2).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK);
+				return ok ? msg : "ECHEC";
+			});
+			check(!imported.equals("ECHEC"), "import de constructions (.schem, .litematic)");
+			System.out.println("[valcombe-test] import : " + imported);
 
 			// Le village de Valcombe
 			ctx.setScreen(() -> null);
@@ -481,6 +575,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "7-panneau-jour");
 			ctx.setScreen(() -> null);
+			// Le Conteur voit le rôle de chacun au-dessus de lui
+			world.getServer().runCommand("gamemode spectator " + me);
+			var ctr = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+				ctr.getX(), ctr.getY() + 9, ctr.getZ() + 16, ctr.getX(), ctr.getY() + 1, ctr.getZ()));
+			ctx.waitTicks(40);
+			shot(ctx, "23-conteur-roles");
+			world.getServer().runCommand("gamemode creative " + me);
 			// Bâton du Conteur : viser un joueur montre son rôle ; clic droit ouvre sa ligne du grimoire
 			ctx.runOnClient(mc -> {
 				var inv = mc.player.getInventory();
@@ -526,6 +628,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 					me, hall.x, hall.y, hall.z + 1.5, hall.x, hall.y + 3.2, hall.z - 6));
 				ctx.waitTicks(60);
 				shot(ctx, "22-salle-presentoir");
+				world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+					me, hall.x + 3, hall.y, hall.z, hall.x - 8, hall.y + 2.5, hall.z));
+				ctx.waitTicks(20);
+				shot(ctx, "22b-salle-panneau-mur");
 			}
 		}
 	}

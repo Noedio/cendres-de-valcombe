@@ -108,6 +108,11 @@ public final class McHost implements Host {
 			lanterns = null;
 			ValcombeMod.LOG.info("Village de Valcombe agrandi (plan {}) en {}", Village.LAYOUT, v.center());
 		}
+		if (village.oldThrones()) {
+			village.upgradeThrones(level);
+			village.save(server);
+			ValcombeMod.LOG.info("Trônes du village remplacés par les trônes sculptés");
+		}
 		if (village.isGenerated() && !village.hasHall()) {
 			buildHall();
 		}
@@ -164,7 +169,7 @@ public final class McHost implements Host {
 		float yaw = village.yawToCenter(feet);
 		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
 			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_chair\",\"%s\"],Rotation:[%.1ff,0f]}",
-			feet.x, feet.y + 0.35, feet.z, tag, yaw));
+			feet.x, feet.y + 0.45, feet.z, tag, yaw));
 		p.teleportTo(server.overworld(), feet.x, feet.y, feet.z, Set.of(), yaw, p.getXRot(), false);
 		WorldSetup.run(server, "ride " + name + " mount @e[type=minecraft:item_display,tag=" + tag + ",limit=1]");
 		p.sendSystemMessage(Component.literal("Accroupis-toi pour te lever.").withStyle(ChatFormatting.GRAY), true);
@@ -222,6 +227,9 @@ public final class McHost implements Host {
 	// Salle d'attente vivante : présentoir des rôles du script, panneau de la prochaine partie
 	// ------------------------------------------------------------------
 	private String hallKey = "";
+	/** Générations du présentoir et des panneaux de la salle : les anciennes sont retirées. */
+	private int hallGen = (int) (System.nanoTime() & 0xFFFFF);
+	private int boardGen = (int) (System.nanoTime() >> 8 & 0xFFFFF);
 
 	public void updateHall(fr.valcombe.session.Session ses) {
 		if (server == null || village == null || village.hallSpot() == null) {
@@ -245,12 +253,13 @@ public final class McHost implements Host {
 			return;
 		}
 		hallKey = key;
+		hallGen++;
 		Vec3 h = village.hallSpot();
 		WorldSetup.run(server, "kill @e[tag=vc_presentoir]");
 		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
-			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\"],billboard:\"center\",line_width:260,"
+			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\",\"vc_pres_" + hallGen + "\"],billboard:\"center\",line_width:260,"
 				+ "background:-1308622848,text:{text:\"%s\",color:\"gold\"}}",
-			h.x, h.y + 3.6, h.z, text.replace("\"", "'")));
+			h.x, h.y + 4.4, h.z, text.replace("\"", "'")));
 		// Jetons des rôles du script, en rangées le long du mur du fond
 		int perRow = 13;
 		for (int i = 0; i < roles.size(); i++) {
@@ -260,9 +269,9 @@ public final class McHost implements Host {
 			int row = i / perRow;
 			int inRow = Math.min(perRow, roles.size() - row * perRow);
 			double x = h.x + (i % perRow - (inRow - 1) / 2.0) * 1.2;
-			double y = h.y + 3.7 - row * 0.8;
+			double y = h.y + 4.1 - row * 0.75;
 			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
-				"summon minecraft:item_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\"],billboard:\"vertical\","
+				"summon minecraft:item_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\",\"vc_pres_" + hallGen + "\"],billboard:\"vertical\","
 					+ "brightness:{sky:15,block:15},item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":"
 					+ "\"valcombe:%s\",\"minecraft:custom_name\":\"%s\"}},transformation:{translation:[0f,0f,0f],"
 					+ "left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[0.7f,0.7f,0.7f]}}",
@@ -306,6 +315,40 @@ public final class McHost implements Host {
 		teleport(p, sp);
 		ValcombeUi.accuseItem(p, true);
 		stage.addSeat(name, new Stage.Spot(spot, yaw));
+	}
+
+	private boolean glowing;
+
+	/**
+	 * Pendant le conseil (accusations ouvertes ou vote en cours), les joueurs de la partie brillent :
+	 * on voit leur silhouette à travers les murs, pour savoir qui est où.
+	 */
+	private void councilGlow() {
+		var ses = ValcombeMod.session();
+		var g = ses.game();
+		boolean council = g != null && g.phase() == fr.valcombe.rules.Game.Phase.DAY && !g.dayOver()
+			&& (ses.nominationsOpen() || ses.voteOpen());
+		if (!council && !glowing) {
+			return;
+		}
+		glowing = council;
+		for (String name : seats.keySet()) {
+			ServerPlayer p = player(name);
+			if (p == null) {
+				continue;
+			}
+			if (council) {
+				p.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, false, false));
+			} else {
+				p.removeEffect(MobEffects.GLOWING);
+			}
+		}
+	}
+
+	@Override
+	public double[] seatPosition(String player) {
+		SeatPos s = seats.get(player);
+		return s == null ? null : new double[] {s.pos().x, s.pos().y, s.pos().z};
 	}
 
 	@Override
@@ -382,12 +425,23 @@ public final class McHost implements Host {
 		v.buildHall(server.overworld());
 		v.save(server);
 		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
+		boardGen++;
+		Vec3 hc = v.hallSpot();
 		for (var e : v.hallBoards().entrySet()) {
 			Vec3 p = e.getValue();
+			// Panneaux plaqués contre les murs, tournés vers la salle (sinon le texte traverse le mur) ;
+			// celui du centre suit le regard.
+			double dx = p.x - hc.x;
+			double dz = p.z - hc.z;
+			boolean wall = Math.abs(dx) > 3 || Math.abs(dz) > 3;
+			float yaw = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? -90f : 90f) : 0f;
 			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
-				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_salle\"],billboard:\"center\","
-					+ "line_width:220,background:-1308622848,text:\"%s\"}",
-				p.x, p.y, p.z, e.getKey().replace("\"", "'").replace("\n", "\\n")));
+				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_salle\",\"vc_salle_%d\"],Rotation:[%.1ff,0f],"
+					+ "billboard:\"%s\",line_width:220,background:-937749996,shadow:1b,"
+					+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
+					+ "scale:[%.2ff,%.2ff,%.2ff]},text:\"%s\"}",
+				p.x, p.y, p.z, boardGen, yaw, wall ? "fixed" : "center", wall ? 1.35 : 0.9, wall ? 1.35 : 0.9, wall ? 1.35 : 0.9,
+				e.getKey().replace("\"", "'").replace("\n", "\\n")));
 		}
 		applySpawn();
 		return "Salle d'attente construite : dalle dorée pour s'inscrire, rouge pour se désinscrire.";
@@ -644,6 +698,29 @@ public final class McHost implements Host {
 			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.");
 	}
 
+	/**
+	 * Importe une construction (.schem, .litematic, .nbt) à la place de la carte actuelle, centrée
+	 * sur la place ; elle devient une carte à compléter en mode construction (trônes, maisons, centre).
+	 */
+	public String importSchematic(String fileName, byte[] data) {
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
+		}
+		ServerLevel level = server.overworld();
+		int[] size = SchematicImporter.size(fileName, data, server.registryAccess().lookupOrThrow(
+			net.minecraft.core.registries.Registries.BLOCK));
+		BlockPos c = village != null ? village.center() : defaultCenter();
+		int half = Math.max(size[0], size[2]) / 2 + 2;
+		int clear = Math.max(half, village == null ? 0 : village.extent());
+		clearArea(c, clear, 4, Math.max(28, size[1] + 6));
+		BlockPos corner = c.offset(-size[0] / 2, 0, -size[2] / 2);
+		String dims = SchematicImporter.place(level, corner, fileName, data);
+		Village v = Village.custom(c);
+		useVillage(v);
+		return "Construction « " + fileName + " » importée (" + dims + "). Passez en mode construction pour poser "
+			+ "les trônes, les maisons et le centre, puis enregistrez la carte.";
+	}
+
 	public String setMapCenter(ServerPlayer p) {
 		Village v = requireVillage();
 		v.setCenter(p.blockPosition().below());
@@ -806,14 +883,19 @@ public final class McHost implements Host {
 
 	@Override
 	public void title(List<String> players, String title, String subtitle) {
+		// Le grand titre de Minecraft est énorme : seuls les titres courts (« Jour 2 », « 3 voix »)
+		// y vont ; une phrase passe en sous-titre doré, plus discret, avec sa précision à la suite.
+		boolean big = title.length() <= 12;
+		Component top = big ? Component.literal(title).withStyle(ChatFormatting.GOLD) : Component.empty();
+		Component sub = big ? Component.literal(subtitle).withStyle(ChatFormatting.GRAY)
+			: Component.literal(title).withStyle(ChatFormatting.GOLD)
+				.append(subtitle.isEmpty() ? Component.empty() : Component.literal(" — " + subtitle).withStyle(ChatFormatting.GRAY));
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p != null) {
-				p.connection.send(new ClientboundSetTitlesAnimationPacket(10, 50, 15));
-				p.connection.send(new ClientboundSetSubtitleTextPacket(
-					Component.literal(subtitle).withStyle(ChatFormatting.GRAY)));
-				p.connection.send(new ClientboundSetTitleTextPacket(
-					Component.literal(title).withStyle(ChatFormatting.GOLD)));
+				p.connection.send(new ClientboundSetTitlesAnimationPacket(8, 40, 12));
+				p.connection.send(new ClientboundSetSubtitleTextPacket(sub));
+				p.connection.send(new ClientboundSetTitleTextPacket(top));
 			}
 		}
 	}
@@ -1193,6 +1275,16 @@ public final class McHost implements Host {
 		if (tick % 20 == 0) {
 			cleanChairs();
 			showMarkers();
+		}
+		if (tick % 20 == 0 && !seats.isEmpty()) {
+			councilGlow();
+		}
+		if (tick % 100 == 0 && server != null) {
+			if (village != null) {
+				WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + "]");
+			}
+			WorldSetup.run(server, "kill @e[tag=vc_presentoir,tag=!vc_pres_" + hallGen + "]");
+			WorldSetup.run(server, "kill @e[tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
 		}
 		if (tick % 4 == 0 && !seats.isEmpty()) {
 			featherHints();

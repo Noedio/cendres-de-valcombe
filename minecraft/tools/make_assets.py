@@ -128,48 +128,93 @@ def parchment():
     img.save("parchment.png")
 
 
+def shade(c, f):
+    return tuple(max(0, min(255, int(v * f))) for v in c[:3])
+
+
 def panel():
-    """Cadre 9 tranches 48x48 : bois sombre, liseré bronze, coins rivetés, intérieur transparent."""
+    """Cadre 9 tranches 48x48 : bois sombre veiné, double liseré bronze en relief, coins à clous dorés."""
     img = Img(48, 48)
-    noise_fill(img, WINE, 8, 3)
-    img.rect(5, 5, 43, 43, (0, 0, 0, 0))
-    for y in range(5, 43):
-        for x in range(5, 43):
+    noise_fill(img, WINE, 7, 3)
+    rnd = random.Random(31)
+    for y in range(48):  # veines du bois
+        v = math.sin(y * 0.9 + rnd.random()) * 0.08
+        for x in range(48):
+            img.put(x, y, shade(WINE, 0.8 + v) + (90,))
+    for y in range(6, 42):
+        for x in range(6, 42):
             img.px[y][x] = [0, 0, 0, 0]
     for i in range(48):
         for t in (0, 47):
             img.put(i, t, INK)
             img.put(t, i, INK)
-        for t in (3, 44):
-            img.put(i, t, BRONZE)
-            img.put(t, i, BRONZE)
+        img.put(i, 1, shade(WINE, 1.5))  # lumière en haut / à gauche
+        img.put(1, i, shade(WINE, 1.5))
+        img.put(i, 46, shade(WINE, 0.55))
+        img.put(46, i, shade(WINE, 0.55))
+        img.put(i, 3, GOLD)
+        img.put(3, i, GOLD)
+        img.put(i, 4, BRONZE_DARK)
+        img.put(4, i, BRONZE_DARK)
+        img.put(i, 43, BRONZE_DARK)
+        img.put(43, i, BRONZE_DARK)
+        img.put(i, 44, BRONZE)
+        img.put(44, i, BRONZE)
+        img.put(i, 5, INK + (160,))  # ombre intérieure
+        img.put(5, i, INK + (160,))
     for cx, cy in ((4, 4), (43, 4), (4, 43), (43, 43)):
-        img.disc(cx + 0.5, cy + 0.5, 3, BRONZE)
-        img.disc(cx, cy, 1.2, GOLD)
+        img.disc(cx + 0.5, cy + 0.5, 3.4, INK)
+        img.disc(cx + 0.5, cy + 0.5, 2.8, BRONZE)
+        img.disc(cx, cy, 1.4, GOLD)
+        img.put(cx - 1, cy - 1, WHITE + (200,))
     img.save("panel.png")
 
 
 def button(name, face, rim):
-    """Bouton 9 tranches 64x20."""
+    """Bouton 9 tranches 64x20 : cire bombée (dégradé), liseré métal, relief lumière / ombre."""
     img = Img(64, 20)
-    noise_fill(img, face, 6, hash(name) % 1000)
-    for x in range(64):
-        img.put(x, 0, rim)
-        img.put(x, 19, INK)
-        img.put(x, 1, WHITE + (40,))
+    rnd = random.Random(hash(name) % 1000)
     for y in range(20):
-        img.put(0, y, rim)
+        f = 1.28 - 0.5 * (y / 19)  # plus clair en haut, plus sombre en bas
+        for x in range(64):
+            n = rnd.uniform(-0.04, 0.04)
+            img.px[y][x] = list(shade(face, f + n)) + [255]
+    for x in range(64):
+        img.put(x, 0, INK)
+        img.put(x, 19, INK)
+        img.put(x, 1, rim)
+        img.put(x, 2, WHITE + (70,))
+        img.put(x, 18, shade(rim, 0.55))
+        img.put(x, 17, INK + (70,))
+    for y in range(20):
+        img.put(0, y, INK)
         img.put(63, y, INK)
+        img.put(1, y, rim)
+        img.put(62, y, shade(rim, 0.55))
+    for cx, cy in ((0, 0), (63, 0), (0, 19), (63, 19)):
+        img.px[cy][cx] = [0, 0, 0, 0]
     img.save(name)
 
 
 def seat_disc(name, rim):
-    """Jeton de siège 32x32 : disque parchemin, anneau de camp."""
+    """Jeton de siège 32x32 : anneau de camp bombé et éclairé, disque parchemin légèrement ombré."""
     img = Img(32, 32)
-    img.disc(16, 16, 15, INK)
-    img.disc(16, 16, 14, rim)
-    img.disc(16, 16, 12, PARCH)
-    img.ring(16, 16, 10.5, 0.8, PARCH_DARK)
+    for y in range(32):
+        for x in range(32):
+            dx, dy = x + 0.5 - 16, y + 0.5 - 16
+            d = math.hypot(dx, dy)
+            if d > 15.5:
+                continue
+            a = min(1.0, 15.5 - d)
+            if d >= 12:
+                light = (-dx - dy) / (d * 1.4142 + 1e-6)
+                bulge = 1 - abs((d - 12) / 3.5 - 0.45) * 1.3
+                img.put(x, y, shade(rim, 0.72 + 0.22 * bulge + 0.3 * light), a)
+            else:
+                img.put(x, y, shade(PARCH, 1 - 0.16 * (d / 12) ** 2))
+    img.ring(16, 16, 15.3, 0.9, INK)
+    img.ring(16, 16, 12, 1.0, shade(rim, 0.45))
+    img.ring(16, 16, 10.2, 0.6, PARCH_DARK + (150,))
     img.save(name)
 
 

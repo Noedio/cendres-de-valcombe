@@ -88,6 +88,22 @@ public final class Theme {
 		return lines.size() * (font.lineHeight + 1);
 	}
 
+	/** Paragraphe coupé à maxHeight pixels (dernière ligne terminée par « … » si le texte dépasse). */
+	public static int paragraph(GuiGraphicsExtractor g, Font font, String text, int x, int y, int width, int color, int maxHeight) {
+		List<FormattedCharSequence> lines = font.split(Component.literal(text), width);
+		int lh = font.lineHeight + 1;
+		int max = Math.max(1, maxHeight / lh);
+		for (int i = 0; i < Math.min(max, lines.size()); i++) {
+			if (i == max - 1 && lines.size() > max) {
+				g.text(font, lines.get(i), x, y + i * lh, color, false);
+				g.text(font, "…", x + Math.min(width - 6, font.width(lines.get(i)) + 1), y + i * lh, color, false);
+			} else {
+				g.text(font, lines.get(i), x, y + i * lh, color, false);
+			}
+		}
+		return Math.min(max, lines.size()) * lh;
+	}
+
 	/** Jeton de siège : disque du camp, pictogramme, linceul si mort, anneau si choisi. */
 	public static void token(GuiGraphicsExtractor g, int cx, int cy, int size, String roleId, String team,
 			boolean alive, boolean selected, boolean hovered) {

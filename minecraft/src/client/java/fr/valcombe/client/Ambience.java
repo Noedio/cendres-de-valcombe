@@ -26,13 +26,17 @@ public final class Ambience {
 			SimpleSoundInstance.forUI(SoundEvent.createVariableRangeEvent(id(name)), pitch, volume));
 	}
 
+	/** Réglage changé : on relance (ou coupe) le fond sonore. */
+	public static void refresh() {
+		String phase = ClientState.phase();
+		current = "?";
+		onPhase(phase);
+	}
+
 	/** Change l'ambiance selon la phase de la partie. */
 	static void onPhase(String phase) {
-		String wanted = switch (phase) {
-			case "NIGHT" -> "ambiance_nuit";
-			case "DAY", "READY" -> "ambiance_jour";
-			default -> "";
-		};
+		// Seule la nuit a un fond sonore (le jour, on parle : pas de boucle par-dessus les voix).
+		String wanted = "NIGHT".equals(phase) && ClientConfig.get().ambiance ? "ambiance_nuit" : "";
 		if (wanted.equals(current)) {
 			return;
 		}
@@ -43,7 +47,7 @@ public final class Ambience {
 		}
 		current = wanted;
 		if (!wanted.isEmpty()) {
-			loop = new SimpleSoundInstance(id(wanted), SoundSource.AMBIENT, 0.45f, 1f, RandomSource.create(), true, 0,
+			loop = new SimpleSoundInstance(id(wanted), SoundSource.AMBIENT, 0.22f, 1f, RandomSource.create(), true, 0,
 				SoundInstance.Attenuation.NONE, 0, 0, 0, true);
 			sounds.play(loop);
 		}

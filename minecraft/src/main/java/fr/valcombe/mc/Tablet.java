@@ -55,13 +55,16 @@ public final class Tablet {
 		this.atelier = atelier;
 	}
 
-	/** Lien vers l'Atelier pour cet opérateur (démarre la tablette à son nom si besoin). */
+	/**
+	 * Lien vers l'Atelier pour cet opérateur. Chaque opérateur a son propre jeton : plusieurs
+	 * personnes travaillent ensemble dans l'Atelier, sans toucher à la tablette du Conteur.
+	 */
 	public synchronized List<String> openAtelier(String player) throws IOException {
-		if (http == null || !player.equals(owner)) {
+		if (http == null) {
 			open(player);
 		}
-		atelierAllowed = true;
-		return links().stream().map(l -> l.replace("/#", "/atelier#")).toList();
+		String t = atelier.tokenFor(player);
+		return links().stream().map(l -> l.substring(0, l.indexOf("/#")) + "/atelier#" + t).toList();
 	}
 
 	public Tablet(Session session, Community community) {
@@ -79,6 +82,14 @@ public final class Tablet {
 
 	/** Démarre (ou redémarre avec un nouveau jeton) la tablette pour ce joueur. Retourne le lien. */
 	public synchronized String open(String player) throws IOException {
+		if (http != null && port == community.tabletPort()) {
+			// Serveur déjà ouvert (Atelier ou tablette) : nouveau jeton seulement, sans couper l'Atelier.
+			byte[] b = new byte[18];
+			RANDOM.nextBytes(b);
+			token = HexFormat.of().formatHex(b);
+			owner = player;
+			return links().get(0);
+		}
 		close();
 		port = community.tabletPort();
 		HttpServer h;
@@ -93,7 +104,7 @@ public final class Tablet {
 		h.createContext("/api/commande", this::command);
 		if (atelier != null) {
 			h.createContext("/atelier", atelier::page);
-			h.createContext("/api/atelier/", ex -> atelier.api(ex, atelierAllowed && authorized(ex), owner));
+			h.createContext("/api/atelier/", ex -> atelier.api(ex, !community.tabletLocalOnly() || local(ex)));
 		}
 		h.setExecutor(Executors.newFixedThreadPool(2, r -> {
 			Thread t = new Thread(r, "valcombe-tablette");

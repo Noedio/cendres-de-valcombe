@@ -173,20 +173,20 @@ def vent(seconds, brightness):
 
 def ambiance_nuit():
     seconds = 24
-    out = norm(vent(seconds, 260), 0.35)
+    out = norm(vent(seconds, 260), 0.22)
     x = t(seconds)
     # Grillons : chants brefs et aigus
-    for start in np.arange(0.5, seconds - 1, 1.7):
+    for start in np.arange(1.0, seconds - 1, 4.5):
         y = t(0.35)
-        chirp = np.sin(2 * np.pi * 4300 * y) * (np.sin(2 * np.pi * 38 * y) > 0) * np.exp(-y / 0.2) * 0.05
+        chirp = np.sin(2 * np.pi * 4300 * y) * (np.sin(2 * np.pi * 38 * y) > 0) * np.exp(-y / 0.2) * 0.025
         i = int((start + RNG.uniform(0, 0.6)) * RATE)
         out[i:i + len(chirp)] += chirp[: len(out) - i]
     # Une chouette, au loin
-    for start in (6.0, 15.5):
+    for start in (13.0,):
         y = t(1.4)
         f = 380 - 40 * y
-        hoot = np.sin(np.cumsum(2 * np.pi * f / RATE)) * np.exp(-((y - 0.3) ** 2) / 0.02) * 0.08
-        hoot += np.sin(np.cumsum(2 * np.pi * (f - 20) / RATE)) * np.exp(-((y - 0.95) ** 2) / 0.04) * 0.08
+        hoot = np.sin(np.cumsum(2 * np.pi * f / RATE)) * np.exp(-((y - 0.3) ** 2) / 0.02) * 0.05
+        hoot += np.sin(np.cumsum(2 * np.pi * (f - 20) / RATE)) * np.exp(-((y - 0.95) ** 2) / 0.04) * 0.05
         i = int(start * RATE)
         out[i:i + len(hoot)] += hoot
     return crossloop(out)
@@ -231,7 +231,11 @@ def main():
     index = {}
     for name, (make, stream) in SOUNDS.items():
         data = make().astype(np.float32)
-        sf.write(OUT / f"{name}.ogg", data, RATE, format="OGG", subtype="VORBIS")
+        # Écriture par morceaux : d'un seul bloc, l'encodeur Vorbis de libsndfile déborde sa pile sous Windows.
+        with sf.SoundFile(OUT / f"{name}.ogg", "w", RATE, 1 if data.ndim == 1 else data.shape[1],
+                          format="OGG", subtype="VORBIS") as f:
+            for i in range(0, len(data), 4096):
+                f.write(data[i:i + 4096])
         entry = {"name": f"valcombe:{name}"}
         if stream:
             entry["stream"] = True

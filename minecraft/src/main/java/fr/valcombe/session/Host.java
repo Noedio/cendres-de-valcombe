@@ -13,6 +13,11 @@ public interface Host {
 	default void addSeat(String player) {
 	}
 
+	/** Position du siège d'un joueur dans le monde (x, y, z), ou null. */
+	default double[] seatPosition(String player) {
+		return null;
+	}
+
 	/** Parties jouées par ce joueur sur le serveur (figure du Doyen). */
 	default int gamesPlayed(String player) {
 		return 0;

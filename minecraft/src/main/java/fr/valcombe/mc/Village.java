@@ -32,7 +32,7 @@ public final class Village {
 	/** Trônes d'un village généré par défaut. */
 	public static final int SEATS = 16;
 	/** Version du plan du village généré : un village plus ancien est reconstruit au démarrage. */
-	public static final int LAYOUT = 2;
+	public static final int LAYOUT = 3;
 	private static final int ROAD_WIDTH = 3;
 	private static final int HOUSE_HALF = 4;
 	private static final int CLEAR_HEIGHT = 16;
@@ -99,6 +99,7 @@ public final class Village {
 		int[] center;
 		boolean generated;
 		int layout;
+		int decorGen;
 		int seatTotal;
 		int size = 1;
 		Boolean withHouses;
@@ -111,6 +112,8 @@ public final class Village {
 	private BlockPos center;
 	private final boolean generated;
 	private int layout = LAYOUT;
+	/** Génération des décors en entités (trônes 3D) : les anciennes générations sont retirées. */
+	private int decorGen = 1;
 	private boolean hall;
 	private String theme = "gothique";
 	private final List<BlockPos> seats = new ArrayList<>();
@@ -206,7 +209,41 @@ public final class Village {
 
 	/** Village généré selon un plan plus ancien (plus petit) : à reconstruire. */
 	public boolean outdated() {
-		return generated && layout < LAYOUT;
+		return generated && layout < 2;
+	}
+
+	/** Village du plan 2 : seuls les trônes changent (trônes en blocs → trônes sculptés en 3D). */
+	public boolean oldThrones() {
+		return generated && layout == 2;
+	}
+
+	public int decorGen() {
+		return decorGen;
+	}
+
+	/** Remplace les trônes en blocs du plan 2 par les trônes sculptés, sans toucher au reste. */
+	public void upgradeThrones(ServerLevel level) {
+		Palette p = palette(theme);
+		decorGen++;
+		for (int i = 0; i < seatTotal; i++) {
+			double a = angle(i, seatTotal);
+			int x = (int) Math.round(seatRadius * Math.cos(a));
+			int z = (int) Math.round(seatRadius * Math.sin(a));
+			Direction back = away(x, z);
+			Direction side = back.getClockWise();
+			BlockState air = Blocks.AIR.defaultBlockState();
+			int bx = x + back.getStepX();
+			int bz = z + back.getStepZ();
+			for (int y = 1; y <= 3; y++) {
+				set(level, bx, y, bz, air);
+			}
+			set(level, bx, 0, bz, p.seatFloor().defaultBlockState());
+			for (int s : new int[] {-1, 1}) {
+				set(level, x + side.getStepX() * s, 1, z + side.getStepZ() * s, air);
+			}
+			throne(level, x, z, p);
+		}
+		layout = LAYOUT;
 	}
 
 	/** Le même village (centre et thème), selon le plan actuel. */
@@ -431,13 +468,13 @@ public final class Village {
 		int[] h = hallCenter();
 		var m = new java.util.LinkedHashMap<String, Vec3>();
 		m.put("Dalle dorée : s'inscrire\nDalle rouge : se désinscrire\nObsidienne : devenir Conteur",
-			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 3.2, center.getZ() + h[1] + 0.5));
+			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.15, center.getZ() + h[1] + 0.5));
 		m.put("Le bien gagne quand le Démon meurt.\nLe mal gagne quand il ne reste que deux vivants.",
-			new Vec3(center.getX() + h[0] - 8.4, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
+			new Vec3(center.getX() + h[0] - 7.85, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
 		m.put("La nuit, chacun dort chez soi.\nLe jour, on débat, on chuchote,\npuis on vote à l'horloge.",
-			new Vec3(center.getX() + h[0] + 8.4, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
+			new Vec3(center.getX() + h[0] + 8.85, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
 		m.put("Menu du jeu : touche J\nou l'horloge en main (clic droit)",
-			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.5, center.getZ() + h[1] - 6.4));
+			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.5, center.getZ() + h[1] - 5.85));
 		return m;
 	}
 
@@ -498,6 +535,7 @@ public final class Village {
 	 */
 	public void build(ServerLevel level) {
 		Palette p = palette(theme);
+		decorGen++;
 		BlockState air = Blocks.AIR.defaultBlockState();
 		BlockState hedge = p.hedge().defaultBlockState().setValue(LeavesBlock.PERSISTENT, true);
 		java.util.Random rnd = new java.util.Random(center.asLong());
@@ -612,25 +650,25 @@ public final class Village {
 	}
 
 	/** Trône de bois : on s'y assoit d'un clic droit. */
+	/**
+	 * Trône sculpté (modèle 3D du mod, entité d'affichage) posé sur une estrade. Un bloc invisible
+	 * (barrière) lui donne du volume et reçoit le clic droit pour s'asseoir.
+	 */
 	private void throne(ServerLevel level, int x, int z, Palette p) {
 		Direction back = away(x, z);
-		Direction side = back.getClockWise();
 		set(level, x, 0, z, p.seatFloor().defaultBlockState());
-		set(level, x, 1, z, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, back));
-		int bx = x + back.getStepX();
-		int bz = z + back.getStepZ();
-		set(level, bx, 0, bz, p.seatFloor().defaultBlockState());
-		set(level, bx, 1, bz, p.pillar().defaultBlockState());
-		set(level, bx, 2, bz, p.pillar().defaultBlockState());
-		set(level, bx, 3, bz, Blocks.DARK_OAK_TRAPDOOR.defaultBlockState()
-			.setValue(net.minecraft.world.level.block.TrapDoorBlock.HALF, net.minecraft.world.level.block.state.properties.Half.BOTTOM));
-		for (int s : new int[] {-1, 1}) {
-			int ax = x + side.getStepX() * s;
-			int az = z + side.getStepZ() * s;
-			set(level, ax, 0, az, p.seatFloor().defaultBlockState());
-			set(level, ax, 1, az, Blocks.DARK_OAK_SLAB.defaultBlockState()
-				.setValue(net.minecraft.world.level.block.SlabBlock.TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP));
+		set(level, x + back.getStepX(), 0, z + back.getStepZ(), p.seatFloor().defaultBlockState());
+		set(level, x, 1, z, Blocks.BARRIER.defaultBlockState());
+		if (level.getServer() == null) {
+			return;
 		}
+		Vec3 f = new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5);
+		WorldSetup.run(level.getServer(), String.format(java.util.Locale.ROOT,
+			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_trone\",\"vc_tr_%d\"],Rotation:[%.1ff,0f],"
+				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:trone\"}},"
+				+ "view_range:2f,transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],"
+				+ "right_rotation:[0f,0f,0f,1f],scale:[1.15f,1.15f,1.15f]}}",
+			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f)));
 	}
 
 	/** Étal de marché : quatre poteaux, un auvent rayé, un comptoir. */
@@ -763,6 +801,7 @@ public final class Village {
 		d.center = arr(center);
 		d.generated = generated;
 		d.layout = layout;
+		d.decorGen = decorGen;
 		d.seatTotal = seatTotal;
 		d.size = size;
 		d.withHouses = withHouses;
@@ -786,6 +825,7 @@ public final class Village {
 				Data d = GSON.fromJson(Files.readString(json), Data.class);
 				Village v = new Village(pos(d.center), d.generated);
 				v.layout = d.layout;
+				v.decorGen = Math.max(1, d.decorGen);
 				if (d.seatTotal > 0) {
 					v.seatTotal = d.seatTotal;
 					v.size = d.size;

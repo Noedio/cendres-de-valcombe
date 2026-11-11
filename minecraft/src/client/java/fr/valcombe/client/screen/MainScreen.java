@@ -22,7 +22,7 @@ public class MainScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {360, 236};
+		return new int[] {380, 260};
 	}
 
 	private record Action(String label, Runnable run) {
@@ -33,23 +33,6 @@ public class MainScreen extends BaseScreen {
 		JsonObject v = view();
 		boolean inGame = !ClientState.phase().equals("LOBBY");
 		JsonObject role = ClientState.obj(v, "role");
-
-		// Cercle des joueurs (jetons fermés : on ne voit pas les rôles des autres)
-		if (inGame) {
-			List<JsonObject> seats = objects(v, "seats");
-			int me = ClientState.num(v, "mySeat", -1);
-			circle(seats.size(), px + 262, py + 78, 52, (i, x, y) -> {
-				JsonObject s = seats.get(i);
-				TokenWidget t = new TokenWidget(x, y, 18, ClientState.str(s, "name"),
-					i == me && role != null ? ClientState.str(role, "id") : null,
-					i == me && role != null ? ClientState.str(role, "team") : null,
-					ClientState.bool(s, "alive"), false, null);
-				if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
-					t.marker("ghost");
-				}
-				token(t);
-			});
-		}
 
 		List<Action> actions = new ArrayList<>();
 		if (ClientState.obj(v, "prompt") != null) {
@@ -108,12 +91,7 @@ public class MainScreen extends BaseScreen {
 			}));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
-		boolean cb = fr.valcombe.client.ClientConfig.get().daltonien;
-		actions.add(new Action("Daltonien : " + (cb ? "oui" : "non"), () -> {
-			fr.valcombe.client.ClientConfig.get().daltonien = !cb;
-			fr.valcombe.client.ClientConfig.get().save();
-			minecraft.gui.setScreen(new MainScreen());
-		}));
+		actions.add(new Action("Préférences…", () -> minecraft.gui.setScreen(new PrefsScreen())));
 		actions.add(new Action("Mon carnet", () -> minecraft.gui.setScreen(new NotebookScreen())));
 		actions.add(new Action("Historique", () -> {
 			send("vc historique");
@@ -129,7 +107,7 @@ public class MainScreen extends BaseScreen {
 		if (ClientState.bool(v, "leader")) {
 			actions.add(new Action("Panneau du Conteur", () -> minecraft.gui.setScreen(new StorytellerScreen())));
 		}
-		int bw = 108;
+		int bw = (pw - 36) / 3;
 		int rows = (actions.size() + 2) / 3;
 		buttonsTop = py + ph - 28 - (rows - 1) * 22;
 		for (int i = 0; i < actions.size(); i++) {
@@ -138,6 +116,40 @@ public class MainScreen extends BaseScreen {
 			Action a = actions.get(i);
 			button(px + 12 + col * (bw + 6), buttonsTop + row * 22, bw, a.label(), a.run());
 		}
+		// Cercle des joueurs (jetons fermés : on ne voit pas les rôles des autres), à droite, dans la
+		// place laissée au-dessus du journal et des boutons : une ellipse qui ne déborde jamais.
+		if (inGame) {
+			List<JsonObject> seats = objects(v, "seats");
+			int me = ClientState.num(v, "mySeat", -1);
+			int top = py + 26;
+			int bottom = buttonsTop - feedHeight() - 4;
+			int size = bottom - top < 110 ? 14 : 18;
+			int ry = Math.max(8, (bottom - top - size - 12) / 2);
+			int rx = Math.max(ry, (pw - 196) / 2 - 22);
+			int cx = px + 196 + (pw - 196) / 2 - 6;
+			int cy = top + size / 2 + ry + 2;
+			final int sz = size;
+			ellipse(seats.size(), cx, cy, rx, ry, (i, x, y) -> {
+				JsonObject s = seats.get(i);
+				TokenWidget t = new TokenWidget(x, y, sz, ClientState.str(s, "name"),
+					i == me && role != null ? ClientState.str(role, "id") : null,
+					i == me && role != null ? ClientState.str(role, "team") : null,
+					ClientState.bool(s, "alive"), false, null);
+				if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
+					t.marker("ghost");
+				}
+				token(t);
+			});
+		}
+	}
+
+	/** Lignes de journal affichées : une seule si la fenêtre est basse. */
+	private int feedLines() {
+		return ph < 230 ? 1 : 2;
+	}
+
+	private int feedHeight() {
+		return feedLines() * 10 + 4;
 	}
 
 	@Override
@@ -156,7 +168,8 @@ public class MainScreen extends BaseScreen {
 			Theme.ink(g, font, ClientState.str(role, "name"), x + 42, y + 8, Theme.INK);
 			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
 			Theme.ink(g, font, (evil ? "Camp du mal" : "Camp du bien"), x + 42, y + 20, evil ? Theme.EVIL : Theme.GOOD);
-			Theme.paragraph(g, font, ClientState.str(role, "text"), x, y + 42, 172, Theme.INK);
+			Theme.paragraph(g, font, ClientState.str(role, "text"), x, y + 42, 172, Theme.INK,
+				buttonsTop - feedHeight() - 4 - (y + 42));
 		} else {
 			Theme.ink(g, font, phase.equals("LOBBY") ? "Inscrits :" : "Tu observes la partie.", x, y, Theme.INK);
 			List<String> lobby = strings(v, "lobby");
@@ -169,8 +182,8 @@ public class MainScreen extends BaseScreen {
 
 		// Journal des dernières annonces
 		List<String> feed = strings(v, "feed");
-		int fy = buttonsTop - 24;
-		for (int i = Math.max(0, feed.size() - 2); i < feed.size(); i++) {
+		int fy = buttonsTop - feedHeight();
+		for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
 			String line = feed.get(i);
 			if (font.width(line) > pw - 30) {
 				line = font.plainSubstrByWidth(line, pw - 34) + "…";

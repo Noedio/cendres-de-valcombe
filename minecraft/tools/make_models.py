@@ -68,54 +68,99 @@ def load(path):
 # ---------------------------------------------------------------------------
 # Textures des jetons (32 × 32)
 # ---------------------------------------------------------------------------
+S = 2  # les jetons sont dessinés en 64 × 64 (coordonnées ci-dessous en 32 × 32, multipliées par S)
+N = 32 * S
+
+
+def lit(c, f):
+    return tuple(max(0, min(255, int(v * f))) for v in c[:3])
+
+
 def token_base(face, ring, inner):
-    img = A.Img(32, 32)
-    img.disc(16, 16, 15.5, ring)
-    img.disc(16, 16, 13, inner)
-    img.ring(16, 16, 13.5, 1, A.INK)
-    for k in range(12):  # rivets
-        a = 2 * math.pi * k / 12
-        img.disc(16 + 14.3 * math.cos(a), 16 + 14.3 * math.sin(a), 0.8, face)
+    """Jeton 64 × 64 : anneau de métal bombé éclairé d'en haut à gauche, liseré, intérieur ombré."""
+    img = A.Img(N, N)
+    cx = cy = N / 2
+    r_out, r_in = 15.6 * S, 12.6 * S
+    for y in range(N):
+        for x in range(N):
+            dx, dy = x + 0.5 - cx, y + 0.5 - cy
+            d = math.hypot(dx, dy)
+            if d > r_out + 0.5:
+                continue
+            a = min(1.0, r_out + 0.5 - d)
+            if d >= r_in:
+                # Anneau : normale radiale, bombé (plus clair vers le milieu de l'anneau)
+                t = (d - r_in) / (r_out - r_in)
+                bulge = 1 - abs(t - 0.45) * 1.3
+                light = (-dx - dy) / (d * 1.4142 + 1e-6)
+                f = 0.7 + 0.25 * bulge + 0.3 * light
+                img.put(x, y, lit(ring, f), a)
+                if 0.35 < t < 0.55 and light > 0.55:
+                    img.put(x, y, A.WHITE, 0.35 * (light - 0.55) / 0.45)
+            else:
+                # Intérieur : léger vignettage, et ombre portée de l'anneau en haut à gauche
+                v = 1 - 0.18 * (d / r_in) ** 2
+                shadow = max(0.0, (dx + dy) / (d * 1.4142 + 1e-6)) if d > r_in - 3 * S else 0
+                img.put(x, y, lit(inner, v - 0.12 * (1 - shadow) * (d > r_in - 2.5 * S)))
+    img.ring(cx, cy, r_in, 1.2, A.INK)
+    img.ring(cx, cy, r_out, 1.0, lit(ring, 0.45))
+    for k in range(12):  # rivets en relief
+        ang = 2 * math.pi * k / 12
+        rx, ry = cx + 14.1 * S * math.cos(ang), cy + 14.1 * S * math.sin(ang)
+        img.disc(rx, ry, 1.5 * S * 0.6, lit(face, 0.55))
+        img.disc(rx - 0.4, ry - 0.4, 1.2 * S * 0.5, face)
+        img.put(rx - 1, ry - 1, A.WHITE, 0.7)
     return img
+
+
+def sc(*v):
+    return [c * S for c in v]
 
 
 def crest():
     """Dos des jetons : la tour de Valcombe sur fond lie-de-vin."""
     img = token_base(A.GOLD, A.BRONZE, A.WINE)
-    img.rect(13, 9, 19, 23, A.GOLD)
-    img.rect(11, 21, 21, 23, A.GOLD)
+    img.rect(*sc(13, 9, 19, 23), A.GOLD)
+    img.rect(*sc(11, 21, 21, 23), A.GOLD)
     for x in (12, 15, 18):
-        img.rect(x, 7, x + 2, 10, A.GOLD)
-    img.rect(15, 14, 17, 18, A.WINE)
-    img.disc(16, 13, 1.2, A.WINE)
+        img.rect(*sc(x, 7, x + 2, 10), A.GOLD)
+    img.rect(*sc(15, 14, 17, 18), A.WINE)
+    img.disc(16 * S, 13 * S, 1.2 * S, A.WINE)
+    for y in range(9 * S, 23 * S):  # ombrage de la tour
+        img.put(18 * S + 1, y, lit(A.GOLD, 0.7))
+        img.put(13 * S, y, lit(A.GOLD, 1.2))
     return img
 
 
 def dead():
     img = token_base(A.ASH, GREY_DARK, GREY)
-    img.disc(16, 14, 6, A.WHITE)  # crâne
-    img.rect(13, 18, 19, 22, A.WHITE)
-    img.disc(13.5, 14, 1.8, A.INK)
-    img.disc(18.5, 14, 1.8, A.INK)
-    img.poly([(16, 16), (15, 18), (17, 18)], A.INK)
+    img.disc(16 * S, 14 * S, 6 * S, A.WHITE)  # crâne
+    img.rect(*sc(13, 18, 19, 22), A.WHITE)
+    img.disc(13.5 * S, 14 * S, 1.8 * S, A.INK)
+    img.disc(18.5 * S, 14 * S, 1.8 * S, A.INK)
+    img.poly([(16 * S, 16 * S), (15 * S, 18 * S), (17 * S, 18 * S)], A.INK)
     for x in (14, 16, 18):
-        img.rect(x, 20, x + 1, 22, A.INK)
+        img.rect(*sc(x, 20, x + 1, 22), A.INK)
     return img
 
 
 def ghost():
     img = token_base(A.GOLD, GREY_DARK, GREY)
-    img.rect(14, 13, 18, 24, A.PARCH)  # cierge
-    img.rect(14, 23, 18, 24, A.PARCH_DARK)
-    img.rect(15, 11, 17, 13, A.INK)
-    img.disc(16, 9, 2.4, (240, 170, 60))
-    img.disc(16, 9.6, 1.2, (255, 235, 160))
+    img.rect(*sc(14, 13, 18, 24), A.PARCH)  # cierge
+    img.rect(*sc(14, 23, 18, 24), A.PARCH_DARK)
+    img.rect(*sc(15, 11, 17, 13), A.INK)
+    img.disc(16 * S, 9 * S, 2.4 * S, (240, 170, 60))
+    img.disc(16 * S, 9.6 * S, 1.2 * S, (255, 235, 160))
     return img
 
 
 def edge():
+    """Tranche du jeton : métal moleté (stries), plus clair au centre."""
     img = A.Img(16, 16)
-    A.noise_fill(img, A.BRONZE_DARK, 12, 7)
+    for y in range(16):
+        for x in range(16):
+            f = 0.85 + 0.25 * (1 - abs(y - 7.5) / 8) + (0.12 if x % 2 == 0 else -0.05)
+            img.px[y][x] = list(lit(A.BRONZE, f)) + [255]
     return img
 
 
@@ -127,17 +172,32 @@ def role_teams():
 
 
 def role_face(icon_path, team):
+    """Pictogramme du rôle réduit avec lissage (moyenne de zones) au centre du jeton 64 × 64."""
     ring = A.EVIL if team == "evil" else A.GOOD
     img = token_base(A.GOLD, ring, A.PARCH)
     icon = load(icon_path)
-    # Pictogramme réduit au centre (24 × 24 sur 32 × 32)
-    for y in range(32):
-        for x in range(32):
-            sx, sy = int((x - 4) * 32 / 24), int((y - 4) * 32 / 24)
-            if 4 <= x < 28 and 4 <= y < 28 and 0 <= sx < 32 and 0 <= sy < 32:
-                c = icon.px[sy][sx]
-                if c[3] > 0 and math.hypot(x + 0.5 - 16, y + 0.5 - 16) < 12.5:
-                    img.put(x, y, c[:3], c[3] / 255)
+    size = 40 * S // 2  # 40 px sur 64
+    off = (N - size) / 2
+    k = icon.w / size
+    for y in range(size):
+        for x in range(size):
+            acc = [0.0, 0.0, 0.0, 0.0]
+            n = 0
+            for sy in range(int(y * k), max(int(y * k) + 1, int((y + 1) * k))):
+                for sx in range(int(x * k), max(int(x * k) + 1, int((x + 1) * k))):
+                    c = icon.px[min(sy, icon.h - 1)][min(sx, icon.w - 1)]
+                    al = c[3] / 255
+                    for i in range(3):
+                        acc[i] += c[i] * al
+                    acc[3] += al
+                    n += 1
+            if acc[3] <= 0:
+                continue
+            col = [acc[i] / acc[3] for i in range(3)]
+            px, py = x + off, y + off
+            if math.hypot(px + 0.5 - N / 2, py + 0.5 - N / 2) < 12.4 * S:
+                img.put(px + 1, py + 1, A.INK, 0.25 * acc[3] / n)  # ombre portée
+                img.put(px, py, col, acc[3] / n)
     return img
 
 
@@ -161,31 +221,50 @@ def token_model(front, back):
             "faces": {
                 # Une entité d'affichage tournée vers le joueur lui montre sa face nord.
                 "north": face("#front"), "south": face("#back"),
-                "east": face("#edge", (0, 0, 1, 16)), "west": face("#edge", (0, 0, 1, 16)),
-                "up": face("#edge", (0, 0, 16, 1)), "down": face("#edge", (0, 0, 16, 1)),
+                "east": face("#edge", (0, 0, 1.5, 16)), "west": face("#edge", (0, 0, 1.5, 16)),
+                "up": face("#edge", (0, 0, 16, 1.5)), "down": face("#edge", (0, 0, 16, 1.5)),
             },
         }],
     }
 
 
 def throne_model():
-    """Trône sculpté ; le dossier est du côté +Z (sud)."""
-    wood = "#wood"
+    """Trône sculpté ; le dossier est du côté +Z (sud). Pieds tournés, coussin de velours,
+    accoudoirs à volutes, haut dossier encadré d'or, montants à pommeaux et fronton."""
+    wood, dark, trim, vel = "#wood", "#dark", "#trim", "#cushion"
+    el = [
+        # Pieds tournés et sabots dorés
+        box([1.5, 0, 1.5], [3.5, 7, 3.5], dark), box([12.5, 0, 1.5], [14.5, 7, 3.5], dark),
+        box([1.5, 0, 12.5], [3.5, 7, 14.5], dark), box([12.5, 0, 12.5], [14.5, 7, 14.5], dark),
+        box([1, 0, 1], [4, 1, 4], trim), box([12, 0, 1], [15, 1, 4], trim),
+        box([1, 0, 12], [4, 1, 15], trim), box([12, 0, 12], [15, 1, 15], trim),
+        # Traverses basses
+        box([3.5, 2, 2], [12.5, 3, 3], wood), box([3.5, 2, 13], [12.5, 3, 14], wood),
+        # Assise et coussin de velours (qui déborde un peu)
+        box([1, 7, 1], [15, 9, 15], wood),
+        box([0.8, 8.6, 0.8], [15.2, 9, 1.4], trim),
+        box([2, 9, 1.5], [14, 10.6, 13], vel),
+        # Montants du dossier et pommeaux
+        box([1, 9, 12.5], [3, 29, 15], dark), box([13, 9, 12.5], [15, 29, 15], dark),
+        box([0.5, 29, 12], [3.5, 31, 15.5], trim), box([12.5, 29, 12], [15.5, 31, 15.5], trim),
+        # Dossier : panneau, cadre doré, velours capitonné
+        box([3, 10, 13.5], [13, 28, 14.5], wood),
+        box([3.5, 11, 13], [12.5, 27, 13.5], trim),
+        box([4, 11.5, 12.6], [12, 26.5, 13], vel),
+        # Fronton en gradins et losange doré
+        box([4, 28, 13], [12, 29.5, 15], wood), box([5.5, 29.5, 13], [10.5, 31, 15], wood),
+        box([7, 31, 13.2], [9, 32, 14.8], trim),
+        box([7.2, 27.3, 12.4], [8.8, 28.9, 12.7], trim),
+        # Accoudoirs et volutes
+        box([1, 13, 3], [3, 14.5, 12.5], dark), box([13, 13, 3], [15, 14.5, 12.5], dark),
+        box([0.6, 9, 1.2], [3.4, 15.5, 3.6], wood), box([12.6, 9, 1.2], [15.4, 15.5, 3.6], wood),
+        box([0.4, 15.5, 1], [3.6, 16.3, 3.8], trim), box([12.4, 15.5, 1], [15.6, 16.3, 3.8], trim),
+    ]
     return {
-        "textures": {"wood": "minecraft:block/dark_oak_planks", "trim": "minecraft:block/gold_block",
-                     "cushion": "minecraft:block/red_wool", "particle": "minecraft:block/dark_oak_planks"},
-        "elements": [
-            box([2, 0, 2], [4, 7, 4], wood), box([12, 0, 2], [14, 7, 4], wood),
-            box([2, 0, 12], [4, 7, 14], wood), box([12, 0, 12], [14, 7, 14], wood),
-            box([1, 7, 1], [15, 9, 15], wood),
-            box([2, 9, 2], [14, 10, 13], "#cushion"),
-            box([1, 9, 13], [15, 26, 15], wood),
-            box([3, 11, 12.5], [13, 24, 13], "#cushion", faces=("north",)),
-            box([0.5, 26, 12.5], [15.5, 27, 15.5], "#trim"),
-            box([7, 27, 13], [9, 30, 15], "#trim"),
-            box([1, 9, 1], [3, 14, 13], wood), box([13, 9, 1], [15, 14, 13], wood),
-            box([0.5, 14, 0.5], [3.5, 15, 3.5], "#trim"), box([12.5, 14, 0.5], [15.5, 15, 3.5], "#trim"),
-        ],
+        "textures": {"wood": "minecraft:block/dark_oak_planks", "dark": "minecraft:block/stripped_dark_oak_log",
+                     "trim": "minecraft:block/gold_block", "cushion": "minecraft:block/red_wool",
+                     "particle": "minecraft:block/dark_oak_planks"},
+        "elements": el,
     }
 
 
