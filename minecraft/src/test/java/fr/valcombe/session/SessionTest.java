@@ -106,6 +106,10 @@ class SessionTest {
 					}
 					h.prompts.remove(who);
 					s.validate(who);
+				} else if (has(msgs, "/vc decider 0")) {
+					long n = msgs.stream().flatMap(m -> m.parts.stream())
+						.filter(pt -> pt.command() != null && pt.command().startsWith("/vc decider")).count();
+					s.decide(who, random.nextInt((int) n));
 				} else if (has(msgs, "/vc envoyer")) {
 					s.storytellerSend(who, null);
 				} else if (has(msgs, "/vc dormir")) {

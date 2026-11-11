@@ -898,6 +898,10 @@ public final class Game {
 		}
 		if (player(target).role == Role.CHATELAIN && !isPoisoned(target)) {
 			Integer other = decide.mayorBounce(this, target);
+			if (other != null && other < 0) {
+				addLog("L'attaque sur le Châtelain est détournée : personne ne meurt.");
+				return;
+			}
 			if (other != null) {
 				addLog("L'attaque sur le Châtelain est détournée vers " + player(other).name + ".");
 				if (safeFromDemon(other)) {

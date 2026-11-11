@@ -460,6 +460,8 @@ public final class Session {
 		clearPrompts(Prompt.Info.class);
 		clearPrompts(Prompt.Grimoire.class);
 		clearPrompts(Prompt.Confirm.class);
+		clearPrompts(Prompt.Decide.class);
+		pendingDecision = null;
 	}
 
 	public String startNight() {
@@ -575,7 +577,101 @@ public final class Session {
 		return "Choix enregistré.";
 	}
 
+	/** Décision en attente du Conteur : ce qu'il faut faire de sa réponse. */
+	private java.util.function.IntConsumer pendingDecision;
+	private String decisionAsked;
+
+	private static final Set<Role> MISREG_SENSITIVE = java.util.EnumSet.of(Role.COMMERE, Role.GREFFIER, Role.INQUISITEUR,
+		Role.AUBERGISTE, Role.VEILLEUSE, Role.ASTROLOGUE, Role.EMBAUMEUR, Role.FAUCONNIER);
+
+	/** Pose une question au Conteur ; la nuit reprend avec sa réponse. */
+	private void askStoryteller(String title, String question, List<String> options, java.util.function.IntConsumer then) {
+		pendingDecision = then;
+		decisionAsked = storyteller;
+		tell(storyteller, new Msg().colored("[Conteur] " + question, "light_purple"));
+		Msg row = new Msg();
+		for (int i = 0; i < options.size(); i++) {
+			row.button(options.get(i), "/vc decider " + i, options.get(i));
+		}
+		tell(storyteller, row);
+		setPrompt(storyteller, new Prompt.Decide(title, question, options));
+	}
+
+	/** Réponse du Conteur à une décision en direct. */
+	public String decide(String name, int option) {
+		if (pendingDecision == null || !name.equals(decisionAsked)) {
+			throw new GameException("Aucune décision en attente.");
+		}
+		var then = pendingDecision;
+		pendingDecision = null;
+		setPrompt(name, null);
+		then.accept(option);
+		return "Décision prise.";
+	}
+
+	/** Le Conteur humain doit-il trancher avant ce réveil ? Si oui, la question est posée et on attend. */
+	private boolean needsLiveDecision(Step step, List<Integer> targets) {
+		if (!human() || step.kind != Step.Kind.ROLE) {
+			return false;
+		}
+		Game g = game;
+		if (MISREG_SENSITIVE.contains(step.role) && policies.misregister == HumanDecisions.Policy.HASARD) {
+			List<String> tricksters = new ArrayList<>();
+			for (Game.Seat p : g.players()) {
+				int seat = g.seatOf(p.name);
+				if ((p.role() == Role.MOUCHARD || p.role() == Role.EXCOMMUNIE) && g.poisonedSeat() != seat) {
+					tricksters.add(p.name + " (" + p.role().displayName + ")");
+				}
+			}
+			if (!tricksters.isEmpty()) {
+				askStoryteller(step.title(), String.join(" et ", tricksters) + " trompe(nt)-il(s) " + step.role.displayName + " ?",
+					List.of("Oui, tromper", "Non, la vérité"), choice -> {
+						policies.misregister = choice == 0 ? HumanDecisions.Policy.TOUJOURS : HumanDecisions.Policy.JAMAIS;
+						try {
+							resolveNow(targets);
+						} finally {
+							policies.misregister = HumanDecisions.Policy.HASARD;
+						}
+					});
+				return true;
+			}
+		}
+		if (step.role == Role.GOULE && !targets.isEmpty() && policies.mayorTarget == null) {
+			int t = targets.get(0);
+			Game.Seat target = g.player(t);
+			if (target.role() == Role.CHATELAIN && target.alive() && g.poisonedSeat() != t && g.protectedSeat() != t
+				&& g.poisonedSeat() != step.seat) {
+				List<String> names = new ArrayList<>();
+				names.add("Le Châtelain meurt");
+				for (Game.Seat p : g.players()) {
+					if (p.alive() && p.team() == Team.GOOD && !p.name.equals(target.name)) {
+						names.add(p.name);
+					}
+				}
+				names.add("Personne ne meurt");
+				askStoryteller(step.title(), "La Goule attaque le Châtelain (" + target.name + ") : qui meurt ?", names, choice -> {
+					String pick = names.get(choice);
+					policies.mayorTarget = choice == 0 ? "" : choice == names.size() - 1 ? HumanDecisions.NOBODY : pick;
+					try {
+						resolveNow(targets);
+					} finally {
+						policies.mayorTarget = null;
+					}
+				});
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void resolve(List<Integer> targets) {
+		if (needsLiveDecision(pendingStep, targets)) {
+			return; // la nuit attend la réponse du Conteur
+		}
+		resolveNow(targets);
+	}
+
+	private void resolveNow(List<Integer> targets) {
 		Game g = game;
 		Step step = pendingStep;
 		Info info = g.resolve(step, targets);
@@ -1371,6 +1467,12 @@ public final class Session {
 					m.put("nominee", vo.nominee());
 					m.put("ghost", vo.ghost());
 				}
+				case Prompt.Decide dc -> {
+					m.put("type", "decide");
+					m.put("title", dc.title());
+					m.put("question", dc.question());
+					m.put("options", dc.options());
+				}
 				case Prompt.Confirm cf -> {
 					m.put("type", "confirm");
 					m.put("title", cf.title());
@@ -1405,6 +1507,7 @@ public final class Session {
 				case Prompt.Grimoire gr -> sleep(bot);
 				case Prompt.Vote v -> answers.put(bot, rng.chance(0.5));
 				case Prompt.Confirm cf -> storytellerSend(bot, null);
+				case Prompt.Decide dc -> decide(bot, 0);
 			}
 		} catch (GameException ignored) {
 			// État changé entre-temps : rien à faire.

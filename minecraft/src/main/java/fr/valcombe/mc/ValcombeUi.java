@@ -243,6 +243,7 @@ public final class ValcombeUi {
 			case Prompt.Grimoire gr -> openGrimoire(p, true);
 			case Prompt.Vote v -> openVote(p, v);
 			case Prompt.Confirm cf -> openConfirm(p, cf);
+			case Prompt.Decide dc -> openDecide(p, dc);
 		}
 	}
 
@@ -284,6 +285,16 @@ public final class ValcombeUi {
 			act(pl -> session.vote(name(pl), true)));
 		gui.set(15, Gui.icon(Items.WOOL.red(), "Je m'abstiens", "Ne pas voter."),
 			act(pl -> session.vote(name(pl), false)));
+		gui.open(p, host);
+	}
+
+	private void openDecide(ServerPlayer p, Prompt.Decide dc) {
+		Gui gui = new Gui("prompt:decide", dc.title(), 3);
+		gui.set(4, Gui.glow(Gui.icon(Items.PAPER, "Décision du Conteur", ChatFormatting.LIGHT_PURPLE, List.of(dc.question()))));
+		for (int i = 0; i < dc.options().size() && i < 18; i++) {
+			int choice = i;
+			gui.set(9 + i, Gui.icon(Items.WOOL.purple(), dc.options().get(i)), act(pl -> session.decide(name(pl), choice)));
+		}
 		gui.open(p, host);
 	}
 

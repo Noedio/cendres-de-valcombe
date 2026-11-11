@@ -12,6 +12,9 @@ import java.util.List;
 public final class HumanDecisions extends AutoDecisions {
 	public enum Policy { HASARD, TOUJOURS, JAMAIS }
 
+	/** Valeur de mayorTarget : l'attaque est détournée et personne ne meurt. */
+	public static final String NOBODY = "*personne*";
+
 	/** Enregistrement trompeur du Mouchard et de l'Excommunié. */
 	public Policy misregister = Policy.HASARD;
 	/** Nom du joueur qui meurt à la place du Châtelain ; "" = le Châtelain meurt ; null = au hasard. */
@@ -35,6 +38,9 @@ public final class HumanDecisions extends AutoDecisions {
 		}
 		if (mayorTarget.isEmpty()) {
 			return null;
+		}
+		if (mayorTarget.equals(NOBODY)) {
+			return -1; // personne ne meurt
 		}
 		int s = game.seatOf(mayorTarget);
 		return s >= 0 && s != mayor ? s : null;

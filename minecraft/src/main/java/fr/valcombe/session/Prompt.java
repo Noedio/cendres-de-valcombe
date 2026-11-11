@@ -24,6 +24,10 @@ public sealed interface Prompt {
 	record Vote(String nominee, boolean ghost) implements Prompt {
 	}
 
+	/** Le Conteur tranche en direct (la nuit est en pause) : une question, des réponses. */
+	record Decide(String title, String question, List<String> options) implements Prompt {
+	}
+
 	/** Le Conteur relit l'information avant l'envoi. */
 	record Confirm(String title, String to, String text, String truth) implements Prompt {
 	}

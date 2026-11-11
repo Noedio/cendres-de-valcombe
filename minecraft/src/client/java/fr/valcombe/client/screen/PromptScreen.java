@@ -43,6 +43,7 @@ public class PromptScreen extends BaseScreen {
 		return switch (type()) {
 			case "choose", "grimoire", "vote" -> new int[] {300, 250};
 			case "confirm" -> new int[] {300, 180};
+			case "decide" -> new int[] {300, 230};
 			default -> new int[] {270, 170};
 		};
 	}
@@ -51,7 +52,7 @@ public class PromptScreen extends BaseScreen {
 	protected void init() {
 		JsonObject p = prompt();
 		String title = switch (type()) {
-			case "choose", "info", "confirm" -> ClientState.str(p, "title");
+			case "choose", "info", "confirm", "decide" -> ClientState.str(p, "title");
 			case "vote" -> "Le village vote";
 			case "grimoire" -> "Le grimoire";
 			default -> "Valcombe";
@@ -115,6 +116,18 @@ public class PromptScreen extends BaseScreen {
 				button(cx - 70, py + ph - 26, 140, up ? "Baisser la main" : "Lever la main",
 					() -> send(up ? "vc vote non" : "vc vote oui"));
 			}
+			case "decide" -> {
+				List<String> options = strings(p, "options");
+				int cols = options.size() > 6 ? 2 : 1;
+				int bw = cols == 2 ? 132 : 200;
+				for (int i = 0; i < options.size(); i++) {
+					int choice = i;
+					int col = cols == 2 ? i % 2 : 0;
+					int row = cols == 2 ? i / 2 : i;
+					int bx = cols == 2 ? cx - bw - 3 + col * (bw + 6) : cx - bw / 2;
+					button(bx, py + 52 + row * 21, bw, options.get(i), () -> send("vc decider " + choice));
+				}
+			}
 			case "confirm" -> {
 				String text = ClientState.str(p, "text");
 				button(cx - 118, py + ph - 26, 112, "Envoyer", () -> send("vc envoyer"));
@@ -174,6 +187,7 @@ public class PromptScreen extends BaseScreen {
 				}
 				Theme.centered(g, font, hint, cx, py + ph - 40, Theme.ASH);
 			}
+			case "decide" -> Theme.paragraph(g, font, ClientState.str(p, "question"), x, py + 18, pw - 32, Theme.WINE);
 			case "confirm" -> {
 				Theme.ink(g, font, "Pour " + ClientState.str(p, "to") + " :", x, py + 16, Theme.WINE);
 				int h = Theme.paragraph(g, font, ClientState.str(p, "text"), x, py + 30, pw - 32, Theme.INK);
