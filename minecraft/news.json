@@ -1,5 +1,10 @@
 [
   {
+    "date": "12 nov. 2026",
+    "title": "Version 0.7.0 : le pupitre du Conteur et l'Atelier",
+    "text": "Le Conteur reprend la main : pause, vote annulé, grâce, étape précédente, et un joueur déconnecté peut être relayé puis retrouve sa place. Nuit pas à pas, jetons de rappel propres à chaque rôle, temps de parole, journal de la partie. Dans l'Atelier : des rôles à plusieurs effets, à usage unique ou qui agissent de jour ; des scénarios avec rôles imposés, ordre de nuit et répartition réglables ; des cartes qui se construisent sans figer le serveur, avec un plan vu de dessus."
+  },
+  {
     "date": "11 nov. 2026",
     "title": "Launcher 0.6.2 : vos touches habituelles",
     "text": "Options du jeu › « Reprendre mes touches de Minecraft » : le launcher recopie les touches de votre Minecraft habituel (launcher officiel, CurseForge, Modrinth, Prism…). Les touches de Valcombe (J, H, G, K) restent. À la toute première partie, c'est fait d'office."
