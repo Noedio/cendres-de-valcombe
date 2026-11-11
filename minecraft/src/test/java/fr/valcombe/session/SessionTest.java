@@ -28,6 +28,12 @@ class SessionTest {
 		final Map<String, List<Msg>> prompts = new HashMap<>();
 		final List<String> announces = new ArrayList<>();
 		boolean night;
+		String saved = "";
+
+		@Override
+		public void persist(String json) {
+			saved = json;
+		}
 
 		@Override
 		public void announce(String text) {
@@ -210,6 +216,40 @@ class SessionTest {
 			assertNull(s.game(), "la partie de bots doit se terminer (graine " + seed + ")");
 			assertTrue(h.prompts.isEmpty(), "les bots ne reçoivent pas de messages");
 		}
+	}
+
+	@Test
+	void partieSauvegardeeEtReprise() {
+		Random random = new Random(11);
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(random));
+		s.addBots(8);
+		s.start("Conteur", Session.Mode.AUTO);
+		s.startNight();
+		pump(s, h, random);
+		assertTrue(!h.saved.isEmpty(), "partie enregistrée");
+		String roles = s.game().describeRoles();
+		int day = s.game().day();
+
+		FakeHost h2 = new FakeHost();
+		Session s2 = new Session(h2, Rng.of(new Random(12)));
+		s2.restore(h.saved);
+		assertNotNull(s2.game());
+		assertTrue(s2.game().describeRoles().equals(roles), "mêmes rôles");
+		assertTrue(s2.game().day() == day && s2.game().phase() == Game.Phase.DAY, "même jour");
+		for (int i = 0; i < 300 && s2.game() != null; i++) {
+			if (s2.game().phase() == Game.Phase.DAY) {
+				s2.endDay();
+			}
+			if (s2.game() != null) {
+				s2.startNight();
+				while (!h2.tasks.isEmpty()) {
+					h2.tasks.poll().run();
+				}
+			}
+		}
+		assertNull(s2.game(), "la partie reprise va jusqu'au bout");
+		assertTrue(h2.saved.isEmpty(), "plus rien à reprendre");
 	}
 
 	@Test

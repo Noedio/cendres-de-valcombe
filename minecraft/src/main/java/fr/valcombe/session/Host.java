@@ -28,6 +28,10 @@ public interface Host {
 	default void deadPlayers(List<String> dead, List<String> withGhostVote) {
 	}
 
+	/** Enregistre la sauvegarde de la partie (chaîne vide : plus de partie à reprendre). */
+	default void persist(String json) {
+	}
+
 	/** Affiche (ou retire, si prompt == null) l'invite en cours d'un joueur. */
 	default void prompt(String player, Prompt prompt) {
 	}

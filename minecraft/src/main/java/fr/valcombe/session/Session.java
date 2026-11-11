@@ -327,6 +327,7 @@ public final class Session {
 		for (Game.Seat p : g.players()) {
 			showRole(p.name, p.believed());
 		}
+		save();
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
 			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). Le Conteur fait tomber la première nuit.");
 		return "Partie lancée.";
@@ -337,6 +338,7 @@ public final class Session {
 			host.endGame(realNames());
 		}
 		game = null;
+		host.persist("");
 		clearNight();
 		clearVote();
 		clearPrompts(null);
@@ -467,6 +469,7 @@ public final class Session {
 		}
 		g.startNight();
 		host.nightEffects(realNames(), true, settings);
+		save();
 		announce("La nuit " + g.night() + " tombe sur Valcombe. Fermez les yeux…");
 		nextLater();
 		return "";
@@ -710,6 +713,7 @@ public final class Session {
 			return;
 		}
 		nominationsOpen = mode == Mode.AUTO;
+		save();
 		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
 	}
 
@@ -900,6 +904,7 @@ public final class Session {
 		List<Integer> voters = new ArrayList<>(lockedHands);
 		clearVote();
 		Game.VoteResult r = g.vote(nom.index(), voters);
+		save();
 		String nominee = g.player(nom.nominee()).name;
 		announce(r.count() + " voix contre " + nominee + " (seuil " + r.threshold() + ") : "
 			+ (r.onBlock() ? "en passe d'être exécuté." : "pas d'exécution pour l'instant."));
@@ -989,6 +994,7 @@ public final class Session {
 			throw new GameException("Un vote est en cours.");
 		}
 		Game.DayEnd end = g.endDay();
+		save();
 		announce(end.executed() >= 0
 			? g.player(end.executed()).name + " est exécuté."
 			: "Personne n'est exécuté aujourd'hui.");
@@ -1014,6 +1020,7 @@ public final class Session {
 		announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
 		lastGame = g;
 		game = null;
+		host.persist("");
 		clearNight();
 		clearVote();
 		clearPrompts(null);
@@ -1137,6 +1144,94 @@ public final class Session {
 	/** Noms des scripts enregistrés (fournis par le serveur). */
 	public void setSavedScripts(List<String> names) {
 		savedScripts = List.copyOf(names);
+	}
+
+	// ------------------------------------------------------------------
+	// Sauvegarde automatique
+	// ------------------------------------------------------------------
+	private static final class SaveData {
+		String mode;
+		String storyteller;
+		List<String> lobby;
+		List<String> bots;
+		Map<String, String> notes;
+		List<String> script;
+		String scriptName;
+		Settings settings;
+		String misregister;
+		String mayorTarget;
+		String successor;
+		boolean nominationsOpen;
+		String game;
+	}
+
+	private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
+
+	/** Enregistre l'état de la table (appelé aux moments clés de la partie). */
+	private void save() {
+		if (game == null) {
+			host.persist("");
+			return;
+		}
+		SaveData d = new SaveData();
+		d.mode = mode.name();
+		d.storyteller = storyteller;
+		d.lobby = List.copyOf(lobby);
+		d.bots = List.copyOf(bots);
+		d.notes = Map.copyOf(notes);
+		d.script = script.stream().map(Role::name).toList();
+		d.scriptName = scriptName;
+		d.settings = settings;
+		d.misregister = policies.misregister.name();
+		d.mayorTarget = policies.mayorTarget;
+		d.successor = policies.successor;
+		d.nominationsOpen = nominationsOpen;
+		d.game = game.toJson();
+		host.persist(GSON.toJson(d));
+	}
+
+	/** Reprend une partie enregistrée (après un redémarrage du serveur). */
+	public String restore(String json) {
+		SaveData d = GSON.fromJson(json, SaveData.class);
+		mode = Mode.valueOf(d.mode);
+		storyteller = d.storyteller;
+		lobby.clear();
+		lobby.addAll(d.lobby);
+		bots.clear();
+		bots.addAll(d.bots);
+		notes.clear();
+		notes.putAll(d.notes);
+		script = java.util.EnumSet.noneOf(Role.class);
+		d.script.forEach(r -> script.add(Role.valueOf(r)));
+		scriptName = d.scriptName;
+		settings.nightFreeze = d.settings.nightFreeze;
+		settings.nightDark = d.settings.nightDark;
+		settings.nightHouses = d.settings.nightHouses;
+		settings.nightMute = d.settings.nightMute;
+		settings.defenseSeconds = d.settings.defenseSeconds;
+		settings.clockTicks = d.settings.clockTicks;
+		policies.misregister = HumanDecisions.Policy.valueOf(d.misregister);
+		policies.mayorTarget = d.mayorTarget;
+		policies.successor = d.successor;
+		nominationsOpen = d.nominationsOpen;
+		game = Game.fromJson(d.game, rng);
+		if (mode == Mode.HUMAIN) {
+			game.decide = policies;
+		}
+		clearNight();
+		clearVote();
+		host.seatPlayers(realNames(), storyteller != null ? storyteller : realNames().isEmpty() ? "" : realNames().get(0));
+		String where = switch (game.phase()) {
+			case NIGHT -> "la nuit " + game.night();
+			case DAY -> "le jour " + game.day();
+			default -> "le début de partie";
+		};
+		announce("Partie reprise là où elle s'était arrêtée : " + where + ".");
+		if (game.phase() == Game.Phase.NIGHT) {
+			host.nightEffects(realNames(), true, settings);
+			nextLater(); // le réveil en cours au moment de l'arrêt est repris à l'étape suivante
+		}
+		return "";
 	}
 
 	// ------------------------------------------------------------------

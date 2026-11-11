@@ -37,6 +37,14 @@ public final class ValcombeMod implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			HOST.setServer(server);
 			HOST.prepareWorld();
+			String saved = HOST.savedGame();
+			if (saved != null) {
+				try {
+					SESSION.restore(saved);
+				} catch (RuntimeException e) {
+					LOG.error("Sauvegarde de partie illisible : ignorée", e);
+				}
+			}
 			SESSION.setSavedScripts(ScriptStore.list(server));
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HOST.setServer(null));

@@ -61,8 +61,9 @@ public final class Game {
 	private record Slot(Step.Kind kind, Role role) {
 	}
 
-	public final Rng rng;
-	public Decisions decide;
+	/** Non enregistrés : recréés au rechargement. */
+	public transient Rng rng;
+	public transient Decisions decide;
 	private final List<Seat> seats = new ArrayList<>();
 	private final List<String> log = new ArrayList<>();
 	private Phase phase = Phase.SETUP;
@@ -98,6 +99,20 @@ public final class Game {
 	private boolean tie;
 	private boolean dayOver;
 	private int executedToday = -1;
+
+	private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
+
+	/** État complet de la partie, pour la sauvegarde automatique. */
+	public String toJson() {
+		return GSON.toJson(this);
+	}
+
+	public static Game fromJson(String json, Rng rng) {
+		Game g = GSON.fromJson(json, Game.class);
+		g.rng = rng;
+		g.decide = new AutoDecisions();
+		return g;
+	}
 
 	public Game(List<String> names, Rng rng) {
 		this.rng = rng;

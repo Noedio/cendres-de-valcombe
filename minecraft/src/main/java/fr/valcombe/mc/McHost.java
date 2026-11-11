@@ -149,6 +149,38 @@ public final class McHost implements Host {
 			+ ", " + v.seatCount() + " siège(s), " + v.houseCount() + " maison(s).";
 	}
 
+	private java.nio.file.Path saveFile() {
+		return server.getServerDirectory().resolve("config").resolve("valcombe-partie.json");
+	}
+
+	@Override
+	public void persist(String json) {
+		if (server == null) {
+			return;
+		}
+		try {
+			java.nio.file.Path f = saveFile();
+			if (json.isEmpty()) {
+				java.nio.file.Files.deleteIfExists(f);
+			} else {
+				java.nio.file.Files.createDirectories(f.getParent());
+				java.nio.file.Files.writeString(f, json);
+			}
+		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Sauvegarde de la partie impossible", e);
+		}
+	}
+
+	/** Sauvegarde laissée par un arrêt du serveur, ou null. */
+	public String savedGame() {
+		try {
+			java.nio.file.Path f = saveFile();
+			return java.nio.file.Files.exists(f) ? java.nio.file.Files.readString(f) : null;
+		} catch (java.io.IOException e) {
+			return null;
+		}
+	}
+
 	public Village village() {
 		return village;
 	}
