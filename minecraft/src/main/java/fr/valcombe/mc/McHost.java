@@ -57,6 +57,23 @@ public final class McHost implements Host {
 	private final Map<String, SeatPos> houses = new HashMap<>();
 	private boolean inHouses;
 
+	private Community community;
+
+	public void setCommunity(Community community) {
+		this.community = community;
+	}
+
+	@Override
+	public void report(fr.valcombe.session.GameReport report) {
+		if (community != null) {
+			try {
+				community.record(report);
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Statistiques non enregistrées", e);
+			}
+		}
+	}
+
 	public void setServer(MinecraftServer server) {
 		this.server = server;
 		this.village = server == null ? null : Village.load(server);

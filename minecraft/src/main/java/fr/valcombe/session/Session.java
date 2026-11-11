@@ -1125,9 +1125,10 @@ public final class Session {
 		if (g == null) {
 			return;
 		}
+		revealBoards(g); // avant endGame, qui oublie la place des sièges
 		host.endGame(realNames());
-		revealBoards(g);
 		host.celebrate(realNames());
+		host.report(report(g));
 		host.title(realNames(), g.winner() == Team.GOOD ? "Victoire du bien" : "Victoire du mal", g.winReason());
 		announce("Fin de la partie : victoire du " + (g.winner() == Team.GOOD ? "bien" : "mal") + " ! "
 			+ g.winReason());
@@ -1138,6 +1139,17 @@ public final class Session {
 		clearNight();
 		clearVote();
 		clearPrompts(null);
+	}
+
+	private GameReport report(Game g) {
+		List<GameReport.Player> players = new ArrayList<>();
+		for (Game.Seat p : g.players()) {
+			players.add(new GameReport.Player(p.name, p.role().displayName,
+				p.believed() != p.role() ? p.believed().displayName : null,
+				p.team().name(), p.alive(), bots.contains(p.name)));
+		}
+		return new GameReport(g.winner() == null ? "" : g.winner().name(), g.winReason(), g.day(), scriptName,
+			mode == Mode.HUMAIN ? storyteller : null, players, List.copyOf(g.log()));
 	}
 
 	public void onDisconnect(String name) {

@@ -24,6 +24,22 @@ public final class ValcombeMod implements ModInitializer {
 	private static final Session SESSION = new Session(HOST);
 	private static final ValcombeUi UI = new ValcombeUi(SESSION, HOST);
 	private static final ViewSync SYNC = new ViewSync(SESSION);
+	private static Community community;
+	private static Tablet tablet;
+
+	/** Statistiques et compte rendu Discord (disponible une fois le serveur démarré). */
+	public static Community community() {
+		return community;
+	}
+
+	/** Grimoire sur tablette (disponible une fois le serveur démarré). */
+	public static Tablet tablet() {
+		return tablet;
+	}
+
+	static boolean isLeader(ServerPlayer p) {
+		return SYNC.isLeader(p);
+	}
 
 	/** La table de jeu du serveur (utilisée par le plugin vocal). */
 	public static Session session() {
@@ -51,6 +67,10 @@ public final class ValcombeMod implements ModInitializer {
 		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			HOST.setServer(server);
+			community = new Community(server.getServerDirectory().resolve("config"));
+			HOST.setCommunity(community);
+			tablet = new Tablet(SESSION, community);
+			tablet.setServer(server);
 			HOST.prepareWorld();
 			String saved = HOST.savedGame();
 			if (saved != null) {
@@ -62,7 +82,12 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			SESSION.setSavedScripts(ScriptStore.list(server));
 		});
-		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HOST.setServer(null));
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			HOST.setServer(null);
+			if (tablet != null) {
+				tablet.close();
+			}
+		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			HOST.onTick();
 			SYNC.onTick(server);

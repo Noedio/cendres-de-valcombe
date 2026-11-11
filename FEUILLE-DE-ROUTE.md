@@ -69,6 +69,12 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 | Hébergement | Script d'installation sur un petit serveur loué, sauvegardes automatiques |
 | Launcher | Plusieurs serveurs enregistrés, rapport de plantage en un clic |
 
+### Avancement de la phase 4
+
+- Fait : grimoire sur tablette ou téléphone (`/vc tablette` : page web servie par le serveur, lien à jeton secret, actions avec les droits du Conteur), compte rendu de fin de partie sur Discord (`/vc discord <webhook>`, `/vc discord essai`), statistiques par joueur (`/vc stats [pseudo]`), guide d'hébergement sur VPS ([HEBERGEMENT.md](HEBERGEMENT.md)) avec service systemd et sauvegardes automatiques.
+- Corrigé au passage : la révélation des rôles sur les jetons en fin de partie (les sièges étaient oubliés trop tôt).
+- Reporté : plusieurs serveurs enregistrés et rapport de plantage dans le launcher.
+
 ## Déjà fait
 
 - Moteur de règles des 22 rôles, testé.

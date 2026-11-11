@@ -185,6 +185,39 @@ def main():
         "rem Lance le serveur. Il faut Java 25 et le fichier fabric-server-launch.jar (voir INSTALLATION.md).\r\n"
         "java -Xmx4G -jar fabric-server-launch.jar nogui\r\n"
         "pause\r\n", encoding="utf-8")
+    # Serveur loué sous Linux (voir HEBERGEMENT.md) : lancement, service systemd, sauvegardes.
+    linux = {
+        "demarrer.sh": (
+            "#!/bin/sh\n"
+            "# Lance le serveur (Java 25 et fabric-server-launch.jar requis, voir HEBERGEMENT.md).\n"
+            "cd \"$(dirname \"$0\")\"\n"
+            "exec java -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"),
+        "sauvegarder.sh": (
+            "#!/bin/sh\n"
+            "# Sauvegarde le monde et les réglages de Valcombe ; garde les 14 dernières archives.\n"
+            "set -e\n"
+            "cd \"$(dirname \"$0\")\"\n"
+            "mkdir -p sauvegardes\n"
+            "tar -czf \"sauvegardes/valcombe-$(date +%Y-%m-%d_%H%M).tar.gz\" world config server.properties whitelist.json ops.json 2>/dev/null || true\n"
+            "ls -1t sauvegardes/valcombe-*.tar.gz | tail -n +15 | xargs -r rm --\n"),
+        "valcombe.service": (
+            "[Unit]\n"
+            "Description=Serveur Minecraft Les Cendres de Valcombe\n"
+            "After=network-online.target\n"
+            "\n"
+            "[Service]\n"
+            "User=valcombe\n"
+            "WorkingDirectory=/opt/valcombe\n"
+            "ExecStart=/opt/valcombe/demarrer.sh\n"
+            "Restart=on-failure\n"
+            "RestartSec=10\n"
+            "\n"
+            "[Install]\n"
+            "WantedBy=multi-user.target\n"),
+    }
+    for name, text in linux.items():
+        with open(server / name, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
     print(f"Serveur : {server}")
 
 

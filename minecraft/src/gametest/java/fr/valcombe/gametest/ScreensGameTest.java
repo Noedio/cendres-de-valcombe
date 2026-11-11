@@ -76,6 +76,58 @@ public class ScreensGameTest implements FabricClientGameTest {
 		}
 	}
 
+	/** Grimoire sur tablette : la page répond, refuse un mauvais jeton, et exécute une commande. */
+	private static void checkTablet(ClientGameTestContext ctx) {
+		send(ctx, "vc tablette");
+		ctx.waitTicks(10);
+		String link = fr.valcombe.mc.ValcombeMod.tablet().links().get(0);
+		String token = link.substring(link.indexOf('#') + 1);
+		String base = "http://127.0.0.1:" + fr.valcombe.mc.ValcombeMod.community().tabletPort();
+		try {
+			var http = java.net.http.HttpClient.newHttpClient();
+			var page = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/")).build(),
+				java.net.http.HttpResponse.BodyHandlers.ofString());
+			check(page.statusCode() == 200 && page.body().contains("Grimoire de Valcombe"), "page de la tablette");
+			var bad = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/vue"))
+				.header("X-Valcombe-Jeton", "faux").build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+			check(bad.statusCode() == 403, "jeton refusé");
+			var vue = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/vue"))
+				.header("X-Valcombe-Jeton", token).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+			check(vue.statusCode() == 200 && vue.body().contains("\"grimoire\""), "vue du grimoire : " + vue.body());
+			java.nio.file.Files.writeString(java.nio.file.Path.of("tablette-vue.json"), vue.body());
+			var cmd = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/commande"))
+				.header("X-Valcombe-Jeton", token)
+				.POST(java.net.http.HttpRequest.BodyPublishers.ofString("vc rassembler")).build(),
+				java.net.http.HttpResponse.BodyHandlers.ofString());
+			check(cmd.statusCode() == 200, "commande depuis la tablette : " + cmd.statusCode() + " " + cmd.body());
+			var refused = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/commande"))
+				.header("X-Valcombe-Jeton", token)
+				.POST(java.net.http.HttpRequest.BodyPublishers.ofString("op Bot1")).build(),
+				java.net.http.HttpResponse.BodyHandlers.ofString());
+			check(refused.statusCode() == 400, "commande hors /vc refusée");
+			System.out.println("[valcombe-test] tablette OK : " + cmd.body().replace("\n", " "));
+		} catch (java.io.IOException e) {
+			throw new AssertionError("tablette injoignable", e);
+		}
+		send(ctx, "vc tablette fermer");
+	}
+
+	/** Requête HTTP pendant que le jeu continue de tourner (le serveur ne répond qu'entre deux ticks). */
+	private static java.net.http.HttpResponse<String> fetch(ClientGameTestContext ctx, java.net.http.HttpClient http,
+		java.net.http.HttpRequest req, java.net.http.HttpResponse.BodyHandler<String> body) {
+		var future = http.sendAsync(req, body);
+		for (int i = 0; i < 200 && !future.isDone(); i++) {
+			ctx.waitTick();
+		}
+		return future.join();
+	}
+
+	private static void check(boolean ok, String what) {
+		if (!ok) {
+			throw new AssertionError("Échec : " + what);
+		}
+	}
+
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
 		try (TestSingleplayerContext world = ctx.worldBuilder().adjustSettings(w -> w.setAllowCommands(true)).create()) {
@@ -190,6 +242,9 @@ public class ScreensGameTest implements FabricClientGameTest {
 			playNight(ctx);
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "7-panneau-jour");
+			ctx.setScreen(() -> null);
+			checkTablet(ctx);
+			send(ctx, "vc stats");
 			world.getServer().runCommand("vc arreter");
 		}
 	}

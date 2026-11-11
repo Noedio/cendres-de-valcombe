@@ -44,6 +44,10 @@ public interface Host {
 	default void celebrate(List<String> players) {
 	}
 
+	/** Bilan d'une partie terminée (statistiques, compte rendu). */
+	default void report(GameReport report) {
+	}
+
 	/** Enregistre la sauvegarde de la partie (chaîne vide : plus de partie à reprendre). */
 	default void persist(String json) {
 	}

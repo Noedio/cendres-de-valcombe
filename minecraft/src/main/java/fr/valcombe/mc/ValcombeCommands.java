@@ -54,6 +54,13 @@ public final class ValcombeCommands {
 		return p.getScoreboardName();
 	}
 
+	private static String lines(CommandContext<CommandSourceStack> ctx, List<String> lines) {
+		for (String line : lines) {
+			ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+		}
+		return "";
+	}
+
 	private static String arg(CommandContext<CommandSourceStack> ctx, String key) {
 		return StringArgumentType.getString(ctx, key);
 	}
@@ -240,6 +247,46 @@ public final class ValcombeCommands {
 			.then(Commands.literal("mp")
 				.then(Commands.argument("message", StringArgumentType.greedyString())
 					.executes(c -> exec(c, x -> session.messageStoryteller(name(x), arg(x, "message"))))))
+			.then(Commands.literal("stats")
+				.executes(c -> exec(c, x -> lines(x, ValcombeMod.community().statsLines(null))))
+				.then(Commands.argument("joueur", StringArgumentType.word())
+					.executes(c -> exec(c, x -> lines(x, ValcombeMod.community().statsLines(arg(x, "joueur")))))))
+			.then(Commands.literal("discord").requires(admin)
+				.then(Commands.literal("essai").executes(c -> exec(c, x -> {
+					CommandSourceStack src = x.getSource();
+					ValcombeMod.community().test().whenComplete((ok, err) -> src.getServer().execute(() -> {
+						if (err == null) {
+							src.sendSuccess(() -> Component.literal("Message d'essai envoyé sur Discord."), false);
+						} else {
+							src.sendFailure(Component.literal("Échec de l'envoi : " + err.getMessage()));
+						}
+					}));
+					return "Envoi du message d'essai…";
+				})))
+				.then(Commands.argument("adresse", StringArgumentType.greedyString())
+					.executes(c -> exec(c, x -> ValcombeMod.community().setWebhook(arg(x, "adresse"))))))
+			.then(Commands.literal("tablette").requires(leader)
+				.executes(c -> exec(c, x -> {
+					ServerPlayer p = x.getSource().getPlayerOrException();
+					Tablet t = ValcombeMod.tablet();
+					t.open(p.getScoreboardName());
+					p.sendSystemMessage(Component.literal("Grimoire sur tablette ouvert. Ouvrez ce lien sur votre tablette ou téléphone "
+						+ "(même réseau, ou port " + ValcombeMod.community().tabletPort() + " ouvert) — ne le partagez pas :")
+						.withStyle(net.minecraft.ChatFormatting.GOLD));
+					for (String link : t.links()) {
+						p.sendSystemMessage(Component.literal("  " + link).withStyle(st -> st
+							.withColor(net.minecraft.ChatFormatting.AQUA).withUnderlined(true)
+							.withClickEvent(new net.minecraft.network.chat.ClickEvent.OpenUrl(java.net.URI.create(link)))));
+					}
+					return "Fermer : /vc tablette fermer. Nouveau lien (l'ancien ne marche plus) : /vc tablette";
+				}))
+				.then(Commands.literal("fermer").executes(c -> exec(c, x -> {
+					ValcombeMod.tablet().close();
+					return "Tablette fermée : le lien ne fonctionne plus.";
+				})))
+				.then(Commands.literal("port").requires(admin)
+					.then(Commands.argument("port", IntegerArgumentType.integer(1024, 65535))
+						.executes(c -> exec(c, x -> ValcombeMod.community().setTabletPort(IntegerArgumentType.getInteger(x, "port")))))))
 			.then(Commands.literal("reglage").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
