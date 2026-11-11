@@ -191,7 +191,7 @@ public final class ValcombeMod implements ModInitializer {
 				p.level().getServer().getCommands().performPrefixedCommand(p.createCommandSourceStack(), cmd);
 			}
 		});
-		// Clic droit avec l'horloge « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
+		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
 		UseItemCallback.EVENT.register((player, level, hand) -> {
 			// Plume d'accusation : pendant un vote, lever ou baisser la main ; sinon accuser le joueur visé, même de loin.
 			if (ValcombeUi.isAccuseItem(player.getItemInHand(hand))) {

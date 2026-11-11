@@ -143,6 +143,8 @@ public partial class MainWindow : Window
         MemorySlider.Value = _config.MaxMemoryMb / 1024;
         CloseOnLaunchBox.IsChecked = _config.CloseOnLaunch;
         ShortcutsBox.IsChecked = _config.Shortcuts;
+        HdBox.IsChecked = _config.HdTextures;
+        ShadersBox.IsChecked = _config.Shaders;
         UpdateLabels();
     }
 
@@ -240,6 +242,8 @@ public partial class MainWindow : Window
             _config.Background = bg;
         }
         _config.CloseOnLaunch = CloseOnLaunchBox.IsChecked == true;
+        _config.HdTextures = HdBox.IsChecked == true;
+        _config.Shaders = ShadersBox.IsChecked == true;
         bool shortcuts = ShortcutsBox.IsChecked == true;
         if (shortcuts != _config.Shortcuts)
         {
@@ -710,6 +714,10 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("Aucune version installée : renseignez le dépôt GitHub dans les Réglages.");
             }
             Instance.PrepareOptions(_config.Minecraft, Paths.GameDir);
+            if (_release != null)
+            {
+                await Instance.SyncExtrasAsync(_release, Paths.GameDir, _config, progress);
+            }
             if (!Prism.HasAccount())
             {
                 SetStatus("Première connexion : dans la fenêtre qui s'ouvre, Comptes → Ajouter Microsoft, puis suivez les étapes. "
@@ -756,6 +764,7 @@ public partial class MainWindow : Window
         await Engine.DownloadAsync(plan, progress);
         await Instance.SyncEngineAsync(release, progress);
         Instance.PrepareOptions(_config.Minecraft, Engine.GameDir);
+        await Instance.SyncExtrasAsync(release, Engine.GameDir, _config, progress);
         SetStatus("Lancement de Minecraft…", 1);
         var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));
         if (!_config.CloseOnLaunch)

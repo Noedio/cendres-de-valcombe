@@ -258,8 +258,12 @@ public final class Hud {
 		for (Object[] l : labels) {
 			String label = (String) l[2];
 			int tw = mc.font.width(label);
-			int sx = (int) l[0];
+			// Jamais sous les barres du bas (chat, aides, inventaire) ni hors de l'écran sur les côtés.
+			int sx = Math.max(tw / 2 + 4, Math.min(w - tw / 2 - 4, (int) l[0]));
 			int sy = (int) l[1];
+			if (sy > h - 90 || sy < 46) {
+				continue;
+			}
 			for (int tries = 0; tries < 8; tries++) {
 				boolean hit = false;
 				for (int[] box : placed) {
@@ -283,7 +287,7 @@ public final class Hud {
 	/** Tableau du jour, en haut à droite : nominations, voix, et qui est sur le billot. */
 	private static void drawToday(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int top) {
 		JsonObject day = ClientState.obj(v, "today");
-		if (day == null || !"DAY".equals(ClientState.phase())) {
+		if (day == null || !"DAY".equals(ClientState.phase()) || mc.gui.screen() != null) {
 			return;
 		}
 		java.util.List<String[]> lines = new java.util.ArrayList<>(); // {texte, couleur}

@@ -12,6 +12,10 @@ public sealed class PackMod
     [JsonPropertyName("url")] public string Url { get; set; } = "";
     [JsonPropertyName("sha512")] public string Sha512 { get; set; } = "";
     [JsonPropertyName("size")] public long Size { get; set; }
+    /// <summary>Pour les « extras » : dossier du jeu (resourcepacks, shaderpacks).</summary>
+    [JsonPropertyName("folder")] public string Folder { get; set; } = "";
+    /// <summary>Pour les « extras » : réglage qui les active (« hd » : textures, « shaders » : ombres et lumières).</summary>
+    [JsonPropertyName("group")] public string Group { get; set; } = "";
 }
 
 public sealed class NewsItem
@@ -38,6 +42,8 @@ public sealed class PackManifest
     [JsonPropertyName("loader")] public string Loader { get; set; } = "";
     [JsonPropertyName("server")] public string Server { get; set; } = "";
     [JsonPropertyName("mods")] public List<PackMod> Mods { get; set; } = new();
+    /// <summary>Packs de textures et de shaders (hors du dossier mods, ignorés des anciens launchers).</summary>
+    [JsonPropertyName("extras")] public List<PackMod> Extras { get; set; } = new();
     [JsonPropertyName("news")] public List<NewsItem> News { get; set; } = new();
     [JsonPropertyName("launcher")] public LauncherInfo? Launcher { get; set; }
 }

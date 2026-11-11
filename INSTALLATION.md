@@ -12,15 +12,18 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - Modrinth App : bouton « + » puis « Importer » ;
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
-   Le launcher installe Minecraft 26.3, Fabric, Fabric API, Simple Voice Chat et le mod Valcombe.
+   Le launcher installe Minecraft 26.3, Fabric, Fabric API, Simple Voice Chat et le mod Valcombe, ainsi que les mods
+   graphiques des joueurs (Sodium, Iris, Continuity, LambDynamicLights, EntityCulling). Les textures HD (Faithful 64x)
+   et les shaders (Complementary Reimagined) sont proposés en option : activez-les dans les packs de ressources et
+   dans les réglages d'Iris (touche O). Le launcher Valcombe, lui, les installe et les active tout seul.
 4. Lancez l'instance, puis Multijoueur → « Ajouter un serveur », avec l'adresse donnée par l'hôte.
 5. En jeu :
-   - **J** ou l'horloge « Menu de Valcombe » (clic droit) : menu du jeu ;
+   - **J** ou le grimoire « Menu de Valcombe » (clic droit) : menu du jeu ;
    - **V** : réglages du vocal (Simple Voice Chat). Choisissez votre micro au premier lancement ;
    - **clic droit sur un trône** de la place : s'y asseoir (accroupi pour se lever). En partie, chacun a le sien ; cliquer sur celui d'un autre fait scintiller le vôtre ;
    - **H** : lever ou baisser la main pendant un vote, dès que l'accusé commence sa défense ;
    - **plume d'accusation** (donnée en début de partie) : viser un joueur, même à l'autre bout de la place, et faire un clic droit pour l'accuser. Pendant un vote, la plume lève ou baisse la main. La barre au-dessus de l'inventaire indique qui est visé ;
-   - en haut à gauche, le **tableau du jour** : qui a accusé qui, avec combien de voix, et qui est sur le billot ; pendant le vote, une rangée de cases montre l'aiguille, les mains comptées et quand elle arrivera à vous ;
+   - en haut à droite, le **tableau du jour** : qui a accusé qui, avec combien de voix, et qui est sur le billot ; pendant le vote, une rangée de cases montre l'aiguille, les mains comptées et quand elle arrivera à vous ;
    - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
    - menu → « Regarder » : suivre la partie en spectateur ;
    - menu → « Appeler le Conteur » : il est prévenu et peut vous prendre à part (vocal seul à seul) ;

@@ -33,6 +33,14 @@ Sommaire :
 
 Le launcher se met à jour tout seul et met le jeu à la dernière version dès son démarrage. Vos touches et réglages sont gardés, même après une réinstallation. Page **Guide** : les règles et les touches ; page **Mon carnet** : vos parties.
 
+**Graphismes** : le launcher installe de quoi rendre le jeu plus beau et plus fluide, côté joueur seulement (rien à faire sur le serveur) :
+
+- **Sodium** (fluidité), **EntityCulling** (rendu allégé), **Continuity** (blocs sans jointures), **LambDynamicLights** (une torche en main éclaire autour de vous) ;
+- des **textures haute définition** (Faithful 64x) ;
+- des **shaders** (Iris + Complementary Reimagined) : ombres, lumière du soleil, eau et ciel réalistes.
+
+Page **Personnalisation › Graphismes du jeu** : décochez les shaders si le jeu saccade (carte graphique ancienne ou PC portable), ou les textures HD si vous préférez l'aspect d'origine. C'est appliqué au lancement suivant. En jeu, la touche **O** ouvre les réglages des shaders (Iris).
+
 **Touches en jeu** :
 
 | Touche ou geste | Effet |
@@ -110,7 +118,7 @@ Le Conteur (ou l'opérateur, en Conteur automatique) lance la partie : menu J �
 4. **Accuser** : plume d'accusation en main, viser un joueur (même de loin), clic droit. Chacun accuse au plus une fois par jour, et chacun ne peut être accusé qu'une fois par jour.
 5. **La défense** : l'accusé a quelques secondes pour se défendre. On peut déjà lever la main (H ou la plume).
 6. **Le vote à l'horloge** : une aiguille dorée fait le tour du cercle à partir du voisin de l'accusé. Quand elle passe devant vous, votre main est comptée si elle est levée. Un bandeau montre l'ordre de passage, les mains comptées et quand l'aiguille arrive à vous.
-7. **Le billot** : il faut au moins la moitié des vivants. Celui qui a le plus de voix (sans égalité) est « sur le billot ». Le tableau du jour (en haut à gauche) montre chaque accusation, ses voix et **qui a voté**.
+7. **Le billot** : il faut au moins la moitié des vivants. Celui qui a le plus de voix (sans égalité) est « sur le billot ». Le tableau du jour (en haut à droite) montre chaque accusation, ses voix et **qui a voté**.
 8. **La fin du jour** : le Conteur clôt la journée ; le joueur sur le billot est exécuté (le gibet sort de terre). Puis la nuit tombe.
 
 ### Les morts

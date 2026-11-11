@@ -83,8 +83,18 @@ public final class ValcombeUi {
 			case DEMON -> Items.WITHER_SKELETON_SKULL;
 		};
 		ChatFormatting color = r.evil() ? ChatFormatting.RED : ChatFormatting.AQUA;
-		return Gui.icon(item, r.displayName, color,
+		ItemStack s = Gui.icon(item, r.displayName, color,
 			List.of(r.type.displayName + " — camp : " + Team.of(r).displayName, r.text));
+		// Le jeton du rôle lui-même (emblème aux couleurs du camp), dessiné par le mod.
+		String icon = r.custom() ? "icone_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
+			: "icone_" + r.name().toLowerCase(java.util.Locale.ROOT);
+		return model(s, icon);
+	}
+
+	/** Donne à un objet l'apparence d'un modèle du mod (assets/valcombe/items/<nom>.json). */
+	static ItemStack model(ItemStack s, String name) {
+		s.set(DataComponents.ITEM_MODEL, net.minecraft.resources.Identifier.fromNamespaceAndPath("valcombe", name));
+		return s;
 	}
 
 	/** Icône d'un joueur du cercle : sa tête s'il est connecté, un crâne s'il est mort. */
@@ -106,13 +116,13 @@ public final class ValcombeUi {
 
 	/** Objet « Menu de Valcombe » : clic droit pour ouvrir le menu principal. */
 	public static ItemStack menuItem() {
-		return Gui.glow(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."));
+		return model(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."), "grimoire");
 	}
 
 	public static final String WAND_NAME = "Baguette de carte";
 
 	public static ItemStack wandItem() {
-		return Gui.glow(Gui.icon(Items.BLAZE_ROD, WAND_NAME, "Clic droit sur un bloc : siège.", "Accroupi + clic droit : maison."));
+		return model(Gui.icon(Items.BLAZE_ROD, WAND_NAME, "Clic droit sur un bloc : siège.", "Accroupi + clic droit : maison."), "equerre");
 	}
 
 	public static boolean isWand(ItemStack stack) {
@@ -124,9 +134,9 @@ public final class ValcombeUi {
 
 	/** Bâton du Conteur : viser un joueur pour voir son rôle, ouvrir sa ligne du grimoire, le prendre à part. */
 	public static ItemStack staffItem() {
-		return Gui.glow(Gui.icon(Items.BREEZE_ROD, STAFF_NAME, "Viser un joueur : son rôle s'affiche.",
+		return model(Gui.icon(Items.BREEZE_ROD, STAFF_NAME, "Viser un joueur : son rôle s'affiche.",
 			"Clic droit : sa ligne du grimoire. Accroupi + clic droit : aparté vocal.",
-			"Clic droit dans le vide : le panneau du Conteur."));
+			"Clic droit dans le vide : le panneau du Conteur."), "baton");
 	}
 
 	public static boolean isStaffItem(ItemStack stack) {
@@ -169,8 +179,8 @@ public final class ValcombeUi {
 	public static final String ACCUSE_NAME = "Plume d'accusation";
 
 	public static ItemStack accuseItem() {
-		return Gui.glow(Gui.icon(Items.FEATHER, ACCUSE_NAME, "Le jour, quand les nominations sont ouvertes :",
-			"clic droit sur un joueur pour l'accuser."));
+		return model(Gui.icon(Items.FEATHER, ACCUSE_NAME, "Le jour, quand les nominations sont ouvertes :",
+			"clic droit sur un joueur pour l'accuser."), "plume");
 	}
 
 	public static boolean isAccuseItem(ItemStack stack) {
@@ -204,6 +214,9 @@ public final class ValcombeUi {
 	public void giveMenuItem(ServerPlayer p) {
 		for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
 			if (isMenuItem(p.getInventory().getItem(i))) {
+				if (!p.getInventory().getItem(i).has(DataComponents.ITEM_MODEL)) {
+					p.getInventory().setItem(i, menuItem()); // ancienne horloge : remplacée par le grimoire
+				}
 				return;
 			}
 		}

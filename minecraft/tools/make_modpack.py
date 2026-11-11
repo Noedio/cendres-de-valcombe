@@ -42,12 +42,28 @@ def props():
     return out
 
 
-def modrinth_file(project, game_version, version_number):
+# Graphismes, côté joueurs seulement (jamais sur le serveur) : fluidité, shaders, lumière tenue en main,
+# blocs sans jointures, rendu allégé. Versions vérifiées pour Minecraft 26.3.
+CLIENT_MODS = {
+    "Sodium": ("sodium", "mc26.3-0.9.2-fabric"),
+    "Iris (shaders)": ("iris", "1.11.7+26.3-fabric"),
+    "LambDynamicLights": ("lambdynamiclights", "4.13.0+26.3"),
+    "Continuity": ("continuity", "3.0.1+26.3"),
+    "EntityCulling": ("entityculling", "1.11.3"),
+}
+# Packs installés par le launcher dans resourcepacks/ et shaderpacks/, activés selon les réglages du joueur.
+EXTRAS = {
+    "Textures Faithful 64x": ("faithful-64x", "Release-15-Wilderness-Bound-Drop", "resourcepacks", "hd"),
+    "Shaders Complementary Reimagined": ("complementary-reimagined", "r5.9.3", "shaderpacks", "shaders"),
+}
+
+
+def modrinth_file(project, game_version, version_number, loader="fabric"):
     """Fichier principal d'une version Modrinth : adresse, empreintes, taille."""
-    query = urllib.parse.urlencode({
-        "game_versions": json.dumps([game_version]),
-        "loaders": json.dumps(["fabric"]),
-    })
+    q = {"game_versions": json.dumps([game_version])}
+    if loader:
+        q["loaders"] = json.dumps([loader])
+    query = urllib.parse.urlencode(q)
     req = urllib.request.Request(f"{API}/project/{project}/version?{query}", headers={"User-Agent": USER_AGENT})
     versions = json.load(urllib.request.urlopen(req, timeout=30))
     for v in versions:
@@ -83,6 +99,10 @@ def main():
         "Fabric API": modrinth_file("fabric-api", mc, p["fabric_api_version"]),
         "Simple Voice Chat": modrinth_file("simple-voice-chat", mc, p["voicechat_version"]),
     }
+    client_mods = {label: modrinth_file(slug, mc, ver) for label, (slug, ver) in CLIENT_MODS.items()}
+    extras = {}
+    for label, (slug, ver, folder, group) in EXTRAS.items():
+        extras[label] = dict(modrinth_file(slug, mc, ver, loader=None), folder=folder, group=group)
 
     # --- Modpack (.mrpack) -------------------------------------------------
     index = {
@@ -100,6 +120,24 @@ def main():
                 "fileSize": m["size"],
             }
             for m in mods.values()
+        ] + [
+            {
+                "path": f"mods/{m['filename']}",
+                "hashes": {"sha1": m["sha1"], "sha512": m["sha512"]},
+                "env": {"client": "required", "server": "unsupported"},
+                "downloads": [m["url"]],
+                "fileSize": m["size"],
+            }
+            for m in client_mods.values()
+        ] + [
+            {
+                "path": f"{m['folder']}/{m['filename']}",
+                "hashes": {"sha1": m["sha1"], "sha512": m["sha512"]},
+                "env": {"client": "optional", "server": "unsupported"},
+                "downloads": [m["url"]],
+                "fileSize": m["size"],
+            }
+            for m in extras.values()
         ],
         "dependencies": {"minecraft": mc, "fabric-loader": p["loader_version"]},
     }
@@ -120,7 +158,7 @@ def main():
         "server": server,
         "mods": [
             {"name": label, "filename": m["filename"], "url": m["url"], "sha512": m["sha512"], "size": m["size"]}
-            for label, m in mods.items()
+            for label, m in list(mods.items()) + list(client_mods.items())
         ] + [{
             "name": "Les Cendres de Valcombe",
             "filename": jar.name,
@@ -128,6 +166,11 @@ def main():
             "sha512": hashlib.sha512(jar.read_bytes()).hexdigest(),
             "size": jar.stat().st_size,
         }],
+        "extras": [
+            {"name": label, "filename": m["filename"], "url": m["url"], "sha512": m["sha512"], "size": m["size"],
+             "folder": m["folder"], "group": m["group"]}
+            for label, m in extras.items()
+        ],
         "news": news,
     }
     # Launcher annoncé (mise à jour automatique) : l'exe publié doit être joint à la version.

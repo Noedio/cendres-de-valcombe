@@ -60,6 +60,7 @@ public static class Instance
 
         await SyncModsAsync(release, Paths.ModsDir, progress, repair, ct);
         PrepareOptions(config.Minecraft, Paths.GameDir);
+        await SyncExtrasAsync(release, Paths.GameDir, config, progress, ct);
         await File.WriteAllTextAsync(InstalledVersionFile, release.Tag, ct);
         progress.Report(("Prêt à jouer.", 1));
     }
@@ -96,6 +97,97 @@ public static class Instance
                     progress.Report(($"Téléchargement : {mod.Name}" + (extra.Length > 0 ? $" ({extra})" : ""), (index + p) / m.Mods.Count));
                 }), ct);
         }
+    }
+
+    /// <summary>
+    /// Packs de textures HD et shaders : télécharge ceux qui sont activés dans les réglages, puis
+    /// les allume ou les éteint dans le jeu (options.txt et réglages d'Iris).
+    /// </summary>
+    public static async Task SyncExtrasAsync(Release release, string gameDir, LauncherConfig config,
+        IProgress<(string, double)> progress, CancellationToken ct = default)
+    {
+        var extras = release.Manifest.Extras;
+        bool On(PackMod e) => e.Group == "hd" ? config.HdTextures : e.Group == "shaders" ? config.Shaders : true;
+        var wanted = extras.Where(On).ToList();
+        for (int i = 0; i < wanted.Count; i++)
+        {
+            var e = wanted[i];
+            string dir = Path.Combine(gameDir, e.Folder.Length > 0 ? e.Folder : "resourcepacks");
+            Directory.CreateDirectory(dir);
+            string target = Path.Combine(dir, e.FileName);
+            if (File.Exists(target) && Http.Sha512(target) == e.Sha512.ToLowerInvariant())
+            {
+                continue;
+            }
+            int index = i;
+            await Http.DownloadAsync(Releases.Resolve(release, e), target, e.Sha512,
+                new Progress<double>(p =>
+                {
+                    string extra = string.Join(", ", new[] { Http.SpeedText(), Http.RemainingText((long)(e.Size * (1 - p))) }
+                        .Where(x => x.Length > 0));
+                    progress.Report(($"Téléchargement : {e.Name}" + (extra.Length > 0 ? $" ({extra})" : ""),
+                        (index + p) / Math.Max(1, wanted.Count)));
+                }), ct);
+        }
+        ApplyGraphics(extras, config, gameDir);
+    }
+
+    /// <summary>Active (ou retire) nos packs dans la liste des packs de ressources, et règle Iris.</summary>
+    public static void ApplyGraphics(List<PackMod> extras, LauncherConfig config, string gameDir)
+    {
+        // Packs de ressources : « vanilla », puis le pack HD, puis les ressources des mods (nos modèles par-dessus).
+        string file = Path.Combine(gameDir, "options.txt");
+        var current = new List<string>();
+        if (File.Exists(file))
+        {
+            string? line = File.ReadAllLines(file).FirstOrDefault(l => l.StartsWith("resourcePacks:", StringComparison.Ordinal));
+            if (line != null)
+            {
+                try
+                {
+                    current = JsonSerializer.Deserialize<List<string>>(line["resourcePacks:".Length..]) ?? new();
+                }
+                catch (JsonException)
+                {
+                    current = new();
+                }
+            }
+        }
+        var ours = extras.Where(e => e.Folder == "resourcepacks").Select(e => "file/" + e.FileName).ToHashSet();
+        current.RemoveAll(p => ours.Contains(p) || p == "vanilla" || p == "fabric");
+        var packs = new List<string> { "vanilla" };
+        if (config.HdTextures)
+        {
+            packs.AddRange(extras.Where(e => e.Folder == "resourcepacks" && e.Group == "hd").Select(e => "file/" + e.FileName));
+        }
+        packs.AddRange(current);
+        packs.Add("fabric");
+        ApplyValues(new Dictionary<string, string> { ["resourcePacks"] = JsonSerializer.Serialize(packs) }, gameDir);
+
+        // Shaders (Iris) : config/iris.properties, sans toucher aux autres réglages d'Iris.
+        var shader = extras.FirstOrDefault(e => e.Folder == "shaderpacks");
+        if (shader == null)
+        {
+            return;
+        }
+        string iris = Path.Combine(gameDir, "config", "iris.properties");
+        Directory.CreateDirectory(Path.GetDirectoryName(iris)!);
+        var lines = File.Exists(iris) ? File.ReadAllLines(iris).ToList() : new List<string>();
+        void Set(string key, string value)
+        {
+            int idx = lines.FindIndex(l => l.StartsWith(key + "=", StringComparison.Ordinal));
+            if (idx >= 0)
+            {
+                lines[idx] = key + "=" + value;
+            }
+            else
+            {
+                lines.Add(key + "=" + value);
+            }
+        }
+        Set("shaderPack", shader.FileName);
+        Set("enableShaders", config.Shaders ? "true" : "false");
+        File.WriteAllLines(iris, lines);
     }
 
     /// <summary>

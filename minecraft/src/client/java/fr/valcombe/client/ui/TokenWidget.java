@@ -20,6 +20,8 @@ public class TokenWidget extends AbstractButton {
 	private final Runnable action;
 	private final List<String> markers = new ArrayList<>();
 	private String caption;
+	/** Où mettre le nom : 0 dessous, 1 dessus, 2 à gauche, 3 à droite (vers l'extérieur du cercle). */
+	private int labelSide;
 
 	public TokenWidget(int cx, int cy, int size, String name, String roleId, String team, boolean alive,
 			boolean selected, Runnable action) {
@@ -35,6 +37,18 @@ public class TokenWidget extends AbstractButton {
 	public TokenWidget marker(String m) {
 		markers.add(m);
 		return this;
+	}
+
+	public TokenWidget labelSide(int side) {
+		this.labelSide = side;
+		return this;
+	}
+
+	/** Côté du nom selon la place sur le cercle (angle en radians, 0 = à droite, sens horaire à l'écran). */
+	public TokenWidget labelOutward(double angle) {
+		double c = Math.cos(angle);
+		double sn = Math.sin(angle);
+		return labelSide(Math.abs(c) > 0.8 ? (c < 0 ? 2 : 3) : sn < 0 ? 1 : 0);
 	}
 
 	public TokenWidget caption(String c) {
@@ -60,8 +74,18 @@ public class TokenWidget extends AbstractButton {
 		}
 		String label = name.length() > 12 ? name.substring(0, 11) + "…" : name;
 		int tw = font.width(label);
-		g.fill(cx - tw / 2 - 2, getY() + getHeight() + 1, cx + tw / 2 + 2, getY() + getHeight() + 11, 0xB01B1214);
-		g.centeredText(font, label, cx, getY() + getHeight() + 2, alive ? Theme.PARCH : Theme.ASH);
+		int lx = switch (labelSide) {
+			case 2 -> getX() - 3 - tw / 2 - 2;
+			case 3 -> getX() + getWidth() + 3 + tw / 2 + 2;
+			default -> cx;
+		};
+		int ly = switch (labelSide) {
+			case 1 -> getY() - 11;
+			case 2, 3 -> cy - 5;
+			default -> getY() + getHeight() + 1;
+		};
+		g.fill(lx - tw / 2 - 2, ly, lx + tw / 2 + 2, ly + 10, 0xB01B1214);
+		g.centeredText(font, label, lx, ly + 1, alive ? Theme.PARCH : Theme.ASH);
 		if (caption != null) {
 			g.centeredText(font, caption, cx, getY() + getHeight() + 12, Theme.GOLD);
 		}

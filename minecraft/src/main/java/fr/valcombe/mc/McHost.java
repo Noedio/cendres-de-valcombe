@@ -440,7 +440,7 @@ public final class McHost implements Host {
 					+ "billboard:\"%s\",line_width:220,background:-937749996,shadow:1b,"
 					+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
 					+ "scale:[%.2ff,%.2ff,%.2ff]},text:\"%s\"}",
-				p.x, p.y, p.z, boardGen, yaw, wall ? "fixed" : "center", wall ? 1.35 : 0.9, wall ? 1.35 : 0.9, wall ? 1.35 : 0.9,
+				p.x, p.y, p.z, boardGen, yaw, wall ? "fixed" : "center", wall ? 1.35 : 0.6, wall ? 1.35 : 0.6, wall ? 1.35 : 0.6,
 				e.getKey().replace("\"", "'").replace("\n", "\\n")));
 		}
 		applySpawn();

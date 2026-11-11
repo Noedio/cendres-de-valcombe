@@ -468,12 +468,12 @@ public final class Village {
 		int[] h = hallCenter();
 		var m = new java.util.LinkedHashMap<String, Vec3>();
 		m.put("Dalle dorée : s'inscrire\nDalle rouge : se désinscrire\nObsidienne : devenir Conteur",
-			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.15, center.getZ() + h[1] + 0.5));
+			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.3, center.getZ() + h[1] + 0.5));
 		m.put("Le bien gagne quand le Démon meurt.\nLe mal gagne quand il ne reste que deux vivants.",
 			new Vec3(center.getX() + h[0] - 7.85, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
 		m.put("La nuit, chacun dort chez soi.\nLe jour, on débat, on chuchote,\npuis on vote à l'horloge.",
 			new Vec3(center.getX() + h[0] + 8.85, center.getY() + 2.5, center.getZ() + h[1] + 0.5));
-		m.put("Menu du jeu : touche J\nou l'horloge en main (clic droit)",
+		m.put("Menu du jeu : touche J\nou le grimoire en main (clic droit)",
 			new Vec3(center.getX() + h[0] + 0.5, center.getY() + 2.5, center.getZ() + h[1] - 5.85));
 		return m;
 	}

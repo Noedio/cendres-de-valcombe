@@ -371,6 +371,159 @@ def write_hats():
     write_item("crane_mort_vote", skull_model(True))
 
 
+
+# ---------------------------------------------------------------------------
+# Objets du jeu (en main), dessinés en 32 × 32 (deux fois la définition des objets de Minecraft)
+# ---------------------------------------------------------------------------
+LEATHER = (92, 38, 30)
+BRASS = (201, 160, 72)
+WOOD = (104, 70, 42)
+PAGE = (236, 222, 188)
+
+
+def outline(img, color=A.INK):
+    """Contour sombre d'un pixel autour de la silhouette (lisibilité, style des objets du jeu)."""
+    mask = [[img.px[y][x][3] > 40 for x in range(img.w)] for y in range(img.h)]
+    for y in range(img.h):
+        for x in range(img.w):
+            if mask[y][x]:
+                continue
+            near = any(0 <= x + dx < img.w and 0 <= y + dy < img.h and mask[y + dy][x + dx]
+                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+            if near:
+                img.px[y][x] = list(color) + [255]
+    return img
+
+
+def quill():
+    """Plume d'accusation : plume d'oie blanche, barbes grises, pointe trempée d'encre rouge."""
+    img = A.Img(32, 32)
+    # Barbes (de part et d'autre du rachis, en diagonale bas-gauche → haut-droite)
+    for t in range(0, 100):
+        u = t / 100
+        cx, cy = 7 + 21 * u, 25 - 21 * u
+        width = 5.5 * math.sin(math.pi * min(1, u * 1.15)) if u > 0.18 else 0
+        for k in range(1, int(width) + 1):
+            shade = 1.0 - 0.06 * k + (0.08 if (t // 6) % 2 else 0)
+            img.put(cx - k * 0.7, cy - k * 0.7, lit(A.WHITE, shade))
+            img.put(cx + k * 0.7, cy + k * 0.7, lit((214, 210, 204), shade))
+    img.line(4, 28, 28, 4, (236, 226, 200), 1.2)  # rachis
+    img.line(3, 29, 7, 25, (150, 24, 24), 1.6)     # pointe à l'encre rouge
+    img.put(3, 29, (90, 10, 10))
+    return outline(img)
+
+
+def staff():
+    """Bâton du Conteur : bois sculpté, bagues de laiton, couronne tenant une pierre d'âme lumineuse."""
+    img = A.Img(32, 32)
+    img.line(4, 29, 22, 11, lit(WOOD, 0.8), 3.0)
+    img.line(4, 28, 21, 11, WOOD, 1.6)
+    for u in (0.3, 0.62):  # bagues de laiton
+        x, y = 4 + 18 * u, 29 - 18 * u
+        img.disc(x, y, 1.9, BRASS)
+        img.put(x - 1, y - 1, A.WHITE, 0.6)
+    # Couronne et pierre
+    for a in (-0.9, 0, 0.9):
+        img.line(22, 10, 22 + 5 * math.cos(a - 0.8), 10 - 5 * math.sin(a + 0.8), BRASS, 1.3)
+    img.disc(25.5, 6.5, 3.6, (60, 170, 190))
+    img.disc(25.5, 6.5, 2.6, (120, 225, 235))
+    img.disc(24.6, 5.4, 1.0, A.WHITE)
+    return outline(img)
+
+
+def square():
+    """Équerre du bâtisseur : laiton gradué et fil à plomb."""
+    img = A.Img(32, 32)
+    img.rect(5, 4, 9, 28, BRASS)
+    img.rect(5, 24, 28, 28, BRASS)
+    img.rect(5, 4, 6, 28, A.WHITE + (90,))
+    img.rect(5, 24, 28, 25, A.WHITE + (90,))
+    for y in range(7, 23, 3):
+        img.rect(8, y, 9, y + 1, lit(BRASS, 0.5))
+    for x in range(10, 27, 3):
+        img.rect(x, 27, x + 1, 28, lit(BRASS, 0.5))
+    img.line(20, 6, 20, 17, (200, 200, 200), 0.8)
+    img.disc(20, 19, 2.2, (150, 150, 160))
+    img.put(19, 18, A.WHITE)
+    return outline(img)
+
+
+def leather():
+    img = A.Img(32, 32)
+    import random
+    rnd = random.Random(5)
+    for y in range(32):
+        for x in range(32):
+            img.px[y][x] = list(lit(LEATHER, 0.9 + rnd.uniform(-0.08, 0.08))) + [255]
+    for i in range(32):  # filets dorés à la bordure
+        for t in (2, 29):
+            img.put(i, t, BRASS, 0.8)
+            img.put(t, i, BRASS, 0.8)
+    # Tour de Valcombe dorée au centre de la couverture
+    img.rect(14, 9, 18, 21, BRASS)
+    img.rect(12, 19, 20, 21, BRASS)
+    for x in (13, 15, 17):
+        img.rect(x, 7, x + 2, 10, BRASS)
+    img.rect(15, 13, 17, 16, LEATHER)
+    return img
+
+
+def pages():
+    img = A.Img(32, 32)
+    for y in range(32):
+        for x in range(32):
+            img.px[y][x] = list(lit(PAGE, 0.95 if y % 2 else 0.82)) + [255]
+    return img
+
+
+def clasp():
+    img = A.Img(16, 16)
+    for y in range(16):
+        for x in range(16):
+            img.px[y][x] = list(lit(BRASS, 1.1 - 0.4 * y / 16)) + [255]
+    return img
+
+
+def grimoire_model():
+    """Grimoire de poche (menu du jeu) : couverture de cuir, tranche de pages, fermoir de laiton."""
+    tex = {"cover": "valcombe:item/objets/cuir", "pages": "valcombe:item/objets/pages",
+           "clasp": "valcombe:item/objets/fermoir", "particle": "valcombe:item/objets/cuir"}
+    el = [
+        {"from": [3, 1, 6.5], "to": [13, 15, 9.5], "faces": {
+            "north": face("#cover"), "south": face("#cover"), "west": face("#cover", (0, 0, 3, 16)),
+            "east": face("#pages", (0, 0, 3, 16)), "up": face("#pages", (0, 0, 16, 3)), "down": face("#pages", (0, 0, 16, 3))}},
+        box([12.5, 6.5, 6], [14, 9.5, 10], "#clasp"),
+    ]
+    display = {
+        "gui": {"rotation": [20, -35, 0], "scale": [1.05, 1.05, 1.05]},
+        "ground": {"translation": [0, 2, 0], "scale": [0.5, 0.5, 0.5]},
+        "fixed": {"scale": [0.9, 0.9, 0.9]},
+        "thirdperson_righthand": {"rotation": [0, -90, 20], "translation": [0, 1, -1], "scale": [0.5, 0.5, 0.5]},
+        "firstperson_righthand": {"rotation": [0, -110, 15], "translation": [2, 2, 0], "scale": [0.55, 0.55, 0.55]},
+        "firstperson_lefthand": {"rotation": [0, 70, -15], "translation": [2, 2, 0], "scale": [0.55, 0.55, 0.55]},
+    }
+    return {"textures": tex, "elements": el, "display": display}
+
+
+def flat_item(texture, handheld=False):
+    return {"parent": "minecraft:item/handheld" if handheld else "minecraft:item/generated",
+            "textures": {"layer0": texture}}
+
+
+def write_objects():
+    obj = TEX.parent / "objets"
+    save(quill(), obj / "plume.png")
+    save(staff(), obj / "baton.png")
+    save(square(), obj / "equerre.png")
+    save(leather(), obj / "cuir.png")
+    save(pages(), obj / "pages.png")
+    save(clasp(), obj / "fermoir.png")
+    write_item("plume", flat_item("valcombe:item/objets/plume", handheld=True))
+    write_item("baton", flat_item("valcombe:item/objets/baton", handheld=True))
+    write_item("equerre", flat_item("valcombe:item/objets/equerre", handheld=True))
+    write_item("grimoire", grimoire_model())
+
+
 def main():
     save(crest(), TEX / "dos.png")
     save(dead(), TEX / "mort.png")
@@ -385,13 +538,17 @@ def main():
         role = icon.stem
         save(role_face(icon, teams.get(role, "good")), TEX / f"role_{role}.png")
         write_item(f"jeton_{role}", token_model(f"valcombe:item/scene/role_{role}", back))
+        # Icône plate du rôle, pour les menus en coffre (le jeton 3D se lit mal de face dans un inventaire)
+        write_item(f"icone_{role}", flat_item(f"valcombe:item/scene/role_{role}"))
         # Rôles créés : n'importe quel emblème, aux couleurs de n'importe quel camp
         for team, suffix in (("good", "bien"), ("evil", "mal")):
             save(role_face(icon, team), TEX / f"role_{role}_{suffix}.png")
             write_item(f"jeton_{role}_{suffix}", token_model(f"valcombe:item/scene/role_{role}_{suffix}", back))
+            write_item(f"icone_{role}_{suffix}", flat_item(f"valcombe:item/scene/role_{role}_{suffix}"))
     write_item("trone", throne_model())
     write_item("lutrin", lectern_model())
     write_hats()
+    write_objects()
     print(f"{len(teams)} rôles, modèles écrits dans {ASSETS}")
 
 

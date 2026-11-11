@@ -43,6 +43,10 @@ public sealed class LauncherConfig
     public bool Shortcuts { get; set; } = true;
     /// <summary>Le raccourci du Bureau a déjà été créé une fois (on ne le recrée pas s'il a été supprimé).</summary>
     public bool DesktopShortcutDone { get; set; }
+    /// <summary>Textures haute définition (pack 64x) pour tout le jeu.</summary>
+    public bool HdTextures { get; set; } = true;
+    /// <summary>Ombres, lumières et eau réalistes (shaders) : demande une carte graphique récente.</summary>
+    public bool Shaders { get; set; } = true;
     public string Accent { get; set; } = "Lie-de-vin";
     public string Background { get; set; } = "Parchemin";
     public MinecraftOptions Minecraft { get; set; } = new();

@@ -121,15 +121,17 @@ public class MainScreen extends BaseScreen {
 		if (inGame) {
 			List<JsonObject> seats = objects(v, "seats");
 			int me = ClientState.num(v, "mySeat", -1);
-			int top = py + 26;
-			int bottom = buttonsTop - feedHeight() - 4;
+			// Noms vers l'extérieur (dessus, dessous, côtés) : ils ne se recouvrent plus.
+			int top = py + 18;
+			int bottom = buttonsTop - 4;
 			int size = bottom - top < 110 ? 14 : 18;
-			int ry = Math.max(8, (bottom - top - size - 12) / 2);
-			int rx = Math.max(ry, (pw - 196) / 2 - 22);
-			int cx = px + 196 + (pw - 196) / 2 - 6;
-			int cy = top + size / 2 + ry + 2;
+			int ry = Math.max(8, (bottom - top - size - 22) / 2);
+			int rx = Math.max(ry, (pw - 196) / 2 - 52);
+			int cx = px + 196 + (pw - 196) / 2 - 4;
+			int cy = top + 11 + size / 2 + ry;
 			final int sz = size;
-			ellipse(seats.size(), cx, cy, rx, ry, (i, x, y) -> {
+			final int n = seats.size();
+			ellipse(n, cx, cy, rx, ry, (i, x, y) -> {
 				JsonObject s = seats.get(i);
 				TokenWidget t = new TokenWidget(x, y, sz, ClientState.str(s, "name"),
 					i == me && role != null ? ClientState.str(role, "id") : null,
@@ -138,9 +140,14 @@ public class MainScreen extends BaseScreen {
 				if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
 					t.marker("ghost");
 				}
+				t.labelOutward(-Math.PI / 2 + 2 * Math.PI * i / Math.max(1, n));
 				token(t);
 			});
 		}
+	}
+
+	private static boolean inGameView() {
+		return !ClientState.phase().equals("LOBBY");
 	}
 
 	/** Lignes de journal affichées : une seule si la fenêtre est basse. */
@@ -169,7 +176,7 @@ public class MainScreen extends BaseScreen {
 			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
 			Theme.ink(g, font, (evil ? "Camp du mal" : "Camp du bien"), x + 42, y + 20, evil ? Theme.EVIL : Theme.GOOD);
 			Theme.paragraph(g, font, ClientState.str(role, "text"), x, y + 42, 172, Theme.INK,
-				buttonsTop - feedHeight() - 4 - (y + 42));
+				buttonsTop - feedHeight() - 6 - (y + 42));
 		} else {
 			Theme.ink(g, font, phase.equals("LOBBY") ? "Inscrits :" : "Tu observes la partie.", x, y, Theme.INK);
 			List<String> lobby = strings(v, "lobby");
@@ -183,13 +190,18 @@ public class MainScreen extends BaseScreen {
 		// Journal des dernières annonces
 		List<String> feed = strings(v, "feed");
 		int fy = buttonsTop - feedHeight();
-		for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
-			String line = feed.get(i);
-			if (font.width(line) > pw - 30) {
-				line = font.plainSubstrByWidth(line, pw - 34) + "…";
+		if (inGameView() && !feed.isEmpty()) {
+			// En partie : la dernière annonce, repliée dans la colonne de gauche (le cercle est à droite).
+			Theme.paragraph(g, font, feed.get(feed.size() - 1), px + 14, fy, 176, Theme.ASH, feedHeight() - 2);
+		} else {
+			for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
+				String line = feed.get(i);
+				if (font.width(line) > pw - 30) {
+					line = font.plainSubstrByWidth(line, pw - 34) + "…";
+				}
+				Theme.ink(g, font, line, px + 14, fy, Theme.ASH);
+				fy += 10;
 			}
-			Theme.ink(g, font, line, px + 14, fy, Theme.ASH);
-			fy += 10;
 		}
 	}
 }

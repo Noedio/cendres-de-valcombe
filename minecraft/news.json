@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Version 0.6.0 : Valcombe en haute définition",
+    "text": "Textures HD et shaders (ombres, lumière, eau) installés par le launcher, réglables dans Personnalisation. Nouveaux objets : le grimoire (menu), la plume d'accusation, le bâton du Conteur. Vrais trônes sculptés, rôles visibles par le Conteur, joueurs visibles à travers les murs pendant le conseil, et qui a voté pour qui. Écrans revus sans chevauchement, Atelier à plusieurs avec import de schématiques. Hôtes : mettez à jour le mod du serveur."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Version 0.5.3",
     "text": "Le réglage de la nuit ne plante plus face à un serveur ancien, et un bandeau rouge prévient quand le serveur n'a pas la même version du mod. Hôtes : mettez à jour le mod du serveur."
   },
