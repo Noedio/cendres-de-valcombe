@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Version 0.5.3",
+    "text": "Le réglage de la nuit ne plante plus face à un serveur ancien, et un bandeau rouge prévient quand le serveur n'a pas la même version du mod. Hôtes : mettez à jour le mod du serveur."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Launcher 0.5.2",
     "text": "Le launcher se range tout seul dans le menu Démarrer et sur le Bureau, et met le jeu à jour dès son démarrage, en arrière-plan : JOUER est immédiat."
   },
