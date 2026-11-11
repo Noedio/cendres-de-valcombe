@@ -24,9 +24,13 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
    - menu → « Regarder » : suivre la partie en spectateur ;
    - menu → « Appeler le Conteur » : il est prévenu et peut vous prendre à part (vocal seul à seul) ;
+   - menu → « Annoncer un rôle » : le rôle que vous dites être (vrai ou bluff) s'affiche sous votre nom ;
+   - menu → « Parler en privé » : invitez un joueur ; une fois accepté, vous ne vous entendez plus qu'à deux, jusqu'à la cloche, la nuit ou un vote ;
+   - **G** : faire un signe au-dessus de sa tête (oui, non, question, attention, réflexion, d'accord) ;
+   - **K** : revoir sa carte de rôle ;
    - une fois mort, vous portez une coiffe (chapeau de deuil ou crâne, au choix du Conteur), avec un cierge tant qu'il vous reste votre vote de fantôme.
 
-Avec le **launcher Valcombe**, vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
+Le **launcher Valcombe** a aussi une page « Guide » (règles et touches), des préréglages de performance (petite machine, équilibré, haute qualité), un conseil de mémoire selon votre ordinateur et un voyant d'état du serveur. Vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
 
 ## Pour l'hôte (serveur)
 

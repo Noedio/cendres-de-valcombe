@@ -700,6 +700,34 @@ public final class McHost implements Host {
 	}
 
 	@Override
+	public void sign(String player, String symbol, String color) {
+		ServerPlayer p = player(player);
+		if (server == null || p == null) {
+			return;
+		}
+		String tag = "vc_signe_" + Math.abs(player.hashCode());
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"%s\"],billboard:\"center\",background:0,"
+				+ "see_through:0b,shadow:1b,transformation:{translation:[0f,0.7f,0f],left_rotation:[0f,0f,0f,1f],"
+				+ "right_rotation:[0f,0f,0f,1f],scale:[2.6f,2.6f,2.6f]},text:{text:\"%s\",color:\"%s\",bold:1b}}",
+			p.getX(), p.getY() + 2.1, p.getZ(), tag, symbol, color));
+		WorldSetup.run(server, "ride @e[type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + player);
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT, "playsound minecraft:block.note_block.hat master @a %.1f %.1f %.1f 0.6 1.6",
+			p.getX(), p.getY(), p.getZ()));
+		int token = ++signToken;
+		signTokens.put(player, token);
+		schedule(80, () -> {
+			if (signTokens.getOrDefault(player, 0) == token) {
+				WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
+			}
+		});
+	}
+
+	private int signToken;
+	private final Map<String, Integer> signTokens = new HashMap<>();
+
+	@Override
 	public void whisperBubble(String from, String to) {
 		if (server == null) {
 			return;

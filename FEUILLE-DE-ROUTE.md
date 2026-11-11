@@ -212,6 +212,9 @@ Les sons et musiques passent par le mod (`sounds.json` et fichiers `.ogg`). Ils 
 - **Coiffe des morts** : chapeau de deuil ou crâne (modèles originaux), avec un cierge tant que le mort a son vote.
 - **Côté Conteur** : bâton du Conteur (rôle du joueur visé, grimoire d'un clic, aparté vocal), bandeau de nuit, appel au Conteur par les joueurs.
 
+- **Pour les joueurs** : annonce publique de son rôle (sous le nom), signes rapides (touche G), conversations privées à deux sur invitation, carte de rôle à revoir (touche K).
+- **Launcher** : page Guide, préréglages de performance, mémoire conseillée, voyant d'état du serveur.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** avec la 0.3.0 : c'est elle qui dira quoi corriger en premier.

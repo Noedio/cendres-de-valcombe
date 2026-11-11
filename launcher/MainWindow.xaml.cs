@@ -91,6 +91,7 @@ public partial class MainWindow : Window
             return;
         }
         PageHome.Visibility = page == "Home" ? Visibility.Visible : Visibility.Collapsed;
+        PageGuide.Visibility = page == "Guide" ? Visibility.Visible : Visibility.Collapsed;
         PageGame.Visibility = page == "Game" ? Visibility.Visible : Visibility.Collapsed;
         PageLook.Visibility = page == "Look" ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = page == "Settings" ? Visibility.Visible : Visibility.Collapsed;
@@ -144,6 +145,13 @@ public partial class MainWindow : Window
         FpsLabel.Text = FpsSlider.Value >= 260 ? "Images par seconde : illimitées" : $"Images par seconde : {(int)FpsSlider.Value}";
         VolumeLabel.Text = $"Volume général : {(int)VolumeSlider.Value} %";
         MemoryLabel.Text = $"Mémoire allouée au jeu : {(int)MemorySlider.Value} Go";
+        int total = TotalMemoryGb();
+        if (total > 0)
+        {
+            int rec = RecommendedMemoryGb(total);
+            MemoryHint.Text = $"Cet ordinateur a {total} Go de mémoire : {rec} Go conseillés pour le jeu."
+                + ((int)MemorySlider.Value > total * 3 / 4 ? " Attention : réglage trop élevé, Windows risque de ralentir." : "");
+        }
     }
 
     private void OptionChanged(object sender, RoutedEventArgs e)
@@ -420,10 +428,54 @@ public partial class MainWindow : Window
         {
             return;
         }
+        ServerDot.Fill = new SolidColorBrush(st.Online ? Color.FromRgb(0x5F, 0xB8, 0x5A) : Color.FromRgb(0xB0, 0x40, 0x3A));
         ServerText.Text = !st.Online
             ? $"{address} — hors ligne"
             : $"{address} — en ligne, {st.Players}/{st.Max} joueur(s)"
                 + (st.Names.Count > 0 ? Environment.NewLine + string.Join(", ", st.Names) : "");
+    }
+
+    /// <summary>Mémoire de l'ordinateur, en Go (0 si inconnue).</summary>
+    private static int TotalMemoryGb()
+    {
+        long bytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        return bytes <= 0 ? 0 : (int)Math.Round(bytes / 1024.0 / 1024 / 1024);
+    }
+
+    /// <summary>Mémoire conseillée pour Minecraft avec le mod et le vocal : jamais plus de la moitié de l'ordinateur.</summary>
+    private static int RecommendedMemoryGb(int total) =>
+        Math.Max(2, Math.Min(total / 2, total <= 8 ? 3 : total <= 16 ? 4 : 6));
+
+    /// <summary>Préréglages de performance : quelques curseurs du launcher et des options avancées de Minecraft.</summary>
+    private void ApplyPreset(object sender, RoutedEventArgs e)
+    {
+        string preset = (sender as Button)?.Tag as string ?? "equilibre";
+        (int render, int fps, Dictionary<string, string> extra, string label) = preset switch
+        {
+            "petite" => (6, 60, new Dictionary<string, string>
+            {
+                ["simulationDistance"] = "5", ["particles"] = "2", ["entityShadows"] = "false",
+                ["biomeBlendRadius"] = "0", ["mipmapLevels"] = "0",
+            }, "Petite machine"),
+            "haute" => (16, 240, new Dictionary<string, string>
+            {
+                ["simulationDistance"] = "12", ["particles"] = "0", ["entityShadows"] = "true",
+                ["biomeBlendRadius"] = "5", ["mipmapLevels"] = "4",
+            }, "Haute qualité"),
+            _ => (10, 120, new Dictionary<string, string>
+            {
+                ["simulationDistance"] = "8", ["particles"] = "1", ["entityShadows"] = "true",
+                ["biomeBlendRadius"] = "2", ["mipmapLevels"] = "4",
+            }, "Équilibré"),
+        };
+        RenderSlider.Value = render;
+        FpsSlider.Value = fps;
+        OptionChanged(sender, e);
+        foreach (string dir in new[] { Profile.Dir }.Concat(Profile.GameDirs.Where(Directory.Exists)))
+        {
+            Instance.ApplyValues(extra, dir);
+        }
+        PresetHint.Text = $"Préréglage « {label} » appliqué. Il prendra effet au prochain lancement du jeu.";
     }
 
     private bool Integrated => !string.IsNullOrWhiteSpace(_config.MicrosoftClientId);
@@ -643,6 +695,22 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private static IEnumerable<RadioButton> FindNav(DependencyObject parent)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is RadioButton rb && rb.Tag is string)
+            {
+                yield return rb;
+            }
+            foreach (var r in FindNav(child))
+            {
+                yield return r;
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Captures d'écran (vérification sans réseau) : ValcombeLauncher.exe --capture <dossier>
     // ------------------------------------------------------------------
@@ -661,9 +729,17 @@ public partial class MainWindow : Window
             new() { Name = "Soirée du vendredi", Address = "vendredi.exemple.fr:25570" },
         };
         RefreshServerPicker();
-        ServerText.Text = "valcombe.exemple.fr — en ligne, 7/20 joueur(s)";
-        foreach (string page in new[] { "Home", "Game", "Look", "Settings", "Account" })
+        ServerText.Text = "valcombe.exemple.fr — en ligne, 7/20 joueur(s)" + Environment.NewLine + "Léa, Hugo, Inès, Malo";
+        ServerDot.Fill = new SolidColorBrush(Color.FromRgb(0x5F, 0xB8, 0x5A));
+        foreach (string page in new[] { "Home", "Guide", "Game", "Look", "Settings", "Account" })
         {
+            foreach (var rb in FindNav(this))
+            {
+                if ((string)rb.Tag == page)
+                {
+                    rb.IsChecked = true;
+                }
+            }
             ShowPage(page);
             await Task.Delay(150);
             UpdateLayout();

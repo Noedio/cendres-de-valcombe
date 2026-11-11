@@ -25,6 +25,7 @@
                    Margin="18,0,0,12"/>
         <StackPanel>
           <RadioButton Style="{StaticResource Nav}" Content="Accueil" x:Name="NavHome" IsChecked="True" Checked="Navigate" Tag="Home"/>
+          <RadioButton Style="{StaticResource Nav}" Content="Guide" Checked="Navigate" Tag="Guide"/>
           <RadioButton Style="{StaticResource Nav}" Content="Options du jeu" Checked="Navigate" Tag="Game"/>
           <RadioButton Style="{StaticResource Nav}" Content="Personnalisation" Checked="Navigate" Tag="Look"/>
           <RadioButton Style="{StaticResource Nav}" Content="Réglages" Checked="Navigate" Tag="Settings"/>
@@ -98,21 +99,82 @@
               <StackPanel Grid.Column="1" Margin="20,0,0,0">
                 <TextBlock Text="Le cercle" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}"/>
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                           Text="13 Citadins et 4 Étrangers cherchent le Démon et ses 4 Sbires. Le bien gagne quand le Démon meurt ; le mal, quand il ne reste que deux vivants."/>
+                           Text="Le bien cherche le Démon caché parmi les joueurs ; le mal le protège. Deux scripts : les Cendres (classique) et les Brumes. Nouveau venu ? Lisez le Guide."/>
                 <TextBlock Text="Serveur" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}" Margin="0,14,0,0"/>
                 <ComboBox x:Name="ServerPicker" Margin="0,4,0,4" SelectionChanged="ServerPicked"/>
-                <TextBlock x:Name="ServerText" Style="{StaticResource Hint}"/>
+                <DockPanel>
+                  <Ellipse x:Name="ServerDot" DockPanel.Dock="Left" Width="9" Height="9" Fill="#8A8080" Margin="0,4,6,0"
+                           VerticalAlignment="Top" ToolTip="État du serveur"/>
+                  <TextBlock x:Name="ServerText" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
+                </DockPanel>
                 <TextBlock Text="Compte" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}" Margin="0,14,0,0"/>
                 <TextBlock x:Name="AccountShort" Style="{StaticResource Hint}"/>
               </StackPanel>
             </Grid>
           </Grid>
 
+          <!-- Guide -->
+          <ScrollViewer x:Name="PageGuide" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+              <TextBlock Style="{StaticResource H1}" Text="Guide du joueur"/>
+              <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="Valcombe se joue à 5 à 15 joueurs, autour d'un Conteur (un joueur, ou le jeu lui-même). Chacun reçoit un rôle secret."/>
+              <TextBlock Style="{StaticResource Label}" Text="Les camps"/>
+              <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="Le bien (Citadins et Étrangers) gagne quand le Démon meurt. Le mal (le Démon et ses Sbires) gagne quand il ne reste que deux vivants. Le mal se connaît ; le bien doit deviner qui ment."/>
+              <TextBlock Style="{StaticResource Label}" Text="Une journée à Valcombe"/>
+              <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="La nuit, chacun dort chez soi ; quand vient ton tour, un écran s'ouvre pour utiliser ton pouvoir. Le jour, on discute, on se parle en privé, puis on accuse. L'accusé se défend, et l'aiguille dorée fait le tour du cercle : lève la main avant qu'elle passe devant toi. Le joueur sur le billot à la fin du jour est exécuté."/>
+              <TextBlock Style="{StaticResource Label}" Text="Les morts"/>
+              <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="Un mort reste dans la partie : il parle, il écoute, et il garde un seul vote, signalé par le cierge sur sa coiffe."/>
+              <TextBlock Style="{StaticResource Label}" Text="Touches et gestes"/>
+              <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="150"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                  <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Style="{StaticResource Hint}" FontWeight="Bold" Text="J"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Menu du jeu : ton rôle, tes actions, ton carnet"/>
+                <TextBlock Grid.Row="1" Style="{StaticResource Hint}" FontWeight="Bold" Text="H"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Lever ou baisser la main pendant un vote"/>
+                <TextBlock Grid.Row="2" Style="{StaticResource Hint}" FontWeight="Bold" Text="G"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Faire un signe au-dessus de sa tête (oui, non, question…)"/>
+                <TextBlock Grid.Row="3" Style="{StaticResource Hint}" FontWeight="Bold" Text="K"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Revoir sa carte de rôle"/>
+                <TextBlock Grid.Row="4" Style="{StaticResource Hint}" FontWeight="Bold" Text="V"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Réglages du vocal (choisir son micro)"/>
+                <TextBlock Grid.Row="5" Style="{StaticResource Hint}" FontWeight="Bold" Text="Clic droit, trône"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="S'asseoir (accroupi pour se lever)"/>
+                <TextBlock Grid.Row="6" Style="{StaticResource Hint}" FontWeight="Bold" Text="Plume d'accusation"/>
+                <TextBlock Grid.Row="6" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Viser un joueur et clic droit pour l'accuser ; pendant un vote, lever la main"/>
+                <TextBlock Grid.Row="7" Style="{StaticResource Hint}" FontWeight="Bold" Text="Menu → Annoncer"/>
+                <TextBlock Grid.Row="7" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Dire quel rôle tu es (ou bluffer) : il s'affiche sous ton nom"/>
+                <TextBlock Grid.Row="8" Style="{StaticResource Hint}" FontWeight="Bold" Text="Menu → Parler en privé"/>
+                <TextBlock Grid.Row="8" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Inviter un joueur : vous ne vous entendez plus qu'à deux, jusqu'à la cloche"/>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+
           <!-- Options du jeu -->
           <ScrollViewer x:Name="PageGame" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="560" HorizontalAlignment="Left">
               <TextBlock Style="{StaticResource H1}" Text="Options du jeu"/>
-              <TextBlock Style="{StaticResource Hint}" Text="Appliquées à Minecraft au prochain lancement."/>
+              <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="Ce que vous réglez ici ou en jeu est gardé d'une partie à l'autre, même après une réinstallation."/>
+              <TextBlock Style="{StaticResource Label}" Text="Préréglages"/>
+              <WrapPanel>
+                <Button Style="{StaticResource Wax}" Content="Petite machine" Tag="petite" Click="ApplyPreset" Margin="0,0,8,6"
+                        ToolTip="Distance courte, 60 images/s, particules et ombres réduites"/>
+                <Button Style="{StaticResource Wax}" Content="Équilibré" Tag="equilibre" Click="ApplyPreset" Margin="0,0,8,6"/>
+                <Button Style="{StaticResource Wax}" Content="Haute qualité" Tag="haute" Click="ApplyPreset" Margin="0,0,8,6"
+                        ToolTip="Grande distance d'affichage, toutes les particules"/>
+              </WrapPanel>
+              <TextBlock x:Name="PresetHint" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
               <TextBlock Style="{StaticResource Label}" x:Name="RenderLabel"/>
               <Slider x:Name="RenderSlider" Minimum="2" Maximum="32" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="OptionChanged"/>
               <TextBlock Style="{StaticResource Label}" x:Name="FovLabel"/>
@@ -180,6 +242,7 @@
               <TextBlock Style="{StaticResource Hint}" Text="À renseigner une fois l'application validée par Microsoft : le launcher se connecte et lance alors le jeu lui-même, sans Prism."/>
               <TextBlock Style="{StaticResource Label}" x:Name="MemoryLabel"/>
               <Slider x:Name="MemorySlider" Minimum="2" Maximum="16" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="SettingsChanged"/>
+              <TextBlock x:Name="MemoryHint" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
               <WrapPanel Margin="0,18,0,0">
                 <Button Style="{StaticResource Wax}" Content="Ouvrir le dossier" Click="OpenFolder" Margin="0,0,8,8"/>
                 <Button Style="{StaticResource Wax}" Content="Réparer l'installation" Click="RepairInstall" Margin="0,0,8,8"/>

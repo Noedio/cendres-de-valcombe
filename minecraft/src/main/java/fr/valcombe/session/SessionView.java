@@ -84,6 +84,8 @@ final class SessionView {
 				s.put("alive", p.alive());
 				s.put("ghostVote", p.ghostVote());
 				s.put("bot", ses.bots.contains(p.name));
+				Role claimed = ses.claims.get(p.name);
+				s.put("claim", claimed == null ? null : claimed.name());
 				seats.add(s);
 			}
 			v.put("seats", seats);
@@ -110,6 +112,8 @@ final class SessionView {
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
 			v.put("aside", ses.aside);
+			v.put("talkingWith", ses.talks.get(me));
+			v.put("talkInvite", ses.talkInvites.get(me));
 			v.put("hasStoryteller", ses.storyteller != null);
 			if (me.equals(ses.storyteller) && g.phase() == Game.Phase.NIGHT && ses.pendingStep != null) {
 				// Bandeau du Conteur, la nuit : qui est réveillé, et ce qu'on attend.

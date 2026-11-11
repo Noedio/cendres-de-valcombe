@@ -176,6 +176,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 			if (phase(ctx).equals("DAY")) {
 				ctx.setScreen(MainScreen::new);
 				shot(ctx, "5-jour");
+				ctx.setScreen(fr.valcombe.client.screen.ClaimScreen::new);
+				shot(ctx, "5d-annoncer-role");
+				send(ctx, "vc annoncer greffier");
+				ctx.setScreen(fr.valcombe.client.screen.SignScreen::new);
+				shot(ctx, "5e-signes");
 				ctx.setScreen(() -> null);
 				String target = ctx.computeOnClient(mc -> {
 					for (var e : ClientState.view().getAsJsonArray("seats")) {
@@ -218,7 +223,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 				ctx.waitTicks(10);
 				shot(ctx, "14b-mains-gibet");
 				ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
-				ctx.waitTicks(5);
+				send(ctx, "vc signe question");
+				ctx.waitTicks(10);
 				shot(ctx, "14c-assis");
 				// Coiffe des morts : chapeau, puis crâne (seulement si le joueur est du bien : sa mort ne finit pas la partie)
 				// Joueur du mal : il échange son rôle avec un joueur fictif du bien, pour que sa mort ne finisse pas la partie.

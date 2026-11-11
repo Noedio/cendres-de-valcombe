@@ -74,6 +74,17 @@ public final class Hud {
 		}
 	}
 
+	/** Touche K : la carte de rôle réapparaît, déjà retournée. */
+	public static void showCard() {
+		JsonObject role = ClientState.obj(ClientState.view(), "role");
+		if (role == null) {
+			return;
+		}
+		card = role;
+		cardAt = System.currentTimeMillis() - 1500;
+		cardFlipped = true;
+	}
+
 	/** La carte tombe face cachée, se retourne, reste lisible quelques secondes puis s'efface. */
 	private static void drawCard(GuiGraphicsExtractor g, Minecraft mc, int w, int h) {
 		long t = System.currentTimeMillis() - cardAt;
@@ -333,6 +344,16 @@ public final class Hud {
 			g.fill(w / 2 - nw / 2, 24, w / 2 + nw / 2, 38, 0xD02A1840);
 			g.outline(w / 2 - nw / 2, 24, nw, 14, 0xFFB08CD8);
 			g.text(mc.font, t, w / 2 - nw / 2 + 6, 27, 0xFFE8DCF8, false);
+		}
+		// Conversation privée entre joueurs, et invitation en attente
+		String talk = ClientState.str(v, "talkingWith");
+		String invite = ClientState.str(v, "talkInvite");
+		if (talk != null && !talk.isEmpty()) {
+			String t = "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)";
+			g.text(mc.font, t, w / 2 - mc.font.width(t) / 2, h - 84, 0xFFC8A8F0, true);
+		} else if (invite != null && !invite.isEmpty()) {
+			String t = invite + " veut te parler en privé — touche J pour répondre";
+			g.text(mc.font, t, w / 2 - mc.font.width(t) / 2, h - 84, Theme.GOLD, true);
 		}
 		// Aparté avec le Conteur (vocal seul à seul)
 		String aside = ClientState.str(v, "aside");

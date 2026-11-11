@@ -37,6 +37,12 @@ public final class Session {
 	final Set<String> spectators = new LinkedHashSet<>();
 	/** Jetons de rappel posés par le Conteur sur les sièges (« ivre », « a choisi X »…). */
 	final Map<String, List<String>> reminders = new LinkedHashMap<>();
+	/** Rôles annoncés publiquement par les joueurs (ce qu'ils disent être, vrai ou non). */
+	final Map<String, Role> claims = new LinkedHashMap<>();
+	/** Conversations privées entre deux joueurs, le jour : chacun → son interlocuteur. */
+	final Map<String, String> talks = new LinkedHashMap<>();
+	/** Invitations à parler en privé : invité → qui l'invite. */
+	final Map<String, String> talkInvites = new LinkedHashMap<>();
 	/** Partie d'entraînement : le joueur guidé, et les conseils déjà donnés. */
 	String trainee;
 	private final Set<String> tipsGiven = new java.util.HashSet<>();
@@ -140,6 +146,9 @@ public final class Session {
 			if (name.equals(aside)) {
 				return List.of(storyteller);
 			}
+		}
+		if (g != null && g.phase() == Game.Phase.DAY && talks.containsKey(name) && !name.equals(aside)) {
+			return List.of(talks.get(name));
 		}
 		if (!settings.nightMute || g == null || g.phase() != Game.Phase.NIGHT) {
 			return null;
@@ -252,6 +261,120 @@ public final class Session {
 
 	String waitingAckName() {
 		return waitingAck;
+	}
+
+	// ------------------------------------------------------------------
+	// Annonces de rôle, signes, conversations privées
+	// ------------------------------------------------------------------
+	/** Le joueur annonce publiquement un rôle (vrai ou bluff) ; « aucun » retire l'annonce. */
+	public String claim(String name, String roleId) {
+		Game g = requireGame();
+		requireSeat(name);
+		if (roleId.equalsIgnoreCase("aucun")) {
+			claims.remove(name);
+			announce(name + " retire son annonce.");
+		} else {
+			Role r = parseRole(roleId);
+			claims.put(name, r);
+			announce(name + " dit être : " + r.displayName + ".");
+		}
+		updateBoards();
+		return "";
+	}
+
+	public Role claimOf(String name) {
+		return claims.get(name);
+	}
+
+	private final Map<String, Long> lastSign = new java.util.HashMap<>();
+
+	/** Signe rapide au-dessus de la tête : oui, non, question, attention, réflexion, accord. */
+	public String sign(String name, String which) {
+		String[] s = switch (which) {
+			case "oui" -> new String[] {"✔", "green"};
+			case "non" -> new String[] {"✘", "red"};
+			case "question" -> new String[] {"?", "yellow"};
+			case "attention" -> new String[] {"!", "gold"};
+			case "reflexion" -> new String[] {"…", "gray"};
+			case "accord" -> new String[] {"✋", "aqua"};
+			default -> throw new GameException("Signes : oui, non, question, attention, reflexion, accord.");
+		};
+		long now = System.currentTimeMillis();
+		if (now - lastSign.getOrDefault(name, 0L) < 800) {
+			return "";
+		}
+		lastSign.put(name, now);
+		host.sign(name, s[0], s[1]);
+		return "";
+	}
+
+	/** Invite un joueur à parler en privé (vocal seul à seul), le jour. */
+	public String inviteTalk(String from, String to) {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY) {
+			throw new GameException("On ne parle en privé que de jour.");
+		}
+		requireSeat(from);
+		String target = g.player(seatByName(to)).name;
+		if (target.equals(from)) {
+			throw new GameException("Parler à soi-même ?");
+		}
+		if (bots.contains(target)) {
+			throw new GameException(target + " est un joueur fictif : chuchote-lui plutôt.");
+		}
+		if (talks.containsKey(from)) {
+			throw new GameException("Tu parles déjà avec " + talks.get(from) + " (/vc parler fin).");
+		}
+		if (talks.containsKey(target)) {
+			throw new GameException(target + " parle déjà avec quelqu'un.");
+		}
+		talkInvites.put(target, from);
+		tell(target, new Msg().colored("[Valcombe] " + from + " veut te parler en privé. ", "light_purple")
+			.button("Accepter", "/vc parler accepter", "Vous ne vous entendrez qu'à deux")
+			.button("Refuser", "/vc parler refuser", "Décliner"));
+		host.sound(List.of(target), "clock");
+		return "Invitation envoyée à " + target + ".";
+	}
+
+	public String answerTalk(String name, boolean yes) {
+		String from = talkInvites.remove(name);
+		if (from == null) {
+			throw new GameException("Personne ne t'a invité à parler.");
+		}
+		if (!yes) {
+			tell(from, new Msg().colored(name + " décline ton invitation.", "gray"));
+			return "Invitation refusée.";
+		}
+		if (talks.containsKey(from) || talks.containsKey(name)) {
+			throw new GameException("L'un de vous parle déjà avec quelqu'un.");
+		}
+		talks.put(from, name);
+		talks.put(name, from);
+		announce(from + " et " + name + " s'isolent pour parler.");
+		host.whisperBubble(from, name);
+		return "Tu parles en privé avec " + from + ". /vc parler fin pour revenir au village.";
+	}
+
+	public String endTalk(String name) {
+		String other = talks.remove(name);
+		if (other == null) {
+			throw new GameException("Tu ne parles en privé avec personne.");
+		}
+		talks.remove(other);
+		tell(other, new Msg().colored(name + " met fin à votre conversation privée.", "gray"));
+		return "Tu reviens au village.";
+	}
+
+	/** Fin de toutes les conversations privées (cloche, nuit, vote). */
+	private void endAllTalks() {
+		if (!talks.isEmpty()) {
+			talks.clear();
+			talkInvites.clear();
+		}
+	}
+
+	public String talkingWith(String name) {
+		return talks.get(name);
 	}
 
 	public boolean voteOpen() {
@@ -586,6 +709,9 @@ public final class Session {
 		}
 		notes.clear();
 		reminders.clear();
+		claims.clear();
+		talks.clear();
+		talkInvites.clear();
 		mode = wanted;
 		game = g;
 		clearNight();
@@ -609,6 +735,7 @@ public final class Session {
 		if (game != null) {
 			host.endGame(realNames());
 		aside = null;
+		endAllTalks();
 		if (storyteller != null) {
 			host.storytellerTools(storyteller, false);
 		}
@@ -760,6 +887,7 @@ public final class Session {
 		}
 		g.startNight();
 		aside = null;
+		endAllTalks();
 		tip("nuit", "La nuit tombe", "La nuit, chacun dort. Quand vient ton tour, tu te réveilles : un écran s'ouvre "
 			+ "pour utiliser ton pouvoir. Les autres ne savent pas qui se réveille.");
 		discussionToken++;
@@ -1182,6 +1310,7 @@ public final class Session {
 	/** Le Conteur rassemble tout le monde à sa place sur la place du village. */
 	public String gather() {
 		requireGame();
+		endAllTalks();
 		host.gather(realNames());
 		host.sit(realNames(), false);
 		host.sound(realNames(), "bell");
@@ -1225,6 +1354,7 @@ public final class Session {
 
 	/** Temps de parole de l'accusé, puis le vote à l'horloge. */
 	private void startDefense(Game.Nomination nom) {
+		endAllTalks();
 		voteNom = nom;
 		answers.clear();
 		lockedHands.clear();
@@ -1466,6 +1596,7 @@ public final class Session {
 		revealBoards(g); // avant endGame, qui oublie la place des sièges
 		host.endGame(realNames());
 		aside = null;
+		endAllTalks();
 		if (storyteller != null) {
 			host.storytellerTools(storyteller, false);
 		}
@@ -1634,6 +1765,10 @@ public final class Session {
 			if (!honor.isEmpty() && p.alive()) {
 				text += "\n« " + honor + " »";
 			}
+			Role claimed = claims.get(p.name);
+			if (claimed != null) {
+				text += "\n« dit : " + claimed.displayName + " »";
+			}
 			if (p.name.equals(accused)) {
 				text += "\n⚖ accusé";
 			} else if (p.name.equals(block)) {
@@ -1744,6 +1879,9 @@ public final class Session {
 		bots.addAll(d.bots);
 		notes.clear();
 		notes.putAll(d.notes);
+		claims.clear();
+		talks.clear();
+		talkInvites.clear();
 		reminders.clear();
 		if (d.reminders != null) {
 			d.reminders.forEach((k, v) -> reminders.put(k, new ArrayList<>(v)));

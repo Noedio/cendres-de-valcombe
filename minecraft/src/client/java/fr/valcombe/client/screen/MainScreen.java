@@ -76,6 +76,24 @@ public class MainScreen extends BaseScreen {
 			actions.add(new Action("Nominer", () -> minecraft.gui.setScreen(new PickerScreen("Nominer qui ?", "vc nominer "))));
 			actions.add(new Action("Tirer", () -> minecraft.gui.setScreen(new PickerScreen("Tirer sur qui ?", "vc tirer "))));
 			actions.add(new Action("Chuchoter", () -> minecraft.gui.setScreen(new PickerScreen("Chuchoter à qui ?", "vc chuchoter "))));
+			String invite = ClientState.str(v, "talkInvite");
+			if (invite != null && !invite.isEmpty()) {
+				actions.add(new Action("Parler avec " + invite, () -> {
+					send("vc parler accepter");
+					onClose();
+				}));
+			}
+			if (ClientState.str(v, "talkingWith") != null && !ClientState.str(v, "talkingWith").isEmpty()) {
+				actions.add(new Action("Revenir au village", () -> {
+					send("vc parler fin");
+					onClose();
+				}));
+			} else {
+				actions.add(new Action("Parler en privé", () -> minecraft.gui.setScreen(new PickerScreen("Parler en privé avec qui ?", "vc parler "))));
+			}
+		}
+		if (role != null) {
+			actions.add(new Action("Annoncer un rôle", () -> minecraft.gui.setScreen(new ClaimScreen())));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
 		actions.add(new Action("Mon carnet", () -> minecraft.gui.setScreen(new NotebookScreen())));

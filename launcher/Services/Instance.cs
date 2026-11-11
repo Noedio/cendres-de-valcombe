@@ -122,6 +122,27 @@ public static class Instance
         if (map.TryGetValue("lang", out var lang) && lang.Length > 0) o.Language = lang;
     }
 
+    /// <summary>Écrit quelques clés dans options.txt, en gardant toutes les autres lignes.</summary>
+    public static void ApplyValues(IDictionary<string, string> values, string gameDir)
+    {
+        Directory.CreateDirectory(gameDir);
+        string file = Path.Combine(gameDir, "options.txt");
+        var lines = File.Exists(file) ? File.ReadAllLines(file).ToList() : new List<string>();
+        foreach (var (key, value) in values)
+        {
+            int idx = lines.FindIndex(l => l.StartsWith(key + ":", StringComparison.Ordinal));
+            if (idx >= 0)
+            {
+                lines[idx] = key + ":" + value;
+            }
+            else
+            {
+                lines.Add(key + ":" + value);
+            }
+        }
+        File.WriteAllLines(file, lines);
+    }
+
     /// <summary>Écrit les réglages choisis dans options.txt (instance Prism par défaut), en gardant les autres lignes.</summary>
     public static void ApplyOptions(MinecraftOptions o, string? gameDir = null)
     {

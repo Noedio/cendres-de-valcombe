@@ -68,6 +68,10 @@ public interface Host {
 	}
 
 	/** Deux joueurs chuchotent : une bulle apparaît au-dessus d'eux. */
+	/** Signe rapide au-dessus de la tête d'un joueur (✔, ✘, ?, !…). */
+	default void sign(String player, String symbol, String color) {
+	}
+
 	default void whisperBubble(String from, String to) {
 	}
 

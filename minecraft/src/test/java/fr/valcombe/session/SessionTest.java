@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import fr.valcombe.rules.Game;
 import fr.valcombe.rules.GameException;
+import fr.valcombe.rules.Role;
 import fr.valcombe.rules.Rng;
 import fr.valcombe.rules.Step;
 
@@ -332,6 +333,43 @@ class SessionTest {
 		assertEquals(2, noms.get(0).get("votes"));
 		assertNull(today.get("block"), "2 voix sous le seuil : personne sur le billot");
 		assertEquals(true, today.get("canNominate"));
+	}
+
+	@Test
+	void annoncesSignesEtConversationsPrivees() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(7)));
+		for (int i = 1; i <= 6; i++) {
+			s.join("J" + i);
+		}
+		s.toggleStoryteller("Conteur");
+		s.start("Conteur", Session.Mode.HUMAIN);
+		s.startNight();
+		assertThrows(GameException.class, () -> s.inviteTalk("J1", "J2"), "pas de conversation privée la nuit");
+		pump(s, h, new Random(7));
+		// Annonce publique d'un rôle, puis retrait
+		s.claim("J1", "greffier");
+		assertEquals(Role.GREFFIER, s.claimOf("J1"));
+		assertTrue(h.announces.stream().anyMatch(a -> a.contains("J1 dit être")), "annonce publique");
+		assertThrows(GameException.class, () -> s.claim("J1", "inconnu"));
+		s.claim("J1", "aucun");
+		assertNull(s.claimOf("J1"));
+		// Signe : accepté, et les signes inconnus refusés
+		s.sign("J2", "question");
+		assertThrows(GameException.class, () -> s.sign("J2", "danse"));
+		// Conversation privée : invitation, acceptation, vocal à deux, fin à la cloche
+		s.inviteTalk("J1", "J2");
+		assertEquals("J1", s.view("J2", false).get("talkInvite"));
+		s.answerTalk("J2", true);
+		assertEquals(List.of("J2"), s.voiceTargets("J1"));
+		assertEquals(List.of("J1"), s.voiceTargets("J2"));
+		assertNull(s.voiceTargets("J3"));
+		assertThrows(GameException.class, () -> s.inviteTalk("J3", "J1"), "J1 est déjà occupé");
+		s.gather();
+		assertNull(s.talkingWith("J1"), "la cloche réunit tout le monde");
+		s.inviteTalk("J3", "J4");
+		s.answerTalk("J4", false);
+		assertNull(s.talkingWith("J3"));
 	}
 
 	@Test

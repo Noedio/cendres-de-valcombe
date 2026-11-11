@@ -15,6 +15,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 public final class ValcombeClient implements ClientModInitializer {
 	private static KeyMapping menuKey;
 	private static KeyMapping handKey;
+	private static KeyMapping signKey;
+	private static KeyMapping roleKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -27,6 +29,8 @@ public final class ValcombeClient implements ClientModInitializer {
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("valcombe", "main"));
 		menuKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.menu", InputConstants.KEY_J, category));
 		handKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.hand", InputConstants.KEY_H, category));
+		signKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.sign", InputConstants.KEY_G, category));
+		roleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.role", InputConstants.KEY_K, category));
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (handKey.consumeClick()) {
 				// Lever ou baisser la main pendant le vote à l'horloge
@@ -34,6 +38,14 @@ public final class ValcombeClient implements ClientModInitializer {
 				if (vote != null && ClientState.bool(vote, "canVote")) {
 					ClientState.send(ClientState.bool(vote, "myHand") ? "vc vote non" : "vc vote oui");
 				}
+			}
+			while (signKey.consumeClick()) {
+				if (client.gui.screen() == null) {
+					client.gui.setScreen(new fr.valcombe.client.screen.SignScreen());
+				}
+			}
+			while (roleKey.consumeClick()) {
+				Hud.showCard(); // revoir sa carte de rôle
 			}
 			while (menuKey.consumeClick()) {
 				if (client.gui.screen() == null) {
