@@ -96,6 +96,12 @@ public class MainScreen extends BaseScreen {
 			actions.add(new Action("Annoncer un rôle", () -> minecraft.gui.setScreen(new ClaimScreen())));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
+		boolean cb = fr.valcombe.client.ClientConfig.get().daltonien;
+		actions.add(new Action("Daltonien : " + (cb ? "oui" : "non"), () -> {
+			fr.valcombe.client.ClientConfig.get().daltonien = !cb;
+			fr.valcombe.client.ClientConfig.get().save();
+			minecraft.gui.setScreen(new MainScreen());
+		}));
 		actions.add(new Action("Mon carnet", () -> minecraft.gui.setScreen(new NotebookScreen())));
 		actions.add(new Action("Historique", () -> {
 			send("vc historique");

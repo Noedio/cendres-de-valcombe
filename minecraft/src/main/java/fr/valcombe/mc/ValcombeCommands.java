@@ -354,6 +354,10 @@ public final class ValcombeCommands {
 					}
 					return "Fermer : /vc tablette fermer.";
 				})))
+			.then(Commands.literal("soiree").requires(admin)
+				.then(Commands.literal("effacer").executes(c -> exec(c, x -> ValcombeMod.community().setNextEvening(""))))
+				.then(Commands.argument("quand", StringArgumentType.greedyString())
+					.executes(c -> exec(c, x -> ValcombeMod.community().setNextEvening(arg(x, "quand"))))))
 			.then(Commands.literal("scenario").requires(leader)
 				.then(Commands.argument("id", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(

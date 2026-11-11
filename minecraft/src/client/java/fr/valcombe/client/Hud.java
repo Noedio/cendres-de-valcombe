@@ -174,6 +174,8 @@ public final class Hud {
 			g.fill(x, y, x + box, y + box, fill);
 			if (locked.contains(name)) {
 				g.text(mc.font, "✋", x + 2, y + 2, 0xFFFFFFFF, false);
+			} else if (i >= pos && hands.contains(name)) {
+				g.text(mc.font, "↑", x + 3, y + 2, 0xFFFFFFFF, false); // main levée, pas encore comptée
 			}
 			if (i == pos) {
 				g.outline(x - 2, y - 2, box + 4, box + 4, Theme.GOLD);
@@ -333,6 +335,20 @@ public final class Hud {
 			}
 		}
 		drawToday(g, mc, v, vote == null ? 28 : 84);
+		// Conteur : joueurs déconnectés
+		var absents = v.getAsJsonArray("absents");
+		if (absents != null && !absents.isEmpty()) {
+			StringBuilder names = new StringBuilder();
+			absents.forEach(e -> names.append(names.length() == 0 ? "" : ", ").append(e.getAsString()));
+			String t = "Absents : " + names + (phase.equals("NIGHT") ? " (leur réveil est joué au hasard)" : "");
+			g.text(mc.font, t, w / 2 - mc.font.width(t) / 2, 42, 0xFFE05A4A, true);
+		}
+		// Nuit d'attente : ceux qui dorment savent quoi faire
+		if (phase.equals("NIGHT") && ClientState.obj(v, "prompt") == null && !ClientState.bool(v, "isStoryteller")
+				&& ClientState.num(v, "mySeat", -1) >= 0 && mc.gui.screen() == null) {
+			String t = "Tu dors… Le Conteur réveille chacun à son tour. Touche J : ton carnet et tes notes.";
+			g.text(mc.font, t, w / 2 - mc.font.width(t) / 2, h - 60, 0xFFB8A6C8, true);
+		}
 		// Conteur, la nuit : qui est réveillé et ce qu'on attend
 		JsonObject ns = ClientState.obj(v, "nightStep");
 		if (ns != null) {

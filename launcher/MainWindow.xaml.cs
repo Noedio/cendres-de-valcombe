@@ -92,6 +92,11 @@ public partial class MainWindow : Window
         }
         PageHome.Visibility = page == "Home" ? Visibility.Visible : Visibility.Collapsed;
         PageGuide.Visibility = page == "Guide" ? Visibility.Visible : Visibility.Collapsed;
+        PageCarnet.Visibility = page == "Carnet" ? Visibility.Visible : Visibility.Collapsed;
+        if (page == "Carnet")
+        {
+            LoadCarnet();
+        }
         PageGame.Visibility = page == "Game" ? Visibility.Visible : Visibility.Collapsed;
         PageLook.Visibility = page == "Look" ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = page == "Settings" ? Visibility.Visible : Visibility.Collapsed;
@@ -429,10 +434,79 @@ public partial class MainWindow : Window
             return;
         }
         ServerDot.Fill = new SolidColorBrush(st.Online ? Color.FromRgb(0x5F, 0xB8, 0x5A) : Color.FromRgb(0xB0, 0x40, 0x3A));
+        ShowMotd(st.Motd);
         ServerText.Text = !st.Online
             ? $"{address} — hors ligne"
             : $"{address} — en ligne, {st.Players}/{st.Max} joueur(s)"
                 + (st.Names.Count > 0 ? Environment.NewLine + string.Join(", ", st.Names) : "");
+    }
+
+    /// <summary>Description du serveur : la première ligne annonce la prochaine soirée, la seconde le salon.</summary>
+    private void ShowMotd(string motd)
+    {
+        var lines = (motd ?? "").Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        bool evening = lines.Length > 0 && lines[0].StartsWith("Prochaine soirée", StringComparison.Ordinal);
+        SoireeBox.Visibility = evening || lines.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
+        SoireeText.Text = string.Join(Environment.NewLine, evening ? lines : lines.Skip(1));
+    }
+
+    /// <summary>Le carnet du joueur : écrit par le mod à chaque passage au salon, lu ici.</summary>
+    private void LoadCarnet()
+    {
+        CarnetStats.Children.Clear();
+        string? file = new[] { Profile.Dir }.Concat(Profile.GameDirs)
+            .Select(d => Path.Combine(d, "valcombe-carnet.json"))
+            .Where(File.Exists)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+        if (file == null)
+        {
+            CarnetHint.Text = "Votre carnet se remplit après votre première partie sur un serveur Valcombe : "
+                + "parties, victoires, camps et rôles joués.";
+            CarnetTitle.Text = "";
+            CarnetRoles.Text = "";
+            return;
+        }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file));
+            var r = doc.RootElement;
+            int Get(string k) => r.TryGetProperty(k, out var v) && v.TryGetInt32(out int n) ? n : 0;
+            string Str(string k) => r.TryGetProperty(k, out var v) ? v.GetString() ?? "" : "";
+            CarnetHint.Text = $"{Str("joueur")} sur {Str("serveur")} — mis à jour le {Str("misAJour")}.";
+            string titre = Str("titre");
+            CarnetTitle.Text = titre.Length > 0 ? $"« {titre} »" : "";
+            int games = Get("parties");
+            int wins = Get("victoires");
+            void Stat(string label, string value)
+            {
+                var sp = new StackPanel { Margin = new Thickness(0, 0, 12, 12) };
+                sp.Children.Add(new TextBlock { Text = value, FontSize = 22, Foreground = (Brush)FindResource("Ink"),
+                    FontFamily = (FontFamily)FindResource("Title") });
+                sp.Children.Add(new TextBlock { Text = label, Style = (Style)FindResource("Hint") });
+                CarnetStats.Children.Add(sp);
+            }
+            Stat("parties", games.ToString());
+            Stat("victoires", games == 0 ? "0" : $"{wins} ({100 * wins / games} %)");
+            Stat("survivant en fin de partie", Get("survivant").ToString());
+            Stat("dans le bien", $"{Get("bien")} ({Get("victoiresBien")} gagnées)");
+            Stat("dans le mal", $"{Get("mal")} ({Get("victoiresMal")} gagnées)");
+            Stat("parties menées en Conteur", Get("conteur").ToString());
+            var roles = new List<(string, int)>();
+            if (r.TryGetProperty("roles", out var rs) && rs.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var p in rs.EnumerateObject())
+                {
+                    roles.Add((p.Name, p.Value.TryGetInt32(out int n) ? n : 0));
+                }
+            }
+            CarnetRoles.Text = roles.Count == 0 ? "Aucun pour l'instant."
+                : string.Join(", ", roles.OrderByDescending(x => x.Item2).Select(x => $"{x.Item1} ×{x.Item2}"));
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException)
+        {
+            CarnetHint.Text = "Carnet illisible : il sera réécrit à votre prochaine visite au salon.";
+        }
     }
 
     /// <summary>Mémoire de l'ordinateur, en Go (0 si inconnue).</summary>
@@ -731,7 +805,16 @@ public partial class MainWindow : Window
         RefreshServerPicker();
         ServerText.Text = "valcombe.exemple.fr — en ligne, 7/20 joueur(s)" + Environment.NewLine + "Léa, Hugo, Inès, Malo";
         ServerDot.Fill = new SolidColorBrush(Color.FromRgb(0x5F, 0xB8, 0x5A));
-        foreach (string page in new[] { "Home", "Guide", "Game", "Look", "Settings", "Account" })
+        ShowMotd("Prochaine soirée : vendredi 21 h\n5 inscrit(s) au salon · « Le Bal masqué »");
+        string demo = Path.Combine(Path.GetTempPath(), "valcombe-apercu-carnet");
+        Profile.DirOverride = Path.Combine(Path.GetTempPath(), "valcombe-apercu-profil");
+        Directory.CreateDirectory(demo);
+        File.WriteAllText(Path.Combine(demo, "valcombe-carnet.json"), "{\"joueur\":\"Léa\",\"parties\":12,\"victoires\":7,"
+            + "\"bien\":8,\"mal\":4,\"victoiresBien\":5,\"victoiresMal\":2,\"survivant\":6,\"conteur\":1,"
+            + "\"titre\":\"Pilier de Valcombe\",\"roles\":{\"La Veilleuse\":3,\"La Goule\":2,\"Le Greffier\":2,"
+            + "\"Le Templier\":1},\"serveur\":\"valcombe.exemple.fr\",\"misAJour\":\"2026-11-11\"}");
+        Profile.GameDirsOverride = new[] { demo };
+        foreach (string page in new[] { "Home", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
         {
             foreach (var rb in FindNav(this))
             {

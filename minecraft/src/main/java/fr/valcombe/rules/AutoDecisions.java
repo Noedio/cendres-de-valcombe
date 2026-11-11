@@ -17,14 +17,34 @@ public class AutoDecisions implements Decisions {
 			lastMisregister.put(key, false);
 			return false;
 		}
-		boolean yes = game.rng.chance(misregisterChance);
+		boolean yes = game.rng.chance(balanced(game, misregisterChance));
 		lastMisregister.put(key, yes);
 		return yes;
 	}
 
+	/**
+	 * Le Conteur automatique garde la partie disputée : quand le mal est presque éliminé, ses
+	 * faux-semblants jouent plus souvent ; quand il domine, plus rarement.
+	 */
+	static double balanced(Game game, double base) {
+		List<Integer> alive = game.aliveSeats();
+		if (alive.isEmpty()) {
+			return base;
+		}
+		long evil = alive.stream().filter(s -> game.player(s).team() == Team.EVIL).count();
+		double ratio = (double) evil / alive.size();
+		if (ratio < 0.2) {
+			return Math.min(0.6, base * 1.5);
+		}
+		if (ratio > 0.4) {
+			return base * 0.6;
+		}
+		return base;
+	}
+
 	@Override
 	public Integer mayorBounce(Game game, int mayor) {
-		if (!game.rng.chance(mayorBounceChance)) {
+		if (!game.rng.chance(balanced(game, mayorBounceChance))) {
 			return null;
 		}
 		List<Integer> candidates = game.aliveSeats().stream()

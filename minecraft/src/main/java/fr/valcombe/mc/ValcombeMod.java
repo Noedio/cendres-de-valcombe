@@ -70,6 +70,33 @@ public final class ValcombeMod implements ModInitializer {
 		return maps;
 	}
 
+	private static String baseMotd;
+
+	/**
+	 * Description du serveur (liste des serveurs, launcher) : la prochaine soirée et le salon.
+	 * Le launcher la lit pour afficher « Prochaine soirée » sur son accueil.
+	 */
+	private static void updateMotd(net.minecraft.server.MinecraftServer server) {
+		if (community == null || baseMotd == null) {
+			return;
+		}
+		String evening = community.nextEvening();
+		String state;
+		if (SESSION.game() != null) {
+			state = "Partie en cours (" + SESSION.game().size() + " joueurs)";
+		} else {
+			int n = SESSION.lobby().size();
+			state = n == 0 ? "Salon ouvert" : n + " inscrit(s) au salon";
+			if (SESSION.scenario() != null) {
+				state += " · « " + SESSION.scenario().nom + " »";
+			}
+		}
+		String motd = (evening.isEmpty() ? "Les Cendres de Valcombe" : "Prochaine soirée : " + evening) + "\n" + state;
+		if (!motd.equals(server.getMotd())) {
+			server.setMotd(motd);
+		}
+	}
+
 	public static McHost host() {
 		return HOST;
 	}
@@ -110,6 +137,8 @@ public final class ValcombeMod implements ModInitializer {
 			creations.setMaps(maps);
 			HOST.setMaps(maps);
 			creations.load();
+			SESSION.carnetSource = community::carnet;
+			baseMotd = server.getMotd();
 			Atelier atelier = new Atelier(SESSION, creations, maps, HOST);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
@@ -135,6 +164,10 @@ public final class ValcombeMod implements ModInitializer {
 			SYNC.onTick(server);
 			if (server.getTickCount() % 5 == 0) {
 				VoiceRouter.update(server, SESSION, HOST.village());
+			}
+			if (server.getTickCount() % 40 == 0) {
+				updateMotd(server);
+				HOST.updateHall(SESSION);
 			}
 		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

@@ -38,6 +38,8 @@ public final class Community {
 		int tabletPort = 25570;
 		/** La tablette n'accepte que les appareils du réseau local. */
 		boolean tabletLocalOnly = true;
+		/** Prochaine soirée annoncée par l'hôte (description du serveur, accueil du launcher). */
+		String nextEvening = "";
 	}
 
 	/** Statistiques d'un joueur. */
@@ -300,6 +302,39 @@ public final class Community {
 			out.add(roles.substring(0, roles.length() - 2));
 		}
 		return out;
+	}
+
+	/** Le carnet d'un joueur (envoyé à son jeu, puis affiché par le launcher). */
+	public Map<String, Object> carnet(String name) {
+		Stats s = stats().get(name);
+		if (s == null) {
+			return null;
+		}
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("joueur", name);
+		m.put("parties", s.games);
+		m.put("victoires", s.wins);
+		m.put("bien", s.good);
+		m.put("mal", s.evil);
+		m.put("victoiresBien", s.goodWins);
+		m.put("victoiresMal", s.evilWins);
+		m.put("survivant", s.survived);
+		m.put("conteur", s.storyteller);
+		m.put("titre", title(name));
+		m.put("derniere", s.last);
+		m.put("roles", s.roles);
+		return m;
+	}
+
+	public String nextEvening() {
+		return config().nextEvening == null ? "" : config().nextEvening;
+	}
+
+	public String setNextEvening(String text) {
+		config().nextEvening = text == null ? "" : text.trim();
+		saveConfig();
+		return config().nextEvening.isEmpty() ? "Prochaine soirée effacée."
+			: "Prochaine soirée annoncée : « " + config().nextEvening + " ». Elle s'affiche dans la liste des serveurs et sur le launcher.";
 	}
 
 	/** Titre honorifique affiché sous le nom du joueur, ou chaîne vide. */

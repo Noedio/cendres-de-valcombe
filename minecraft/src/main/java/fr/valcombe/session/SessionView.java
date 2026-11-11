@@ -52,6 +52,12 @@ final class SessionView {
 		v.put("script", sc);
 		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.
 		v.put("customRoles", Role.customDefs());
+		if (ses.carnetSource != null && ses.game == null) {
+			Map<String, Object> carnet = ses.carnetSource.apply(me);
+			if (carnet != null) {
+				v.put("carnet", carnet);
+			}
+		}
 		if (ses.scenario != null) {
 			v.put("scenario", Map.of("id", ses.scenario.id, "nom", ses.scenario.nom,
 				"description", ses.scenario.description == null ? "" : ses.scenario.description));
@@ -96,7 +102,7 @@ final class SessionView {
 				s.put("alive", p.alive());
 				s.put("ghostVote", p.ghostVote());
 				s.put("bot", ses.bots.contains(p.name));
-				Role claimed = ses.claims.get(p.name);
+				Role claimed = ses.social.claims.get(p.name);
 				s.put("claim", claimed == null ? null : claimed.name());
 				seats.add(s);
 			}
@@ -123,9 +129,14 @@ final class SessionView {
 				v.put("vote", vote);
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
-			v.put("aside", ses.aside);
-			v.put("talkingWith", ses.talks.get(me));
-			v.put("talkInvite", ses.talkInvites.get(me));
+			v.put("aside", ses.social.aside);
+			if (me.equals(ses.storyteller)) {
+				// Joueurs déconnectés, pour le Conteur (de nuit, leur réveil est joué au hasard).
+				v.put("absents", g.players().stream().map(p -> p.name)
+					.filter(n -> !ses.bots.contains(n) && !ses.host.online(n)).toList());
+			}
+			v.put("talkingWith", ses.social.talks.get(me));
+			v.put("talkInvite", ses.social.talkInvites.get(me));
 			v.put("hasStoryteller", ses.storyteller != null);
 			if (me.equals(ses.storyteller) && g.phase() == Game.Phase.NIGHT && ses.pendingStep != null) {
 				// Bandeau du Conteur, la nuit : qui est réveillé, et ce qu'on attend.

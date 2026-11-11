@@ -217,7 +217,9 @@ public sealed class Engine
                 int n = Interlocked.Increment(ref done);
                 if (n % 25 == 0 || n == todo.Count)
                 {
-                    progress.Report(($"Téléchargement du jeu : {n} / {todo.Count} fichiers", (double)n / todo.Count));
+                    string speed = Http.SpeedText();
+                    progress.Report(($"Téléchargement du jeu : {n} / {todo.Count} fichiers" + (speed.Length > 0 ? $" ({speed})" : ""),
+                        (double)n / todo.Count));
                 }
             });
     }

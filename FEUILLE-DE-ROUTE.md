@@ -329,9 +329,25 @@ Dans le salon, le Conteur (ou l'hôte, en partie automatique) choisit un scénar
 - **Phase 11 — cartes** : bibliothèque de cartes (structure Minecraft et repères), générateur réglable (5 à 20 trônes, trois tailles, maisons ou non), mode construction avec repères lumineux et liste de contrôle, cartes partagées dans les fichiers `.valcombe`, carte liée à un scénario.
 - Limites : 40 rôles créés au plus par serveur ; le pouvoir libre demande un Conteur humain ; la simulation fait voter les joueurs fictifs au hasard (elle repère un script très déséquilibré ou bloqué, pas les finesses).
 
+### Avancement de la phase 12
+
+- Fait :
+  - **launcher** : page « Mon carnet » (statistiques écrites par le mod dans le dossier du jeu, gardées par le profil), « Prochaine soirée » lue dans la description du serveur (`/vc soiree`), vitesse et temps restant des téléchargements, reprise d'un téléchargement interrompu, réglage de connexion rangé dans « Avancé » (Prism n'est plus qu'un secours), aide pour l'avertissement de Windows au premier lancement ;
+  - **salle d'attente vivante** : présentoir 3D des rôles du script, panneau de la prochaine partie (scénario, inscrits, Conteur) ;
+  - **veillée de fin** : chaque joueur révélé à tour de rôle à l'écran, au rythme des jetons qui se retournent ;
+  - **nuit d'attente** : un message pour ceux qui dorment, la liste des joueurs déconnectés pour le Conteur ;
+  - **joueurs fictifs crédibles** : annonces (le bien dit ce qu'il croit être, le mal bluffe), accusations selon les soupçons (deux annonces identiques, silence), votes selon le camp ;
+  - **Conteur automatique plus fin** : ses faux-semblants s'ajustent pour garder la partie disputée ;
+  - **mode daltonien** (formes en plus des couleurs) ;
+  - **Session.java allégé** : la vie sociale (annonces, signes, apartés, conversations privées) passe dans Social.java, les joueurs fictifs dans BotBrain.java.
+- Non fait, et pourquoi :
+  - **voyageurs et figures neutres** : ajouter un joueur en cours de partie touche à tout le moteur (sièges, votes, voisinages, conditions de victoire) ; à concevoir après la soirée de test, avec des retours réels ;
+  - **launcher pour Linux et macOS** : le launcher est écrit pour Windows (WPF) ; il faudrait le réécrire avec une bibliothèque multiplateforme. En attendant, Prism Launcher et le modpack `.mrpack` fonctionnent partout ;
+  - **certificat de signature** du launcher : payant (plusieurs centaines d'euros par an) ; l'aide explique comment passer l'avertissement de Windows.
+
 ## Ordre conseillé
 
-1. **Soirée de test réelle** avec la 0.3.0, avant tout gros chantier : elle dira ce qui gêne vraiment.
+1. **Soirée de test réelle** à 8–12 joueurs : c'est désormais la seule étape du plan qui reste, et elle dira quoi corriger.
 2. **Phase 9** : sans elle, ni rôles ni scénarios créés ne sont possibles. Elle est invisible pour les joueurs, mais elle sécurise le reste.
 3. **Phase 10**, puis **phase 11** : créer des rôles et des scénarios apporte le plus de nouveauté ; les cartes viennent ensuite, car on peut déjà en faire à la main avec la baguette.
 4. **Phase 12** au fil des retours.

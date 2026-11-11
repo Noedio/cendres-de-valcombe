@@ -104,6 +104,14 @@ public final class Theme {
 		if (!alive) {
 			image(g, tex("token_dead"), x, y, size, size, 32, 32);
 		}
+		if (team != null && fr.valcombe.client.ClientConfig.get().daltonien && size >= 16) {
+			// Mode daltonien : un triangle pour le mal, un rond pour le bien, en plus de la couleur.
+			var font = net.minecraft.client.Minecraft.getInstance().font;
+			boolean evil = team.equals("EVIL");
+			String mark = evil ? "▲" : "●";
+			g.fill(x + size - 9, y, x + size, y + 9, 0xE01B1214);
+			g.text(font, mark, x + size - 8, y + 1, evil ? 0xFFFF8080 : 0xFFA0C8FF, false);
+		}
 		if (selected) {
 			image(g, tex("token_selected"), x, y, size, size, 32, 32);
 		} else if (hovered) {

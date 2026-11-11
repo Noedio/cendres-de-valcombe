@@ -31,6 +31,7 @@ public final class ClientState {
 	public static void apply(String json) {
 		view = JsonParser.parseString(json).getAsJsonObject();
 		// Rôles créés dans l'Atelier (serveur) : même registre que le serveur, rechargé s'il a changé.
+		writeCarnet(obj(view, "carnet"));
 		JsonElement custom = view.get("customRoles");
 		String ck = custom == null ? "" : custom.toString();
 		if (!ck.equals(customKey)) {
@@ -47,6 +48,26 @@ public final class ClientState {
 			boolean sameType = prompt != null && lastPromptKey.contains("\"type\":\"" + str(prompt, "type") + "\"");
 			lastPromptKey = key;
 			ScreenRouter.onPromptChanged(prompt, sameType);
+		}
+	}
+
+	private static String carnetKey = "";
+
+	/** Le carnet du joueur (statistiques du serveur), écrit dans le dossier du jeu pour le launcher. */
+	private static void writeCarnet(JsonObject carnet) {
+		if (carnet == null || carnet.toString().equals(carnetKey)) {
+			return;
+		}
+		carnetKey = carnet.toString();
+		try {
+			var mc = net.minecraft.client.Minecraft.getInstance();
+			JsonObject out = carnet.deepCopy();
+			var server = mc.getCurrentServer();
+			out.addProperty("serveur", server == null ? "partie solo" : server.ip);
+			out.addProperty("misAJour", java.time.LocalDate.now().toString());
+			java.nio.file.Files.writeString(mc.gameDirectory.toPath().resolve("valcombe-carnet.json"), out.toString());
+		} catch (java.io.IOException | RuntimeException e) {
+			// carnet non écrit : le launcher montrera le précédent
 		}
 	}
 

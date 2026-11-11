@@ -454,6 +454,25 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
 			shot(ctx, "20b-script-avec-role-cree");
 			ctx.setScreen(() -> null);
+
+			// Phase 12 : prochaine soirée (description du serveur), carnet pour le launcher, daltonien, présentoir
+			world.getServer().runCommand("vc soiree vendredi 21 h");
+			ctx.waitTicks(60);
+			check(world.getServer().computeOnServer(server -> server.getMotd()).contains("vendredi 21 h"), "prochaine soirée annoncée");
+			check(ctx.computeOnClient(mc -> java.nio.file.Files.exists(mc.gameDirectory.toPath().resolve("valcombe-carnet.json"))),
+				"carnet écrit pour le launcher");
+			ctx.runOnClient(mc -> fr.valcombe.client.ClientConfig.get().daltonien = true);
+			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
+			shot(ctx, "21-daltonien");
+			ctx.runOnClient(mc -> fr.valcombe.client.ClientConfig.get().daltonien = false);
+			ctx.setScreen(() -> null);
+			var hall = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().hallSpot());
+			if (hall != null) {
+				world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+					me, hall.x, hall.y, hall.z + 1.5, hall.x, hall.y + 3.2, hall.z - 6));
+				ctx.waitTicks(60);
+				shot(ctx, "22-salle-presentoir");
+			}
 		}
 	}
 }

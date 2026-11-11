@@ -417,6 +417,15 @@ public final class Village {
 		}
 	}
 
+	/** Centre de la salle d'attente (pieds), ou null s'il n'y en a pas. */
+	public Vec3 hallSpot() {
+		if (!hall) {
+			return null;
+		}
+		int[] h = hallCenter();
+		return new Vec3(center.getX() + h[0] + 0.5, center.getY() + 1, center.getZ() + h[1] + 0.5);
+	}
+
 	/** Positions (absolues) des panneaux flottants de la salle : texte → position. */
 	public java.util.Map<String, Vec3> hallBoards() {
 		int[] h = hallCenter();

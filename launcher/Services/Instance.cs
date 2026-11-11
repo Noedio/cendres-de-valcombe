@@ -74,7 +74,13 @@ public static class Instance
             }
             int index = i;
             await Http.DownloadAsync(Releases.Resolve(release, mod), target, mod.Sha512,
-                new Progress<double>(p => progress.Report(($"Téléchargement : {mod.Name}", (index + p) / m.Mods.Count))), ct);
+                new Progress<double>(p =>
+                {
+                    string speed = Http.SpeedText();
+                    string left = Http.RemainingText((long)(mod.Size * (1 - p)));
+                    string extra = string.Join(", ", new[] { speed, left }.Where(x => x.Length > 0));
+                    progress.Report(($"Téléchargement : {mod.Name}" + (extra.Length > 0 ? $" ({extra})" : ""), (index + p) / m.Mods.Count));
+                }), ct);
         }
     }
 

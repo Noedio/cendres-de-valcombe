@@ -28,9 +28,20 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - menu → « Parler en privé » : invitez un joueur ; une fois accepté, vous ne vous entendez plus qu'à deux, jusqu'à la cloche, la nuit ou un vote ;
    - **G** : faire un signe au-dessus de sa tête (oui, non, question, attention, réflexion, d'accord) ;
    - **K** : revoir sa carte de rôle ;
+   - menu → « Daltonien » : un triangle (mal) ou un rond (bien) s'ajoute aux couleurs des jetons, une flèche aux mains levées ;
    - une fois mort, vous portez une coiffe (chapeau de deuil ou crâne, au choix du Conteur), avec un cierge tant qu'il vous reste votre vote de fantôme.
 
-Le **launcher Valcombe** a aussi une page « Guide » (règles et touches), des préréglages de performance (petite machine, équilibré, haute qualité), un conseil de mémoire selon votre ordinateur et un voyant d'état du serveur. Vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
+Le **launcher Valcombe** a aussi une page « Guide » (règles et touches), des préréglages de performance (petite machine, équilibré, haute qualité), un conseil de mémoire selon votre ordinateur, un voyant d'état du serveur avec la **prochaine soirée** annoncée par l'hôte, une page **« Mon carnet »** (parties, victoires, camps, rôles joués, titre ; elle se remplit à chaque passage au salon) et l'affichage de la vitesse et du temps restant des téléchargements (un téléchargement coupé reprend où il s'était arrêté). Vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
+
+### Au premier lancement du launcher : « Windows a protégé votre ordinateur »
+
+Le launcher n'est pas signé numériquement (un certificat de signature coûte plusieurs centaines d'euros par an). Windows SmartScreen affiche donc un écran bleu au premier lancement :
+
+1. cliquez sur **Informations complémentaires** ;
+2. vérifiez que l'application s'appelle bien `ValcombeLauncher.exe` ;
+3. cliquez sur **Exécuter quand même**.
+
+Windows ne le redemande plus ensuite, et les mises à jour automatiques du launcher ne le redéclenchent pas. Téléchargez le launcher uniquement depuis la page des versions du dépôt GitHub.
 
 ## Pour l'hôte (serveur)
 
@@ -81,6 +92,9 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
     - la **bibliothèque de cartes** : enregistrer la carte actuelle, en charger une autre, générer un village réglable (5 à 20 trônes, petite, normale ou grande place, avec ou sans maisons) ;
     - le **partage** : un fichier `.valcombe` (rôles, scénarios et cartes) à envoyer à un autre hôte, qui l'importe sur la même page.
 11. Dans le jeu, écran Script → « Scénarios… » pour choisir un scénario, ouvrir l'Atelier ou passer en **mode construction** (`/vc carte construction` : créatif, baguette de carte, repères lumineux sur chaque trône et maison, liste de contrôle ; `/vc carte centre` pose le centre). Commandes de carte : `/vc carte enregistrer <id> <nom>`, `charger <id>`, `supprimer <id>`, `liste`, `generer <trônes> <petite|normale|grande> <thème> <oui|non>`.
+
+12. **Prochaine soirée** : `/vc soiree vendredi 21 h` l'annonce dans la liste des serveurs de Minecraft et sur l'accueil du launcher, avec le nombre d'inscrits (`/vc soiree effacer` pour la retirer).
+13. La salle d'attente montre en 3D les rôles du script choisi et un panneau de la prochaine partie (scénario, inscrits, Conteur). En fin de partie, chaque joueur est révélé à tour de rôle (la veillée). Les joueurs fictifs annoncent un rôle (le mal bluffe), accusent et votent d'eux-mêmes : l'entraînement ressemble davantage à une vraie partie.
 
 Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
 

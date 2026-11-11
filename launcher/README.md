@@ -13,6 +13,10 @@ Un seul `ValcombeLauncher.exe`, portable : il range tout dans le dossier `Valcom
 
 Pages : Accueil (nouvelles, serveur, compte), Options du jeu, Personnalisation (couleur d'accent, fond, fermeture au lancement), Réglages (dépôt, serveur, mémoire, réparation), Compte.
 
+## Premier lancement
+
+L'exe n'est pas signé : Windows SmartScreen affiche « Windows a protégé votre ordinateur ». Cliquez sur « Informations complémentaires », puis « Exécuter quand même » (voir INSTALLATION.md).
+
 ## Compiler
 
 Il faut le SDK .NET 9.

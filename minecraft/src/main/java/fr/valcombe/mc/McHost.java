@@ -218,6 +218,58 @@ public final class McHost implements Host {
 		return best;
 	}
 
+	// ------------------------------------------------------------------
+	// Salle d'attente vivante : présentoir des rôles du script, panneau de la prochaine partie
+	// ------------------------------------------------------------------
+	private String hallKey = "";
+
+	public void updateHall(fr.valcombe.session.Session ses) {
+		if (server == null || village == null || village.hallSpot() == null) {
+			return;
+		}
+		var g = ses.game();
+		List<fr.valcombe.rules.Role> roles = new ArrayList<>(ses.script());
+		roles.sort(java.util.Comparator.comparingInt((fr.valcombe.rules.Role r) -> r.type.ordinal()).thenComparing(Enum::ordinal));
+		String name = ses.scenario() != null ? "« " + ses.scenario().nom + " »" : ses.scriptName();
+		List<String> lobby = ses.lobby();
+		String st = ses.storyteller();
+		String text = g != null
+			? "Partie en cours — " + (g.phase() == fr.valcombe.rules.Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day())
+				+ "\nRôles du script : " + name
+			: "Prochaine partie : " + name + "\n" + (lobby.isEmpty() ? "Personne n'est encore inscrit"
+				: lobby.size() + " inscrit(s) : " + String.join(", ", lobby.stream().limit(8).toList())
+					+ (lobby.size() > 8 ? "…" : ""))
+				+ "\nConteur : " + (st == null ? "automatique" : st);
+		String key = text + "|" + roles + "|" + fr.valcombe.rules.Role.customDefs().size();
+		if (key.equals(hallKey)) {
+			return;
+		}
+		hallKey = key;
+		Vec3 h = village.hallSpot();
+		WorldSetup.run(server, "kill @e[tag=vc_presentoir]");
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\"],billboard:\"center\",line_width:260,"
+				+ "background:-1308622848,text:{text:\"%s\",color:\"gold\"}}",
+			h.x, h.y + 3.6, h.z, text.replace("\"", "'")));
+		// Jetons des rôles du script, en rangées le long du mur du fond
+		int perRow = 13;
+		for (int i = 0; i < roles.size(); i++) {
+			fr.valcombe.rules.Role r = roles.get(i);
+			String model = r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
+				: "jeton_" + r.name().toLowerCase(java.util.Locale.ROOT);
+			int row = i / perRow;
+			int inRow = Math.min(perRow, roles.size() - row * perRow);
+			double x = h.x + (i % perRow - (inRow - 1) / 2.0) * 1.2;
+			double y = h.y + 3.7 - row * 0.8;
+			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+				"summon minecraft:item_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\"],billboard:\"vertical\","
+					+ "brightness:{sky:15,block:15},item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":"
+					+ "\"valcombe:%s\",\"minecraft:custom_name\":\"%s\"}},transformation:{translation:[0f,0f,0f],"
+					+ "left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[0.7f,0.7f,0.7f]}}",
+				x, y, h.z - 6.2, model, r.displayName.replace("\"", "'")));
+		}
+	}
+
 	@Override
 	public void storytellerTools(String name, boolean on) {
 		ServerPlayer p = player(name);

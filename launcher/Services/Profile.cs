@@ -20,7 +20,8 @@ public static class Profile
     public static string[]? GameDirsOverride { get; set; }
 
     /// <summary>Fichiers suivis, relatifs au dossier du jeu.</summary>
-    private static readonly string[] Files = { "options.txt", "servers.dat" };
+    private static readonly string[] Files = { "options.txt", "servers.dat", "valcombe-carnet.json",
+        Path.Combine("config", "valcombe-client.json") };
 
     /// <summary>Dossiers suivis en entier (réglages du vocal : micro, volumes…).</summary>
     private static readonly string[] Folders = { Path.Combine("config", "voicechat") };

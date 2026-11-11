@@ -8,7 +8,30 @@ namespace Valcombe.Launcher.Services;
 /// <summary>État du serveur Minecraft (protocole de « ping » de la liste des serveurs).</summary>
 public static class ServerStatus
 {
-    public sealed record Result(bool Online, int Players, int Max, IReadOnlyList<string> Names);
+    public sealed record Result(bool Online, int Players, int Max, IReadOnlyList<string> Names, string Motd = "");
+
+    /// <summary>Texte d'une description de serveur (chaîne simple ou composant JSON avec « extra »).</summary>
+    private static string Text(JsonElement e)
+    {
+        if (e.ValueKind == JsonValueKind.String)
+        {
+            return e.GetString() ?? "";
+        }
+        if (e.ValueKind == JsonValueKind.Array)
+        {
+            return string.Concat(e.EnumerateArray().Select(Text));
+        }
+        if (e.ValueKind != JsonValueKind.Object)
+        {
+            return "";
+        }
+        string s = e.TryGetProperty("text", out var t) ? Text(t) : "";
+        if (e.TryGetProperty("extra", out var extra))
+        {
+            s += Text(extra);
+        }
+        return s;
+    }
 
     private static void WriteVarInt(Stream s, int value)
     {
@@ -109,7 +132,8 @@ public static class ServerStatus
                     names.Add(e.GetProperty("name").GetString() ?? "");
                 }
             }
-            return new Result(true, players.GetProperty("online").GetInt32(), players.GetProperty("max").GetInt32(), names);
+            string motd = doc.RootElement.TryGetProperty("description", out var d) ? Text(d) : "";
+            return new Result(true, players.GetProperty("online").GetInt32(), players.GetProperty("max").GetInt32(), names, motd);
         }
         catch (Exception)
         {

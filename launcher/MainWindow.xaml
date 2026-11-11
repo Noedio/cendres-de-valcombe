@@ -26,6 +26,7 @@
         <StackPanel>
           <RadioButton Style="{StaticResource Nav}" Content="Accueil" x:Name="NavHome" IsChecked="True" Checked="Navigate" Tag="Home"/>
           <RadioButton Style="{StaticResource Nav}" Content="Guide" Checked="Navigate" Tag="Guide"/>
+          <RadioButton Style="{StaticResource Nav}" Content="Mon carnet" Checked="Navigate" Tag="Carnet"/>
           <RadioButton Style="{StaticResource Nav}" Content="Options du jeu" Checked="Navigate" Tag="Game"/>
           <RadioButton Style="{StaticResource Nav}" Content="Personnalisation" Checked="Navigate" Tag="Look"/>
           <RadioButton Style="{StaticResource Nav}" Content="Réglages" Checked="Navigate" Tag="Settings"/>
@@ -100,6 +101,11 @@
                 <TextBlock Text="Le cercle" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}"/>
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
                            Text="Le bien cherche le Démon caché parmi les joueurs ; le mal le protège. Deux scripts : les Cendres (classique) et les Brumes. Nouveau venu ? Lisez le Guide."/>
+                <Border x:Name="SoireeBox" Visibility="Collapsed" Margin="0,12,0,0" Padding="10,6" CornerRadius="6"
+                        Background="#33A0283C" BorderBrush="{StaticResource Gold}" BorderThickness="1">
+                  <TextBlock x:Name="SoireeText" TextWrapping="Wrap" FontFamily="{StaticResource Title}" FontSize="14"
+                             Foreground="{StaticResource Ink}"/>
+                </Border>
                 <TextBlock Text="Serveur" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}" Margin="0,14,0,0"/>
                 <ComboBox x:Name="ServerPicker" Margin="0,4,0,4" SelectionChanged="ServerPicked"/>
                 <DockPanel>
@@ -157,6 +163,18 @@
                 <TextBlock Grid.Row="8" Style="{StaticResource Hint}" FontWeight="Bold" Text="Menu → Parler en privé"/>
                 <TextBlock Grid.Row="8" Grid.Column="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Text="Inviter un joueur : vous ne vous entendez plus qu'à deux, jusqu'à la cloche"/>
               </Grid>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Mon carnet -->
+          <ScrollViewer x:Name="PageCarnet" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+              <TextBlock Style="{StaticResource H1}" Text="Mon carnet"/>
+              <TextBlock x:Name="CarnetHint" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
+              <TextBlock x:Name="CarnetTitle" FontFamily="{StaticResource Title}" FontSize="18" Foreground="{StaticResource Gold}" Margin="0,8,0,0"/>
+              <UniformGrid x:Name="CarnetStats" Columns="3" Margin="0,8,0,0"/>
+              <TextBlock Style="{StaticResource Label}" Text="Rôles joués"/>
+              <TextBlock x:Name="CarnetRoles" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
             </StackPanel>
           </ScrollViewer>
 
@@ -237,9 +255,14 @@
                 <Button Style="{StaticResource Wax}" Content="Retirer la sélection" Click="RemoveServer" Margin="0,0,8,8"/>
               </WrapPanel>
               <TextBlock Style="{StaticResource Hint}" Text="Choisissez ensuite le serveur sur l'accueil, sous « Serveur »."/>
-              <TextBlock Style="{StaticResource Label}" Text="ID d'application Microsoft (connexion intégrée)"/>
-              <TextBox x:Name="ClientIdBox" LostFocus="SettingsChanged"/>
-              <TextBlock Style="{StaticResource Hint}" Text="À renseigner une fois l'application validée par Microsoft : le launcher se connecte et lance alors le jeu lui-même, sans Prism."/>
+              <Expander Header="Avancé" Margin="0,12,0,0" Foreground="{StaticResource Ink}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource Label}" Text="ID d'application Microsoft (connexion intégrée)"/>
+                  <TextBox x:Name="ClientIdBox" LostFocus="SettingsChanged"/>
+                  <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                             Text="Rempli d'office avec l'application Valcombe validée par Microsoft. Vidé, le launcher passe par Prism Launcher (secours)."/>
+                </StackPanel>
+              </Expander>
               <TextBlock Style="{StaticResource Label}" x:Name="MemoryLabel"/>
               <Slider x:Name="MemorySlider" Minimum="2" Maximum="16" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="SettingsChanged"/>
               <TextBlock x:Name="MemoryHint" Style="{StaticResource Hint}" TextWrapping="Wrap"/>
