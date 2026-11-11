@@ -83,6 +83,20 @@
 	.meter { height: 6px; background: #3a2a2e; border-radius: 3px; overflow: hidden; margin-top: 8px; }
 	.meter i { display: block; height: 100%; background: var(--gold); }
 	.empty { color: var(--muted); font-style: italic; }
+	.pause { background: var(--gold); color: #201408; border-radius: 10px; padding: 8px 12px; margin-top: 10px; font-weight: bold; }
+	.order { font-size: .92rem; }
+	.order div { padding: 3px 6px; border-radius: 6px; }
+	.order .done { color: var(--muted); }
+	.order .now { background: #3a2a14; color: var(--gold); font-weight: bold; }
+	.alert { color: #ffb4a8; margin: 4px 0; }
+	.todo { margin: 8px 0; }
+	.tray h4 { margin: 10px 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: normal; }
+	.tray h4.evil { color: var(--evil); }
+	.tray button { min-height: 36px; padding: 6px 10px; font-size: .9rem; }
+	.journal { max-height: 320px; overflow-y: auto; font-size: .88rem; }
+	.journal div { padding: 2px 0; }
+	.journal .head { color: var(--gold); margin-top: 6px; }
+	.sheet { max-height: 88vh; overflow-y: auto; }
 	.warn { color: var(--gold); font-size: .9rem; margin-top: 6px; }
 	@media (min-width: 900px) { .cols { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; } }
 </style>
@@ -94,8 +108,16 @@
 </header>
 <div class="state" id="state"></div>
 
+<div class="pause" id="pauseBox" hidden>Partie en pause</div>
 <section id="promptBox" hidden></section>
 <section id="voteBox" hidden></section>
+<section id="nightBox" hidden>
+	<h2>Nuit pas à pas</h2>
+	<div class="cols">
+		<div class="card" id="stepCard"></div>
+		<div class="card order" id="nightOrder"></div>
+	</div>
+</section>
 
 <section>
 	<h2>Conduite</h2>
@@ -111,6 +133,9 @@
 	<section>
 		<h2>Fil de la partie</h2>
 		<div class="card feed" id="feed"></div>
+		<h2 style="margin-top:14px">Journal du Conteur</h2>
+		<div class="bar" id="journalBar" style="margin-bottom:8px"></div>
+		<div class="card journal" id="journal"></div>
 	</section>
 </div>
 
@@ -119,6 +144,7 @@
 		<h3 id="sheetName"></h3>
 		<div class="state" id="sheetRole"></div>
 		<div class="bar" id="sheetActions" style="margin-top:12px"></div>
+		<div class="tray" id="sheetTray"></div>
 	</div>
 </div>
 <div class="toast" id="toast"></div>
@@ -138,6 +164,8 @@ function readToken() {
 const token = readToken();
 let view = null;
 let toastTimer = 0;
+let journalSection = -1;
+let armed = "";
 
 function el(tag, cls, text) {
 	const e = document.createElement(tag);
@@ -205,8 +233,11 @@ function render() {
 	setState((v.online ? "Connecté en tant que " : "Hors jeu : ") + v.me
 		+ (v.storyteller ? " · Conteur : " + v.storyteller : " · Conteur automatique")
 		+ (v.online ? "" : " — connectez-vous au jeu pour agir"), !v.online);
+	document.getElementById("pauseBox").hidden = !v.paused;
 	renderPrompt(v);
 	renderVote(v);
+	renderNight(v);
+	renderJournal(v);
 	renderControls(v);
 	renderSeats(v);
 	const feed = document.getElementById("feed");
@@ -232,8 +263,15 @@ function renderPrompt(v) {
 	} else if (p.type === "confirm") {
 		card.append(el("div", "text", "Pour " + p.to + " : " + p.text + (p.truth ? "\n(vérité : " + p.truth + ")" : "")));
 		bar.append(btn("Envoyer", "vc envoyer", "main"));
+		const edit = el("button", "", "Modifier avant l'envoi");
+		edit.addEventListener("click", () => {
+			const text = window.prompt("Information envoyée à " + p.to + " :", p.text);
+			if (text && text.trim()) send("vc envoyer " + text.trim().slice(0, 300));
+		});
+		bar.append(edit);
 	} else if (p.type === "choose") {
-		card.append(el("div", "text", "Choisir " + p.count + " joueur(s)."));
+		card.append(el("div", "text", "Choisir " + p.count + " joueur(s)."
+			+ (p.optional ? " Pouvoir à usage unique : valider sans personne le garde pour une autre nuit." : "")));
 		for (const o of p.options) bar.append(btn(o.name, "vc choisir " + o.name, o.selected ? "sel" : ""));
 		bar.append(btn("Valider", "vc valider", "main"));
 	} else if (p.type === "info") {
@@ -259,6 +297,7 @@ function renderVote(v) {
 		? vote.nominee + " (accusé par " + vote.nominator + ") se défend — " + vote.defenseLeft + " s"
 		: "Vote sur " + vote.nominee + " : " + vote.count + " voix, seuil " + vote.threshold));
 	if (defense) row.append(btn("Passer au vote", "vc voter", "main"));
+	row.append(btn("Annuler le vote", "vc vote annuler"));
 	card.append(row);
 	if (!defense) {
 		const m = el("div", "meter");
@@ -275,17 +314,128 @@ function renderControls(v) {
 	c.replaceChildren();
 	if (v.phase === "LOBBY") {
 		c.append(btn("Lancer (Conteur humain)", "vc lancer humain", "main"), btn("Lancer (automatique)", "vc lancer auto"));
+		c.append(btn("Mélanger les places", "vc melanger"));
+		if (v.lobbyStatus) c.append(el("div", v.lobbyReady ? "state" : "state off", v.lobbyStatus));
 		return;
 	}
 	if (v.phase === "READY") c.append(btn("Faire tomber la nuit", "vc nuit", "main"));
-	if (v.phase === "NIGHT") c.append(btn("Étape suivante", "vc suivant", "main"));
+	if (v.phase === "NIGHT") {
+		c.append(btn("Étape précédente", "vc precedent"));
+		c.append(btn("Étape suivante", "vc suivant", "main"));
+	}
 	if (v.phase === "DAY") {
+		const block = v.today && v.today.block;
 		c.append(btn("Rassembler", "vc rassembler"));
 		c.append(btn("Discussion 5 min", "vc discussion 5"));
+		c.append(btn("+1 minute", "vc prolonger 1"));
 		c.append(v.nominationsOpen ? btn("Fermer les nominations", "vc nominations fermer") : btn("Ouvrir les nominations", "vc nominations ouvrir", "main"));
-		c.append(btn("Finir le jour", "vc finjour"));
+		if (block && !v.vote) c.append(btn("Gracier " + block, "vc gracier"));
+		c.append(btn(block ? "Exécuter " + block + " et clore le jour" : "Clore la journée", "vc finjour"));
+		if (v.dayOver) c.append(btn("Faire tomber la nuit", "vc nuit", "main"));
+		c.append(btn("Parole au suivant", "vc parole suivant"));
+		c.append(btn("Tour de table", "vc parole tour"));
+		if (v.speech) c.append(btn("Arrêter la parole", "vc parole stop"));
+		c.append(btn(v.broadcast ? "Ma voix : à tous" : "Ma voix : proximité", "vc diffusion"));
 	}
-	c.append(btn("Arrêter la partie", "vc arreter", "danger"));
+	c.append(btn(v.paused ? "Reprendre" : "Pause", "vc pause", v.paused ? "main" : ""));
+	c.append(confirmBtn("Victoire du bien", "vc victoire bien"));
+	c.append(confirmBtn("Victoire du mal", "vc victoire mal"));
+	c.append(confirmBtn("Arrêter la partie", "vc arreter"));
+	if (v.speech) {
+		c.append(el("div", "state", "Parole : " + (v.speech.speaker || "personne")
+			+ (v.speech.queue.length ? " — demandent : " + v.speech.queue.join(", ") : "")));
+	}
+}
+
+// Bouton à confirmer : le premier appui l'arme, le second lance la commande.
+function confirmBtn(label, cmd) {
+	const on = armed === cmd;
+	const b = el("button", "danger", on ? "Confirmer : " + label : label);
+	b.addEventListener("click", () => {
+		if (on) { armed = ""; send(cmd); } else { armed = cmd; render(); }
+	});
+	return b;
+}
+
+function renderNight(v) {
+	const box = document.getElementById("nightBox");
+	const order = v.nightOrder;
+	if (v.phase !== "NIGHT" || !order) { box.hidden = true; return; }
+	box.hidden = false;
+	const list = document.getElementById("nightOrder");
+	list.replaceChildren();
+	if (!order.length) list.append(el("div", "empty", "Plus aucun réveil."));
+	for (const e of order) {
+		const mark = e.state === 0 ? "▶ " : e.state < 0 ? "✔ " : "· ";
+		list.append(el("div", e.state === 0 ? "now" : e.state < 0 ? "done" : "", mark + e.title + (e.player ? " — " + e.player : "")));
+	}
+	const card = document.getElementById("stepCard");
+	card.replaceChildren();
+	const ns = v.nightStep;
+	if (!ns) { card.append(el("div", "empty", "Aucune étape en cours.")); return; }
+	card.append(el("div", "title", ns.title + (ns.player ? " — " + ns.player : "")));
+	if (ns.waiting) card.append(el("div", "state", "On attend : " + ns.waiting));
+	for (const a of ns.alerts || []) card.append(el("div", "alert", "⚠ " + a));
+	card.append(el("div", "todo", ns.todo || ""));
+	if (ns.player) {
+		const bar = el("div", "bar");
+		const awake = (v.awake || []).includes(ns.player);
+		bar.append(btn(awake ? "Rendormir" : "Réveiller", (awake ? "vc rendormir " : "vc reveiller ") + ns.player));
+		bar.append(btn("Demander 1 joueur", "vc demander " + ns.player + " 1"));
+		bar.append(btn("Demander 2 joueurs", "vc demander " + ns.player + " 2"));
+		const show = el("button", "", "Montrer…");
+		show.addEventListener("click", () => showTo(ns.player));
+		bar.append(show);
+		const sheet = el("button", "", "Fiche et jetons");
+		sheet.addEventListener("click", () => openByName(ns.player));
+		bar.append(sheet);
+		card.append(bar);
+	}
+}
+
+function showTo(name) {
+	const text = window.prompt("Information à montrer à " + name + " (oui, non, un nombre, un nom, un rôle…) :");
+	if (text && text.trim()) send("vc montrer " + name + " " + text.trim().slice(0, 200));
+}
+
+function openByName(name) {
+	const s = (view.seats || []).find(x => x.name === name);
+	const g = (view.grimoire || []).find(x => x.name === name);
+	if (s) openSheet(s, g);
+}
+
+function isHead(line) {
+	return line.startsWith("La nuit ") || line.startsWith("Le jour ") || line.startsWith("Mise en place");
+}
+
+function renderJournal(v) {
+	const box = document.getElementById("journal");
+	const bar = document.getElementById("journalBar");
+	const keepScroll = box.scrollTop;
+	box.replaceChildren();
+	bar.replaceChildren();
+	const lines = v.journal || [];
+	if (!lines.length) { box.append(el("div", "empty", "Le journal s'écrit pendant la partie.")); return; }
+	const heads = lines.filter(isHead);
+	if (journalSection >= heads.length) journalSection = -1;
+	const all = el("button", journalSection < 0 ? "sel" : "", "Tout");
+	all.addEventListener("click", () => { journalSection = -1; render(); });
+	bar.append(all);
+	heads.forEach((h, i) => {
+		const label = h.startsWith("Mise") ? "Mise en place" : h.replace(" tombe.", "").replace(" se lève.", "").replace("La nuit", "Nuit").replace("Le jour", "Jour");
+		const b = el("button", journalSection === i ? "sel" : "", label);
+		b.addEventListener("click", () => { journalSection = i; render(); });
+		bar.append(b);
+	});
+	let index = -1;
+	for (const line of lines) {
+		const head = isHead(line);
+		if (head) index++;
+		if (journalSection >= 0 && index !== journalSection) continue;
+		box.append(el("div", head ? "head" : "", line));
+	}
+	box.scrollTop = keepScroll;
+	if (v.gameNote) box.prepend(el("div", "alert", "Note de partie : " + v.gameNote));
 }
 
 function renderSeats(v) {
@@ -325,6 +475,10 @@ function renderSeats(v) {
 		if (g && g.master) chips.append(el("span", "chip", "maître"));
 		if (!s.alive) chips.append(el("span", "chip ghost", s.ghostVote ? "vote de fantôme" : "vote utilisé"));
 		if (s.bot) chips.append(el("span", "chip", "fictif"));
+		if (s.standIn) chips.append(el("span", "chip ghost", "relayé"));
+		else if ((v.absents || []).includes(s.name)) chips.append(el("span", "chip poison", "déconnecté"));
+		const said = v.answers && v.answers[s.name];
+		if (said && said.length) chips.append(el("span", "chip", "a désigné : " + said.join(", ")));
 		for (const r of (g && g.reminders) || []) chips.append(el("span", "chip herring", r));
 		if (chips.childElementCount) card.append(chips);
 		card.addEventListener("click", () => openSheet(s, g));
@@ -340,13 +494,43 @@ function openSheet(s, g) {
 	if (s.alive) a.append(btn("Tuer", "vc tuer " + s.name, "danger"));
 	else a.append(btn("Ressusciter", "vc ressusciter " + s.name));
 	if (!(g && g.poisoned)) a.append(btn("Empoisonner", "vc empoisonner " + s.name));
-	const remind = el("button", "", "Poser un rappel");
+	a.append(btn("Demander 1 joueur", "vc demander " + s.name + " 1"));
+	const show = el("button", "", "Montrer…");
+	show.addEventListener("click", () => { closeSheet(); showTo(s.name); });
+	a.append(show);
+	if (view.phase === "NIGHT") {
+		const awake = (view.awake || []).includes(s.name);
+		a.append(btn(awake ? "Rendormir" : "Réveiller", (awake ? "vc rendormir " : "vc reveiller ") + s.name));
+	} else if (view.phase === "DAY") {
+		a.append(btn("Donner la parole", "vc parole donner " + s.name));
+	}
+	if ((view.absents || []).includes(s.name) && !s.standIn) a.append(btn("Le faire relayer", "vc relayer " + s.name, "main"));
+	const note = el("button", "", "Note");
+	note.addEventListener("click", () => {
+		const text = window.prompt("Note sur " + s.name + " (vide : effacer) :", (g && g.note) || "");
+		if (text !== null) send(("vc note " + s.name + " " + text.trim().slice(0, 200)).trim());
+	});
+	a.append(note);
+	// Jetons de rappel : ceux des rôles en jeu, puis les jetons communs ; un appui pose ou retire.
+	const tray = document.getElementById("sheetTray");
+	tray.replaceChildren();
+	const worn = (g && g.reminders) || [];
+	for (const group of view.tokens || []) {
+		tray.append(el("h4", group.evil ? "evil" : "", group.role));
+		const bar = el("div", "bar");
+		for (const item of group.items) {
+			const on = worn.includes(item);
+			bar.append(btn((on ? "✔ " : "") + item, "vc rappel " + s.name + " " + (on ? "retirer " : "") + item, on ? "sel" : ""));
+		}
+		tray.append(bar);
+	}
+	const remind = el("button", "", "Autre rappel…");
 	remind.addEventListener("click", () => {
-		const text = window.prompt("Rappel sur " + s.name + " (ex. ivre, a choisi Bot3) :");
+		const text = window.prompt("Rappel sur " + s.name + " (ex. a choisi Bot3) :");
 		if (text && text.trim()) send("vc rappel " + s.name + " " + text.trim().slice(0, 40));
 	});
 	a.append(remind);
-	if (g && g.reminders && g.reminders.length) a.append(btn("Effacer les rappels", "vc rappel " + s.name + " effacer"));
+	if (worn.length) a.append(btn("Effacer les rappels", "vc rappel " + s.name + " effacer"));
 	const close = el("button", "", "Fermer");
 	close.addEventListener("click", closeSheet);
 	a.append(close);

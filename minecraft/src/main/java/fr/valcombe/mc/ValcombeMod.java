@@ -156,20 +156,31 @@ public final class ValcombeMod implements ModInitializer {
 			SESSION.setSavedScripts(ScriptStore.list(server));
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			try {
+				SESSION.saveNow(); // la partie en cours reprendra au prochain démarrage
+			} catch (RuntimeException e) {
+				LOG.error("Sauvegarde de la partie impossible à l'arrêt", e);
+			}
 			HOST.setServer(null);
 			if (tablet != null) {
 				tablet.close();
 			}
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
-			HOST.onTick();
-			SYNC.onTick(server);
+			// Chaque partie du tick est protégée : une erreur d'affichage ne doit pas arrêter le serveur ni la partie.
+			guarded("la partie", HOST::onTick);
+			guarded("la vue des joueurs", () -> SYNC.onTick(server));
 			if (server.getTickCount() % 5 == 0) {
-				VoiceRouter.update(server, SESSION, HOST.village());
+				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village()));
 			}
 			if (server.getTickCount() % 40 == 0) {
-				updateMotd(server);
-				HOST.updateHall(SESSION);
+				guarded("l'accueil", () -> {
+					updateMotd(server);
+					HOST.updateHall(SESSION);
+				});
+			}
+			if (server.getTickCount() % 1200 == 600) {
+				guarded("la sauvegarde", SESSION::saveNow);
 			}
 		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -177,6 +188,9 @@ public final class ValcombeMod implements ModInitializer {
 			UI.giveMenuItem(p);
 			var g = SESSION.game();
 			HOST.onJoin(p, g != null && g.seatOf(p.getScoreboardName()) >= 0);
+			// Une seconde plus tard : le client a eu le temps de s'annoncer (écrans du mod ou menus coffre).
+			String joined = p.getScoreboardName();
+			HOST.schedule(20, () -> SESSION.onJoin(joined));
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			String name = handler.getPlayer().getScoreboardName();
@@ -290,5 +304,18 @@ public final class ValcombeMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
 			ValcombeCommands.register(dispatcher, SESSION, UI));
 		LOG.info("Les Cendres de Valcombe : prêt.");
+	}
+
+	private static final java.util.Map<String, Integer> TICK_ERRORS = new java.util.HashMap<>();
+
+	/** Exécute une partie du tick ; une erreur est journalisée (dix fois au plus par sujet) sans rien arrêter. */
+	private static void guarded(String what, Runnable r) {
+		try {
+			r.run();
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
+			if (TICK_ERRORS.merge(what, 1, Integer::sum) <= 10) {
+				LOG.error("Erreur pendant le tick (" + what + ")", e);
+			}
+		}
 	}
 }

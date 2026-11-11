@@ -33,6 +33,10 @@ public final class Session {
 	public final Settings settings = new Settings();
 	final List<String> lobby = new ArrayList<>();
 	final Set<String> bots = new LinkedHashSet<>();
+	/** Joueurs absents dont un joueur fictif tient la place jusqu'à leur retour. */
+	final Set<String> standIns = new LinkedHashSet<>();
+	/** Partie en pause : les minuteurs, la nuit et le vote attendent. */
+	boolean paused;
 	/** Spectateurs : ils regardent la partie sans y jouer. */
 	final Set<String> spectators = new LinkedHashSet<>();
 	/** Jetons de rappel posés par le Conteur sur les sièges (« ivre », « a choisi X »…). */
@@ -61,6 +65,7 @@ public final class Session {
 	private String deliverTo;
 	private String deliverTitle;
 	private String deliverText;
+	private String deliverTruth;
 	private int nightToken;
 
 	// Jour : vote en cours
@@ -90,6 +95,12 @@ public final class Session {
 
 	/** Les joueurs fictifs : annonces, accusations et votes. */
 	private final BotBrain brain;
+	/** Le pupitre du Conteur : actions à la main, jetons par rôle, temps de parole. */
+	final Desk desk = new Desk(this);
+
+	Rng rng() {
+		return rng;
+	}
 
 	// ------------------------------------------------------------------
 	// État lisible par les menus
@@ -139,6 +150,9 @@ public final class Session {
 		if (silencedByElder(name)) {
 			return List.of();
 		}
+		if (desk.broadcast && g != null && g.phase() == Game.Phase.DAY && name.equals(storyteller) && social.aside == null) {
+			return realNames(); // la voix du Conteur porte à tout le village
+		}
 		// Aparté de jour : le Conteur et le joueur pris à part ne s'entendent qu'entre eux.
 		if (social.aside != null && storyteller != null && g != null && g.phase() == Game.Phase.DAY) {
 			if (name.equals(storyteller)) {
@@ -158,6 +172,11 @@ public final class Session {
 		for (var e : prompts.entrySet()) {
 			if (!bots.contains(e.getKey()) && !(e.getValue() instanceof Prompt.Vote)) {
 				awake.add(e.getKey());
+			}
+		}
+		for (String n : desk.awake) {
+			if (!awake.contains(n)) {
+				awake.add(n);
 			}
 		}
 		if (name.equals(storyteller)) {
@@ -197,6 +216,8 @@ public final class Session {
 	final Set<String> figures = new LinkedHashSet<>();
 	private long dayStartedAt;
 	private int sandToken;
+	/** Temps ajouté au Sablier par le Conteur (/vc prolonger). */
+	private int sandExtraTicks;
 
 	public java.util.Set<String> figures() {
 		return java.util.Collections.unmodifiableSet(figures);
@@ -223,9 +244,10 @@ public final class Session {
 		}
 		if (figures.contains("sablier")) {
 			int token = ++sandToken;
+			sandExtraTicks = 0;
 			int day = g.day();
 			host.schedule(20 * 60 * 9, () -> {
-				if (token == sandToken && game == g && g.day() == day && !g.dayOver()) {
+				if (token == sandToken && game == g && g.day() == day && !g.dayOver() && sandExtraTicks == 0 && !paused) {
 					host.title(realNames(), "Le Sablier", "Plus qu'une minute avant la fin du jour");
 				}
 			});
@@ -237,8 +259,14 @@ public final class Session {
 		if (token != sandToken || game != g || g.day() != day || g.dayOver() || g.phase() != Game.Phase.DAY) {
 			return;
 		}
-		if (voteNom != null) {
-			host.schedule(400, () -> sandglass(token, g, day)); // on laisse finir le vote en cours
+		if (voteNom != null || paused) {
+			host.schedule(400, () -> sandglass(token, g, day)); // on laisse finir le vote en cours, ou la pause
+			return;
+		}
+		if (sandExtraTicks > 0) {
+			int extra = sandExtraTicks;
+			sandExtraTicks = 0;
+			host.schedule(extra, () -> sandglass(token, g, day));
 			return;
 		}
 		announce("Le Sablier est vide : la journée s'achève.");
@@ -470,7 +498,16 @@ public final class Session {
 	// Outils
 	// ------------------------------------------------------------------
 	private boolean online(String name) {
-		return bots.contains(name) || host.online(name);
+		return isAuto(name) || host.online(name);
+	}
+
+	/** Joué par la machine : joueur fictif, ou absent relayé par un joueur fictif. */
+	boolean isAuto(String name) {
+		return bots.contains(name) || standIns.contains(name);
+	}
+
+	public boolean isStandIn(String name) {
+		return standIns.contains(name);
 	}
 
 	/** Annonces publiques récentes, affichées par le client. */
@@ -498,7 +535,7 @@ public final class Session {
 		}
 	}
 
-	private void setPrompt(String name, Prompt prompt) {
+	void setPrompt(String name, Prompt prompt) {
 		if (prompt == null) {
 			if (prompts.remove(name) != null && !bots.contains(name)) {
 				host.prompt(name, null);
@@ -518,7 +555,7 @@ public final class Session {
 				}
 			}
 		}
-		if (bots.contains(name)) {
+		if (isAuto(name)) {
 			host.schedule(15, () -> botAct(name, prompt));
 		} else {
 			host.prompt(name, prompt);
@@ -567,7 +604,7 @@ public final class Session {
 	}
 
 	/** Joueurs réels (hors bots) de la partie. */
-	private List<String> realNames() {
+	List<String> realNames() {
 		return names().stream().filter(n -> !bots.contains(n)).toList();
 	}
 
@@ -583,7 +620,20 @@ public final class Session {
 		String t = text.trim();
 		if (t.equalsIgnoreCase("effacer")) {
 			reminders.remove(name);
+			save();
 			return "Rappels de " + name + " effacés.";
+		}
+		if (t.toLowerCase(java.util.Locale.ROOT).startsWith("retirer ")) {
+			String which = t.substring(8).trim();
+			List<String> have = reminders.get(name);
+			if (have == null || !have.remove(which)) {
+				throw new GameException(name + " ne porte pas le rappel « " + which + " ».");
+			}
+			if (have.isEmpty()) {
+				reminders.remove(name);
+			}
+			save();
+			return "Rappel « " + which + " » retiré de " + name + ".";
 		}
 		if (t.isEmpty() || t.length() > 40) {
 			throw new GameException("Un rappel tient en 40 caractères.");
@@ -593,6 +643,7 @@ public final class Session {
 			throw new GameException("Six rappels au plus par joueur.");
 		}
 		list.add(t);
+		save();
 		return "Rappel posé sur " + name + " : « " + t + " ».";
 	}
 
@@ -693,6 +744,50 @@ public final class Session {
 		return "Désinscription enregistrée.";
 	}
 
+	/** Mélange l'ordre du cercle (les places de la prochaine partie). */
+	public String shuffleLobby() {
+		if (game != null) {
+			throw new GameException("Les places se mélangent avant la partie.");
+		}
+		if (lobby.size() < 2) {
+			throw new GameException("Il faut au moins deux inscrits.");
+		}
+		List<String> mixed = rng.shuffle(lobby);
+		lobby.clear();
+		lobby.addAll(mixed);
+		announce("Les places sont mélangées : " + String.join(", ", lobby) + ".");
+		return "";
+	}
+
+	/** Le meneur retire un inscrit du salon. */
+	public String kick(String target) {
+		if (game != null) {
+			throw new GameException("Impossible pendant une partie.");
+		}
+		String name = lobby.stream().filter(n -> n.equalsIgnoreCase(target)).findFirst()
+			.orElseThrow(() -> new GameException(target + " n'est pas inscrit."));
+		lobby.remove(name);
+		bots.remove(name);
+		announce(name + " est retiré du salon (" + lobby.size() + " inscrits).");
+		return "";
+	}
+
+	/** La partie peut-elle être lancée ? Renvoie { prêt ("oui" ou "non"), explication }. */
+	public String[] lobbyStatus() {
+		int n = (int) lobby.stream().filter(this::online).count();
+		if (n < Distribution.MIN_PLAYERS || n > Distribution.MAX_PLAYERS) {
+			return new String[] {"non", "Il faut entre " + Distribution.MIN_PLAYERS + " et " + Distribution.MAX_PLAYERS
+				+ " joueurs inscrits et connectés (" + n + " pour l'instant)."};
+		}
+		String problem = fr.valcombe.rules.Setup.check(script, n);
+		if (problem != null) {
+			return new String[] {"non", problem};
+		}
+		Distribution.Counts c = Distribution.counts(n);
+		return new String[] {"oui", n + " joueurs : " + c.citadin() + " Citadins, " + c.etranger() + " Étranger(s), "
+			+ c.sbire() + " Sbire(s), " + c.demon() + " Démon."};
+	}
+
 	public String listPlayers() {
 		if (lobby.isEmpty()) {
 			return "Personne n'est inscrit.";
@@ -753,7 +848,15 @@ public final class Session {
 		if (game != null) {
 			throw new GameException("Une partie est déjà en cours.");
 		}
+		if (host.busy()) {
+			throw new GameException("La carte est en cours de construction : patientez quelques secondes.");
+		}
 		List<String> names = lobby.stream().filter(this::online).toList();
+		if (scenario != null && !scenario.playable().contains(names.size())) {
+			List<Integer> ok = scenario.playable();
+			throw new GameException("Le scénario « " + scenario.nom + " » se joue de " + ok.get(0) + " à " + ok.get(ok.size() - 1)
+				+ " joueurs (actuellement " + names.size() + ").");
+		}
 		if (names.size() < Distribution.MIN_PLAYERS || names.size() > Distribution.MAX_PLAYERS) {
 			throw new GameException("Il faut entre " + Distribution.MIN_PLAYERS + " et " + Distribution.MAX_PLAYERS
 				+ " joueurs inscrits et connectés (actuellement " + names.size() + ").");
@@ -762,17 +865,28 @@ public final class Session {
 			throw new GameException("Mode humain : il faut d'abord un Conteur.");
 		}
 		Game g = new Game(names, rng);
-		g.setupRandom(script, figures.contains("sentinelle") ? rng.next(3) - 1 : 0);
+		int shift = figures.contains("sentinelle") ? rng.next(3) - 1 : 0;
+		if (scenario != null) {
+			// Le scénario règle le tirage (rôles imposés, répartition), l'ordre de nuit et quelques règles.
+			g.setupRandom(script, shift, scenario.forced(), scenario.counts(names.size()));
+			g.setNightOrder(scenario.order(true), scenario.order(false));
+			g.setRules(scenario.regles.mortsSansVote, scenario.regles.accusationsMax);
+		} else {
+			g.setupRandom(script, shift);
+		}
 		if (wanted == Mode.HUMAIN) {
 			g.decide = policies;
 		}
 		notes.clear();
 		reminders.clear();
+		standIns.clear();
+		paused = false;
 		social.claims.clear();
 		social.talks.clear();
 		social.talkInvites.clear();
 		mode = wanted;
 		game = g;
+		desk.reset();
 		clearNight();
 		clearVote();
 		host.seatPlayers(names(), storyteller != null && host.online(storyteller) ? storyteller : starter);
@@ -799,6 +913,8 @@ public final class Session {
 
 	public String stop() {
 		trainee = null;
+		paused = false;
+		standIns.clear();
 		if (game != null) {
 			host.endGame(realNames());
 		social.aside = null;
@@ -809,6 +925,7 @@ public final class Session {
 		}
 		host.seatBoards(Map.of());
 		game = null;
+		desk.reset();
 		host.persist("");
 		clearNight();
 		clearVote();
@@ -958,6 +1075,8 @@ public final class Session {
 		tip("nuit", "La nuit tombe", "La nuit, chacun dort. Quand vient ton tour, tu te réveilles : un écran s'ouvre "
 			+ "pour utiliser ton pouvoir. Les autres ne savent pas qui se réveille.");
 		discussionToken++;
+		discussionLeft = 0;
+		desk.nightFalls();
 		host.timer(realNames(), "", 0);
 		host.nightEffects(realNames(), true, settings);
 		save();
@@ -970,7 +1089,11 @@ public final class Session {
 		int token = nightToken;
 		host.schedule(settings.stepDelayTicks, () -> {
 			if (game != null && game.phase() == Game.Phase.NIGHT && token == nightToken) {
-				processNext();
+				if (paused) {
+					nextLater();
+				} else {
+					processNext();
+				}
 			}
 		});
 	}
@@ -1001,15 +1124,24 @@ public final class Session {
 	}
 
 	private List<Integer> randomTargets(Step step) {
+		// Sans doublon ; les vivants d'abord, et soi-même seulement faute de mieux.
 		List<Integer> pool = new ArrayList<>();
+		List<Integer> rest = new ArrayList<>();
 		for (int s = 0; s < game.size(); s++) {
-			if (!(step.notSelf() && s == step.seat)) {
-				pool.add(s);
+			if (s != step.seat) {
+				(game.player(s).alive() ? pool : rest).add(s);
 			}
+		}
+		if (!step.notSelf()) {
+			rest.add(step.seat);
 		}
 		List<Integer> out = new ArrayList<>();
 		for (int i = 0; i < step.choose(); i++) {
-			out.add(rng.pick(pool));
+			List<Integer> from = pool.isEmpty() ? rest : pool;
+			if (from.isEmpty()) {
+				break;
+			}
+			out.add(from.remove(rng.next(from.size())));
 		}
 		return out;
 	}
@@ -1028,13 +1160,17 @@ public final class Session {
 			row.button(label, "/vc choisir " + p.name, "Désigner " + p.name);
 		}
 		row.button("Valider", "/vc valider", "Valider ton choix");
-		tell(name, new Msg().colored("[Nuit] " + step.title() + " : désigne " + step.choose() + " joueur(s).", "gold"));
+		tell(name, new Msg().colored("[Nuit] " + step.title() + " : désigne " + step.choose() + " joueur(s)."
+			+ (step.optional() ? " Pouvoir à usage unique : valide sans désigner personne pour le garder." : ""), "gold"));
 		tell(name, row);
-		setPrompt(name, new Prompt.Choose(step.title(), step.choose(), options));
+		setPrompt(name, new Prompt.Choose(step.title(), step.choose(), options, step.optional()));
 	}
 
 	/** Bascule la sélection d'un joueur pendant un choix de nuit. */
 	public String choose(String name, String target) {
+		if (desk.asking(name)) {
+			return desk.choose(name, target);
+		}
 		if (pendingStep == null || !name.equals(pendingChooser)) {
 			throw new GameException("Ce n'est pas à toi de choisir.");
 		}
@@ -1055,6 +1191,9 @@ public final class Session {
 	}
 
 	public String validate(String name) {
+		if (desk.asking(name)) {
+			return desk.validate(name);
+		}
 		if (pendingStep == null || !name.equals(pendingChooser)) {
 			throw new GameException("Ce n'est pas à toi de choisir.");
 		}
@@ -1069,14 +1208,20 @@ public final class Session {
 	/** Décision en attente du Conteur : ce qu'il faut faire de sa réponse. */
 	private java.util.function.IntConsumer pendingDecision;
 	private String decisionAsked;
+	private int decisionOptions;
+	/** Réponse retenue si le Conteur passe l'étape sans trancher. */
+	private int decisionDefault;
 
 	private static final Set<Role> MISREG_SENSITIVE = java.util.EnumSet.of(Role.COMMERE, Role.GREFFIER, Role.INQUISITEUR,
 		Role.AUBERGISTE, Role.VEILLEUSE, Role.ASTROLOGUE, Role.EMBAUMEUR, Role.FAUCONNIER);
 
 	/** Pose une question au Conteur ; la nuit reprend avec sa réponse. */
-	private void askStoryteller(String title, String question, List<String> options, java.util.function.IntConsumer then) {
+	private void askStoryteller(String title, String question, List<String> options, int byDefault,
+		java.util.function.IntConsumer then) {
 		pendingDecision = then;
 		decisionAsked = storyteller;
+		decisionOptions = options.size();
+		decisionDefault = byDefault;
 		tell(storyteller, new Msg().colored("[Conteur] " + question, "light_purple"));
 		Msg row = new Msg();
 		for (int i = 0; i < options.size(); i++) {
@@ -1091,6 +1236,9 @@ public final class Session {
 		if (pendingDecision == null || !name.equals(decisionAsked)) {
 			throw new GameException("Aucune décision en attente.");
 		}
+		if (option < 0 || option >= decisionOptions) {
+			throw new GameException("Réponse inconnue : choisis l'une des réponses proposées.");
+		}
 		var then = pendingDecision;
 		pendingDecision = null;
 		setPrompt(name, null);
@@ -1104,17 +1252,18 @@ public final class Session {
 			return false;
 		}
 		Game g = game;
-		if (MISREG_SENSITIVE.contains(step.role) && policies.misregister == HumanDecisions.Policy.HASARD) {
+		boolean reads = MISREG_SENSITIVE.contains(step.role) || (step.role.custom() && step.role.ability != null && step.role.ability.wakes());
+		if (reads && policies.misregister == HumanDecisions.Policy.HASARD) {
 			List<String> tricksters = new ArrayList<>();
 			for (Game.Seat p : g.players()) {
 				int seat = g.seatOf(p.name);
-				if ((p.role() == Role.MOUCHARD || p.role() == Role.EXCOMMUNIE) && g.poisonedSeat() != seat) {
+				if (g.canMisregister(seat)) {
 					tricksters.add(p.name + " (" + p.role().displayName + ")");
 				}
 			}
 			if (!tricksters.isEmpty()) {
 				askStoryteller(step.title(), String.join(" et ", tricksters) + " trompe(nt)-il(s) " + step.role.displayName + " ?",
-					List.of("Oui, tromper", "Non, la vérité"), choice -> {
+					List.of("Oui, tromper", "Non, la vérité"), 1, choice -> {
 						policies.misregister = choice == 0 ? HumanDecisions.Policy.TOUJOURS : HumanDecisions.Policy.JAMAIS;
 						try {
 							resolveNow(targets);
@@ -1128,8 +1277,8 @@ public final class Session {
 		if (step.role == Role.GOULE && !targets.isEmpty() && policies.mayorTarget == null) {
 			int t = targets.get(0);
 			Game.Seat target = g.player(t);
-			if (target.role() == Role.CHATELAIN && target.alive() && g.poisonedSeat() != t && g.protectedSeat() != t
-				&& g.poisonedSeat() != step.seat) {
+			if (target.role() == Role.CHATELAIN && target.alive() && !g.isPoisoned(t) && g.protectedSeat() != t
+				&& !g.isPoisoned(step.seat)) {
 				List<String> names = new ArrayList<>();
 				names.add("Le Châtelain meurt");
 				for (Game.Seat p : g.players()) {
@@ -1138,7 +1287,7 @@ public final class Session {
 					}
 				}
 				names.add("Personne ne meurt");
-				askStoryteller(step.title(), "La Goule attaque le Châtelain (" + target.name + ") : qui meurt ?", names, choice -> {
+				askStoryteller(step.title(), "La Goule attaque le Châtelain (" + target.name + ") : qui meurt ?", names, 0, choice -> {
 					String pick = names.get(choice);
 					policies.mayorTarget = choice == 0 ? "" : choice == names.size() - 1 ? HumanDecisions.NOBODY : pick;
 					try {
@@ -1209,6 +1358,7 @@ public final class Session {
 			deliverTo = name;
 			deliverTitle = title;
 			deliverText = text;
+			deliverTruth = truth;
 			tell(storyteller, new Msg().colored("[Conteur] " + title + " → " + name + " : ", "light_purple")
 				.text(text + (truth != null ? "  (vérité : " + truth + ")" : "")));
 			tell(storyteller, new Msg()
@@ -1263,7 +1413,9 @@ public final class Session {
 		if (g.phase() != Game.Phase.NIGHT) {
 			throw new GameException("Ce n'est pas la nuit.");
 		}
-		if (pendingChooser != null) {
+		if (pendingDecision != null) {
+			decide(decisionAsked, decisionDefault);
+		} else if (pendingChooser != null) {
 			setPrompt(pendingChooser, null);
 			pendingChooser = null;
 			resolve(randomTargets(pendingStep));
@@ -1280,6 +1432,7 @@ public final class Session {
 	private void finishNight() {
 		Game g = game;
 		List<Integer> deaths = g.endNight();
+		desk.dayBreaks();
 		clearNight();
 		host.nightEffects(realNames(), false, settings);
 		if (deaths.isEmpty()) {
@@ -1295,6 +1448,7 @@ public final class Session {
 		} else {
 			announce("L'aube se lève. Mort(s) cette nuit : "
 				+ String.join(", ", deaths.stream().map(s -> g.player(s).name).toList()) + ".");
+			deaths.forEach(s -> revealDeath(g, s));
 		}
 		if (g.winner() != null) {
 			finish();
@@ -1361,16 +1515,30 @@ public final class Session {
 		}
 		int token = ++discussionToken;
 		if (minutes <= 0) {
+			discussionLeft = 0;
 			host.timer(realNames(), "", 0);
 			return "Minuteur arrêté.";
 		}
-		int seconds = Math.min(30, minutes) * 60;
-		host.timer(realNames(), "Discussion libre", seconds);
+		discussionLeft = Math.min(30, minutes) * 60;
+		host.timer(realNames(), "Discussion libre", discussionLeft);
 		announce("Discussion libre : " + minutes + " minute(s). Allez chuchoter, puis revenez au cercle.");
-		host.schedule(seconds * 20, () -> {
+		tickDiscussion(token);
+		return "";
+	}
+
+	/** Secondes de discussion libre restantes (0 : pas de minuteur). */
+	int discussionLeft;
+
+	private void tickDiscussion(int token) {
+		host.schedule(20, () -> {
 			if (token != discussionToken || game == null || game.phase() != Game.Phase.DAY) {
 				return;
 			}
+			if (paused || --discussionLeft > 0) {
+				tickDiscussion(token);
+				return;
+			}
+			discussionLeft = 0;
 			host.timer(realNames(), "", 0);
 			host.sound(realNames(), "bell");
 			host.title(realNames(), "Fin de la discussion", "Tout le monde au cercle");
@@ -1381,7 +1549,6 @@ public final class Session {
 				setNominations(true);
 			}
 		});
-		return "";
 	}
 
 	/** Le Conteur rassemble tout le monde à sa place sur la place du village. */
@@ -1399,6 +1566,9 @@ public final class Session {
 		Game g = requireGame();
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne nomine que de jour.");
+		}
+		if (paused) {
+			throw new GameException("La partie est en pause.");
 		}
 		if (!nominationsOpen) {
 			throw new GameException("Les nominations ne sont pas encore ouvertes.");
@@ -1418,19 +1588,33 @@ public final class Session {
 		host.title(realNames(), name + (exileCall ? " veut exiler " : " accuse ") + g.player(b).name, "");
 		if (nom.pelerine()) {
 			announce(name + " est exécuté sur-le-champ !");
+			revealDeath(g, a);
 			host.sound(realNames(), "death");
 			host.execution(name);
 			updateBoards();
 			if (g.winner() != null) {
 				finish();
 			} else {
+				save();
 				announce("La journée s'achève. Le Conteur fait tomber la nuit.");
 			}
 			return "";
 		}
 		startDefense(nom);
 		updateBoards();
+		save();
 		return "";
+	}
+
+	/** Règle de scénario : le rôle d'un mort est révélé à tous. */
+	private void revealDeath(Game g, int seat) {
+		if (scenario == null || !scenario.regles.roleReveleALaMort || seat < 0) {
+			return;
+		}
+		Game.Seat p = g.player(seat);
+		if (!p.alive() && !p.traveller()) {
+			announce(p.name + " était " + p.role().displayName + ".");
+		}
 	}
 
 	/** Temps de parole de l'accusé, puis le vote à l'horloge. */
@@ -1453,6 +1637,10 @@ public final class Session {
 	private void tickDefense(int token) {
 		host.schedule(20, () -> {
 			if (voteNom == null || token != voteToken || !defense) {
+				return;
+			}
+			if (paused) {
+				tickDefense(token);
 				return;
 			}
 			defenseLeft--;
@@ -1515,6 +1703,19 @@ public final class Session {
 		if (g == null || voteNom == null || token != voteToken) {
 			return;
 		}
+		if (paused) {
+			host.schedule(10, () -> advanceClock(token));
+			return;
+		}
+		try {
+			clockStep(g, token);
+		} catch (RuntimeException e) {
+			// Une erreur ne doit jamais laisser le village bloqué dans un vote sans fin.
+			abortVote("Le vote a été interrompu par une erreur (" + e + ") : il est annulé, l'accusation peut être refaite.");
+		}
+	}
+
+	private void clockStep(Game g, int token) {
 		if (clockPos >= clockOrder.size()) {
 			closeVote();
 			return;
@@ -1591,6 +1792,9 @@ public final class Session {
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne chuchote que de jour.");
 		}
+		if (scenario != null && scenario.regles.chuchotementsInterdits) {
+			throw new GameException("Les chuchotements sont interdits dans ce scénario.");
+		}
 		int a = requireSeat(from);
 		int b = seatByName(to);
 		if (a == b) {
@@ -1614,9 +1818,12 @@ public final class Session {
 		}
 		host.sound(realNames(), "death");
 		announce(g.player(s).name + " meurt.");
+		revealDeath(g, s);
 		updateBoards();
 		if (g.winner() != null) {
 			finish();
+		} else {
+			save();
 		}
 		return "";
 	}
@@ -1627,12 +1834,14 @@ public final class Session {
 		g.revive(s);
 		announce(g.player(s).name + " revient parmi les vivants.");
 		updateBoards();
+		save();
 		return "";
 	}
 
 	public String stPoison(String target) {
 		Game g = requireGame();
 		g.setPoisoned(seatByName(target));
+		save();
 		return target + " est empoisonné jusqu'au prochain crépuscule.";
 	}
 
@@ -1642,6 +1851,8 @@ public final class Session {
 		Role r = parseRole(roleId);
 		g.forceReassign(s, r, believedId == null ? null : parseRole(believedId));
 		showRole(g.player(s).name, g.player(s).believed());
+		updateBoards();
+		save();
 		return target + " est maintenant " + r.displayName + ".";
 	}
 
@@ -1653,8 +1864,14 @@ public final class Session {
 		announce(name + " se déclare Arbalétrier et tire sur " + g.player(b).name + "…");
 		host.schedule(40, () -> {
 			announce(hit ? g.player(b).name + " s'effondre, transpercé !" : "Rien ne se passe.");
+			if (hit) {
+				revealDeath(g, b);
+			}
 			if (game == g && g.winner() != null) {
 				finish();
+			} else if (game == g) {
+				updateBoards();
+				save();
 			}
 		});
 		return "";
@@ -1675,6 +1892,7 @@ public final class Session {
 		announce(end.executed() >= 0
 			? g.player(end.executed()).name + " est exécuté."
 			: "Personne n'est exécuté aujourd'hui.");
+		revealDeath(g, end.executed());
 		if (g.winner() != null) {
 			finish();
 		} else {
@@ -1709,6 +1927,9 @@ public final class Session {
 		announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
 		lastGame = g;
 		game = null;
+		paused = false;
+		standIns.clear();
+		desk.reset();
 		host.persist("");
 		clearNight();
 		clearVote();
@@ -1726,17 +1947,269 @@ public final class Session {
 			mode == Mode.HUMAIN ? storyteller : null, players, List.copyOf(g.log()));
 	}
 
+	/** Délai laissé à un joueur déconnecté pendant son choix de nuit, en partie automatique (30 secondes). */
+	static final int ABSENT_TICKS = 600;
+
+	/**
+	 * Un joueur se déconnecte : ses invites l'attendent. De nuit, s'il devait choisir, on lui laisse
+	 * le temps de revenir (partie automatique) ou le Conteur décide (le relayer, passer l'étape).
+	 */
 	public void onDisconnect(String name) {
-		prompts.remove(name);
-		if (game != null && game.phase() == Game.Phase.NIGHT) {
-			if (name.equals(waitingAck)) {
-				sleep(name);
-			} else if (name.equals(pendingChooser)) {
-				prompts.remove(name);
-				pendingChooser = null;
-				resolve(randomTargets(pendingStep));
+		Game g = game;
+		if (g == null) {
+			prompts.remove(name);
+			return;
+		}
+		int seat = g.seatOf(name);
+		boolean stOnline = storyteller != null && !name.equals(storyteller) && host.online(storyteller);
+		if (seat >= 0 && !bots.contains(name) && stOnline) {
+			tell(storyteller, new Msg().colored("[Conteur] " + name + " s'est déconnecté. ", "light_purple")
+				.button("Le faire relayer", "/vc relayer " + name, "Un joueur fictif tient sa place jusqu'à son retour"));
+		}
+		if (g.phase() != Game.Phase.NIGHT) {
+			return;
+		}
+		if (name.equals(waitingAck)) {
+			sleep(name);
+		} else if (name.equals(pendingChooser) && !stOnline) {
+			int token = nightToken;
+			host.schedule(ABSENT_TICKS, () -> {
+				if (game == g && token == nightToken && name.equals(pendingChooser) && !online(name)) {
+					prompts.remove(name);
+					pendingChooser = null;
+					resolve(randomTargets(pendingStep));
+				}
+			});
+		}
+	}
+
+	/** Un joueur (ou le Conteur) revient en cours de partie : il retrouve sa place et ce qu'on attendait de lui. */
+	public void onJoin(String name) {
+		Game g = game;
+		if (g == null) {
+			return;
+		}
+		int seat = g.seatOf(name);
+		boolean st = name.equals(storyteller);
+		if (seat < 0 && !st) {
+			return;
+		}
+		if (standIns.remove(name)) {
+			announce(name + " est de retour et reprend sa place.");
+		}
+		if (seat >= 0) {
+			host.rejoin(name, g.phase() == Game.Phase.NIGHT, settings);
+			showRole(name, g.player(seat).believed());
+			if (name.equals(pendingChooser)) {
+				sendChoice(name);
+			} else if (prompts.get(name) != null) {
+				host.prompt(name, prompts.get(name));
+			}
+			updateBoards();
+		}
+		if (st) {
+			if (mode == Mode.HUMAIN) {
+				host.storytellerTools(name, true);
+			}
+			if (prompts.get(name) != null) {
+				host.prompt(name, prompts.get(name));
 			}
 		}
+	}
+
+	/** Un joueur fictif tient la place d'un joueur absent, jusqu'à son retour. */
+	public String standIn(String target) {
+		Game g = requireGame();
+		int seat = seatByName(target);
+		String name = g.player(seat).name;
+		if (bots.contains(name)) {
+			throw new GameException(name + " est déjà un joueur fictif.");
+		}
+		if (host.online(name)) {
+			throw new GameException(name + " est connecté.");
+		}
+		if (!standIns.add(name)) {
+			throw new GameException(name + " est déjà relayé.");
+		}
+		announce(name + " est absent : un joueur fictif tient sa place jusqu'à son retour.");
+		if (name.equals(pendingChooser)) {
+			sendChoice(name);
+		} else if (voteNom != null && !defense && clockOrder.indexOf(seat) >= Math.max(0, clockPos)) {
+			waitingVote.add(name);
+			setPrompt(name, new Prompt.Vote(g.player(voteNom.nominee()).name, !g.player(seat).alive()));
+		}
+		return "";
+	}
+
+	// ------------------------------------------------------------------
+	// Le Conteur reprend la main : pause, vote annulé, grâce, victoire, étape précédente
+	// ------------------------------------------------------------------
+	public boolean paused() {
+		return paused;
+	}
+
+	/** Met la partie en pause, ou la reprend : minuteurs, nuit et vote attendent. */
+	public String togglePause() {
+		requireGame();
+		paused = !paused;
+		if (paused) {
+			host.timer(realNames(), "", 0);
+			host.title(realNames(), "Partie en pause", "Le Conteur reprend dans un instant");
+			announce("La partie est en pause.");
+		} else {
+			restoreTimer();
+			host.title(realNames(), "La partie reprend", "");
+			announce("La partie reprend.");
+		}
+		return "";
+	}
+
+	/** Remet à l'écran le minuteur qui a cours : l'orateur d'abord, sinon la discussion libre, sinon rien. */
+	void restoreTimer() {
+		if (game == null || paused) {
+			return;
+		}
+		if (desk.speaker != null) {
+			host.timer(realNames(), "La parole est à " + desk.speaker, desk.speechLeft);
+		} else if (discussionLeft > 0) {
+			host.timer(realNames(), "Discussion libre", discussionLeft);
+		} else {
+			host.timer(realNames(), "", 0);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Pupitre du Conteur : actions à la main, temps de parole (voir Desk)
+	// ------------------------------------------------------------------
+	public String wake(String target, boolean on) {
+		return desk.wake(target, on);
+	}
+
+	public String ask(String target, int count) {
+		return desk.ask(target, count);
+	}
+
+	public String show(String target, String text) {
+		return desk.show(target, text);
+	}
+
+	public String toggleBroadcast() {
+		return desk.toggleBroadcast();
+	}
+
+	public String speechRequest(String name) {
+		return desk.request(name);
+	}
+
+	public String speechNext() {
+		return desk.next();
+	}
+
+	public String speechGive(String target) {
+		return desk.give(target);
+	}
+
+	public String speechRound(int seconds) {
+		return desk.startRound(seconds);
+	}
+
+	public String speechSeconds(int seconds) {
+		return desk.setSeconds(seconds);
+	}
+
+	public String speechStop() {
+		return desk.stopSpeech(true);
+	}
+
+	/** Le journal de la partie en cours, pour le Conteur (dans le chat). */
+	public String journal(String name) {
+		Game g = requireGame();
+		if (!name.equals(storyteller)) {
+			throw new GameException("Seul le Conteur lit le journal pendant la partie.");
+		}
+		tell(name, "— Journal de la partie —");
+		for (String line : g.log()) {
+			tell(name, line);
+		}
+		return "";
+	}
+
+	/** Ajoute du temps à la journée : discussion libre en cours, ou Sablier. */
+	public String extend(int minutes) {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
+			throw new GameException("On ne prolonge que la journée.");
+		}
+		boolean sand = figures.contains("sablier");
+		if (discussionLeft <= 0 && !sand) {
+			throw new GameException("Aucun minuteur en cours (discussion libre ou Sablier).");
+		}
+		if (discussionLeft > 0) {
+			discussionLeft = Math.min(30 * 60, discussionLeft + minutes * 60);
+			restoreTimer();
+		}
+		if (sand) {
+			sandExtraTicks += minutes * 1200;
+		}
+		announce("Le Conteur prolonge la journée de " + minutes + " minute(s).");
+		return "";
+	}
+
+	/** Annule le vote en cours : l'accusation est retirée, accusateur et accusé retrouvent leurs droits. */
+	public String cancelVote() {
+		requireGame();
+		if (voteNom == null) {
+			throw new GameException("Aucun vote en cours.");
+		}
+		abortVote("Le Conteur annule le vote : l'accusation est retirée.");
+		return "";
+	}
+
+	private void abortVote(String message) {
+		Game g = game;
+		Game.Nomination nom = voteNom;
+		clearVote();
+		if (g != null && nom != null) {
+			try {
+				g.cancelNomination(nom.index());
+			} catch (GameException ignored) {
+				// la nomination a déjà été comptée : rien à retirer
+			}
+			host.title(realNames(), "Vote annulé", "");
+			updateBoards();
+			save();
+		}
+		announce(message);
+	}
+
+	/** Gracie le joueur sur le billot. */
+	public String pardon() {
+		String name = requireGame().pardon();
+		announce(name + " est gracié par le Conteur : personne n'est sur le billot.");
+		host.title(realNames(), name + " est gracié", "");
+		updateBoards();
+		save();
+		return "";
+	}
+
+	/** Le Conteur déclare la victoire d'un camp (« bien » ou « mal »). */
+	public String declareWinner(String camp) {
+		Game g = requireGame();
+		if (voteNom != null) {
+			clearVote();
+		}
+		g.declareWinner(camp.toLowerCase(java.util.Locale.ROOT).startsWith("m") ? Team.EVIL : Team.GOOD);
+		finish();
+		return "";
+	}
+
+	/** Revient à l'étape précédente de la nuit, pour la rejouer. */
+	public String previous() {
+		Game g = requireGame();
+		g.previousStep();
+		clearNight();
+		nextLater();
+		return "Retour à l'étape précédente. Ses effets déjà appliqués (mort, poison) ne sont pas annulés.";
 	}
 
 	// ------------------------------------------------------------------
@@ -1774,8 +2247,21 @@ public final class Session {
 		return "Bluffs du Démon modifiés.";
 	}
 
+	/** Clé de la note de partie (les autres notes sont rangées par joueur). */
+	static final String GAME_NOTE = "#partie";
+
 	public String note(String target, String text) {
 		requireGame();
+		if (target.equalsIgnoreCase("partie")) {
+			if (text == null || text.isBlank()) {
+				notes.remove(GAME_NOTE);
+				save();
+				return "Note de partie effacée.";
+			}
+			notes.put(GAME_NOTE, text);
+			save();
+			return "Note de partie enregistrée.";
+		}
 		int s = seatByName(target);
 		if (text == null || text.isBlank()) {
 			notes.remove(game.player(s).name);
@@ -1965,11 +2451,22 @@ public final class Session {
 		String successor;
 		boolean nominationsOpen;
 		String game;
+		List<String> figures;
+		String scenario;
+		Map<String, String> claims;
+		List<String> standIns;
 	}
 
 	private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
 
 	/** Enregistre l'état de la table (appelé aux moments clés de la partie). */
+	/** Enregistre la partie en cours (arrêt du serveur, sauvegarde périodique). */
+	public void saveNow() {
+		if (game != null) {
+			save();
+		}
+	}
+
 	private void save() {
 		if (game == null) {
 			host.persist("");
@@ -1989,6 +2486,11 @@ public final class Session {
 		d.mayorTarget = policies.mayorTarget;
 		d.successor = policies.successor;
 		d.nominationsOpen = nominationsOpen;
+		d.figures = List.copyOf(figures);
+		d.scenario = scenario == null ? null : scenario.id;
+		d.claims = new LinkedHashMap<>();
+		social.claims.forEach((k, v) -> d.claims.put(k, v.name()));
+		d.standIns = List.copyOf(standIns);
 		d.game = game.toJson();
 		host.persist(GSON.toJson(d));
 	}
@@ -2020,6 +2522,33 @@ public final class Session {
 		settings.nightMute = d.settings.nightMute;
 		settings.defenseSeconds = d.settings.defenseSeconds;
 		settings.clockTicks = d.settings.clockTicks;
+		settings.fullEffects = d.settings.fullEffects;
+		settings.spectatorGrimoire = d.settings.spectatorGrimoire;
+		if (d.settings.stepDelayTicks > 0) {
+			settings.stepDelayTicks = d.settings.stepDelayTicks;
+		}
+		if (d.settings.deadHat != null) {
+			settings.deadHat = d.settings.deadHat;
+		}
+		figures.clear();
+		if (d.figures != null) {
+			d.figures.stream().filter(FIGURES::containsKey).forEach(figures::add);
+		}
+		scenario = d.scenario == null ? null
+			: scenarios.stream().filter(x -> x.id.equals(d.scenario)).findFirst().orElse(null);
+		if (d.claims != null) {
+			d.claims.forEach((k, v) -> {
+				Role r = Role.parse(v);
+				if (r != null) {
+					social.claims.put(k, r);
+				}
+			});
+		}
+		standIns.clear();
+		paused = false;
+		if (d.standIns != null) {
+			standIns.addAll(d.standIns);
+		}
 		policies.misregister = HumanDecisions.Policy.valueOf(d.misregister);
 		policies.mayorTarget = d.mayorTarget;
 		policies.successor = d.successor;
@@ -2037,6 +2566,10 @@ public final class Session {
 			default -> "le début de partie";
 		};
 		announce("Partie reprise là où elle s'était arrêtée : " + where + ".");
+		if (mode == Mode.HUMAIN && storyteller != null) {
+			host.storytellerTools(storyteller, true);
+		}
+		updateBoards();
 		if (game.phase() == Game.Phase.NIGHT) {
 			host.nightEffects(realNames(), true, settings);
 			nextLater(); // le réveil en cours au moment de l'arrêt est repris à l'étape suivante
@@ -2059,16 +2592,27 @@ public final class Session {
 	// Joueurs fictifs
 	// ------------------------------------------------------------------
 	private void botAct(String bot, Prompt prompt) {
-		if (prompts.get(bot) != prompt) {
-			return; // invite déjà périmée
+		if (prompts.get(bot) != prompt || !isAuto(bot)) {
+			return; // invite déjà périmée, ou joueur revenu entre-temps
 		}
 		try {
 			switch (prompt) {
+				case Prompt.Choose c when desk.asking(bot) -> desk.botAnswer(bot);
+				case Prompt.Choose c when c.optional() && rng.chance(0.5) -> {
+					selected.clear();
+					validate(bot);
+				}
 				case Prompt.Choose c -> {
-					List<Prompt.Option> pool = new ArrayList<>(c.options());
-					for (int i = 0; i < c.count() && !pool.isEmpty(); i++) {
-						Prompt.Option o = pool.remove(rng.next(pool.size()));
-						selected.add(o.seat());
+					int own = game.seatOf(bot);
+					List<Prompt.Option> pool = new ArrayList<>(c.options().stream().filter(o -> o.alive() && o.seat() != own).toList());
+					List<Prompt.Option> rest = new ArrayList<>(c.options().stream().filter(o -> !pool.contains(o)).toList());
+					selected.clear();
+					for (int i = 0; i < c.count(); i++) {
+						List<Prompt.Option> from = pool.isEmpty() ? rest : pool;
+						if (from.isEmpty()) {
+							break;
+						}
+						selected.add(from.remove(rng.next(from.size())).seat());
 					}
 					validate(bot);
 				}

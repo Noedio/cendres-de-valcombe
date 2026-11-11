@@ -477,8 +477,12 @@ public final class Hud {
 		if (absents != null && !absents.isEmpty()) {
 			StringBuilder names = new StringBuilder();
 			absents.forEach(e -> names.append(names.length() == 0 ? "" : ", ").append(e.getAsString()));
-			String t = "Absents : " + names + (phase.equals("NIGHT") ? " (leur réveil est joué au hasard)" : "");
+			String t = "Absents : " + names + " (fiche du joueur : le faire relayer)";
 			centered(g, mc, t, w, 42, 0xFFE05A4A, false);
+		}
+		// Partie en pause : tout le monde le voit
+		if (ClientState.bool(v, "paused") && mc.gui.screen() == null) {
+			centered(g, mc, "⏸ Partie en pause", w, 54, 0xFFE8C36A, true);
 		}
 		// Nuit d'attente : ceux qui dorment savent quoi faire
 		if (phase.equals("NIGHT") && ClientState.obj(v, "prompt") == null && !ClientState.bool(v, "isStoryteller")

@@ -52,6 +52,59 @@ public final class ScenarioDef {
 		public boolean apartesInterdits;
 		/** Figures neutres : sentinelle, doyen, sablier. */
 		public List<String> figures = new ArrayList<>();
+		/** Les morts n'ont pas de vote de fantôme. */
+		public boolean mortsSansVote;
+		/** Accusations par jour (0 : sans limite). */
+		public int accusationsMax;
+		/** Les chuchotements écrits sont interdits. */
+		public boolean chuchotementsInterdits;
+		/** Le rôle d'un joueur est révélé à tous quand il meurt. */
+		public boolean roleReveleALaMort;
+		/** Rôles toujours en jeu (dans la limite des places de leur type). */
+		public List<String> imposes = new ArrayList<>();
+		/** Répartition propre : nombre de joueurs → [Citadins, Étrangers, Sbires, Démons]. */
+		public java.util.Map<String, List<Integer>> repartition = new java.util.LinkedHashMap<>();
+		/** Ordre de réveil choisi (identifiants de rôles) ; vide : l'ordre habituel. */
+		public List<String> ordrePremiere = new ArrayList<>();
+		public List<String> ordreAutres = new ArrayList<>();
+	}
+
+	/** Les rôles toujours en jeu. */
+	public Set<Role> forced() {
+		Set<Role> out = EnumSet.noneOf(Role.class);
+		if (regles.imposes != null) {
+			for (String r : regles.imposes) {
+				Role role = Role.parse(r);
+				if (role != null) {
+					out.add(role);
+				}
+			}
+		}
+		return out;
+	}
+
+	/** La répartition propre du scénario pour n joueurs, ou null (répartition habituelle). */
+	public fr.valcombe.rules.Distribution.Counts counts(int players) {
+		List<Integer> c = regles.repartition == null ? null : regles.repartition.get(String.valueOf(players));
+		if (c == null || c.size() != 4 || c.stream().anyMatch(java.util.Objects::isNull)) {
+			return null;
+		}
+		return new fr.valcombe.rules.Distribution.Counts(c.get(0), c.get(1), c.get(2), c.get(3));
+	}
+
+	/** Un ordre de réveil choisi, en rôles (les identifiants inconnus sont ignorés). */
+	public List<Role> order(boolean first) {
+		List<Role> out = new ArrayList<>();
+		List<String> ids = first ? regles.ordrePremiere : regles.ordreAutres;
+		if (ids != null) {
+			for (String id : ids) {
+				Role r = Role.parse(id);
+				if (r != null && !out.contains(r)) {
+					out.add(r);
+				}
+			}
+		}
+		return out;
 	}
 
 	/** Les rôles du scénario (les rôles inconnus, par exemple supprimés, sont ignorés). */
@@ -75,8 +128,8 @@ public final class ScenarioDef {
 	public List<Integer> playable() {
 		List<Integer> out = new ArrayList<>();
 		Set<Role> s = script();
-		for (int n = 5; n <= 15; n++) {
-			if (Setup.check(s, n) == null) {
+		for (int n = fr.valcombe.rules.Distribution.MIN_PLAYERS; n <= fr.valcombe.rules.Distribution.MAX_PLAYERS; n++) {
+			if (Setup.check(s, n, counts(n)) == null) {
 				out.add(n);
 			}
 		}
@@ -95,7 +148,38 @@ public final class ScenarioDef {
 			return "Rôles introuvables : " + String.join(", ", missingRoles()) + ".";
 		}
 		if (playable().isEmpty()) {
-			return "Ce script ne permet aucune partie de 5 à 15 joueurs : ajoutez des rôles (au moins un Démon).";
+			return "Ce script ne permet aucune partie de 5 à 16 joueurs : ajoutez des rôles (au moins un Démon).";
+		}
+		if (regles.imposes != null) {
+			Set<Role> in = script();
+			for (String r : regles.imposes) {
+				Role role = Role.parse(r);
+				if (role == null || !in.contains(role)) {
+					return "Rôle imposé absent du scénario : " + r + ".";
+				}
+			}
+		}
+		if (regles.repartition != null) {
+			for (var e : regles.repartition.entrySet()) {
+				int n;
+				try {
+					n = Integer.parseInt(e.getKey());
+				} catch (NumberFormatException ex) {
+					return "Répartition : nombre de joueurs illisible (" + e.getKey() + ").";
+				}
+				List<Integer> c = e.getValue();
+				if (c == null || c.size() != 4 || c.stream().anyMatch(java.util.Objects::isNull) || c.stream().anyMatch(x -> x < 0)
+					|| c.stream().mapToInt(Integer::intValue).sum() != n || c.get(3) < 1) {
+					return "Répartition à " + n + " joueurs : quatre nombres (Citadins, Étrangers, Sbires, Démons) dont la somme fait "
+						+ n + ", avec au moins un Démon.";
+				}
+				if (c.get(2) + c.get(3) >= c.get(0) + c.get(1)) {
+					return "Répartition à " + n + " joueurs : le mal doit rester minoritaire.";
+				}
+			}
+		}
+		if (regles.accusationsMax < 0 || regles.accusationsMax > 20) {
+			return "Accusations par jour : de 0 (sans limite) à 20.";
 		}
 		if (reglages.defense < 5 || reglages.defense > 180 || reglages.horloge < 0.5 || reglages.horloge > 5) {
 			return "Réglages hors limites : défense de 5 à 180 s, aiguille de 0,5 à 5 s par siège.";

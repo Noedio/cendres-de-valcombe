@@ -8,8 +8,8 @@ public sealed interface Prompt {
 	record Option(int seat, String name, boolean alive, boolean selected) {
 	}
 
-	/** Désigner `count` joueur(s) la nuit. */
-	record Choose(String title, int count, List<Option> options) implements Prompt {
+	/** Désigner `count` joueur(s) la nuit ; optional : on peut valider sans désigner personne (pouvoir à usage unique). */
+	record Choose(String title, int count, List<Option> options, boolean optional) implements Prompt {
 	}
 
 	/** Lire une information, puis se rendormir. */

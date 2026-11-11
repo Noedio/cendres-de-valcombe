@@ -29,6 +29,11 @@ public final class Step {
 		return role == null ? 0 : role.choose;
 	}
 
+	/** Pouvoir à usage unique : le joueur peut valider sans désigner personne, pour le garder. */
+	public boolean optional() {
+		return role != null && role.custom() && role.ability != null && role.ability.uneFois;
+	}
+
 	public boolean notSelf() {
 		return role != null && role.notSelf;
 	}

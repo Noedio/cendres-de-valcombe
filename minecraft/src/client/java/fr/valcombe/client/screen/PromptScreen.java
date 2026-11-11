@@ -152,6 +152,10 @@ public class PromptScreen extends BaseScreen {
 				int count = ClientState.num(p, "count", 1);
 				Theme.centered(g, font, "Désigne " + count + " joueur" + (count > 1 ? "s" : "") + ".", px + pw / 2, py + 104,
 					Theme.WINE);
+				if (ClientState.bool(p, "optional")) {
+					// Pouvoir à usage unique : valider sans personne le garde pour une autre nuit.
+					Theme.centered(g, font, "Une seule fois : valide sans personne pour le garder.", px + pw / 2, py + 116, Theme.ASH);
+				}
 			}
 			case "info" -> {
 				JsonObject role = ClientState.obj(view(), "role");

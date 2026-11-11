@@ -349,6 +349,21 @@ Dans le salon, le Conteur (ou l'hôte, en partie automatique) choisit un scénar
   - **launcher pour Linux et macOS** : le launcher est écrit pour Windows (WPF) ; il faudrait le réécrire avec une bibliothèque multiplateforme. En attendant, Prism Launcher et le modpack `.mrpack` fonctionnent partout ;
   - **certificat de signature** du launcher : payant (plusieurs centaines d'euros par an) ; l'aide explique comment passer l'avertissement de Windows.
 
+## Phase 13 — Ce que Beffroi faisait mieux (novembre 2026)
+
+Comparaison avec Beffroi, l'autre projet du même genre : Valcombe était en avance sur le jeu lui-même, Beffroi sur ce qui évite qu'une soirée casse et sur les outils du Conteur. Repris ici, sans rien ajouter à la publication.
+
+- **Le Conteur reprend la main** : pause, vote annulé, grâce, victoire déclarée, étape précédente, journée prolongée ; un joueur déconnecté est relayé par un joueur fictif, et retrouve sa place à son retour.
+- **Nuit pas à pas** : ordre complet, carte de l'étape (à faire et à dire, mises en garde), réveil à la main, question à un joueur, information libre, jetons de rappel propres à chaque rôle.
+- **Pupitre** rangé par moment de la partie, temps de parole, voix du Conteur à tous, journal filtrable, note de partie, salon (mélanger, retirer, état).
+- **Solidité** : sauvegarde complète, atomique, chaque minute et à l'arrêt ; un vote ne peut plus rester bloqué après une erreur ; chaque partie du tick est protégée.
+- **Atelier, rôles** : jusqu'à trois effets par rôle, usage unique, pouvoirs de jour (tir, représailles), maître, héritier, faux-semblant, grimoire ; copie d'un rôle intégré ; réveil placé après un autre rôle créé ; jetons de rappel sur la fiche. 23 modèles de pouvoir.
+- **Atelier, scénarios** : rôles imposés, répartition des camps, ordre de nuit, quatre règles spéciales de plus, simulation du scénario entier avec le poids de chaque rôle ; scénarios jusqu'à 16 joueurs.
+- **Atelier, cartes** : construction par petits lots avec barre d'avancement, plan vu de dessus et liste de contrôle, renommer, dupliquer, annuler la dernière pose, un monument et un décor par thème.
+- **Corrections** : identifiant de carte contrôlé partout (un identifiant fabriqué pouvait supprimer d'autres fichiers), cartes importées bornées, liens de l'Atelier qui expirent et suivent les droits d'opérateur, Alchimiste ivre sans effet, poison du Conteur distinct de celui de l'Alchimiste, joueurs fictifs qui ne se visent plus eux-mêmes ni deux fois le même joueur, fausses informations tirées dans le script de la partie.
+- Non repris : publication par intégration continue, tests du launcher, fichiers de langue, bot Discord, hébergement depuis le launcher (trop lourds pour le gain, ou contraires au besoin de publier vite).
+- Limites : 40 rôles créés au plus par serveur ; les effets supplémentaires d'un rôle s'appliquent aux joueurs désignés pour le premier ; « étape précédente » n'annule pas les effets déjà appliqués ; la soirée de test à 8–12 joueurs reste à faire.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** à 8–12 joueurs : c'est désormais la seule étape du plan qui reste, et elle dira quoi corriger.

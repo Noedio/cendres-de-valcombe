@@ -59,6 +59,12 @@ public class MainScreen extends BaseScreen {
 			actions.add(new Action("Nominer", () -> minecraft.gui.setScreen(new PickerScreen("Nominer qui ?", "vc nominer "))));
 			actions.add(new Action("Tirer", () -> minecraft.gui.setScreen(new PickerScreen("Tirer sur qui ?", "vc tirer "))));
 			actions.add(new Action("Chuchoter", () -> minecraft.gui.setScreen(new PickerScreen("Chuchoter à qui ?", "vc chuchoter "))));
+			JsonObject speech = ClientState.obj(v, "speech");
+			boolean asked = speech != null && ClientState.bool(speech, "mine");
+			actions.add(new Action(asked ? "Rendre la parole" : "Demander la parole", () -> {
+				send("vc parole");
+				onClose();
+			}));
 			String invite = ClientState.str(v, "talkInvite");
 			if (invite != null && !invite.isEmpty()) {
 				actions.add(new Action("Parler avec " + invite, () -> {

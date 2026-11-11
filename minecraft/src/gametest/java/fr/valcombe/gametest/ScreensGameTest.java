@@ -42,6 +42,15 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(10);
 	}
 
+	/** Attend la fin d'un chantier de carte : les blocs sont posés par petits lots, sur plusieurs ticks. */
+	private static void waitBuild(ClientGameTestContext ctx, TestSingleplayerContext world) {
+		for (int i = 0; i < 240 && world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().busy()); i++) {
+			ctx.waitTicks(10);
+		}
+		check(!world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().busy()), "chantier terminé");
+		ctx.waitTicks(20);
+	}
+
 	/** Répond à l'invite en cours en passant par l'écran d'invite (capture au premier passage de chaque type). */
 	private void answer(ClientGameTestContext ctx, JsonObject p) {
 		String type = ClientState.str(p, "type");
@@ -489,7 +498,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(40);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test")), "carte enregistrée");
 			send(ctx, "vc carte generer 8 petite monastere oui");
-			ctx.waitTicks(100);
+			ctx.setScreen(() -> null);
+			ctx.waitTicks(20);
+			shot(ctx, "19a-chantier-en-cours");
+			waitBuild(ctx, world);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 8, "8 trônes");
 			world.getServer().runCommand("gamemode spectator " + me);
 			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
@@ -497,7 +509,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(60);
 			shot(ctx, "19-village-8-tronees");
 			send(ctx, "vc carte charger village-test");
-			ctx.waitTicks(100);
+			waitBuild(ctx, world);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 16, "carte rechargée");
 			ctx.waitTicks(40);
 			shot(ctx, "19b-carte-rechargee");
@@ -528,14 +540,19 @@ public class ScreensGameTest implements FabricClientGameTest {
 				} catch (java.io.IOException e) {
 					throw new AssertionError(e);
 				}
-				String msg = fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.schem", out.toByteArray());
+				return fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.schem", out.toByteArray());
+			});
+			waitBuild(ctx, world); // le terrain est rasé par petits lots, puis la construction est posée
+			boolean schemOk = world.getServer().computeOnServer(server -> {
 				var c = fr.valcombe.mc.ValcombeMod.host().village().center();
 				var corner = c.offset(-1, 0, -1);
 				var level = server.overworld();
-				System.out.println("[valcombe-test] import schem : " + msg + " ; centre " + c + " ; coin " + level.getBlockState(corner)
+				System.out.println("[valcombe-test] import schem : centre " + c + " ; coin " + level.getBlockState(corner)
 					+ " ; dessus " + level.getBlockState(corner.offset(1, 1, 1)) + " ; sous " + level.getBlockState(corner.below()));
-				boolean ok = level.getBlockState(corner).is(net.minecraft.world.level.block.Blocks.STONE)
+				return level.getBlockState(corner).is(net.minecraft.world.level.block.Blocks.STONE)
 					&& level.getBlockState(corner.offset(1, 1, 1)).is(net.minecraft.world.level.block.Blocks.OAK_PLANKS);
+			});
+			world.getServer().computeOnServer(server -> {
 				// Litematica : une région 2 × 1 × 1, palette [air, or], états compactés sur 2 bits
 				var lit = new net.minecraft.nbt.CompoundTag();
 				var regions = new net.minecraft.nbt.CompoundTag();
@@ -562,20 +579,29 @@ public class ScreensGameTest implements FabricClientGameTest {
 				} catch (java.io.IOException e) {
 					throw new AssertionError(e);
 				}
-				fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.litematic", out2.toByteArray());
+				return fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.litematic", out2.toByteArray());
+			});
+			waitBuild(ctx, world);
+			boolean litOk = world.getServer().computeOnServer(server -> {
+				var level = server.overworld();
 				var c2 = fr.valcombe.mc.ValcombeMod.host().village().center();
 				System.out.println("[valcombe-test] import litematic : " + level.getBlockState(c2.offset(-1, 0, 0)) + " ; " + level.getBlockState(c2));
-				ok &= level.getBlockState(c2.offset(-1, 0, 0)).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)
+				return level.getBlockState(c2.offset(-1, 0, 0)).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)
 					&& level.getBlockState(c2).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK);
-				return ok ? msg : "ECHEC";
 			});
-			check(!imported.equals("ECHEC"), "import de constructions (.schem, .litematic)");
+			check(schemOk, "import d'une construction .schem");
+			check(litOk, "import d'une construction .litematic");
 			System.out.println("[valcombe-test] import : " + imported);
 
 			// Le village de Valcombe
 			ctx.setScreen(() -> null);
 			send(ctx, "vc carte construire port");
-			ctx.waitTicks(120);
+			waitBuild(ctx, world);
+			// À la fin du chantier, les joueurs sont ramenés à la salle d'attente : on revient sur la place pour la photo.
+			var port = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
+				port.getX(), port.getY() + 1, port.getZ() + 12));
+			ctx.waitTicks(40);
 			shot(ctx, "8-village");
 			ctx.runOnClient(mc -> mc.player.setXRot(35));
 			ctx.waitTicks(20);
@@ -602,9 +628,27 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(40);
 			ctx.setScreen(() -> null);
 			shot(ctx, "6b-conteur-nuit");
+			// Pupitre du Conteur : nuit pas à pas, jetons de rappel par rôle, pause.
+			ctx.setScreen(fr.valcombe.client.screen.NightScreen::new);
+			shot(ctx, "24-nuit-pas-a-pas");
+			ctx.setScreen(() -> new fr.valcombe.client.screen.TokenScreen("Bot1", true));
+			shot(ctx, "24b-jetons-de-rappel");
+			send(ctx, "vc rappel Bot1 ivre");
+			send(ctx, "vc pause");
+			ctx.setScreen(StorytellerScreen::new);
+			shot(ctx, "24c-pupitre-nuit-en-pause");
+			send(ctx, "vc pause");
+			ctx.setScreen(() -> null);
 			playNight(ctx);
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "7-panneau-jour");
+			send(ctx, "vc parole tour 30");
+			send(ctx, "vc note partie Bot2 parle beaucoup");
+			ctx.setScreen(StorytellerScreen::new);
+			shot(ctx, "7b-pupitre-pendant-la-parole");
+			send(ctx, "vc parole stop");
+			ctx.setScreen(() -> new fr.valcombe.client.screen.ChronicleScreen("journal"));
+			shot(ctx, "7c-journal-du-conteur");
 			ctx.setScreen(() -> null);
 			// Le Conteur voit le rôle de chacun au-dessus de lui
 			world.getServer().runCommand("gamemode spectator " + me);

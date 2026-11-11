@@ -32,7 +32,12 @@ public final class Setup {
 	 * @return null si c'est possible, sinon la raison (pour le Conteur)
 	 */
 	public static String check(Set<Role> script, int players) {
-		Distribution.Counts c = Distribution.counts(players);
+		return check(script, players, null);
+	}
+
+	/** Même vérification, avec la répartition propre à un scénario (null : la répartition habituelle). */
+	public static String check(Set<Role> script, int players, Distribution.Counts counts) {
+		Distribution.Counts c = counts != null ? counts : Distribution.counts(players);
 		if (c == null) {
 			return "Il faut entre " + Distribution.MIN_PLAYERS + " et " + Distribution.MAX_PLAYERS + " joueurs.";
 		}
@@ -65,8 +70,25 @@ public final class Setup {
 
 	/** Tirage avec un écart d'Étrangers imposé (figure de la Sentinelle : -1, 0 ou +1), si le script le permet. */
 	public static List<Entry> drawBag(int players, Rng rng, Set<Role> script, int outsiderShift) {
-		Distribution.Counts c = Distribution.counts(players);
-		if (c == null || check(script, players) != null) {
+		return drawBag(players, rng, script, outsiderShift, Set.of(), null);
+	}
+
+	/** Tire n rôles dans pool, en prenant d'abord ceux qui sont imposés. */
+	private static List<Role> takeWith(Rng rng, List<Role> pool, int n, Set<Role> forced) {
+		List<Role> first = rng.shuffle(pool.stream().filter(forced::contains).toList());
+		List<Role> out = new ArrayList<>(first.subList(0, Math.min(n, first.size())));
+		out.addAll(rng.take(pool.stream().filter(r -> !forced.contains(r)).toList(), n - out.size()));
+		return out;
+	}
+
+	/**
+	 * Tirage d'un scénario : forced, les rôles toujours en jeu (dans la limite des places de leur type) ;
+	 * counts, la répartition propre au scénario pour ce nombre de joueurs (null : la répartition habituelle).
+	 */
+	public static List<Entry> drawBag(int players, Rng rng, Set<Role> script, int outsiderShift, Set<Role> forced,
+		Distribution.Counts counts) {
+		Distribution.Counts c = counts != null ? counts : Distribution.counts(players);
+		if (c == null || check(script, players, counts) != null) {
 			return null;
 		}
 		List<Role> townPool = ofType(script, RoleType.CITADIN);
@@ -87,8 +109,8 @@ public final class Setup {
 		}
 		int citadins = c.citadin();
 		int etrangers = c.etranger();
-		List<Role> demons = rng.take(demonPool, c.demon());
-		List<Role> minions = rng.take(minionPool, c.sbire());
+		List<Role> demons = takeWith(rng, demonPool, c.demon(), forced);
+		List<Role> minions = takeWith(rng, minionPool, c.sbire(), forced);
 		int bonus = 0;
 		for (Role r : demons) {
 			bonus += Game.outsiderBonus(r);
@@ -112,8 +134,8 @@ public final class Setup {
 				return null;
 			}
 		}
-		List<Role> outsiders = rng.take(outPool, etrangers);
-		List<Role> townsfolk = rng.take(townPool, citadins);
+		List<Role> outsiders = takeWith(rng, outPool, etrangers, forced);
+		List<Role> townsfolk = takeWith(rng, townPool, citadins, forced);
 
 		List<Entry> bag = new ArrayList<>();
 		for (List<Role> group : List.of(demons, minions, outsiders, townsfolk)) {

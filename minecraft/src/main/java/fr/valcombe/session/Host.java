@@ -13,6 +13,14 @@ public interface Host {
 	default void addSeat(String player) {
 	}
 
+	/** Un joueur de la partie se reconnecte : le remettre à sa place (maison ou trône) et dans l'état de la phase. */
+	default void rejoin(String player, boolean night, Settings settings) {
+	}
+
+	/** Le Conteur réveille (ou rendort) un joueur à la main, la nuit : il retrouve (ou perd) la vue. */
+	default void wake(String player, boolean awake, Settings settings) {
+	}
+
 	/** Position du siège d'un joueur dans le monde (x, y, z), ou null. */
 	default double[] seatPosition(String player) {
 		return null;
@@ -26,6 +34,11 @@ public interface Host {
 	/** Charge une carte de la bibliothèque (scénario) ; renvoie un message, ou lève GameException. */
 	default String loadMap(String id) {
 		return "";
+	}
+
+	/** Une carte est en cours de construction ou de chargement : la partie ne peut pas commencer. */
+	default boolean busy() {
+		return false;
 	}
 
 	/** Message à tout le serveur. */

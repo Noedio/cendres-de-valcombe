@@ -145,13 +145,28 @@ Le jeton de chacun se retourne et montre son rôle ; la **veillée** révèle ch
 
 **Conteur humain** : un opérateur devient Conteur (dalle d'obsidienne ou menu). Il ne joue pas, il mène :
 
-- **Panneau du Conteur** (menu J) : faire tomber la nuit, passer une étape, rassembler le village, discussion minutée, ouvrir/fermer les accusations, lancer le vote, clore la journée, accueillir un voyageur, réglages.
+- **Pupitre du Conteur** (menu J) : tout ce que le Conteur peut faire, rangé par moment de la partie.
+
+  | Onglet | Ce qu'on y trouve |
+  | --- | --- |
+  | Partie | Rôles affichés au-dessus des joueurs, accueillir un voyageur, réglages de la nuit, journal, note de partie, pause |
+  | Nuit | Faire tomber la nuit, **nuit pas à pas**, étape précédente, passer l'étape, pause |
+  | Jour | Rassembler, discussion minutée, **prolonger d'une minute**, ouvrir ou fermer les accusations, lancer ou **annuler le vote**, **gracier** le joueur sur le billot, clore la journée, **ma voix à tous** |
+  | Parole | Donner la parole au suivant, tour de table, temps par orateur, arrêter |
+  | Fin | Journal, **victoire du bien**, **victoire du mal**, arrêter sans révéler (un second clic confirme) |
+
+- **Nuit pas à pas** : l'ordre complet de la nuit, avec l'étape en cours ; la carte de l'étape (qui se réveille, ce qu'il faut faire et dire, les mises en garde : ivre, empoisonné, mort, déconnecté) ; et les gestes à la main : réveiller ou rendormir un joueur, lui demander de désigner quelqu'un, lui montrer une information libre, poser un jeton de rappel.
+- **Jetons de rappel** : chaque rôle en jeu a les siens (« protégé », « faux présage », « a tiré »…), plus des jetons communs. Un clic sur la fiche d'un joueur pose ou retire un jeton ; « Autre rappel » en écrit un libre.
+- **Reprendre la main** : la **pause** gèle les minuteurs, la nuit et le vote ; un vote annulé rend à l'accusateur et à l'accusé le droit d'accuser et d'être accusé ; « étape précédente » rejoue un réveil (ses effets déjà appliqués ne sont pas annulés).
+- **Joueur déconnecté** : le Conteur est prévenu et peut le **faire relayer** par un joueur fictif jusqu'à son retour. À son retour, le joueur retrouve sa place, son rôle et ce qu'on attendait de lui. En partie automatique, un joueur parti pendant son choix de nuit a trente secondes pour revenir.
+- **Temps de parole** : un joueur demande la parole (menu J, ou `/vc parole`) ; le Conteur la donne, ou lance un tour de table. Une barre montre le temps de l'orateur, une cloche sonne à la fin. En partie automatique, la file avance toute seule.
 - **Grimoire** (lutrin au centre de la place, ou panneau) : le vrai rôle de chacun, qui est empoisonné, protégé, le faux présage ; sur chaque siège : tuer, ressusciter, empoisonner, changer le rôle, poser une note ou un **rappel**.
 - **Au-dessus de chaque joueur**, le Conteur voit son nom et son rôle, en bleu (bien) ou rouge (mal), à travers les murs (désactivable dans son panneau).
 - **Bâton du Conteur** : viser un joueur affiche son rôle, son état et ses rappels ; clic droit : sa ligne du grimoire ; accroupi + clic droit : un **aparté** (vocal seul à seul).
 - **Les informations de nuit** : le Conteur relit chaque information avant l'envoi et peut la modifier (rôles ivres, empoisonnés, faux-semblants). Quand une règle laisse le choix au Conteur (Mouchard, Excommunié, Châtelain), la nuit se met en pause et lui pose la question.
 - **Bandeau de nuit** : qui est réveillé, et ce qu'on attend. Les joueurs déconnectés sont signalés.
-- **Tablette** : `/vc tablette` donne un lien pour mener la partie depuis un téléphone ou une tablette.
+- **Tablette** : `/vc tablette` donne un lien pour mener la partie depuis un téléphone ou une tablette. On y retrouve la nuit pas à pas, les jetons de rappel, la pause, l'annulation du vote, le journal filtré par nuit et par jour, et la modification d'une information avant son envoi.
+- **La partie est enregistrée** à chaque moment clé, chaque minute et à l'arrêt du serveur : elle reprend toute seule au redémarrage, avec ses figures, son scénario, ses rappels et ses notes.
 
 ## 7. Chaque rôle, et comment il se joue
 
@@ -215,9 +230,10 @@ Les **rôles créés dans l'Atelier** se jouent de la même façon : leur texte 
 `/vc atelier` (opérateur) donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau (ou par tunnel SSH sur un VPS). Chaque opérateur a son propre lien : on prépare à plusieurs, en même temps.
 
 - **Accueil** : le parcours pas à pas (rôles, scénario, carte, test, jeu), qui est présent, les dernières modifications.
-- **Rôles** : partir d'un exemple, choisir le camp, l'emblème, le pouvoir (17 modèles), le moment du réveil.
-- **Scénarios** : cocher les rôles, la carte, les réglages, les règles spéciales, les figures neutres, un texte d'ouverture. **Simuler** 200 parties, lancer une **partie d'essai**, **choisir** pour la prochaine partie.
-- **Cartes** : enregistrer la carte actuelle, en charger une, générer un village, **importer une construction** (`.schem` de WorldEdit, `.litematic`, `.nbt`), passer en **mode construction** (baguette : clic droit = trône, accroupi = maison ; `/vc carte centre`). Plusieurs opérateurs peuvent construire en même temps.
+- **Rôles** : partir d'un exemple ou **d'un rôle intégré** (pour en faire une variante), choisir le camp, l'emblème, le pouvoir (23 modèles), le moment du réveil — par rapport à un rôle intégré ou à un autre rôle créé. Un rôle peut porter **jusqu'à trois effets** (par exemple compter les mauvais et protéger), n'agir qu'**une seule fois par partie** (le joueur choisit sa nuit), agir **de jour** (un tir, des représailles quand on l'accuse), et proposer ses propres **jetons de rappel** au Conteur.
+- **Scénarios** : cocher les rôles, la carte, les réglages, les règles spéciales, les figures neutres, un texte d'ouverture. On peut aussi **imposer des rôles** (toujours en jeu), régler la **répartition des camps** par nombre de joueurs, et changer l'**ordre de la nuit**. Règles spéciales : pas d'accusation le premier jour, annonces interdites, conversations privées interdites, chuchotements interdits, morts sans vote, rôle révélé à la mort, nombre d'accusations par jour. **Simuler** 200 parties (avec les règles du scénario : la simulation montre aussi le poids de chaque rôle), lancer une **partie d'essai**, **choisir** pour la prochaine partie.
+- **Cartes** : enregistrer la carte actuelle, en charger une, la **renommer**, la **dupliquer**, générer un village, **importer une construction** (`.schem` de WorldEdit, `.litematic`, `.nbt`), passer en **mode construction** (baguette : clic droit = trône, accroupi = maison ; `/vc carte centre` ; « Annuler la dernière pose »). Un **plan vu de dessus** montre trônes, maisons et centre, avec une liste de contrôle, avant de charger une carte. Générer, importer ou charger une carte se fait **par petits lots** : le serveur reste fluide, une barre montre l'avancement, et la partie ne peut pas commencer avant la fin. Chaque thème a son monument et son décor : puits couvert et étals (gothique), jardin de cloître, carrés de simples et mur d'enceinte (monastère), fanal, cargaisons et chenal (port). Plusieurs opérateurs peuvent construire en même temps.
+- **Liens de l'Atelier** : chaque `/vc atelier` donne un nouveau lien (l'ancien ne marche plus) ; un lien cesse de fonctionner au bout de douze heures, ou dès que son propriétaire n'est plus opérateur.
 - **Partage** : un fichier `.valcombe` à envoyer à un autre hôte.
 
 ## 9. En cas de souci

@@ -532,7 +532,7 @@ class GameTest {
 					List<Integer> targets = new ArrayList<>();
 					while (targets.size() < step.choose()) {
 						int t = rng.next(n);
-						if (!(step.notSelf() && t == step.seat)) {
+						if (!(step.notSelf() && t == step.seat) && !targets.contains(t)) {
 							targets.add(t);
 						}
 					}

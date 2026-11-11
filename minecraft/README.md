@@ -45,7 +45,16 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | `/vc conteur` | Opérateur | Devenir ou cesser d'être le Conteur |
 | `/vc bots <n>`, `/vc bots retirer` | Meneur | Joueurs fictifs pour tester |
 | `/vc lancer [auto\|humain]`, `/vc arreter` | Meneur | Lancer ou interrompre une partie |
-| `/vc nuit`, `/vc finjour`, `/vc suivant` | Meneur | Phases ; passer un réveil bloqué |
+| `/vc nuit`, `/vc finjour`, `/vc suivant`, `/vc precedent` | Meneur | Phases ; passer un réveil bloqué ; rejouer le réveil précédent |
+| `/vc pause`, `/vc prolonger [minutes]` | Meneur | Mettre en pause ou reprendre ; ajouter du temps à la journée |
+| `/vc vote annuler`, `/vc gracier`, `/vc victoire bien\|mal` | Meneur | Annuler le vote en cours ; gracier le joueur sur le billot ; déclarer la victoire |
+| `/vc relayer <joueur>` | Meneur | Un joueur fictif tient la place d'un joueur déconnecté, jusqu'à son retour |
+| `/vc reveiller <joueur>`, `/vc rendormir <joueur>` | Meneur | Réveil à la main, la nuit (le joueur parle au Conteur seul à seul) |
+| `/vc demander <joueur> [n]`, `/vc montrer <joueur> <texte>` | Meneur | Demander à un joueur de désigner n joueurs ; lui montrer une information libre |
+| `/vc rappel <joueur> <texte>\|retirer <texte>\|effacer` | Meneur | Jetons de rappel |
+| `/vc parole`, `/vc parole suivant\|tour [s]\|duree <s>\|donner <joueur>\|stop` | Tous, puis meneur | Demander la parole ; temps de parole |
+| `/vc diffusion`, `/vc journal`, `/vc note partie [texte]` | Meneur | Voix du Conteur à tous ; journal de la partie ; note de partie |
+| `/vc melanger`, `/vc exclure <joueur>` | Meneur | Salon : mélanger les places, retirer un inscrit |
 | `/vc nominer <joueur>`, `/vc tirer <joueur>` | Joueurs vivants | Nomination, tir de l'Arbalétrier (bluff possible) |
 | `/vc vote oui\|non`, `/vc choisir <joueur>`, `/vc valider`, `/vc dormir` | Joueurs | Réponses aux invites |
 | `/vc envoyer [texte]` | Conteur | Envoyer (ou corriger) une information |
@@ -56,6 +65,7 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | `/vc script basculer <rôle>\|complet\|sauver <nom>\|charger <nom>\|supprimer <nom>` | Meneur | Éditeur de scripts |
 | `/vc carte construire\|oublier` | Opérateur | Construire le village sous ses pieds, ou l'oublier (sinon il se construit seul au premier démarrage) |
 | `/vc carte nouvelle`, `/vc carte siege`, `/vc carte maison` | Opérateur | Carte personnalisée : la place ici, puis chaque siège et chaque maison à sa position |
-| `/vc carte retirer siege\|maison`, `/vc carte infos` | Opérateur | Retirer le dernier emplacement, résumé de la carte |
+| `/vc carte retirer siege\|maison`, `/vc carte annuler`, `/vc carte infos` | Opérateur | Retirer le dernier emplacement, annuler la dernière pose, résumé de la carte |
+| `/vc carte renommer <id> <nom>`, `/vc carte copier <id> <nouvel_id>` | Opérateur | Renommer ou dupliquer une carte de la bibliothèque |
 | `/vc reglage <clé> <valeur>` | Meneur | `nuit_maisons`, `nuit_immobile`, `nuit_sombre`, `nuit_muette` (oui\|non), `temps_vote` |
 | `/vc grimoire`, `/vc role`, `/vc fiches`, `/vc historique`, `/vc mp <message>` | Selon le cas | Consultation, message au Conteur |

@@ -31,6 +31,15 @@ public class SeatScreen extends BaseScreen {
 		return null;
 	}
 
+	private boolean isStandIn() {
+		for (JsonObject s : objects(view(), "seats")) {
+			if (name.equals(ClientState.str(s, "name"))) {
+				return ClientState.bool(s, "standIn");
+			}
+		}
+		return false;
+	}
+
 	private boolean isAlive() {
 		for (JsonObject s : objects(view(), "seats")) {
 			if (name.equals(ClientState.str(s, "name"))) {
@@ -42,7 +51,7 @@ public class SeatScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {320, 240};
+		return new int[] {340, 280};
 	}
 
 	@Override
@@ -67,7 +76,7 @@ public class SeatScreen extends BaseScreen {
 			y += 22;
 		}
 		button(bx, y, 66, "Note", () -> minecraft.gui.setScreen(new ChatScreen("/vc note " + name + " ", false)));
-		button(bx + 70, y, 66, "Rappel", () -> minecraft.gui.setScreen(new ChatScreen("/vc rappel " + name + " ", false)));
+		button(bx + 70, y, 66, "Rappels…", () -> minecraft.gui.setScreen(new TokenScreen(name, false)));
 		y += 22;
 		String phase = ClientState.phase();
 		if (phase.equals("DAY") || phase.equals("NIGHT")) {
@@ -77,6 +86,22 @@ public class SeatScreen extends BaseScreen {
 			button(bx + 70, y, 66, "Empoisonner", () -> send("vc empoisonner " + name));
 			y += 22;
 			button(bx, y, 136, "Changer le rôle", () -> minecraft.gui.setScreen(new RolePickerScreen(name, null)));
+			y += 22;
+			// À la main : lui demander un choix, lui montrer une information, le réveiller la nuit.
+			button(bx, y, 66, "Demander", () -> send("vc demander " + name + " 1"));
+			button(bx + 70, y, 66, "Montrer…", () -> minecraft.gui.setScreen(new ChatScreen("/vc montrer " + name + " ", false)));
+			y += 22;
+			if (phase.equals("NIGHT")) {
+				boolean awake = strings(view(), "awake").contains(name);
+				button(bx, y, 136, awake ? "Rendormir" : "Réveiller", () -> send((awake ? "vc rendormir " : "vc reveiller ") + name));
+				y += 22;
+			} else {
+				button(bx, y, 136, "Lui donner la parole", () -> send("vc parole donner " + name));
+				y += 22;
+			}
+			if (strings(view(), "absents").contains(name) && !isStandIn()) {
+				button(bx, y, 136, "Le faire relayer", () -> send("vc relayer " + name));
+			}
 		}
 		button(bx, py + ph - 26, 136, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
@@ -104,7 +129,15 @@ public class SeatScreen extends BaseScreen {
 		}
 		List<String> marks = strings(row, "reminders");
 		if (!marks.isEmpty()) {
-			Theme.paragraph(g, font, "Rappels : " + String.join(" · ", marks), x, y, pw - 180, Theme.BRONZE);
+			y += Theme.paragraph(g, font, "Rappels : " + String.join(" · ", marks), x, y, pw - 180, Theme.BRONZE) + 4;
+		}
+		JsonObject answers = ClientState.obj(view(), "answers");
+		List<String> said = strings(answers, name);
+		if (!said.isEmpty()) {
+			y += Theme.paragraph(g, font, "A désigné pour toi : " + String.join(", ", said), x, y, pw - 180, Theme.WINE) + 4;
+		}
+		if (isStandIn()) {
+			Theme.paragraph(g, font, "Absent : un joueur fictif tient sa place.", x, y, pw - 180, Theme.ASH);
 		}
 		JsonObject pol = ClientState.obj(view(), "policies");
 		if (name.equals(ClientState.str(pol, "mayorTarget"))) {

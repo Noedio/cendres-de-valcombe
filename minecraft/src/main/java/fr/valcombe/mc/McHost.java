@@ -81,6 +81,9 @@ public final class McHost implements Host {
 	}
 
 	public void setServer(MinecraftServer server) {
+		if (server == null) {
+			builds.clear();
+		}
 		this.server = server;
 		this.village = server == null ? null : Village.load(server);
 	}
@@ -481,10 +484,56 @@ public final class McHost implements Host {
 		if (!op) {
 			p.setGameMode(GameType.ADVENTURE);
 		}
+		if (!inGame) {
+			// Parti avant la fin de la partie : il ne garde ni la nuit, ni l'apparence de fantôme, ni la plume.
+			p.removeEffect(MobEffects.BLINDNESS);
+			p.removeEffect(MobEffects.INVISIBILITY);
+			ValcombeUi.accuseItem(p, false);
+			GameType mode = previousMode.remove(p.getScoreboardName());
+			if (mode != null && op) {
+				p.setGameMode(mode);
+			}
+		}
 		if (!inGame && village != null) {
 			BlockPos s = village.spawn();
 			p.teleportTo(server.overworld(), s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
 		}
+	}
+
+	/** Réveil ou sommeil décidé par le Conteur, la nuit : le joueur retrouve ou perd la vue. */
+	@Override
+	public void wake(String name, boolean awake, Settings settings) {
+		ServerPlayer p = player(name);
+		if (p == null) {
+			return;
+		}
+		if (awake) {
+			p.removeEffect(MobEffects.BLINDNESS);
+		} else if (settings.nightDark) {
+			p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 20 * 60 * 30, 0, false, false));
+		}
+	}
+
+	/** Retour d'un joueur en cours de partie : sa place (maison la nuit, trône le jour) et l'état de la phase. */
+	@Override
+	public void rejoin(String name, boolean night, Settings settings) {
+		ServerPlayer p = player(name);
+		if (p == null) {
+			return;
+		}
+		SeatPos target = (inHouses && houses.containsKey(name) ? houses : seats).get(name);
+		if (target != null) {
+			teleport(p, target);
+		}
+		if (night && settings.nightDark) {
+			p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 20 * 60 * 30, 0, false, false));
+		} else {
+			p.removeEffect(MobEffects.BLINDNESS);
+		}
+		if (!inHouses) {
+			sit(List.of(name), night && settings.nightFreeze);
+		}
+		nightFog(List.of(name), night, settings.fullEffects);
 	}
 
 	// ------------------------------------------------------------------
@@ -573,6 +622,15 @@ public final class McHost implements Host {
 		return ok ? "Dernier siège retiré (" + v.seatCount() + " restants)." : "Aucun siège à retirer.";
 	}
 
+	/** Annule le dernier repère posé à la main (trône ou maison). */
+	public String undoMarker() {
+		Village v = requireVillage();
+		String what = v.undoLast();
+		v.save(server);
+		return what == null ? "Rien à annuler : aucun repère posé depuis le chargement de la carte."
+			: "Dernier repère retiré : " + what + " (" + v.seatCount() + " trônes, " + v.houseCount() + " maisons).";
+	}
+
 	public String removeHouse() {
 		Village v = requireVillage();
 		boolean ok = v.removeLastHouse();
@@ -600,8 +658,16 @@ public final class McHost implements Host {
 			if (json.isEmpty()) {
 				java.nio.file.Files.deleteIfExists(f);
 			} else {
+				// Écriture dans un fichier voisin, puis remplacement : une coupure ne laisse jamais une sauvegarde à moitié écrite.
 				java.nio.file.Files.createDirectories(f.getParent());
-				java.nio.file.Files.writeString(f, json);
+				java.nio.file.Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
+				java.nio.file.Files.writeString(tmp, json);
+				try {
+					java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+						java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+				} catch (java.nio.file.AtomicMoveNotSupportedException e) {
+					java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				}
 			}
 		} catch (java.io.IOException e) {
 			ValcombeMod.LOG.warn("Sauvegarde de la partie impossible", e);
@@ -647,6 +713,56 @@ public final class McHost implements Host {
 		return new BlockPos(spawn.getX(), y, spawn.getZ());
 	}
 
+	/** Chantiers en cours : les blocs sont posés par petits lots à chaque tick. */
+	private final BuildQueue builds = new BuildQueue();
+
+	@Override
+	public boolean busy() {
+		return builds.busy();
+	}
+
+	private void requireFree() {
+		if (builds.busy()) {
+			throw new fr.valcombe.rules.GameException("Une construction est déjà en cours : attendez la fin de la barre de progression.");
+		}
+	}
+
+	/** Le plan qui rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus. */
+	BuildQueue.Plan clearPlan(BlockPos c, int radius, int below, int height) {
+		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
+		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+		BuildQueue.Plan plan = new BuildQueue.Plan();
+		for (int y = -below; y < height - below; y++) {
+			for (int x = -radius; x <= radius; x++) {
+				for (int z = -radius; z <= radius; z++) {
+					plan.set(new BlockPos(c.getX() + x, c.getY() + y, c.getZ() + z), y < 0 ? stone : y == 0 ? grass : air);
+				}
+			}
+		}
+		return plan;
+	}
+
+	/** Lance un chantier ; done est appelé sur le fil du serveur quand tout est posé. */
+	void startBuild(String label, BuildQueue.Plan plan, Runnable done) {
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
+		builds.add(label, plan, done);
+	}
+
+	/** Après un changement de carte : ceux qui se trouvaient sur le chantier sont ramenés au point d'apparition. */
+	private void rescuePlayers(Village v) {
+		BlockPos spot = v.spawn();
+		int reach = v.extent() + 6;
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			if (builders.contains(p.getScoreboardName())) {
+				continue; // un constructeur reste où il travaille
+			}
+			if (Math.abs(p.getX() - v.center().getX()) <= reach && Math.abs(p.getZ() - v.center().getZ()) <= reach) {
+				p.teleportTo(server.overworld(), spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, Set.of(), 180, 0, false);
+			}
+		}
+	}
+
 	/** Rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus. */
 	public void clearArea(BlockPos c, int radius, int below, int height) {
 		ServerLevel level = server.overworld();
@@ -675,6 +791,7 @@ public final class McHost implements Host {
 			buildHall();
 		}
 		applySpawn();
+		rescuePlayers(v);
 	}
 
 	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
@@ -684,18 +801,21 @@ public final class McHost implements Host {
 		}
 		BlockPos c = village != null ? village.center()
 			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : defaultCenter();
+		requireFree();
 		Village v = Village.generated(c, theme, seatCount, size, houses);
 		int old = village == null ? 0 : village.extent();
-		if (old > v.extent()) {
-			clearArea(c, old, 4, 28);
-		}
-		v.build(server.overworld());
-		useVillage(v);
-		if (!v.hasHall()) {
-			buildHall();
-		}
-		return "Village généré : " + v.seatTotal() + " trônes, taille " + new String[] {"petite", "normale", "grande"}[v.size()]
-			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.");
+		// Le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
+		BuildQueue.Plan plan = old > v.extent() ? clearPlan(c, old, 4, 28) : new BuildQueue.Plan();
+		plan.then(v.planBuild(server.overworld()));
+		startBuild("Construction du village", plan, () -> {
+			useVillage(v);
+			if (!v.hasHall()) {
+				buildHall();
+			}
+			announceAll("Le village est construit : " + v.seatTotal() + " trônes, thème " + v.theme() + ".");
+		});
+		return "Construction lancée : " + v.seatTotal() + " trônes, taille " + new String[] {"petite", "normale", "grande"}[v.size()]
+			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.") + " Suivez la barre en haut de l'écran.";
 	}
 
 	/**
@@ -710,15 +830,19 @@ public final class McHost implements Host {
 		int[] size = SchematicImporter.size(fileName, data, server.registryAccess().lookupOrThrow(
 			net.minecraft.core.registries.Registries.BLOCK));
 		BlockPos c = village != null ? village.center() : defaultCenter();
+		requireFree();
 		int half = Math.max(size[0], size[2]) / 2 + 2;
 		int clear = Math.max(half, village == null ? 0 : village.extent());
-		clearArea(c, clear, 4, Math.max(28, size[1] + 6));
 		BlockPos corner = c.offset(-size[0] / 2, 0, -size[2] / 2);
-		String dims = SchematicImporter.place(level, corner, fileName, data);
-		Village v = Village.custom(c);
-		useVillage(v);
-		return "Construction « " + fileName + " » importée (" + dims + "). Passez en mode construction pour poser "
-			+ "les trônes, les maisons et le centre, puis enregistrez la carte.";
+		// Le terrain est d'abord rasé par petits lots ; la construction importée est posée ensuite.
+		startBuild("Préparation du terrain", clearPlan(c, clear, 4, Math.max(28, size[1] + 6)), () -> {
+			String dims = SchematicImporter.place(level, corner, fileName, data);
+			useVillage(Village.custom(c));
+			announceAll("Construction « " + fileName + " » importée (" + dims + "). Passez en mode construction pour poser "
+				+ "les trônes, les maisons et le centre, puis enregistrez la carte.");
+		});
+		return "Import de « " + fileName + " » lancé (" + size[0] + " × " + size[1] + " × " + size[2]
+			+ " blocs) : suivez la barre en haut de l'écran.";
 	}
 
 	public String setMapCenter(ServerPlayer p) {
@@ -796,23 +920,39 @@ public final class McHost implements Host {
 	}
 
 	public String buildVillage(ServerPlayer p, String theme) {
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
+		}
+		requireFree();
 		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
 		Village v = Village.generated(c, theme);
-		v.build(p.level());
-		v.save(server);
-		village = v;
-		lanterns = null;
-		applySpawn();
-		buildHall();
-		Vec3 spot = new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 4.5);
-		p.teleportTo(p.level(), spot.x, spot.y, spot.z, Set.of(), 180, 0, false);
-		return "Le village de Valcombe (" + v.theme() + ") est construit, avec sa salle d'attente.";
+		startBuild("Construction du village", v.planBuild(server.overworld()), () -> {
+			stage.clear(server);
+			v.save(server);
+			village = v;
+			lanterns = null;
+			applySpawn();
+			buildHall();
+			rescuePlayers(v);
+			announceAll("Le village de Valcombe (" + v.theme() + ") est construit, avec sa salle d'attente.");
+		});
+		return "Construction du village lancée : suivez la barre en haut de l'écran.";
 	}
 
 	public String forgetVillage() {
 		Village.forget(server);
 		village = null;
 		return "Le village est oublié : les joueurs seront placés autour du Conteur.";
+	}
+
+	/** Message à tous les joueurs connectés. */
+	void announceAll(String text) {
+		if (server == null) {
+			return;
+		}
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			p.sendSystemMessage(Component.literal("[Valcombe] " + text).withStyle(ChatFormatting.GOLD));
+		}
 	}
 
 	public void setUi(ValcombeUi ui) {
@@ -1269,6 +1409,7 @@ public final class McHost implements Host {
 	/** Appelé à chaque tick serveur. */
 	public void onTick() {
 		tick++;
+		builds.tick(server);
 		if (tick % 10 == 0) {
 			checkPads();
 		}
@@ -1300,7 +1441,7 @@ public final class McHost implements Host {
 		for (Task t : due) {
 			try {
 				t.run().run();
-			} catch (RuntimeException e) {
+			} catch (RuntimeException | LinkageError | StackOverflowError e) {
 				ValcombeMod.LOG.error("Erreur dans une tâche de partie", e);
 			}
 		}

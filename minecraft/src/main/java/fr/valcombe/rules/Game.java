@@ -87,6 +87,12 @@ public final class Game {
 	private Map<Integer, Integer> customForged;
 	private Map<Integer, Integer> customProtect;
 	private int poisoned = -1;
+	/** Joueur empoisonné par le Conteur (à part de celui de l'Alchimiste) ; null : personne. */
+	private Integer stPoisoned;
+	/** Rôles créés : sièges ayant utilisé leur pouvoir à usage unique (nuit, tir, représailles). */
+	private Set<Integer> onceUsed;
+	/** Rôles créés au modèle « maître » : siège → maître choisi. */
+	private Map<Integer, Integer> customMaster;
 	/** Joueur désigné par la Faussaire : ses informations de la nuit sont fausses. */
 	private int forged = -1;
 	private int protectedSeat = -1;
@@ -102,6 +108,8 @@ public final class Game {
 	private List<Slot> queue = List.of();
 	private int queueIndex;
 	private Step currentStep;
+	/** Positions dans la file des étapes déjà jouées cette nuit (pour revenir en arrière). */
+	private List<Integer> stepHistory;
 
 	// Jour en cours
 	private final List<int[]> nominations = new ArrayList<>(); // {nominator, nominee, votes(-1)}
@@ -202,6 +210,30 @@ public final class Game {
 		return poisoned;
 	}
 
+	private Set<Integer> onceUsed() {
+		if (onceUsed == null) {
+			onceUsed = new HashSet<>();
+		}
+		return onceUsed;
+	}
+
+	private Map<Integer, Integer> customMaster() {
+		if (customMaster == null) {
+			customMaster = new HashMap<>();
+		}
+		return customMaster;
+	}
+
+	/** Ce joueur est-il le maître de quelqu'un (Écuyer, ou rôle créé au modèle « maître ») ? */
+	public boolean isMaster(int seat) {
+		return master == seat || customMaster().containsValue(seat);
+	}
+
+	/** Ce joueur a-t-il déjà utilisé son pouvoir à usage unique ? */
+	public boolean onceUsed(int seat) {
+		return onceUsed().contains(seat);
+	}
+
 	public int protectedSeat() {
 		return protectedSeat;
 	}
@@ -223,10 +255,55 @@ public final class Game {
 		log.add(text);
 	}
 
+	/** Ligne ajoutée au journal par le Conteur (information montrée, réponse d'un joueur). */
+	public void storytellerLog(String text) {
+		log.add(text);
+	}
+
 	// ------------------------------------------------------------------
 	// Mise en place
 	// ------------------------------------------------------------------
 	private Set<Role> script = Setup.fullScript();
+	/** Répartition propre au scénario (Citadins, Étrangers, Sbires, Démons), ou null. */
+	private int[] customCounts;
+	/** Ordre de réveil propre au scénario (noms de rôles), ou null : l'ordre habituel. */
+	private List<String> firstOrder;
+	private List<String> otherOrder;
+	/** Règles de scénario : les morts n'ont pas de vote, et nombre d'accusations par jour (0 : sans limite). */
+	private boolean noGhostVote;
+	private int maxNominations;
+
+	/** Ordre de réveil d'un scénario : les rôles cités passent dans cet ordre, les autres ensuite, dans l'ordre habituel. */
+	public void setNightOrder(List<Role> first, List<Role> other) {
+		firstOrder = first == null || first.isEmpty() ? null : first.stream().map(Role::name).toList();
+		otherOrder = other == null || other.isEmpty() ? null : other.stream().map(Role::name).toList();
+	}
+
+	public void setRules(boolean noGhostVote, int maxNominations) {
+		this.noGhostVote = noGhostVote;
+		this.maxNominations = Math.max(0, maxNominations);
+	}
+
+	/** Applique un ordre choisi à la liste habituelle des réveils. */
+	static List<Role> ordered(List<Role> usual, List<String> wanted) {
+		if (wanted == null || wanted.isEmpty()) {
+			return usual;
+		}
+		List<Role> out = new ArrayList<>();
+		for (String name : wanted) {
+			for (Role r : usual) {
+				if (r.name().equals(name) && !out.contains(r)) {
+					out.add(r);
+				}
+			}
+		}
+		for (Role r : usual) {
+			if (!out.contains(r)) {
+				out.add(r);
+			}
+		}
+		return out;
+	}
 
 	public void setupRandom() {
 		setupRandom(Setup.fullScript());
@@ -239,11 +316,17 @@ public final class Game {
 
 	/** Tire les rôles, avec un écart d'Étrangers (figure de la Sentinelle). */
 	public void setupRandom(Set<Role> allowed, int outsiderShift) {
-		String problem = Setup.check(allowed, size());
+		setupRandom(allowed, outsiderShift, Set.of(), null);
+	}
+
+	/** Tirage d'un scénario : rôles toujours en jeu, et répartition propre (null : l'habituelle). */
+	public void setupRandom(Set<Role> allowed, int outsiderShift, Set<Role> forced, Distribution.Counts counts) {
+		String problem = Setup.check(allowed, size(), counts);
 		if (problem != null) {
 			throw new GameException(problem);
 		}
-		List<Setup.Entry> bag = Setup.drawBag(size(), rng, allowed, outsiderShift);
+		customCounts = counts == null ? null : new int[] {counts.citadin(), counts.etranger(), counts.sbire(), counts.demon()};
+		List<Setup.Entry> bag = Setup.drawBag(size(), rng, allowed, outsiderShift, forced, counts);
 		if (bag == null) {
 			throw new GameException("Ce script ne permet pas de distribuer les rôles pour " + size() + " joueurs.");
 		}
@@ -266,7 +349,7 @@ public final class Game {
 		}
 		bluffs = bluffList != null ? List.copyOf(bluffList) : Setup.pickBluffs(list, rng, script);
 		redHerring = herring;
-		boolean customLead = seats.stream().anyMatch(p -> model(p.believed, "detecteur") && p.believed.ability.faussePiste);
+		boolean customLead = seats.stream().anyMatch(p -> model(p.believed, "detecteur") && effect(p.believed, "detecteur").faussePiste);
 		if (redHerring < 0 && (wakerSeat(Role.ASTROLOGUE) >= 0 || customLead)) {
 			List<Integer> good = allSeats().stream().filter(s -> player(s).team() == Team.GOOD).toList();
 			Integer pick = rng.pick(good);
@@ -328,7 +411,9 @@ public final class Game {
 
 	/** Écart entre la distribution actuelle et la répartition prévue (null si conforme). */
 	public String distributionWarning() {
-		Distribution.Counts c = Distribution.counts(size());
+		Distribution.Counts c = customCounts != null && customCounts.length == 4
+			? new Distribution.Counts(customCounts[0], customCounts[1], customCounts[2], customCounts[3])
+			: Distribution.counts(size());
 		if (c == null) {
 			return null;
 		}
@@ -447,7 +532,24 @@ public final class Game {
 	}
 
 	public boolean isPoisoned(int seat) {
-		return poisoned == seat || customPoison().containsValue(seat);
+		return poisoned == seat || (stPoisoned != null && stPoisoned == seat) || customPoison().containsValue(seat);
+	}
+
+	/** Peut passer pour un joueur de l'autre camp (Mouchard, Excommunié, rôle créé au modèle « faux-semblant ») ? */
+	public boolean canMisregister(int seat) {
+		Role r = player(seat).role;
+		return (r == Role.MOUCHARD || r == Role.EXCOMMUNIE || model(r, "semblant")) && !isPoisoned(seat);
+	}
+
+	/** Rôles du script de cette partie, d'un type donné (pour les fausses informations). */
+	private List<Role> scriptRoles(RoleType t) {
+		List<Role> in = Role.ofType(t).stream().filter(script::contains).toList();
+		return in.isEmpty() ? Role.ofType(t) : in;
+	}
+
+	private List<Role> scriptRoles() {
+		List<Role> in = Role.all().stream().filter(script::contains).toList();
+		return in.isEmpty() ? Role.all() : in;
 	}
 
 	/** Ivre ou empoisonné : le pouvoir ne fonctionne pas. */
@@ -480,7 +582,12 @@ public final class Game {
 
 	/** Le rôle est un rôle créé avec ce modèle de pouvoir. */
 	private static boolean model(Role r, String type) {
-		return r != null && r.custom() && r.ability != null && r.ability.type.equals(type);
+		return r != null && r.custom() && r.ability != null && r.ability.has(type);
+	}
+
+	/** L'effet de ce modèle porté par un rôle créé, ou null. */
+	private static Ability effect(Role r, String type) {
+		return r != null && r.custom() && r.ability != null ? r.ability.effect(type) : null;
 	}
 
 	/** Étrangers en plus (ou en moins) imposés par un rôle au tirage. */
@@ -488,7 +595,7 @@ public final class Game {
 		if (r == Role.MARGRAVE) {
 			return 2;
 		}
-		return model(r, "etrangers") ? r.ability.etrangers : 0;
+		return model(r, "etrangers") ? effect(r, "etrangers").etrangers : 0;
 	}
 
 	/** « La Goule » → « la Goule », pour les phrases. */
@@ -568,9 +675,10 @@ public final class Game {
 			default -> throw new IllegalArgumentException(what);
 		};
 		boolean canFlip = false;
-		if (p.role == Role.MOUCHARD && !isPoisoned(seat)) {
+		boolean custom = model(p.role, "semblant");
+		if ((p.role == Role.MOUCHARD || (custom && p.role.evil())) && !isPoisoned(seat)) {
 			canFlip = Set.of("evil", "minion", "townsfolk", "outsider").contains(what);
-		} else if (p.role == Role.EXCOMMUNIE && !isPoisoned(seat)) {
+		} else if ((p.role == Role.EXCOMMUNIE || (custom && !p.role.evil())) && !isPoisoned(seat)) {
 			canFlip = Set.of("evil", "minion", "demon", "outsider").contains(what);
 		}
 		boolean v = truth;
@@ -584,14 +692,15 @@ public final class Game {
 	/** Rôle montré à un pouvoir qui révèle un personnage. */
 	public Role shownRole(int seat, String key) {
 		Seat p = player(seat);
-		if (p.role == Role.MOUCHARD && !isPoisoned(seat) && decide.misregister(this, seat, "role", key)) {
-			List<Role> pool = new ArrayList<>(Role.ofType(RoleType.CITADIN));
-			pool.addAll(Role.ofType(RoleType.ETRANGER));
+		boolean custom = model(p.role, "semblant");
+		if ((p.role == Role.MOUCHARD || (custom && p.role.evil())) && !isPoisoned(seat) && decide.misregister(this, seat, "role", key)) {
+			List<Role> pool = new ArrayList<>(scriptRoles(RoleType.CITADIN));
+			pool.addAll(scriptRoles(RoleType.ETRANGER));
 			return rng.pick(pool);
 		}
-		if (p.role == Role.EXCOMMUNIE && !isPoisoned(seat) && decide.misregister(this, seat, "role", key)) {
-			List<Role> pool = new ArrayList<>(Role.ofType(RoleType.SBIRE));
-			pool.add(Role.GOULE);
+		if ((p.role == Role.EXCOMMUNIE || (custom && !p.role.evil())) && !isPoisoned(seat) && decide.misregister(this, seat, "role", key)) {
+			List<Role> pool = new ArrayList<>(scriptRoles(RoleType.SBIRE));
+			pool.addAll(scriptRoles(RoleType.DEMON));
 			return rng.pick(pool);
 		}
 		return p.role;
@@ -607,6 +716,9 @@ public final class Game {
 		}
 		int aliveBefore = aliveResidents();
 		p.alive = false;
+		if (noGhostVote) {
+			p.ghostVote = false;
+		}
 		addLog(p.name + " meurt (" + cause + ").");
 		if (phase == Phase.NIGHT) {
 			deathsTonight.add(seat);
@@ -638,6 +750,15 @@ public final class Game {
 
 	private void onDemonDeath(String cause, int aliveBefore, Role demon) {
 		int h = seatOf(Role.HERITIERE);
+		if (h < 0 || !player(h).alive || isPoisoned(h)) {
+			h = -1;
+			for (int s = 0; s < size(); s++) {
+				if (player(s).alive && model(player(s).role, "heritier") && !isPoisoned(s)) {
+					h = s;
+					break;
+				}
+			}
+		}
 		if (h >= 0 && player(h).alive && !isPoisoned(h) && aliveBefore >= 5) {
 			makeDemon(h, demon);
 			return;
@@ -686,6 +807,7 @@ public final class Game {
 		phase = Phase.NIGHT;
 		// Le poison de la veille et la protection du Chapelain prennent fin au crépuscule.
 		poisoned = -1;
+		stPoisoned = null;
 		forged = -1;
 		protectedSeat = -1;
 		customPoison().clear();
@@ -697,16 +819,17 @@ public final class Game {
 		if (night == 1) {
 			q.add(new Slot(Step.Kind.MINION_INFO, null));
 			q.add(new Slot(Step.Kind.DEMON_INFO, null));
-			for (Role r : Role.firstNightOrder()) {
+			for (Role r : ordered(Role.firstNightOrder(), firstOrder)) {
 				q.add(new Slot(Step.Kind.ROLE, r));
 			}
 		} else {
-			for (Role r : Role.otherNightsOrder()) {
+			for (Role r : ordered(Role.otherNightsOrder(), otherOrder)) {
 				q.add(r == Role.HERITIERE ? new Slot(Step.Kind.NEW_DEMON, null) : new Slot(Step.Kind.ROLE, r));
 			}
 		}
 		queue = q;
 		queueIndex = 0;
+		stepHistory = new ArrayList<>();
 		addLog("La nuit " + night + " tombe.");
 	}
 
@@ -734,8 +857,18 @@ public final class Game {
 		} else if (!player(seat).alive) {
 			return null;
 		}
-		if ((role == Role.EMBAUMEUR || model(role, "execute")) && executedYesterday < 0) {
+		if (role == Role.EMBAUMEUR && executedYesterday < 0) {
 			return null;
+		}
+		if (role.custom() && role.ability != null) {
+			if (role.ability.uneFois && onceUsed().contains(seat)) {
+				return null; // pouvoir à usage unique déjà utilisé
+			}
+			// Sans exécution la veille, un rôle qui n'a que ce pouvoir-là ne se réveille pas.
+			boolean onlyExecuted = role.ability.all().stream().filter(Ability::playedAtNight).allMatch(a -> a.type.equals("execute"));
+			if (onlyExecuted && executedYesterday < 0) {
+				return null;
+			}
 		}
 		return new Step(Step.Kind.ROLE, role, seat, List.of());
 	}
@@ -749,6 +882,7 @@ public final class Game {
 			Step step = buildStep(queue.get(queueIndex++));
 			if (step != null) {
 				currentStep = step;
+				history().add(queueIndex - 1);
 				return step;
 			}
 		}
@@ -756,12 +890,72 @@ public final class Game {
 		return null;
 	}
 
+	private List<Integer> history() {
+		if (stepHistory == null) {
+			stepHistory = new ArrayList<>();
+		}
+		return stepHistory;
+	}
+
+	/**
+	 * Revient à l'étape précédente de la nuit : le prochain nextStep() la rejoue.
+	 * Ses effets déjà appliqués (mort, poison) ne sont pas annulés.
+	 */
+	public void previousStep() {
+		if (phase != Phase.NIGHT) {
+			throw new GameException("Ce n'est pas la nuit.");
+		}
+		List<Integer> h = history();
+		// Dernier élément : l'étape en cours (si la nuit n'est pas finie) ; celui d'avant : la précédente.
+		int back = currentStep != null ? 2 : 1;
+		if (h.size() < back) {
+			throw new GameException("Il n'y a pas d'étape précédente cette nuit.");
+		}
+		int index = h.get(h.size() - back);
+		for (int k = 0; k < back; k++) {
+			h.remove(h.size() - 1);
+		}
+		queueIndex = index;
+		currentStep = null;
+		addLog("Le Conteur revient à l'étape précédente.");
+	}
+
+	/** Les réveils de la nuit en cours, dans l'ordre : ceux déjà joués, celui en cours, ceux à venir. */
+	public List<NightEntry> nightOrder() {
+		List<NightEntry> out = new ArrayList<>();
+		if (phase != Phase.NIGHT) {
+			return out;
+		}
+		int current = currentStep != null ? queueIndex - 1 : -1;
+		for (int i = 0; i < queue.size(); i++) {
+			Step step = buildStep(queue.get(i));
+			boolean played = history().contains(i) && i != current;
+			if (step == null && !played) {
+				continue;
+			}
+			String title = step != null ? step.title() : queue.get(i).role != null ? queue.get(i).role.displayName : "Réveil";
+			out.add(new NightEntry(title, step != null && step.seat >= 0 ? player(step.seat).name : "",
+				i == current ? 0 : played || i < queueIndex ? -1 : 1));
+		}
+		return out;
+	}
+
+	/** Une ligne de l'ordre de nuit ; state : -1 jouée, 0 en cours, 1 à venir. */
+	public record NightEntry(String title, String player, int state) {
+	}
+
 	public void validateTargets(Step step, List<Integer> targets) {
 		if (!step.isChoose()) {
 			return;
 		}
+		if (targets.isEmpty() && step.optional()) {
+			return; // pouvoir à usage unique : le joueur le garde pour une autre nuit
+		}
 		if (targets.size() != step.choose()) {
 			throw new GameException("Il faut désigner " + step.choose() + " joueur(s).");
+		}
+		if (new HashSet<>(targets).size() != targets.size()) {
+			throw new GameException("Chaque joueur ne peut être désigné qu'une fois.");
 		}
 		for (int t : targets) {
 			if (t < 0 || t >= size()) {
@@ -872,7 +1066,9 @@ public final class Game {
 				return i;
 			}
 			case ALCHIMISTE:
-				poisoned = targets.get(0);
+				if (!impaired(seat)) {
+					poisoned = targets.get(0);
+				}
 				return Info.none();
 			case FAUSSAIRE:
 				if (!impaired(seat)) {
@@ -949,13 +1145,13 @@ public final class Game {
 			int c = rng.pick(candidates);
 			Role role = player(c).role;
 			if (role.type != type) {
-				role = rng.pick(Role.ofType(type));
+				role = rng.pick(scriptRoles(type));
 			}
 			truth = pairInfo(seat, role, c);
 		}
 		if (impaired(seat) || (truth == null && !allowNone)) {
 			List<Integer> others = allSeats().stream().filter(s -> s != seat).toList();
-			Info shown = pairInfo(seat, rng.pick(Role.ofType(type)), rng.pick(others));
+			Info shown = pairInfo(seat, rng.pick(scriptRoles(type)), rng.pick(others));
 			shown.truthText = truth == null ? "Aucun joueur ne correspond." : truth.text;
 			return shown;
 		}
@@ -982,7 +1178,7 @@ public final class Game {
 
 	private Info roleReveal(int seat, int target, String key) {
 		Role truth = shownRole(target, key);
-		Role shown = impaired(seat) ? rng.pick(Role.all()) : truth;
+		Role shown = impaired(seat) ? rng.pick(scriptRoles()) : truth;
 		Info i = new Info();
 		i.kind = Info.Kind.ROLE;
 		i.players = List.of(target);
@@ -1047,8 +1243,47 @@ public final class Game {
 	private Info resolveCustom(Step step, List<Integer> targets) {
 		int seat = step.seat;
 		Role role = step.role;
-		Ability a = role.ability;
-		String key = "perso-" + role.customId;
+		Ability first = role.ability;
+		if (first.uneFois) {
+			if (targets.isEmpty()) {
+				addLog(player(seat).name + " garde son pouvoir pour une autre nuit.");
+				return Info.none();
+			}
+			onceUsed().add(seat);
+		}
+		Info out = null;
+		for (Ability a : first.all()) {
+			if (!a.playedAtNight()) {
+				continue;
+			}
+			if (a.type.equals("execute") && executedYesterday < 0) {
+				continue;
+			}
+			int need = a.targetsUsed();
+			if (need > targets.size()) {
+				continue;
+			}
+			Info i = resolveEffect(step, a, need == targets.size() ? targets : targets.subList(0, need));
+			if (out == null) {
+				out = i;
+			} else if (i.text != null) {
+				// Deux informations la même nuit : le joueur les reçoit ensemble.
+				out.text = out.text == null ? i.text : out.text + " " + i.text;
+				if (i.truthText != null) {
+					out.truthText = out.truthText == null ? i.truthText : out.truthText + " " + i.truthText;
+				}
+				if (out.kind == Info.Kind.NONE || out.kind == Info.Kind.STARPASS) {
+					out.kind = i.kind;
+				}
+			}
+		}
+		return out == null ? Info.none() : out;
+	}
+
+	private Info resolveEffect(Step step, Ability a, List<Integer> targets) {
+		int seat = step.seat;
+		Role role = step.role;
+		String key = "perso-" + role.customId + "-" + a.type;
 		switch (a.type) {
 			case "paire": {
 				RoleType t = a.pairType();
@@ -1135,6 +1370,15 @@ public final class Game {
 				return roleReveal(seat, executedYesterday, key);
 			case "decouvrir":
 				return roleReveal(seat, targets.get(0), key);
+			case "grimoire": {
+				Info i = new Info();
+				i.kind = Info.Kind.GRIMOIRE;
+				i.text = "Tu consultes le grimoire.";
+				return i;
+			}
+			case "maitre":
+				customMaster().put(seat, targets.get(0));
+				return Info.none();
 			case "protection":
 				if (!impaired(seat)) {
 					customProtect().put(seat, targets.get(0));
@@ -1271,6 +1515,9 @@ public final class Game {
 		if (!a.alive) {
 			throw new GameException("Les morts ne peuvent pas nominer.");
 		}
+		if (maxNominations > 0 && nominations.size() >= maxNominations) {
+			throw new GameException("Plus d'accusation aujourd'hui : " + maxNominations + " au plus par jour dans ce scénario.");
+		}
 		if (!b.alive) {
 			throw new GameException("On ne peut pas nominer un mort.");
 		}
@@ -1291,12 +1538,58 @@ public final class Game {
 				return new Nomination(-1, nominator, nominee, true);
 			}
 		}
+		Ability reprisal = effect(b.role, "represailles");
+		if (reprisal != null && onceUsed().add(nominee)) {
+			if (!isPoisoned(nominee) && reg(nominator, reprisal.regKey(), new Ctx("represailles-" + b.role.customId))) {
+				execute(nominator, "pouvoir de " + lower(b.role.displayName));
+				dayOver = true;
+				return new Nomination(-1, nominator, nominee, true);
+			}
+		}
 		nominations.add(new int[] {nominator, nominee, -1});
 		return new Nomination(nominations.size() - 1, nominator, nominee, false);
 	}
 
+	/** Annule la dernière nomination tant qu'elle n'a pas été votée : accusateur et accusé retrouvent leurs droits. */
+	public void cancelNomination(int index) {
+		if (index < 0 || index != nominations.size() - 1 || nominations.get(index)[2] >= 0) {
+			throw new GameException("Cette nomination ne peut plus être annulée.");
+		}
+		int[] n = nominations.remove(index);
+		hasNominated.remove(n[0]);
+		wasNominated.remove(n[1]);
+		addLog("Le Conteur annule la nomination de " + player(n[1]).name + " par " + player(n[0]).name + ".");
+	}
+
+	/** Le Conteur gracie le joueur sur le billot : personne ne sera exécuté pour ce vote. */
+	public String pardon() {
+		if (phase != Phase.DAY || dayOver) {
+			throw new GameException("On ne gracie que de jour.");
+		}
+		int seat = onTheBlock();
+		if (seat < 0) {
+			throw new GameException("Personne n'est sur le billot.");
+		}
+		top = -1;
+		topVotes = 0;
+		tie = false;
+		addLog("Le Conteur gracie " + player(seat).name + ".");
+		return player(seat).name;
+	}
+
+	/** Le Conteur déclare la victoire d'un camp. */
+	public void declareWinner(Team team) {
+		if (winner != null) {
+			throw new GameException("La partie est déjà terminée.");
+		}
+		setWinner(team, "Décision du Conteur.");
+	}
+
 	/** voters : sièges ayant levé la main. */
 	public VoteResult vote(int index, List<Integer> voters) {
+		if (phase != Phase.DAY || dayOver) {
+			throw new GameException("On ne vote que de jour.");
+		}
 		if (index < 0 || index >= nominations.size() || nominations.get(index)[2] >= 0) {
 			throw new GameException("Nomination inconnue ou déjà votée.");
 		}
@@ -1340,6 +1633,11 @@ public final class Game {
 		if (e >= 0 && player(e).alive && counted.contains(e) && master >= 0 && !counted.contains(master)) {
 			warnings.add("L'Écuyer a voté sans son maître.");
 		}
+		for (var m : customMaster().entrySet()) {
+			if (player(m.getKey()).alive && counted.contains(m.getKey()) && !counted.contains(m.getValue())) {
+				warnings.add(player(m.getKey()).name + " a voté sans son maître.");
+			}
+		}
 		int count = counted.size();
 		int threshold = (aliveCount() + 1) / 2;
 		nominations.get(index)[2] = count;
@@ -1361,7 +1659,7 @@ public final class Game {
 		executedToday = seat;
 		executedYesterday = seat;
 		addLog(p.name + " est exécuté (" + cause + ").");
-		boolean martyr = (p.role == Role.MARTYR || model(p.role, "martyr")) && !isPoisoned(seat);
+		boolean martyr = p.alive && (p.role == Role.MARTYR || model(p.role, "martyr")) && !isPoisoned(seat);
 		kill(seat, "exécution");
 		if (martyr) {
 			setWinner(Team.EVIL, "Le Martyr a été exécuté.");
@@ -1372,7 +1670,7 @@ public final class Game {
 		if (phase != Phase.DAY) {
 			throw new GameException("Ce n'est pas le jour.");
 		}
-		if (executedToday < 0 && top >= 0 && !tie) {
+		if (executedToday < 0 && top >= 0 && !tie && player(nominations.get(top)[1]).alive) {
 			execute(nominations.get(top)[1], "vote du village");
 		}
 		if (winner == null && executedToday < 0 && aliveResidents() == 3) {
@@ -1396,15 +1694,30 @@ public final class Game {
 			throw new GameException("Les morts ne peuvent pas tirer.");
 		}
 		addLog(p.name + " tire sur " + player(target).name + ".");
-		if (p.believed != Role.ARBALETRIER || arbaletrierUsed) {
+		Ability shot = effect(p.believed, "tir");
+		String what;
+		String cause;
+		if (p.believed == Role.ARBALETRIER) {
+			if (arbaletrierUsed) {
+				return false;
+			}
+			arbaletrierUsed = true;
+			what = "demon";
+			cause = "carreau de l'Arbalétrier";
+		} else if (shot != null) {
+			if (!onceUsed().add(shooter)) {
+				return false;
+			}
+			what = shot.regKey();
+			cause = "tir de " + lower(p.believed.displayName);
+		} else {
 			return false;
 		}
-		arbaletrierUsed = true;
 		if (impaired(shooter) || !player(target).alive) {
 			return false;
 		}
-		if (reg(target, "demon", new Ctx("arbaletrier"))) {
-			kill(target, "carreau de l'Arbalétrier");
+		if (reg(target, what, new Ctx("tir-" + shooter))) {
+			kill(target, cause);
 			checkEvilWin();
 			return true;
 		}
@@ -1435,7 +1748,7 @@ public final class Game {
 	}
 
 	public void setPoisoned(int seat) {
-		poisoned = seat;
+		stPoisoned = seat;
 		addLog("Le Conteur empoisonne " + player(seat).name + ".");
 	}
 
@@ -1455,7 +1768,7 @@ public final class Game {
 		for (int i = 0; i < size(); i++) {
 			Seat p = seats.get(i);
 			List<String> marks = new ArrayList<>();
-			if (poisoned == i) {
+			if (isPoisoned(i)) {
 				marks.add("empoisonné");
 			}
 			if (p.role == Role.SOMNAMBULE) {
@@ -1469,6 +1782,8 @@ public final class Game {
 			}
 			if (master == i) {
 				marks.add("maître de l'Écuyer");
+			} else if (customMaster().containsValue(i)) {
+				marks.add("maître");
 			}
 			if (!p.alive && p.ghostVote) {
 				marks.add("vote de fantôme");

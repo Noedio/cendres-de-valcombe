@@ -20,7 +20,12 @@ import java.util.Set;
  */
 public final class Simulation {
 	/** Résultat : parties gagnées par chaque camp, durée moyenne en jours, parties bloquées. */
-	public record Result(int games, int good, int evil, double days, int stuck, String problem) {
+	public record Result(int games, int good, int evil, double days, int stuck, String problem,
+		int shortest, int longest, java.util.Map<String, int[]> roles) {
+		public Result(int games, int good, int evil, double days, int stuck, String problem) {
+			this(games, good, evil, days, stuck, problem, 0, 0, java.util.Map.of());
+		}
+
 		public int goodPercent() {
 			return games == 0 ? 0 : Math.round(100f * good / games);
 		}
@@ -72,10 +77,21 @@ public final class Simulation {
 	}
 
 	public static Result run(Set<Role> script, int players, int games, long seed) {
-		String problem = Setup.check(script, players);
+		return run(script, null, players, games, seed);
+	}
+
+	/**
+	 * Simule un scénario entier (rôles imposés, répartition, ordre de nuit, règles) quand il est donné.
+	 * roles : pour chaque rôle, { parties où il était en jeu, parties gagnées par son camp }.
+	 */
+	public static Result run(Set<Role> script, ScenarioDef scenario, int players, int games, long seed) {
+		String problem = Setup.check(script, players, scenario == null ? null : scenario.counts(players));
 		if (problem != null) {
 			return new Result(0, 0, 0, 0, 0, problem);
 		}
+		java.util.Map<String, int[]> perRole = new java.util.LinkedHashMap<>();
+		int shortest = Integer.MAX_VALUE;
+		int longest = 0;
 		int good = 0;
 		int evil = 0;
 		int stuck = 0;
@@ -85,7 +101,12 @@ public final class Simulation {
 			QuietHost h = new QuietHost();
 			Session s = new Session(h, Rng.of(random));
 			try {
-				s.useScript("Simulation", script);
+				if (scenario != null) {
+					s.setScenarios(List.of(scenario));
+					s.useScenario(scenario.id);
+				} else {
+					s.useScript("Simulation", script);
+				}
 				s.addBots(players);
 				s.start("Simulation", Session.Mode.AUTO);
 				int day = 0;
@@ -116,6 +137,15 @@ public final class Simulation {
 					continue;
 				}
 				days += s.lastGame().day();
+				shortest = Math.min(shortest, s.lastGame().day());
+				longest = Math.max(longest, s.lastGame().day());
+				for (Game.Seat p : s.lastGame().players()) {
+					int[] c = perRole.computeIfAbsent(p.role().displayName, key -> new int[2]);
+					c[0]++;
+					if (p.team() == s.lastGame().winner()) {
+						c[1]++;
+					}
+				}
 				if (s.lastGame().winner() == Team.GOOD) {
 					good++;
 				} else {
@@ -126,6 +156,7 @@ public final class Simulation {
 			}
 		}
 		int finished = good + evil;
-		return new Result(games, good, evil, finished == 0 ? 0 : (double) days / finished, stuck, null);
+		return new Result(games, good, evil, finished == 0 ? 0 : (double) days / finished, stuck, null,
+			finished == 0 ? 0 : shortest, longest, perRole);
 	}
 }

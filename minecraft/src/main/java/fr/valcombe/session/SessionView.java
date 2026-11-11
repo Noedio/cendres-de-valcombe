@@ -51,6 +51,12 @@ final class SessionView {
 		v.put("lobby", List.copyOf(ses.lobby));
 		v.put("bots", List.copyOf(ses.bots));
 		v.put("inLobby", ses.lobby.contains(me));
+		v.put("paused", ses.paused);
+		if (leader && ses.game == null) {
+			String[] ready = ses.lobbyStatus();
+			v.put("lobbyReady", ready[0].equals("oui"));
+			v.put("lobbyStatus", ready[1]);
+		}
 		v.put("spectator", ses.spectators.contains(me));
 		v.put("trainee", me.equals(ses.trainee));
 		Map<String, Object> sc = new LinkedHashMap<>();
@@ -120,6 +126,7 @@ final class SessionView {
 				s.put("alive", p.alive());
 				s.put("ghostVote", p.ghostVote());
 				s.put("bot", ses.bots.contains(p.name));
+				s.put("standIn", ses.standIns.contains(p.name));
 				s.put("traveller", p.traveller());
 				Role claimed = ses.social.claims.get(p.name);
 				s.put("claim", claimed == null ? null : claimed.name());
@@ -148,6 +155,12 @@ final class SessionView {
 				v.put("vote", vote);
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
+			Map<String, Object> speech = ses.desk.speechView();
+			if (speech != null) {
+				speech.put("mine", ses.desk.queue.contains(me) || me.equals(ses.desk.speaker));
+				v.put("speech", speech);
+			}
+			v.put("broadcast", ses.desk.broadcast);
 			v.put("aside", ses.social.aside);
 			if (me.equals(ses.storyteller)) {
 				// Joueurs déconnectés, pour le Conteur (de nuit, leur réveil est joué au hasard).
@@ -165,7 +178,18 @@ final class SessionView {
 				ns.put("waiting", ses.pendingDecisionOpen() ? "ta décision (menu J)"
 					: ses.pendingChooser != null ? ses.pendingChooser + " choisit"
 					: ses.waitingAckName() != null ? ses.waitingAckName() + " lit son information" : "");
+				// Carte de l'étape : ce qu'il faut faire et dire, et les mises en garde sur le joueur réveillé.
+				ns.put("todo", ses.desk.todo(ses.pendingStep));
+				ns.put("alerts", ses.desk.alerts(g, ses.pendingStep));
 				v.put("nightStep", ns);
+			}
+			if (me.equals(ses.storyteller) && g.phase() == Game.Phase.NIGHT) {
+				List<Map<String, Object>> order = new ArrayList<>();
+				for (Game.NightEntry e : g.nightOrder()) {
+					order.add(Map.of("title", e.title(), "player", e.player(), "state", e.state()));
+				}
+				v.put("nightOrder", order);
+				v.put("awake", List.copyOf(ses.desk.awake));
 			}
 			if (g.phase() == Game.Phase.DAY) {
 				// Tableau du jour : qui a accusé qui, avec combien de voix, et qui est sur le billot.
@@ -209,13 +233,21 @@ final class SessionView {
 					row.put("line", lines.get(i));
 					row.put("note", ses.notes.get(p.name));
 					row.put("reminders", ses.reminders.getOrDefault(p.name, List.of()));
-					row.put("poisoned", g.poisonedSeat() == i);
+					row.put("poisoned", g.isPoisoned(i));
 					row.put("protected", g.protectedSeat() == i);
 					row.put("redHerring", g.redHerring() == i);
-					row.put("master", g.masterSeat() == i);
+					row.put("master", g.isMaster(i));
 					grim.add(row);
 				}
 				v.put("grimoire", grim);
+				if (me.equals(ses.storyteller)) {
+					// Pupitre du Conteur : jetons de rappel par rôle, journal, note de partie, réponses des joueurs.
+					v.put("tokens", ses.desk.tokenTray(g));
+					List<String> log = g.log();
+					v.put("journal", log.subList(Math.max(0, log.size() - 200), log.size()));
+					v.put("gameNote", ses.notes.get(Session.GAME_NOTE));
+					v.put("answers", ses.desk.answers);
+				}
 				v.put("bluffs", g.bluffs().stream().map(Role::name).toList());
 				v.put("distWarning", g.distributionWarning());
 				Map<String, Object> pol = new LinkedHashMap<>();
@@ -233,6 +265,7 @@ final class SessionView {
 					m.put("type", "choose");
 					m.put("title", c.title());
 					m.put("count", c.count());
+					m.put("optional", c.optional());
 					List<Map<String, Object>> opts = new ArrayList<>();
 					for (Prompt.Option o : c.options()) {
 						opts.add(Map.of("seat", o.seat(), "name", o.name(), "alive", o.alive(), "selected", o.selected()));

@@ -364,7 +364,8 @@ public final class ValcombeUi {
 		if (role != null) {
 			gui.set(18, roleIcon(role));
 		}
-		gui.set(22, Gui.icon(Items.WOOL.lime(), "Valider", "Confirmer ton choix."),
+		gui.set(22, Gui.icon(Items.WOOL.lime(), "Valider", c.optional()
+				? "Une seule fois par partie : valide sans personne pour garder ton pouvoir." : "Confirmer ton choix."),
 			act(pl -> session.validate(name(pl))));
 		gui.open(p, host);
 	}
@@ -519,6 +520,16 @@ public final class ValcombeUi {
 				act(pl -> session.setNominations(!session.nominationsOpen()), this::openStoryteller));
 			gui.set(30, Gui.icon(Items.CLOCK, "Lancer le vote maintenant", "Écourte la défense de l'accusé."),
 				act(pl -> session.startVoteNow()));
+			// Reprendre la main : pause, vote annulé, grâce, étape précédente.
+			gui.set(31, Gui.icon(Items.SHEARS, "Annuler le vote", "L'accusation est retirée."),
+				act(pl -> session.cancelVote(), this::openStoryteller));
+			gui.set(32, Gui.icon(Items.PAPER, "Gracier", "Personne n'est plus sur le billot."),
+				act(pl -> session.pardon(), this::openStoryteller));
+			gui.set(33, Gui.icon(Items.HOPPER, session.paused() ? "Reprendre la partie" : "Mettre en pause",
+					"Minuteurs, nuit et vote attendent."),
+				act(pl -> session.togglePause(), this::openStoryteller));
+			gui.set(13, Gui.icon(Items.SPECTRAL_ARROW, "Étape précédente", "Rejoue le réveil précédent de la nuit."),
+				act(pl -> session.previous()));
 		}
 		gui.set(35, Gui.icon(Items.BARRIER, "Retour"), this::openMain);
 		gui.open(p, host);

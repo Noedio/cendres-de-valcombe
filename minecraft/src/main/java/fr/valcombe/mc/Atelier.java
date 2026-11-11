@@ -62,6 +62,9 @@ final class Atelier {
 	// Plusieurs opérateurs à la fois : un lien (jeton) chacun, présence, modifications en cours, journal
 	// ------------------------------------------------------------------
 	private final Map<String, String> tokens = new java.util.concurrent.ConcurrentHashMap<>();
+	/** Moment où chaque lien a été donné : un lien cesse de fonctionner douze heures plus tard. */
+	private final Map<String, Long> tokenBorn = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long TOKEN_LIFE_MS = 12L * 60 * 60 * 1000;
 	private final Map<String, Long> lastSeen = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Création en cours de modification (« role:passeur ») → qui la modifie, et quand. */
 	private final Map<String, String[]> editing = new java.util.concurrent.ConcurrentHashMap<>();
@@ -70,21 +73,46 @@ final class Atelier {
 
 	/** Jeton de l'Atelier pour cet opérateur (créé une fois par démarrage du serveur). */
 	String tokenFor(String player) {
-		for (var e : tokens.entrySet()) {
-			if (e.getValue().equals(player)) {
-				return e.getKey();
-			}
-		}
+		// Un nouveau lien à chaque demande : l'ancien lien de cet opérateur cesse de fonctionner.
+		revoke(player);
 		byte[] b = new byte[18];
 		RANDOM.nextBytes(b);
 		String t = java.util.HexFormat.of().formatHex(b);
 		tokens.put(t, player);
+		tokenBorn.put(t, System.currentTimeMillis());
 		return t;
+	}
+
+	/** Retire les liens d'un opérateur (ou de tous, si player est null). */
+	void revoke(String player) {
+		tokens.entrySet().removeIf(e -> {
+			boolean gone = player == null || e.getValue().equals(player);
+			if (gone) {
+				tokenBorn.remove(e.getKey());
+			}
+			return gone;
+		});
 	}
 
 	private String ownerOf(HttpExchange ex) {
 		String given = ex.getRequestHeaders().getFirst("X-Valcombe-Jeton");
-		return given == null ? null : tokens.get(given);
+		if (given == null) {
+			return null;
+		}
+		String owner = tokens.get(given);
+		Long born = tokenBorn.get(given);
+		if (owner == null || born == null || System.currentTimeMillis() - born > TOKEN_LIFE_MS) {
+			tokens.remove(given);
+			tokenBorn.remove(given);
+			return null;
+		}
+		return owner;
+	}
+
+	/** Un opérateur connecté qui a perdu ses droits perd aussi l'Atelier. */
+	private boolean stillOperator(String owner) {
+		ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+		return p == null || isOperator(p);
 	}
 
 	private void log(String who, String what) {
@@ -144,6 +172,16 @@ final class Atelier {
 			text(ex, 403, "Lien expiré ou réservé : relancez /vc atelier dans le jeu (opérateur).");
 			return;
 		}
+		try {
+			if (!onServer(() -> stillOperator(owner), 10)) {
+				revoke(owner);
+				text(ex, 403, "L'Atelier est réservé aux opérateurs du serveur.");
+				return;
+			}
+		} catch (GameException e) {
+			text(ex, 503, e.getMessage());
+			return;
+		}
 		lastSeen.put(owner, System.currentTimeMillis());
 		String path = ex.getRequestURI().getPath().substring("/api/atelier/".length());
 		boolean post = ex.getRequestMethod().equals("POST");
@@ -178,6 +216,16 @@ final class Atelier {
 				}
 				case "carte/charger" -> text(ex, 200, logged(owner, onServer(() -> maps.load(body.trim()), 120)));
 				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
+				case "carte/renommer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> maps.rename(o.get("id").getAsString(), o.get("nom").getAsString()), 5)));
+				}
+				case "carte/dupliquer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> maps.duplicate(o.get("id").getAsString(),
+						o.get("nouvelId").getAsString(), o.get("nom").getAsString()), 30)));
+				}
+				case "carte/annuler" -> text(ex, 200, onServer(host::undoMarker, 5));
 				case "construction" -> text(ex, 200, onServer(() -> {
 					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
 					if (p == null) {
@@ -266,15 +314,29 @@ final class Atelier {
 			m.put("sieges", d.sieges.size());
 			m.put("maisons", d.logis.size());
 			m.put("octets", maps.bytes(d.id));
+			// Repères pour le plan vu de dessus : [est, hauteur, sud] depuis le centre de la place.
+			m.put("rayon", d.rayon);
+			m.put("plan", Map.of("sieges", d.sieges, "maisons", d.logis));
 			cartes.add(m);
 		}
 		out.put("cartes", cartes);
 		Village v = host.village();
 		if (v != null) {
 			out.put("carteActuelle", Map.of("genere", v.isGenerated(), "sieges", v.seatCount(), "maisons", v.houseCount(),
-				"theme", v.theme()));
+				"theme", v.theme(), "rayon", v.extent(), "plan", Map.of("sieges", v.relSeats(), "maisons", v.relHouses())));
 		}
+		out.put("chantier", host.busy());
+		// Ordre habituel des réveils (première nuit, autres nuits), pour le régler dans un scénario.
+		out.put("ordrePremiere", Role.firstNightOrder().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase()).toList());
+		out.put("ordreAutres", Role.otherNightsOrder().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase()).toList());
+		Map<String, List<Integer>> usual = new LinkedHashMap<>();
+		for (int n = fr.valcombe.rules.Distribution.MIN_PLAYERS; n <= fr.valcombe.rules.Distribution.MAX_PLAYERS; n++) {
+			var c = fr.valcombe.rules.Distribution.counts(n);
+			usual.put(String.valueOf(n), List.of(c.citadin(), c.etranger(), c.sbire(), c.demon()));
+		}
+		out.put("repartition", usual);
 		out.put("modeles", Ability.MODELS);
+		out.put("modelesIntegres", fr.valcombe.rules.Builtins.templates());
 		out.put("cibles", Ability.TARGETS);
 		List<String> emb = new ArrayList<>(EMBLEMS);
 		Role.all().stream().filter(r -> !r.custom()).forEach(r -> emb.add(r.icon));
@@ -290,12 +352,26 @@ final class Atelier {
 		JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 		ScenarioDef d = new ScenarioDef();
 		o.getAsJsonArray("roles").forEach(e -> d.roles.add(e.getAsString()));
-		int players = Math.max(5, Math.min(15, o.get("joueurs").getAsInt()));
+		int players = Math.max(5, Math.min(16, o.get("joueurs").getAsInt()));
 		int games = Math.max(10, Math.min(500, o.has("parties") ? o.get("parties").getAsInt() : 200));
 		if (!d.missingRoles().isEmpty()) {
 			throw new GameException("Rôles introuvables : " + String.join(", ", d.missingRoles()));
 		}
-		Simulation.Result r = Simulation.run(d.script(), players, games, System.nanoTime());
+		// Le scénario en cours d'édition est simulé avec ses règles (rôles imposés, répartition, ordre de nuit).
+		ScenarioDef full = null;
+		if (o.has("scenario") && o.get("scenario").isJsonObject()) {
+			full = GSON.fromJson(o.get("scenario"), ScenarioDef.class);
+			full.id = "simulation";
+			if (full.nom == null || full.nom.isBlank()) {
+				full.nom = "Simulation";
+			}
+			full.carte = "";
+			String problem = full.problem();
+			if (problem != null) {
+				throw new GameException(problem);
+			}
+		}
+		Simulation.Result r = Simulation.run(d.script(), full, players, games, System.nanoTime());
 		Map<String, Object> m = new LinkedHashMap<>();
 		m.put("parties", r.games());
 		m.put("bien", r.good());
@@ -303,6 +379,13 @@ final class Atelier {
 		m.put("pourcentBien", r.goodPercent());
 		m.put("jours", Math.round(r.days() * 10) / 10.0);
 		m.put("bloquees", r.stuck());
+		m.put("joursMin", r.shortest());
+		m.put("joursMax", r.longest());
+		// Poids de chaque rôle : part des parties gagnées par son camp quand il est en jeu.
+		List<Map<String, Object>> weights = new ArrayList<>();
+		r.roles().forEach((name, c) -> weights.add(Map.of("nom", name, "parties", c[0],
+			"victoires", c[0] == 0 ? 0 : Math.round(100f * c[1] / c[0]))));
+		m.put("roles", weights);
 		m.put("probleme", r.problem());
 		return GSON.toJson(m);
 	}

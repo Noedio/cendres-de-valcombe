@@ -74,7 +74,7 @@ public final class MapStore {
 	}
 
 	public boolean exists(String id) {
-		return id != null && Files.exists(dir.resolve(id + ".json")) && Files.exists(dir.resolve(id + ".nbt"));
+		return id != null && id.matches(ID) && Files.exists(dir.resolve(id + ".json")) && Files.exists(dir.resolve(id + ".nbt"));
 	}
 
 	public List<MapDef> list() {
@@ -101,6 +101,7 @@ public final class MapStore {
 	}
 
 	private MapDef def(String id) {
+		checkId(id); // jamais de chemin fabriqué avec un identifiant libre
 		try {
 			return GSON.fromJson(Files.readString(dir.resolve(id + ".json"), StandardCharsets.UTF_8), MapDef.class);
 		} catch (IOException | RuntimeException e) {
@@ -108,8 +109,36 @@ public final class MapStore {
 		}
 	}
 
+	private static final String ID = "[a-z0-9-]{2,30}";
+	/** Plus grande carte acceptée : demi-largeur en blocs, et nombre de repères. */
+	private static final int MAX_RADIUS = 200;
+	private static final int MAX_MARKERS = 40;
+	/** Mémoire accordée à la lecture d'une structure (une archive piégée ne peut pas en demander plus). */
+	private static final long MAX_NBT = 256L * 1024 * 1024;
+
+	/** Une fiche lue dans un fichier partagé doit rester dans des bornes raisonnables. */
+	private static void checkDef(MapDef d) {
+		checkId(d.id);
+		if (d.nom == null || d.nom.isBlank() || d.nom.length() > 50) {
+			throw new GameException("Carte « " + d.id + " » : nom absent ou trop long.");
+		}
+		if (d.rayon < 4 || d.rayon > MAX_RADIUS) {
+			throw new GameException("Carte « " + d.nom + " » : taille hors limites (" + MAX_RADIUS + " blocs de rayon au plus).");
+		}
+		if (d.sieges == null || d.logis == null || d.sieges.size() > MAX_MARKERS || d.logis.size() > MAX_MARKERS) {
+			throw new GameException("Carte « " + d.nom + " » : " + MAX_MARKERS + " trônes et " + MAX_MARKERS + " maisons au plus.");
+		}
+		for (List<int[]> marks : List.of(d.sieges, d.logis)) {
+			for (int[] a : marks) {
+				if (a == null || a.length != 3 || Math.abs(a[0]) > d.rayon + 8 || Math.abs(a[2]) > d.rayon + 8 || Math.abs(a[1]) > 64) {
+					throw new GameException("Carte « " + d.nom + " » : un repère sort de la carte.");
+				}
+			}
+		}
+	}
+
 	private static void checkId(String id) {
-		if (id == null || !id.matches("[a-z0-9-]{2,30}")) {
+		if (id == null || !id.matches(ID)) {
 			throw new GameException("Identifiant de carte : 2 à 30 lettres minuscules, chiffres ou tirets.");
 		}
 	}
@@ -162,10 +191,14 @@ public final class MapStore {
 			throw new GameException("On change de carte entre deux parties.");
 		}
 		MapDef d = def(id);
+		checkDef(d);
+		if (host.busy()) {
+			throw new GameException("Une construction est déjà en cours : attendez la fin de la barre de progression.");
+		}
 		CompoundTag tag;
 		try {
-			tag = NbtIo.readCompressed(dir.resolve(id + ".nbt"), NbtAccounter.unlimitedHeap());
-		} catch (IOException e) {
+			tag = NbtIo.readCompressed(dir.resolve(id + ".nbt"), NbtAccounter.create(MAX_NBT));
+		} catch (IOException | RuntimeException e) {
 			throw new GameException("Structure de la carte illisible : " + e.getMessage());
 		}
 		ServerLevel level = server.overworld();
@@ -175,12 +208,14 @@ public final class MapStore {
 		BlockPos c = old != null ? old.center() : host.defaultCenter();
 		// L'ancienne carte peut déborder de la nouvelle : on rase d'abord la plus grande des deux.
 		int clear = Math.max(d.rayon, old == null ? 0 : old.extent());
-		host.clearArea(c, clear, BELOW, HEIGHT);
 		BlockPos corner = c.offset(-d.rayon, -BELOW, -d.rayon);
-		t.placeInWorld(level, corner, corner, new StructurePlaceSettings(), level.getRandom(), Block.UPDATE_CLIENTS);
-		Village v = Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis);
-		host.useVillage(v);
-		return "Carte « " + d.nom + " » chargée.";
+		// Le terrain est rasé par petits lots (le serveur reste fluide), puis la carte est posée.
+		host.startBuild("Chargement de « " + d.nom + " »", host.clearPlan(c, clear, BELOW, HEIGHT), () -> {
+			t.placeInWorld(level, corner, corner, new StructurePlaceSettings(), level.getRandom(), Block.UPDATE_CLIENTS);
+			host.useVillage(Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis));
+			host.announceAll("Carte « " + d.nom + " » chargée.");
+		});
+		return "Chargement de la carte « " + d.nom + " » lancé : suivez la barre en haut de l'écran.";
 	}
 
 	public String delete(String id) {
@@ -192,6 +227,43 @@ public final class MapStore {
 			throw new GameException("Suppression impossible : " + e.getMessage());
 		}
 		return "Carte « " + d.nom + " » supprimée de la bibliothèque.";
+	}
+
+	/** Change le nom affiché d'une carte (son identifiant, lui, ne change pas : les scénarios s'y réfèrent). */
+	public String rename(String id, String nom) {
+		MapDef d = def(id);
+		if (nom == null || nom.isBlank() || nom.trim().length() > 50) {
+			throw new GameException("Nom de carte : 1 à 50 caractères.");
+		}
+		String old = d.nom;
+		d.nom = nom.trim();
+		try {
+			Files.writeString(dir.resolve(id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new GameException("Renommage impossible : " + e.getMessage());
+		}
+		return "Carte « " + old + " » renommée « " + d.nom + " ».";
+	}
+
+	/** Copie une carte sous un nouvel identifiant, pour en faire une variante. */
+	public String duplicate(String id, String newId, String nom) {
+		MapDef d = def(id);
+		checkId(newId);
+		if (Files.exists(dir.resolve(newId + ".json"))) {
+			throw new GameException("Une carte porte déjà l'identifiant « " + newId + " ».");
+		}
+		d.id = newId;
+		d.nom = nom == null || nom.isBlank() ? d.nom + " (copie)" : nom.trim();
+		if (d.nom.length() > 50) {
+			d.nom = d.nom.substring(0, 50);
+		}
+		try {
+			Files.copy(dir.resolve(id + ".nbt"), dir.resolve(newId + ".nbt"));
+			Files.writeString(dir.resolve(newId + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new GameException("Copie impossible : " + e.getMessage());
+		}
+		return "Carte copiée : « " + d.nom + " ».";
 	}
 
 	// ------------------------------------------------------------------
@@ -212,7 +284,7 @@ public final class MapStore {
 
 	public String importMap(JsonObject o) {
 		MapDef d = GSON.fromJson(o, MapDef.class);
-		checkId(d.id);
+		checkDef(d);
 		if (!o.has("structure")) {
 			throw new GameException("Carte « " + d.nom + " » sans structure.");
 		}
@@ -222,7 +294,7 @@ public final class MapStore {
 		}
 		try {
 			// Vérifie que la structure se lit avant de l'enregistrer.
-			NbtIo.readCompressed(new ByteArrayInputStream(nbt), NbtAccounter.unlimitedHeap());
+			NbtIo.readCompressed(new ByteArrayInputStream(nbt), NbtAccounter.create(MAX_NBT));
 			Files.createDirectories(dir);
 			Files.write(dir.resolve(d.id + ".nbt"), nbt);
 			Files.writeString(dir.resolve(d.id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);

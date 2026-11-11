@@ -20,6 +20,8 @@ public final class RoleDef {
 	/** Réveil les autres nuits (mêmes valeurs). */
 	public String autresNuits = "jamais";
 	public Ability pouvoir = new Ability();
+	/** Jetons de rappel proposés au Conteur pour ce rôle (« protégé », « a choisi »…). */
+	public java.util.List<String> rappels = new java.util.ArrayList<>();
 	/** Emplacement attribué (1 à 40), stable pour garder les sauvegardes lisibles. */
 	public int emplacement;
 
@@ -33,6 +35,10 @@ public final class RoleDef {
 
 	/** Clé de tri du réveil (0 = ne se réveille pas). */
 	double wakeKey(String when, boolean first) {
+		return wakeKey(when, first, 0);
+	}
+
+	private double wakeKey(String when, boolean first, int depth) {
 		if (when == null || when.isBlank() || when.equals("jamais")) {
 			return 0;
 		}
@@ -44,6 +50,16 @@ public final class RoleDef {
 			return 90 + tie;
 		}
 		String[] p = when.split(":", 2);
+		// Le repère peut être un autre rôle créé : on suit sa propre place dans la nuit (sans tourner en rond).
+		RoleDef other = p.length == 2 ? Role.customDefs().stream().filter(x -> x != this && x.id.equalsIgnoreCase(p[1]))
+			.findFirst().orElse(null) : null;
+		if (other != null) {
+			double base = depth >= 4 ? 0 : other.wakeKey(first ? other.premiereNuit : other.autresNuits, first, depth + 1);
+			if (base <= 0) {
+				return 90 + tie;
+			}
+			return (p[0].equals("avant") ? base - 0.05 : base + 0.05) + tie;
+		}
 		Role anchor = p.length == 2 ? Role.parse(p[1]) : null;
 		if (anchor == null || anchor.slot) {
 			return 90 + tie;
@@ -74,6 +90,16 @@ public final class RoleDef {
 		String p = a.problem(type());
 		if (p != null) {
 			return p;
+		}
+		if (rappels != null) {
+			if (rappels.size() > 6) {
+				return "Six jetons de rappel au plus par rôle.";
+			}
+			for (String t : rappels) {
+				if (t == null || t.isBlank() || t.length() > 40) {
+					return "Un jeton de rappel tient en 40 caractères.";
+				}
+			}
 		}
 		if (a.wakes() && "jamais".equals(premiereNuit) && "jamais".equals(autresNuits)) {
 			return "Ce pouvoir se joue la nuit : choisissez quand le rôle se réveille.";

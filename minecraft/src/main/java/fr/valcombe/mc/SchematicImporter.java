@@ -47,7 +47,7 @@ final class SchematicImporter {
 		String name = fileName.toLowerCase(Locale.ROOT);
 		CompoundTag root;
 		try {
-			root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
+			root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.create(256L * 1024 * 1024));
 		} catch (IOException e) {
 			throw new GameException("Fichier illisible : ce n'est pas une construction Minecraft compressée.");
 		}
@@ -76,7 +76,7 @@ final class SchematicImporter {
 	/** Dimensions d'un fichier, sans le poser (pour préparer la zone). */
 	static int[] size(String fileName, byte[] data, HolderLookup.RegistryLookup<Block> blocks) {
 		try {
-			CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
+			CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.create(256L * 1024 * 1024));
 			String name = fileName.toLowerCase(Locale.ROOT);
 			if (name.endsWith(".nbt")) {
 				StructureTemplate t = new StructureTemplate();

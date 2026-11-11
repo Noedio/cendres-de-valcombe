@@ -97,7 +97,7 @@ final class Social {
 		if (!p.alive()) {
 			b.append(p.ghostVote() ? " · mort, a son vote" : " · mort");
 		}
-		if (g.poisonedSeat() == s) {
+		if (g.isPoisoned(s)) {
 			b.append(" · empoisonné");
 		}
 		if (g.protectedSeat() == s) {

@@ -44,8 +44,8 @@ public final class Tablet {
 	private final Community community;
 	private MinecraftServer server;
 	private HttpServer http;
-	private String token;
-	private String owner;
+	private volatile String token;
+	private volatile String owner;
 	private int port;
 	private Atelier atelier;
 	/** L'Atelier n'est ouvert que si un opérateur a demandé le lien (/vc atelier). */
@@ -106,7 +106,8 @@ public final class Tablet {
 			h.createContext("/atelier", atelier::page);
 			h.createContext("/api/atelier/", ex -> atelier.api(ex, !community.tabletLocalOnly() || local(ex)));
 		}
-		h.setExecutor(Executors.newFixedThreadPool(2, r -> {
+		// Quatre fils : une longue opération de l'Atelier ne bloque plus le grimoire du Conteur.
+		h.setExecutor(Executors.newFixedThreadPool(4, r -> {
 			Thread t = new Thread(r, "valcombe-tablette");
 			t.setDaemon(true);
 			return t;
@@ -127,6 +128,9 @@ public final class Tablet {
 			http = null;
 			token = null;
 			owner = null;
+			if (atelier != null) {
+				atelier.revoke(null); // les liens de l'Atelier sont fermés avec la tablette
+			}
 		}
 	}
 
@@ -228,8 +232,8 @@ public final class Tablet {
 			send(ex, 405, "text/plain", "POST attendu");
 			return;
 		}
-		String cmd = new String(ex.getRequestBody().readNBytes(300), StandardCharsets.UTF_8).trim();
-		if (!(cmd.equals("vc") || cmd.startsWith("vc ")) || cmd.contains("\n") || cmd.length() > 250
+		String cmd = new String(ex.getRequestBody().readNBytes(1200), StandardCharsets.UTF_8).trim();
+		if (!(cmd.equals("vc") || cmd.startsWith("vc ")) || cmd.contains("\n") || cmd.length() > 400
 			|| cmd.startsWith("vc tablette")) {
 			send(ex, 400, "text/plain", "Commande refusée.");
 			return;

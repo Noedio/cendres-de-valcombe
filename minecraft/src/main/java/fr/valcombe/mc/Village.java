@@ -259,12 +259,31 @@ public final class Village {
 		return houses.size();
 	}
 
+	/** Ordre des repères posés à la main (S : trône, M : maison), pour annuler le dernier. */
+	private final List<Character> placed = new ArrayList<>();
+
 	public void addSeat(BlockPos p) {
 		seats.add(p);
+		placed.add('S');
 	}
 
 	public void addHouse(BlockPos p) {
 		houses.add(p);
+		placed.add('M');
+	}
+
+	/** Annule le dernier repère posé ; renvoie ce qui a été retiré (« trône », « maison »), ou null. */
+	public String undoLast() {
+		while (!placed.isEmpty()) {
+			char last = placed.remove(placed.size() - 1);
+			if (last == 'S' && removeLastSeat()) {
+				return "trône";
+			}
+			if (last == 'M' && removeLastHouse()) {
+				return "maison";
+			}
+		}
+		return null;
 	}
 
 	public boolean removeLastSeat() {
@@ -487,8 +506,31 @@ public final class Village {
 	// ------------------------------------------------------------------
 	// Construction du village généré
 	// ------------------------------------------------------------------
+	/** Quand un plan est ouvert, les blocs y sont rangés au lieu d'être posés tout de suite. */
+	private BuildQueue.Plan plan;
+
 	private void set(ServerLevel level, int x, int y, int z, BlockState s) {
-		level.setBlock(new BlockPos(center.getX() + x, center.getY() + y, center.getZ() + z), s, FLAGS);
+		BlockPos pos = new BlockPos(center.getX() + x, center.getY() + y, center.getZ() + z);
+		if (plan != null) {
+			plan.set(pos, s);
+		} else {
+			level.setBlock(pos, s, FLAGS);
+		}
+	}
+
+	/**
+	 * Le plan de construction du village : tous ses blocs dans l'ordre, à poser petit à petit
+	 * (voir BuildQueue), puis les trônes sculptés une fois les blocs en place.
+	 */
+	BuildQueue.Plan planBuild(ServerLevel level) {
+		BuildQueue.Plan p = new BuildQueue.Plan();
+		plan = p;
+		try {
+			build(level);
+		} finally {
+			plan = null;
+		}
+		return p;
 	}
 
 	private static Direction away(double dx, double dz) {
@@ -555,6 +597,8 @@ public final class Village {
 					floor = rnd.nextInt(5) == 0 ? p.plazaAlt1() : rnd.nextInt(3) == 0 ? p.plazaAlt2() : p.plaza();
 				} else if (d <= plazaRadius + ROAD_WIDTH) {
 					floor = rnd.nextInt(4) == 0 ? p.ground2() : p.alley();
+				} else if (theme.equals("port") && withHouses && d > houseRadius + 9.5 && d <= clearRadius - 1.5) {
+					floor = Blocks.WATER; // le port : un chenal fait le tour du village
 				} else {
 					floor = rnd.nextInt(9) == 0 ? p.ground() : p.grass();
 				}
@@ -591,28 +635,10 @@ public final class Village {
 				set(level, lx, 3, lz, p.light().defaultBlockState());
 			}
 		}
-		// Puits couvert et cloche, au centre
-		for (int x = -2; x <= 2; x++) {
-			for (int z = -2; z <= 2; z++) {
-				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
-				set(level, x, 0, z, rim ? p.well().defaultBlockState() : Blocks.WATER.defaultBlockState());
-				if (rim) {
-					set(level, x, 1, z, p.rim().defaultBlockState());
-				}
-			}
+		centerpiece(level, p);
+		if (theme.equals("monastere")) {
+			cloisterWall(level, p);
 		}
-		for (int[] c : new int[][] {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}}) {
-			for (int y = 1; y <= 5; y++) {
-				set(level, c[0], y, c[1], p.pillar().defaultBlockState());
-			}
-		}
-		for (int x = -2; x <= 2; x++) {
-			for (int z = -2; z <= 2; z++) {
-				set(level, x, 6, z, Blocks.DARK_OAK_SLAB.defaultBlockState());
-			}
-		}
-		set(level, 0, 5, 0, Blocks.BELL.defaultBlockState());
-		set(level, 0, 7, 0, Blocks.SOUL_LANTERN.defaultBlockState());
 
 		// Allées, maisons, étals, arbres et haies
 		for (int i = 0; i < seatTotal; i++) {
@@ -634,7 +660,13 @@ public final class Village {
 			int mx = (int) Math.round(midR * Math.cos(mid));
 			int mz = (int) Math.round(midR * Math.sin(mid));
 			if (i % 2 == 0) {
-				stall(level, mx, mz, i);
+				if (theme.equals("monastere")) {
+					herbBed(level, mx, mz);
+				} else {
+					stall(level, mx, mz, i);
+				}
+			} else if (theme.equals("port")) {
+				cargo(level, mx, mz, p);
 			} else {
 				tree(level, mx, mz, p, hedge);
 			}
@@ -647,6 +679,136 @@ public final class Village {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Le monument du centre, propre à chaque thème (cinq blocs de côté, la cloche au milieu) :
+	 * un puits couvert (gothique), le jardin d'un cloître sous ses arcades (monastère), un fanal de port.
+	 */
+	private void centerpiece(ServerLevel level, Palette p) {
+		BlockState pillar = p.pillar().defaultBlockState();
+		switch (theme) {
+			case "monastere" -> {
+				// Jardin de cloître : carré de mousse et de fougères, arcades de pierre, cloche sous la croisée.
+				for (int x = -2; x <= 2; x++) {
+					for (int z = -2; z <= 2; z++) {
+						boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
+						set(level, x, 0, z, rim ? p.well().defaultBlockState() : Blocks.MOSS_BLOCK.defaultBlockState());
+						if (!rim && (x + z) % 2 != 0) {
+							set(level, x, 1, z, Blocks.FERN.defaultBlockState());
+						}
+						if (rim) {
+							set(level, x, 5, z, p.well().defaultBlockState());
+						}
+					}
+				}
+				for (int[] c : new int[][] {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}}) {
+					for (int y = 1; y <= 4; y++) {
+						set(level, c[0], y, c[1], pillar);
+					}
+				}
+				for (int k = -2; k <= 2; k++) {
+					set(level, k, 6, 0, p.well().defaultBlockState());
+					set(level, 0, 6, k, p.well().defaultBlockState());
+				}
+				set(level, 0, 5, 0, Blocks.BELL.defaultBlockState());
+				set(level, 0, 7, 0, Blocks.SOUL_LANTERN.defaultBlockState());
+			}
+			case "port" -> {
+				// Fanal : socle de pierre marine, fût rayé rouge et blanc, cloche sous la lanterne.
+				for (int x = -2; x <= 2; x++) {
+					for (int z = -2; z <= 2; z++) {
+						set(level, x, 0, z, p.well().defaultBlockState());
+						boolean core = Math.abs(x) <= 1 && Math.abs(z) <= 1;
+						boolean corner = Math.abs(x) == 1 && Math.abs(z) == 1;
+						if (core) {
+							for (int y = 1; y <= 3; y++) {
+								set(level, x, y, z, (y % 2 == 1 ? Blocks.WOOL.red() : Blocks.WOOL.white()).defaultBlockState());
+							}
+							set(level, x, 4, z, corner ? Blocks.OAK_FENCE.defaultBlockState() : Blocks.AIR.defaultBlockState());
+							set(level, x, 6, z, Blocks.DARK_OAK_SLAB.defaultBlockState());
+						} else if (Math.abs(x) == 2 && Math.abs(z) == 2) {
+							set(level, x, 1, z, p.rim().defaultBlockState());
+						}
+					}
+				}
+				for (int[] c : new int[][] {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}}) {
+					set(level, c[0], 5, c[1], Blocks.OAK_FENCE.defaultBlockState());
+				}
+				set(level, 0, 5, 0, Blocks.BELL.defaultBlockState());
+				set(level, 0, 7, 0, Blocks.SEA_LANTERN.defaultBlockState());
+			}
+			default -> {
+				// Puits couvert et cloche
+				for (int x = -2; x <= 2; x++) {
+					for (int z = -2; z <= 2; z++) {
+						boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
+						set(level, x, 0, z, rim ? p.well().defaultBlockState() : Blocks.WATER.defaultBlockState());
+						if (rim) {
+							set(level, x, 1, z, p.rim().defaultBlockState());
+						}
+					}
+				}
+				for (int[] c : new int[][] {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}}) {
+					for (int y = 1; y <= 5; y++) {
+						set(level, c[0], y, c[1], pillar);
+					}
+				}
+				for (int x = -2; x <= 2; x++) {
+					for (int z = -2; z <= 2; z++) {
+						set(level, x, 6, z, Blocks.DARK_OAK_SLAB.defaultBlockState());
+					}
+				}
+				set(level, 0, 5, 0, Blocks.BELL.defaultBlockState());
+				set(level, 0, 7, 0, Blocks.SOUL_LANTERN.defaultBlockState());
+			}
+		}
+	}
+
+	/** Monastère : un mur d'enceinte bas fait le tour du village, ouvert devant le chemin de la salle d'attente. */
+	private void cloisterWall(ServerLevel level, Palette p) {
+		double r = clearRadius - 1.5;
+		int steps = (int) Math.ceil(2 * Math.PI * r * 2);
+		for (int k = 0; k < steps; k++) {
+			double a = 2 * Math.PI * k / steps;
+			double da = Math.atan2(Math.sin(a - hallAngle()), Math.cos(a - hallAngle()));
+			if (Math.abs(da) * r < 3) {
+				continue;
+			}
+			int x = (int) Math.round(r * Math.cos(a));
+			int z = (int) Math.round(r * Math.sin(a));
+			set(level, x, 1, z, p.wallA().defaultBlockState());
+			set(level, x, 2, z, p.wallB().defaultBlockState());
+			if (k % 12 == 0) {
+				set(level, x, 3, z, p.rim().defaultBlockState());
+			}
+		}
+	}
+
+	/** Monastère : un carré de simples, bordé de pierre, avec son composteur. */
+	private void herbBed(ServerLevel level, int cx, int cz) {
+		for (int x = -2; x <= 2; x++) {
+			for (int z = -2; z <= 2; z++) {
+				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
+				set(level, cx + x, 0, cz + z, (rim ? Blocks.TUFF_BRICKS : Blocks.COARSE_DIRT).defaultBlockState());
+				if (!rim && (x != 0 || z != 0)) {
+					set(level, cx + x, 1, cz + z, ((x + z) % 2 == 0 ? Blocks.FERN : Blocks.SWEET_BERRY_BUSH).defaultBlockState());
+				}
+			}
+		}
+		set(level, cx, 1, cz, Blocks.COMPOSTER.defaultBlockState());
+	}
+
+	/** Port : une pile de tonneaux et un poteau d'amarrage coiffé d'une lanterne. */
+	private void cargo(ServerLevel level, int cx, int cz, Palette p) {
+		for (int x = -1; x <= 1; x++) {
+			set(level, cx + x, 1, cz, Blocks.BARREL.defaultBlockState());
+		}
+		set(level, cx, 1, cz + 1, Blocks.BARREL.defaultBlockState());
+		set(level, cx, 2, cz, Blocks.BARREL.defaultBlockState());
+		set(level, cx + 2, 1, cz - 1, p.post().defaultBlockState());
+		set(level, cx + 2, 2, cz - 1, p.post().defaultBlockState());
+		set(level, cx + 2, 3, cz - 1, p.light().defaultBlockState());
 	}
 
 	/** Trône de bois : on s'y assoit d'un clic droit. */
@@ -663,12 +825,18 @@ public final class Village {
 			return;
 		}
 		Vec3 f = new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5);
-		WorldSetup.run(level.getServer(), String.format(java.util.Locale.ROOT,
+		String summon = String.format(java.util.Locale.ROOT,
 			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_trone\",\"vc_tr_%d\"],Rotation:[%.1ff,0f],"
 				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:trone\"}},"
 				+ "view_range:2f,transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],"
 				+ "right_rotation:[0f,0f,0f,1f],scale:[1.15f,1.15f,1.15f]}}",
-			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f)));
+			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f));
+		MinecraftServer server = level.getServer();
+		if (plan != null) {
+			plan.after.add(() -> WorldSetup.run(server, summon)); // le trône sculpté attend que son estrade soit posée
+		} else {
+			WorldSetup.run(server, summon);
+		}
 	}
 
 	/** Étal de marché : quatre poteaux, un auvent rayé, un comptoir. */
