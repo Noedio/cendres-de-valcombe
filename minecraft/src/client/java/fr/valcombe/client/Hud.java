@@ -223,7 +223,9 @@ public final class Hud {
 		} else {
 			lines.add(new String[] {"Personne sur le billot (seuil : " + threshold + " voix)", "gray"});
 		}
-		if (!ClientState.bool(v, "nominationsOpen")) {
+		if (ClientState.bool(day, "forbidden")) {
+			lines.add(new String[] {"Pas d'accusation aujourd'hui (règle du scénario)", "gray"});
+		} else if (!ClientState.bool(v, "nominationsOpen")) {
 			lines.add(new String[] {"Accusations fermées", "gray"});
 		} else if (ClientState.bool(day, "canNominate")) {
 			lines.add(new String[] {"Tu peux accuser : plume en main, vise, clic droit", "gold"});

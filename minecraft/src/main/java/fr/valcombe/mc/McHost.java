@@ -270,6 +270,49 @@ public final class McHost implements Host {
 		}
 	}
 
+	/** Un voyageur arrive : un trône libre de la carte (ou une place près du cercle), et une maison libre. */
+	@Override
+	public void addSeat(String name) {
+		ServerPlayer p = player(name);
+		if (server == null || p == null || seats.containsKey(name)) {
+			return;
+		}
+		ServerLevel level = server.overworld();
+		Vec3 spot = null;
+		if (village != null) {
+			for (int k = 0; k < village.seatCount() && spot == null; k++) {
+				Vec3 f = village.seatFeet(k);
+				if (seats.values().stream().noneMatch(s -> s.pos().distanceToSqr(f) < 0.5)) {
+					spot = f;
+				}
+			}
+			for (Vec3 h : village.houseFeet()) {
+				if (houses.values().stream().noneMatch(s -> s.pos().distanceToSqr(h) < 0.5)) {
+					houses.put(name, new SeatPos(level, h, village.yawToCenter(h) + 180));
+					break;
+				}
+			}
+		}
+		if (spot == null) {
+			Vec3 c = village != null ? new Vec3(village.center().getX() + 0.5, village.center().getY() + 1, village.center().getZ() + 3.5)
+				: p.position();
+			spot = c;
+		}
+		float yaw = village != null ? village.yawToCenter(spot) : p.getYRot();
+		SeatPos sp = new SeatPos(level, spot, yaw);
+		seats.put(name, sp);
+		previousMode.putIfAbsent(name, p.gameMode.getGameModeForPlayer());
+		p.setGameMode(GameType.ADVENTURE);
+		teleport(p, sp);
+		ValcombeUi.accuseItem(p, true);
+		stage.addSeat(name, new Stage.Spot(spot, yaw));
+	}
+
+	@Override
+	public int gamesPlayed(String player) {
+		return community == null ? 0 : community.games(player);
+	}
+
 	@Override
 	public void storytellerTools(String name, boolean on) {
 		ServerPlayer p = player(name);
@@ -643,16 +686,23 @@ public final class McHost implements Host {
 			}
 			ServerLevel level = p.level();
 			BlockPos c = village.center();
-			level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.SOUL_FIRE_FLAME, true, false,
-				c.getX() + 0.5, c.getY() + 1.5, c.getZ() + 0.5, 8, 0.2, 0.6, 0.2, 0);
+			// Colonnes lumineuses, visibles de loin : bleue au centre, dorée sur les trônes, verte dans les maisons.
+			for (int k = 0; k < 8; k++) {
+				level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.SOUL_FIRE_FLAME, true, true,
+					c.getX() + 0.5, c.getY() + 1.5 + k * 0.6, c.getZ() + 0.5, 2, 0.05, 0.1, 0.05, 0);
+			}
 			for (int i = 0; i < village.seatCount(); i++) {
 				Vec3 f = village.seatFeet(i);
-				level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.FLAME, true, false, f.x, f.y + 1.2, f.z, 4,
-					0.15, 0.4, 0.15, 0);
+				for (int k = 0; k < 5; k++) {
+					level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.END_ROD, true, true,
+						f.x, f.y + 1.2 + k * 0.6, f.z, 1, 0.02, 0.05, 0.02, 0);
+				}
 			}
 			for (Vec3 h : village.houseFeet()) {
-				level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER, true, false, h.x, h.y + 1.2, h.z, 6,
-					0.3, 0.5, 0.3, 0);
+				for (int k = 0; k < 5; k++) {
+					level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER, true, true,
+						h.x, h.y + 1.2 + k * 0.6, h.z, 2, 0.1, 0.1, 0.1, 0);
+				}
 			}
 			int seats = village.seatCount();
 			int houses = village.houseCount();

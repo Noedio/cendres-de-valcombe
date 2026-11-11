@@ -326,6 +326,12 @@ public final class Community {
 		return m;
 	}
 
+	/** Parties jouées sur ce serveur (0 pour un nouveau venu). */
+	public int games(String name) {
+		Stats s = stats().get(name);
+		return s == null ? 0 : s.games;
+	}
+
 	public String nextEvening() {
 		return config().nextEvening == null ? "" : config().nextEvening;
 	}

@@ -22,9 +22,16 @@ public final class Game {
 		Role believed;
 		boolean alive = true;
 		boolean ghostVote = true;
+		/** Voyageur arrivé en cours de partie, et son camp (choisi par le Conteur). */
+		boolean traveller;
+		Team travellerTeam;
 
 		Seat(String name) {
 			this.name = name;
+		}
+
+		public boolean traveller() {
+			return traveller;
 		}
 
 		public Role role() {
@@ -45,14 +52,14 @@ public final class Game {
 		}
 
 		public Team team() {
-			return Team.of(role);
+			return traveller && travellerTeam != null ? travellerTeam : Team.of(role);
 		}
 	}
 
 	public record Nomination(int index, int nominator, int nominee, boolean pelerine) {
 	}
 
-	public record VoteResult(int count, int threshold, List<String> warnings, boolean onBlock) {
+	public record VoteResult(int count, int threshold, List<String> warnings, boolean onBlock, boolean exiled) {
 	}
 
 	public record DayEnd(int executed, Team winner) {
@@ -227,11 +234,16 @@ public final class Game {
 
 	/** Tire les rôles parmi ceux du script. */
 	public void setupRandom(Set<Role> allowed) {
+		setupRandom(allowed, 0);
+	}
+
+	/** Tire les rôles, avec un écart d'Étrangers (figure de la Sentinelle). */
+	public void setupRandom(Set<Role> allowed, int outsiderShift) {
 		String problem = Setup.check(allowed, size());
 		if (problem != null) {
 			throw new GameException(problem);
 		}
-		List<Setup.Entry> bag = Setup.drawBag(size(), rng, allowed);
+		List<Setup.Entry> bag = Setup.drawBag(size(), rng, allowed, outsiderShift);
 		if (bag == null) {
 			throw new GameException("Ce script ne permet pas de distribuer les rôles pour " + size() + " joueurs.");
 		}
@@ -323,6 +335,9 @@ public final class Game {
 		int[] have = new int[4];
 		int bonus = 0;
 		for (Seat p : seats) {
+			if (p.traveller) {
+				continue;
+			}
 			have[p.role.type.ordinal()]++;
 			bonus += outsiderBonus(p.role);
 		}
@@ -358,6 +373,42 @@ public final class Game {
 
 	public List<Integer> aliveSeats() {
 		return allSeats().stream().filter(s -> player(s).alive).toList();
+	}
+
+	/** Vivants sans les voyageurs (conditions de victoire, Héritière, Châtelain). */
+	public int aliveResidents() {
+		return (int) seats.stream().filter(p -> p.alive && !p.traveller).count();
+	}
+
+	/**
+	 * Un voyageur arrive en cours de partie : il s'assoit au bout du cercle, avec le camp choisi.
+	 * Il vote et accuse comme les autres ; le village peut l'exiler.
+	 */
+	public int addTraveller(String name, Team team) {
+		if (phase != Phase.DAY && phase != Phase.NIGHT) {
+			throw new GameException("Les voyageurs arrivent pendant une partie.");
+		}
+		if (seatOf(name) >= 0) {
+			throw new GameException(name + " joue déjà.");
+		}
+		Seat s = new Seat(name);
+		s.role = Role.VOYAGEUR;
+		s.believed = Role.VOYAGEUR;
+		s.traveller = true;
+		s.travellerTeam = team;
+		seats.add(s);
+		addLog(name + " arrive en voyageur (" + (team == Team.EVIL ? "mal" : "bien") + ").");
+		return seats.size() - 1;
+	}
+
+	/** Le voyageur repart : il quitte la partie (compté comme mort, sans vote de fantôme). */
+	public void travellerLeaves(int seat) {
+		Seat p = player(seat);
+		if (!p.traveller || !p.alive) {
+			throw new GameException("Seul un voyageur encore présent peut repartir.");
+		}
+		p.ghostVote = false;
+		kill(seat, "départ du voyageur");
 	}
 
 	public int aliveCount() {
@@ -501,6 +552,12 @@ public final class Game {
 			return cached;
 		}
 		Seat p = player(seat);
+		if (p.traveller) {
+			// Un voyageur n'a pas de type de rôle : seul son camp compte, sans faux-semblant.
+			boolean v = what.equals("evil") && p.team() == Team.EVIL;
+			ctx.cache.put(k, v);
+			return v;
+		}
 		RoleType t = p.role.type;
 		boolean truth = switch (what) {
 			case "evil" -> p.team() == Team.EVIL;
@@ -548,7 +605,7 @@ public final class Game {
 		if (!p.alive) {
 			return false;
 		}
-		int aliveBefore = aliveCount();
+		int aliveBefore = aliveResidents();
 		p.alive = false;
 		addLog(p.name + " meurt (" + cause + ").");
 		if (phase == Phase.NIGHT) {
@@ -607,7 +664,7 @@ public final class Game {
 	}
 
 	private void checkEvilWin() {
-		if (winner == null && demonSeat() >= 0 && aliveCount() <= 2) {
+		if (winner == null && demonSeat() >= 0 && aliveResidents() <= 2) {
 			setWinner(Team.EVIL, "Il ne reste que deux joueurs vivants.");
 		}
 	}
@@ -1202,6 +1259,15 @@ public final class Game {
 		}
 		Seat a = player(nominator);
 		Seat b = player(nominee);
+		if (b.traveller && b.alive) {
+			if (wasNominated.contains(nominee)) {
+				throw new GameException("L'exil de ce voyageur a déjà été demandé aujourd'hui.");
+			}
+			wasNominated.add(nominee);
+			addLog(a.name + " demande l'exil de " + b.name + ".");
+			nominations.add(new int[] {nominator, nominee, -1});
+			return new Nomination(nominations.size() - 1, nominator, nominee, false);
+		}
 		if (!a.alive) {
 			throw new GameException("Les morts ne peuvent pas nominer.");
 		}
@@ -1236,6 +1302,25 @@ public final class Game {
 		}
 		List<Integer> counted = new ArrayList<>();
 		List<String> warnings = new ArrayList<>();
+		int exileOf = nominations.get(index)[1];
+		if (player(exileOf).traveller) {
+			// Exil : tout le monde vote, morts compris, sans dépenser son vote de fantôme.
+			for (int v : voters) {
+				if (v >= 0 && v < size() && !counted.contains(v)) {
+					counted.add(v);
+				}
+			}
+			int threshold = (aliveCount() + 1) / 2;
+			nominations.get(index)[2] = counted.size();
+			boolean exiled = counted.size() >= threshold;
+			addLog("Exil de " + player(exileOf).name + " : " + counted.size() + " voix (seuil " + threshold + ")"
+				+ (exiled ? ", exilé." : ", reste."));
+			if (exiled) {
+				player(exileOf).ghostVote = false;
+				kill(exileOf, "exil");
+			}
+			return new VoteResult(counted.size(), threshold, warnings, false, exiled);
+		}
 		for (int v : voters) {
 			if (v < 0 || v >= size() || counted.contains(v)) {
 				continue;
@@ -1268,7 +1353,7 @@ public final class Game {
 			}
 		}
 		addLog("Vote sur " + player(nominations.get(index)[1]).name + " : " + count + " voix (seuil " + threshold + ").");
-		return new VoteResult(count, threshold, warnings, top == index && !tie);
+		return new VoteResult(count, threshold, warnings, top == index && !tie, false);
 	}
 
 	private void execute(int seat, String cause) {
@@ -1290,7 +1375,7 @@ public final class Game {
 		if (executedToday < 0 && top >= 0 && !tie) {
 			execute(nominations.get(top)[1], "vote du village");
 		}
-		if (winner == null && executedToday < 0 && aliveCount() == 3) {
+		if (winner == null && executedToday < 0 && aliveResidents() == 3) {
 			int c = seatOf(Role.CHATELAIN);
 			if (c >= 0 && player(c).alive && !isPoisoned(c)) {
 				setWinner(Team.GOOD, "Le Châtelain a survécu à trois sans exécution.");

@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 /** Joue des parties complètes à travers la session, en cliquant sur les boutons du chat. */
 class SessionTest {
 
-	static final class FakeHost implements Host {
+	static class FakeHost implements Host {
 		final Deque<Runnable> tasks = new ArrayDeque<>();
 		final Map<String, List<Msg>> prompts = new HashMap<>();
 		final List<String> announces = new ArrayList<>();

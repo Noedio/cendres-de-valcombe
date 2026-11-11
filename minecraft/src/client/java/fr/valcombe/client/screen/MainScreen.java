@@ -95,6 +95,18 @@ public class MainScreen extends BaseScreen {
 		if (role != null) {
 			actions.add(new Action("Annoncer un rôle", () -> minecraft.gui.setScreen(new ClaimScreen())));
 		}
+		if (ClientState.bool(v, "canTravel") && !ClientState.phase().equals("LOBBY")) {
+			actions.add(new Action("Rejoindre en voyageur", () -> {
+				send("vc voyager");
+				onClose();
+			}));
+		}
+		if (ClientState.bool(v, "traveller")) {
+			actions.add(new Action("Quitter Valcombe", () -> {
+				send("vc voyageur partir");
+				onClose();
+			}));
+		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
 		boolean cb = fr.valcombe.client.ClientConfig.get().daltonien;
 		actions.add(new Action("Daltonien : " + (cb ? "oui" : "non"), () -> {

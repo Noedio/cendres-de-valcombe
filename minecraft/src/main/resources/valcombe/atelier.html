@@ -202,6 +202,12 @@
 				<label class="check"><input type="checkbox" id="sAnn"> Annonces de rôle interdites</label>
 				<label class="check"><input type="checkbox" id="sApa"> Conversations privées interdites</label>
 			</div>
+			<h3>Figures neutres</h3>
+			<div class="row">
+				<label class="check"><input type="checkbox" id="fSentinelle"> La Sentinelle : un Étranger de plus ou de moins</label>
+				<label class="check"><input type="checkbox" id="fDoyen"> Le Doyen : les aguerris se taisent 2 minutes chaque jour</label>
+				<label class="check"><input type="checkbox" id="fSablier"> Le Sablier : une journée dure 10 minutes au plus</label>
+			</div>
 			<div class="bar">
 				<button class="main" id="saveSc">Enregistrer</button>
 				<button class="danger" id="delSc">Supprimer</button>
@@ -217,7 +223,7 @@
 				<div class="meter"><div class="g" id="simG"></div><div class="e" id="simE"></div></div>
 				<div id="simText"></div>
 			</div>
-			<p class="hint">La simulation fait jouer des joueurs fictifs (votes au hasard) avec le Conteur automatique : elle montre si un script penche nettement d'un côté ou s'il bloque. Enregistrez avant de choisir ou d'essayer.</p>
+			<p class="hint">La simulation fait jouer des joueurs fictifs avec le Conteur automatique : ils annoncent un rôle (le mal bluffe), accusent et votent selon leur camp, sans finesse. Elle montre si un script penche nettement d'un côté ou s'il bloque. Enregistrez avant de choisir ou d'essayer.</p>
 			<div class="msg" id="scMsg"></div>
 		</div>
 	</div>
@@ -574,6 +580,10 @@ function editSc(s) {
 	$("sAnn").checked = !!rg.annoncesInterdites;
 	$("sApa").checked = !!rg.apartesInterdits;
 	$("sDisc").value = rg.discussionMinutes || 0;
+	const figs = rg.figures || [];
+	$("fSentinelle").checked = figs.includes("sentinelle");
+	$("fDoyen").checked = figs.includes("doyen");
+	$("fSablier").checked = figs.includes("sablier");
 	$("scMsg").textContent = "";
 	$("simOut").classList.add("hidden");
 	renderScenarios();
@@ -596,6 +606,8 @@ function scForm() {
 		regles: {
 			pasAccusationPremierJour: $("sJ1").checked, discussionMinutes: parseInt($("sDisc").value || "0", 10),
 			annoncesInterdites: $("sAnn").checked, apartesInterdits: $("sApa").checked,
+			figures: [["fSentinelle", "sentinelle"], ["fDoyen", "doyen"], ["fSablier", "sablier"]]
+				.filter(([el]) => $(el).checked).map(([, id]) => id),
 		},
 	};
 }

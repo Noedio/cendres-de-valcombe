@@ -354,6 +354,27 @@ public final class ValcombeCommands {
 					}
 					return "Fermer : /vc tablette fermer.";
 				})))
+			.then(Commands.literal("figure").requires(leader)
+				.then(Commands.argument("id", StringArgumentType.word())
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(Session.FIGURES.keySet(), b))
+					.then(Commands.argument("actif", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("oui", "non"), b))
+						.executes(c -> exec(c, x -> session.setFigure(arg(x, "id"), !arg(x, "actif").equals("non")))))))
+			.then(Commands.literal("voyager")
+				.executes(c -> exec(c, x -> {
+					if (session.mode() != Session.Mode.AUTO && session.storyteller() != null) {
+						throw new fr.valcombe.rules.GameException("Demandez au Conteur : il vous accueille avec /vc voyageur <nom> bien|mal.");
+					}
+					return session.addTraveller(name(x), null);
+				})))
+			.then(Commands.literal("voyageur")
+				.then(Commands.literal("partir").executes(c -> exec(c, x -> session.travellerLeaves(name(x)))))
+				.then(Commands.argument("joueur", StringArgumentType.word()).requires(leader)
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(
+						c.getSource().getServer().getPlayerList().getPlayers().stream().map(p -> p.getScoreboardName()), b))
+					.then(Commands.argument("camp", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("bien", "mal"), b))
+						.executes(c -> exec(c, x -> session.addTraveller(arg(x, "joueur"), arg(x, "camp")))))))
 			.then(Commands.literal("soiree").requires(admin)
 				.then(Commands.literal("effacer").executes(c -> exec(c, x -> ValcombeMod.community().setNextEvening(""))))
 				.then(Commands.argument("quand", StringArgumentType.greedyString())

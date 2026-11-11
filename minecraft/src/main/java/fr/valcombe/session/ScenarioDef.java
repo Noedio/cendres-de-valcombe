@@ -50,6 +50,8 @@ public final class ScenarioDef {
 		public boolean annoncesInterdites;
 		/** Les conversations privées à deux sont interdites. */
 		public boolean apartesInterdits;
+		/** Figures neutres : sentinelle, doyen, sablier. */
+		public List<String> figures = new ArrayList<>();
 	}
 
 	/** Les rôles du scénario (les rôles inconnus, par exemple supprimés, sont ignorés). */

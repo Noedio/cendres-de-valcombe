@@ -17,6 +17,15 @@ final class SessionView {
 	// ------------------------------------------------------------------
 	// Vue envoyée au client (écrans sur mesure)
 	// ------------------------------------------------------------------
+	/** Rôle vu pour un siège : le camp d'un voyageur est le sien, pas celui du rôle. */
+	static Map<String, Object> seatRole(Game.Seat p, Role r) {
+		Map<String, Object> m = new LinkedHashMap<>(roleView(r));
+		if (p.traveller()) {
+			m.put("team", p.team().name());
+		}
+		return m;
+	}
+
 	static Map<String, Object> roleView(Role r) {
 		Map<String, Object> m = new LinkedHashMap<>();
 		m.put("id", r.name());
@@ -52,6 +61,12 @@ final class SessionView {
 		v.put("script", sc);
 		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.
 		v.put("customRoles", Role.customDefs());
+		List<Map<String, Object>> figs = new ArrayList<>();
+		for (var e : Session.FIGURES.entrySet()) {
+			figs.add(Map.of("id", e.getKey(), "nom", e.getValue()[0], "texte", e.getValue()[1],
+				"active", ses.figures.contains(e.getKey())));
+		}
+		v.put("figures", figs);
 		if (ses.carnetSource != null && ses.game == null) {
 			Map<String, Object> carnet = ses.carnetSource.apply(me);
 			if (carnet != null) {
@@ -93,6 +108,8 @@ final class SessionView {
 			v.put("dayOver", g.dayOver());
 			int mySeat = g.seatOf(me);
 			v.put("mySeat", mySeat);
+			v.put("traveller", mySeat >= 0 && g.player(mySeat).traveller());
+			v.put("canTravel", mySeat < 0 && !me.equals(ses.storyteller) && g.winner() == null);
 			List<Map<String, Object>> seats = new ArrayList<>();
 			for (int i = 0; i < g.size(); i++) {
 				Game.Seat p = g.player(i);
@@ -102,13 +119,14 @@ final class SessionView {
 				s.put("alive", p.alive());
 				s.put("ghostVote", p.ghostVote());
 				s.put("bot", ses.bots.contains(p.name));
+				s.put("traveller", p.traveller());
 				Role claimed = ses.social.claims.get(p.name);
 				s.put("claim", claimed == null ? null : claimed.name());
 				seats.add(s);
 			}
 			v.put("seats", seats);
 			if (mySeat >= 0) {
-				v.put("role", roleView(g.player(mySeat).believed()));
+				v.put("role", seatRole(g.player(mySeat), g.player(mySeat).believed()));
 			}
 			if (ses.voteNom != null) {
 				Map<String, Object> vote = new LinkedHashMap<>();
@@ -164,7 +182,9 @@ final class SessionView {
 				day.put("blockVotes", g.blockVotes());
 				day.put("tie", g.blockTie());
 				day.put("threshold", (g.aliveCount() + 1) / 2);
-				day.put("canNominate", mySeat >= 0 && g.player(mySeat).alive() && !g.hasNominatedToday(mySeat));
+				boolean forbidden = ses.scenario != null && ses.scenario.regles.pasAccusationPremierJour && g.day() == 1;
+				day.put("forbidden", forbidden);
+				day.put("canNominate", !forbidden && mySeat >= 0 && g.player(mySeat).alive() && !g.hasNominatedToday(mySeat));
 				v.put("today", day);
 			}
 			boolean spyAwake = ses.prompts.get(me) instanceof Prompt.Grimoire;
@@ -176,7 +196,7 @@ final class SessionView {
 					Game.Seat p = g.player(i);
 					Map<String, Object> row = new LinkedHashMap<>();
 					row.put("seat", i);
-					row.put("role", roleView(p.role()));
+					row.put("role", seatRole(p, p.role()));
 					row.put("believed", p.believed() != p.role() ? roleView(p.believed()) : null);
 					row.put("line", lines.get(i));
 					row.put("note", ses.notes.get(p.name));

@@ -136,6 +136,9 @@ public final class Session {
 	 */
 	public List<String> voiceTargets(String name) {
 		Game g = game;
+		if (silencedByElder(name)) {
+			return List.of();
+		}
 		// Aparté de jour : le Conteur et le joueur pris à part ne s'entendent qu'entre eux.
 		if (social.aside != null && storyteller != null && g != null && g.phase() == Game.Phase.DAY) {
 			if (name.equals(storyteller)) {
@@ -171,6 +174,142 @@ public final class Session {
 
 	/** Carnet d'un joueur (statistiques du serveur), fourni par le serveur ; null dans les tests. */
 	public java.util.function.Function<String, Map<String, Object>> carnetSource;
+
+	// ------------------------------------------------------------------
+	// Figures neutres : règles du Conteur, connues de tous
+	// ------------------------------------------------------------------
+	/** Figures disponibles : identifiant → { nom, texte }. */
+	public static final Map<String, String[]> FIGURES = new LinkedHashMap<>();
+
+	static {
+		FIGURES.put("sentinelle", new String[] {"La Sentinelle", "Il peut y avoir un Étranger de plus ou de moins."});
+		FIGURES.put("doyen", new String[] {"Le Doyen",
+			"Les deux premières minutes de chaque jour, les joueurs aguerris (3 parties ou plus) se taisent."});
+		FIGURES.put("sablier", new String[] {"Le Sablier", "Chaque journée dure dix minutes au plus : la cloche la clôt."});
+	}
+
+	final Set<String> figures = new LinkedHashSet<>();
+	private long dayStartedAt;
+	private int sandToken;
+
+	public java.util.Set<String> figures() {
+		return java.util.Collections.unmodifiableSet(figures);
+	}
+
+	public String setFigure(String id, boolean on) {
+		if (!FIGURES.containsKey(id)) {
+			throw new GameException("Figures : " + String.join(", ", FIGURES.keySet()) + ".");
+		}
+		if (game != null) {
+			throw new GameException("Les figures se choisissent entre deux parties.");
+		}
+		if (on ? figures.add(id) : figures.remove(id)) {
+			announce((on ? "Figure neutre ajoutée : " : "Figure neutre retirée : ") + FIGURES.get(id)[0] + " — " + FIGURES.get(id)[1]);
+		}
+		return "";
+	}
+
+	/** À l'aube : le Doyen fait taire les aguerris, le Sablier compte le temps de la journée. */
+	private void dawnFigures(Game g) {
+		dayStartedAt = System.currentTimeMillis();
+		if (figures.contains("doyen")) {
+			announce("Le Doyen : les joueurs aguerris se taisent deux minutes.");
+		}
+		if (figures.contains("sablier")) {
+			int token = ++sandToken;
+			int day = g.day();
+			host.schedule(20 * 60 * 9, () -> {
+				if (token == sandToken && game == g && g.day() == day && !g.dayOver()) {
+					host.title(realNames(), "Le Sablier", "Plus qu'une minute avant la fin du jour");
+				}
+			});
+			host.schedule(20 * 60 * 10, () -> sandglass(token, g, day));
+		}
+	}
+
+	private void sandglass(int token, Game g, int day) {
+		if (token != sandToken || game != g || g.day() != day || g.dayOver() || g.phase() != Game.Phase.DAY) {
+			return;
+		}
+		if (voteNom != null) {
+			host.schedule(400, () -> sandglass(token, g, day)); // on laisse finir le vote en cours
+			return;
+		}
+		announce("Le Sablier est vide : la journée s'achève.");
+		try {
+			endDay();
+		} catch (GameException ignored) {
+			// la journée a été close entre-temps
+		}
+	}
+
+	/** Le Doyen : ce joueur est-il réduit au silence en ce moment ? */
+	private boolean silencedByElder(String name) {
+		Game g = game;
+		return figures.contains("doyen") && g != null && g.phase() == Game.Phase.DAY
+			&& System.currentTimeMillis() - dayStartedAt < 120_000 && !name.equals(storyteller)
+			&& !bots.contains(name) && host.gamesPlayed(name) >= 3;
+	}
+
+	// ------------------------------------------------------------------
+	// Voyageurs : joueurs arrivés en cours de partie
+	// ------------------------------------------------------------------
+	/**
+	 * Un joueur rejoint la partie en cours comme voyageur. camp : « bien », « mal », ou null
+	 * (Conteur automatique : le bien le plus souvent).
+	 */
+	public String addTraveller(String name, String camp) {
+		Game g = requireGame();
+		if (g.winner() != null) {
+			throw new GameException("La partie est terminée.");
+		}
+		if (bots.contains(name) || !host.online(name)) {
+			throw new GameException(name + " doit être connecté au jeu.");
+		}
+		if (name.equals(storyteller)) {
+			throw new GameException("Le Conteur ne joue pas.");
+		}
+		fr.valcombe.rules.Team team = camp == null ? (rng.chance(0.25) ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD)
+			: camp.startsWith("m") ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD;
+		g.addTraveller(name, team);
+		spectators.remove(name);
+		host.spectator(name, false);
+		host.addSeat(name);
+		boolean evil = team == fr.valcombe.rules.Team.EVIL;
+		tell(name, new Msg().colored("[Valcombe] Tu arrives à Valcombe en voyageur, dans le camp du "
+			+ (evil ? "mal" : "bien") + ". Tu votes et tu peux accuser ; le village peut t'exiler. "
+			+ "Pour repartir : /vc voyageur partir.", evil ? "red" : "aqua"));
+		if (evil) {
+			int d = g.demonSeat();
+			if (d >= 0) {
+				tell(name, new Msg().colored("[Valcombe] Le Démon est " + g.player(d).name + ".", "red"));
+				tell(g.player(d).name, new Msg().colored("[Valcombe] " + name + " est un voyageur du mal : il est de ton côté.", "red"));
+			}
+		}
+		showRole(name, fr.valcombe.rules.Role.VOYAGEUR);
+		announce(name + " arrive à Valcombe : c'est un voyageur.");
+		host.sound(realNames(), "bell");
+		save();
+		updateBoards();
+		return "";
+	}
+
+	/** Le voyageur repart. */
+	public String travellerLeaves(String name) {
+		Game g = requireGame();
+		int s = g.seatOf(name);
+		if (s < 0 || !g.player(s).traveller()) {
+			throw new GameException("Tu n'es pas un voyageur.");
+		}
+		g.travellerLeaves(s);
+		announce(name + " quitte Valcombe.");
+		save();
+		updateBoards();
+		if (g.winner() != null) {
+			finish();
+		}
+		return "";
+	}
 
 	// ------------------------------------------------------------------
 	// Scénarios (Atelier)
@@ -223,6 +362,10 @@ public final class Session {
 		settings.nightMute = r.nuitMuette;
 		settings.deadHat = r.coiffe == null ? "chapeau" : r.coiffe;
 		settings.fullEffects = r.effetsComplets;
+		figures.clear();
+		if (d.regles.figures != null) {
+			d.regles.figures.stream().filter(FIGURES::containsKey).forEach(figures::add);
+		}
 		scenario = d;
 		List<Integer> n = d.playable();
 		announce("Scénario de la prochaine partie : « " + d.nom + " » (" + n.get(0) + " à " + n.get(n.size() - 1)
@@ -309,7 +452,7 @@ public final class Session {
 			return waitingVote.contains(name);
 		}
 		int s = g.seatOf(name);
-		return s >= 0 && (g.player(s).alive() || g.player(s).ghostVote());
+		return s >= 0 && (g.player(s).alive() || g.player(s).ghostVote() || g.player(voteNom.nominee()).traveller());
 	}
 
 	/** Invite en cours d'un joueur, ou null. */
@@ -613,7 +756,7 @@ public final class Session {
 			throw new GameException("Mode humain : il faut d'abord un Conteur.");
 		}
 		Game g = new Game(names, rng);
-		g.setupRandom(script);
+		g.setupRandom(script, figures.contains("sentinelle") ? rng.next(3) - 1 : 0);
 		if (wanted == Mode.HUMAIN) {
 			g.decide = policies;
 		}
@@ -635,6 +778,10 @@ public final class Session {
 		}
 		save();
 		updateBoards();
+		if (!figures.isEmpty()) {
+			announce("Figures neutres : " + String.join(" · ", figures.stream()
+				.map(f -> FIGURES.get(f)[0] + " (" + FIGURES.get(f)[1] + ")").toList()));
+		}
 		if (scenario != null && scenario.ouverture != null && !scenario.ouverture.isBlank()) {
 			host.title(realNames(), scenario.nom, "");
 			announce("« " + scenario.nom + " » — " + scenario.ouverture);
@@ -1152,6 +1299,7 @@ public final class Session {
 		if (scenario != null && scenario.regles.discussionMinutes > 0) {
 			discussion(scenario.regles.discussionMinutes);
 		}
+		dawnFigures(g);
 		brain.dawn();
 	}
 
@@ -1253,9 +1401,10 @@ public final class Session {
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		Game.Nomination nom = g.nominate(a, b);
-		announce(name + " accuse " + g.player(b).name + ".");
+		boolean exileCall = g.player(b).traveller();
+		announce(name + (exileCall ? " demande l'exil du voyageur " : " accuse ") + g.player(b).name + ".");
 		host.accusation(name, g.player(b).name);
-		host.title(realNames(), name + " accuse " + g.player(b).name, "");
+		host.title(realNames(), name + (exileCall ? " veut exiler " : " accuse ") + g.player(b).name, "");
 		if (nom.pelerine()) {
 			announce(name + " est exécuté sur-le-champ !");
 			host.sound(realNames(), "death");
@@ -1320,16 +1469,18 @@ public final class Session {
 		String nominee = g.player(voteNom.nominee()).name;
 		clockOrder.clear();
 		waitingVote.clear();
+		boolean exile = g.player(voteNom.nominee()).traveller();
 		for (int k = 1; k <= g.size(); k++) {
 			int s = (voteNom.nominee() + k) % g.size();
 			Game.Seat p = g.player(s);
-			if (p.alive() || p.ghostVote()) {
+			if (p.alive() || p.ghostVote() || exile) {
 				clockOrder.add(s);
 				if (online(p.name)) {
 					waitingVote.add(p.name);
 					answers.putIfAbsent(p.name, false);
-					Msg m = new Msg().colored("[Vote] Exécuter " + nominee + " ? L'aiguille approche.", "gold");
-					if (!p.alive()) {
+					Msg m = new Msg().colored(exile ? "[Vote] Exiler le voyageur " + nominee + " ? L'aiguille approche."
+						: "[Vote] Exécuter " + nominee + " ? L'aiguille approche.", "gold");
+					if (!p.alive() && !exile) {
 						m.text(" (ton unique vote de fantôme)");
 					}
 					m.button("Lever la main", "/vc vote oui", "Voter pour l'exécution")
@@ -1398,6 +1549,20 @@ public final class Session {
 		save();
 		updateBoards();
 		String nominee = g.player(nom.nominee()).name;
+		if (g.player(nom.nominee()).traveller()) {
+			announce(r.count() + " voix pour l'exil de " + nominee + " (seuil " + r.threshold() + ") : "
+				+ (r.exiled() ? "le voyageur est chassé de Valcombe." : "il reste."));
+			host.title(realNames(), r.count() + " voix", r.exiled() ? nominee + " est exilé" : nominee + " reste");
+			if (r.exiled()) {
+				host.sound(realNames(), "death");
+				host.execution(nominee);
+				updateBoards();
+			}
+			if (g.winner() != null) {
+				finish();
+			}
+			return;
+		}
 		announce(r.count() + " voix contre " + nominee + " (seuil " + r.threshold() + ") : "
 			+ (r.onBlock() ? "en passe d'être exécuté." : "pas d'exécution pour l'instant."));
 		host.title(realNames(), r.count() + " voix", r.onBlock() ? nominee + " est en passe d'être exécuté" : "Pas assez de voix");
@@ -1686,6 +1851,9 @@ public final class Session {
 			if (!honor.isEmpty() && p.alive()) {
 				text += "\n« " + honor + " »";
 			}
+			if (p.traveller()) {
+				text += "\n✦ voyageur";
+			}
 			Role claimed = social.claims.get(p.name);
 			if (claimed != null) {
 				text += "\n« dit : " + claimed.displayName + " »";
@@ -1739,7 +1907,8 @@ public final class Session {
 		Map<String, String> models = new LinkedHashMap<>();
 		for (Game.Seat p : g.players()) {
 			Role r = p.role();
-			models.put(p.name, r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
+			models.put(p.name, p.traveller() ? "jeton_voyageur_" + (p.team() == Team.EVIL ? "mal" : "bien")
+				: r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
 				: "jeton_" + r.name().toLowerCase(java.util.Locale.ROOT));
 		}
 		host.seatTokens(models, true);

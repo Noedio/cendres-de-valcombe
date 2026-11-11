@@ -47,6 +47,7 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Retirer les fictifs", () -> send("vc bots retirer"), false));
 			col.add(new Entry("Lancer (automatique)", () -> send("vc lancer auto"), true));
 			col.add(new Entry("Lancer (Conteur humain)", () -> send("vc lancer humain"), false));
+			col.add(new Entry("Figures neutres…", () -> minecraft.gui.setScreen(new FiguresScreen()), false));
 			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
 			button(px + 14, py + ph - 26, 104, "Bâtir le village", () -> {
 				send("vc carte construire " + THEMES[theme]);
@@ -75,6 +76,8 @@ public class StorytellerScreen extends BaseScreen {
 					col.add(new Entry("Lancer le vote", () -> send("vc voter"), false));
 				}
 			}
+			col.add(new Entry("Accueillir un voyageur", () -> minecraft.gui.setScreen(
+				new net.minecraft.client.gui.screens.ChatScreen("/vc voyageur ", false)), false));
 			col.add(new Entry("Arrêter la partie", () -> send("vc arreter"), false));
 			if ("HUMAIN".equals(ClientState.str(v, "mode"))) {
 				String pol = ClientState.str(ClientState.obj(v, "policies"), "misregister");

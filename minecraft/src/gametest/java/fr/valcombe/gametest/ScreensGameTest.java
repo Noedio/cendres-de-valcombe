@@ -131,6 +131,52 @@ public class ScreensGameTest implements FabricClientGameTest {
 		System.out.println("[valcombe-test] Atelier OK");
 	}
 
+	/**
+	 * Séance pilotée (développement) : le jeu reste ouvert ; les lignes ajoutées à seance-commandes.txt
+	 * sont exécutées (« /… » par le joueur, « !… » par la console, « capture nom », « attendre n », « fin »).
+	 * Le lien de l'Atelier est écrit dans seance-lien.txt.
+	 */
+	private void seance(ClientGameTestContext ctx, TestSingleplayerContext world, String me) {
+		var cmds = java.nio.file.Path.of("seance-commandes.txt");
+		send(ctx, "vc atelier");
+		ctx.waitTicks(20);
+		try {
+			java.nio.file.Files.writeString(java.nio.file.Path.of("seance-lien.txt"),
+				String.join("\n", fr.valcombe.mc.ValcombeMod.tablet().links().stream().map(l -> l.replace("/#", "/atelier#")).toList()));
+			java.nio.file.Files.writeString(cmds, "");
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+		int done = 0;
+		for (int t = 0; t < 20 * 60 * 40; t += 10) {
+			ctx.waitTicks(10);
+			java.util.List<String> lines;
+			try {
+				lines = java.nio.file.Files.readAllLines(cmds);
+			} catch (java.io.IOException e) {
+				continue;
+			}
+			while (done < lines.size()) {
+				String line = lines.get(done++).trim();
+				System.out.println("[valcombe-seance] " + line);
+				if (line.equals("fin")) {
+					return;
+				} else if (line.startsWith("/")) {
+					send(ctx, line.substring(1));
+				} else if (line.startsWith("!")) {
+					world.getServer().runCommand(line.substring(1));
+				} else if (line.startsWith("capture ")) {
+					captured.remove(line.substring(8));
+					shot(ctx, line.substring(8));
+				} else if (line.startsWith("attendre ")) {
+					ctx.waitTicks(Integer.parseInt(line.substring(9)));
+				} else if (line.equals("ecran null")) {
+					ctx.setScreen(() -> null);
+				}
+			}
+		}
+	}
+
 	private static void checkTablet(ClientGameTestContext ctx) {
 		send(ctx, "vc tablette");
 		ctx.waitTicks(10);
@@ -189,6 +235,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
 			ctx.waitTicks(40);
+			if ("1".equals(System.getenv("VALCOMBE_SEANCE"))) {
+				seance(ctx, world, me);
+				return;
+			}
 			shot(ctx, "0-salle-attente");
 			ctx.runOnClient(mc -> mc.player.setYRot(0));
 			ctx.waitTicks(10);
@@ -212,6 +262,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 			world.getServer().runCommand("vc script complet");
 			ctx.setScreen(fr.valcombe.client.screen.SettingsScreen::new);
 			shot(ctx, "3c-reglages");
+			world.getServer().runCommand("vc figure sablier oui");
+			ctx.setScreen(fr.valcombe.client.screen.FiguresScreen::new);
+			shot(ctx, "3d-figures");
+			world.getServer().runCommand("vc figure sablier non");
 
 			// Partie avec Conteur automatique
 			ctx.setScreen(() -> null);

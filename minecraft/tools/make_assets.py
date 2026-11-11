@@ -285,6 +285,8 @@ ICONS = {
                                  i.poly([(16, 4), (18.5, 16), (13.5, 16)], BLOOD)),
     "faussaire": lambda i, c: (i.poly([(25, 3), (29, 5), (13, 22), (10, 23), (11, 20)], c), i.line(10, 23, 6, 28, c, 1.4),
                                i.disc(9, 25, 5, BLOOD), i.disc(9, 25, 3, (180, 50, 50)), i.line(20, 10, 24, 6, PARCH, 1)),
+    "voyageur": lambda i, c: (i.line(6, 28, 24, 6, BRONZE_DARK, 2.2), i.disc(24, 10, 6.5, WINE), i.disc(22, 8, 1.8, (170, 70, 90)),
+                              i.line(21, 4, 27, 4, c, 1.4), i.poly([(3, 30), (9, 30), (6, 26)], c)),
     "goule": lambda i, c: (i.disc(16, 14, 9, WHITE), i.rect(11, 20, 21, 27, WHITE), i.disc(12.5, 14, 2.5, INK), i.disc(19.5, 14, 2.5, INK),
                            i.poly([(16, 17), (17.5, 20), (14.5, 20)], INK), [i.rect(12 + 3 * k, 24, 13 + 3 * k, 27, INK) for k in range(3)],
                            i.poly([(8, 9), (4, 2), (11, 6)], BLOOD), i.poly([(24, 9), (28, 2), (21, 6)], BLOOD)),

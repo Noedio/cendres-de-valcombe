@@ -8,7 +8,7 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - **Modrinth App** : https://modrinth.com/app
    - ou **Prism Launcher** : https://prismlauncher.org
 2. Connectez votre compte Microsoft dans le launcher.
-3. Importez le fichier `Valcombe-0.4.0.mrpack` envoyé par l'hôte :
+3. Importez le fichier `Valcombe-0.5.0.mrpack` envoyé par l'hôte :
    - Modrinth App : bouton « + » puis « Importer » ;
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
@@ -54,7 +54,7 @@ Windows ne le redemande plus ensuite, et les mises à jour automatiques du launc
    python tools/make_modpack.py
    ```
 
-   Vous obtenez `dist/Valcombe-0.4.0.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
+   Vous obtenez `dist/Valcombe-0.5.0.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
 3. Téléchargez le lanceur de serveur Fabric pour Minecraft 26.3 (Loader 0.20.1) sur https://fabricmc.net/use/server/ et placez-le dans `serveur-valcombe/` sous le nom `fabric-server-launch.jar`.
 4. Lancez `demarrer.bat` une première fois. Le serveur s'arrête et crée `eula.txt` : lisez le contrat https://aka.ms/MinecraftEULA, puis mettez `eula=true` si vous l'acceptez.
 5. Relancez `demarrer.bat`. Dans la console du serveur, tapez :
@@ -95,6 +95,12 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 
 12. **Prochaine soirée** : `/vc soiree vendredi 21 h` l'annonce dans la liste des serveurs de Minecraft et sur l'accueil du launcher, avec le nombre d'inscrits (`/vc soiree effacer` pour la retirer).
 13. La salle d'attente montre en 3D les rôles du script choisi et un panneau de la prochaine partie (scénario, inscrits, Conteur). En fin de partie, chaque joueur est révélé à tour de rôle (la veillée). Les joueurs fictifs annoncent un rôle (le mal bluffe), accusent et votent d'eux-mêmes : l'entraînement ressemble davantage à une vraie partie.
+
+14. **Voyageurs** : un joueur arrivé en retard rejoint la partie en cours. Conteur humain : `/vc voyageur <joueur> bien|mal` (ou « Accueillir un voyageur » dans le panneau) ; Conteur automatique : le joueur choisit « Rejoindre en voyageur » dans son menu. Le voyageur s'assoit sur un trône libre, vote et accuse ; un voyageur du mal apprend qui est le Démon. Accuser un voyageur demande son **exil** : tout le monde vote, morts compris, sans dépenser son vote de fantôme. Il peut repartir quand il veut (« Quitter Valcombe »). Les voyageurs ne comptent pas pour la victoire du mal à deux vivants.
+15. **Figures neutres** (panneau du Conteur → « Figures neutres… », `/vc figure <id> oui|non`, ou dans un scénario), annoncées à tous au début :
+    - **La Sentinelle** : il peut y avoir un Étranger de plus ou de moins ;
+    - **Le Doyen** : les deux premières minutes de chaque jour, les joueurs aguerris (3 parties ou plus sur le serveur) se taisent au vocal ;
+    - **Le Sablier** : chaque journée dure dix minutes au plus ; la cloche la clôt (après le vote en cours).
 
 Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
 

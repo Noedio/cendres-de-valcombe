@@ -79,26 +79,9 @@ final class Stage {
 		radius = seats.isEmpty() ? 6 : radius / seats.size();
 		this.handLength = Math.max(2, radius - 1.6);
 		this.gibetDistance = Math.max(4, radius - 5);
+		this.thrones = thrones;
 		for (int i = 0; i < order.size(); i++) {
-			Spot s = spots.get(order.get(i));
-			Vec3 p = s.pos();
-			// Trône (dossier du côté opposé au centre) et point d'assise invisible
-			if (thrones) {
-				run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
-					+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
-			}
-			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.35, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
-				+ "\"],Rotation:[" + f(s.yaw()) + "f,0f]}");
-			// Jeton et étiquette
-			run("summon minecraft:item_display " + xyz(p.x, p.y + TOKEN_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_tok_" + i
-				+ "\"],billboard:\"vertical\"," + item("jeton_vivant") + ",brightness:{sky:15,block:15},"
-				+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.1f,1.1f,1.1f]") + "}");
-			models.put(order.get(i), "jeton_vivant");
-			run("summon minecraft:text_display " + xyz(p.x, p.y + LABEL_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_lab_" + i
-				+ "\"],billboard:\"center\",background:1073741824,brightness:{sky:15,block:15},"
-				+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.8f,1.8f,1.8f]") + ",text:{text:\""
-				+ esc(order.get(i)) + "\",color:\"white\"}}");
-			labels.put(order.get(i), "white|" + order.get(i));
+			summonSeat(i, order.get(i), spots.get(order.get(i)));
 		}
 		// Aiguille de l'horloge, au repos vers le nord
 		handAngle = Math.PI;
@@ -115,6 +98,40 @@ final class Stage {
 			run("summon minecraft:interaction " + xyz(l.x, l.y, l.z) + " {Tags:[\"" + SCENE
 				+ "\",\"vc_lutrin\"],width:1.2f,height:1.6f,response:1b}");
 		}
+	}
+
+	private boolean thrones;
+
+	/** Un siège de la scène : trône (s'il le faut), point d'assise, jeton et étiquette. */
+	private void summonSeat(int i, String name, Spot s) {
+		Vec3 p = s.pos();
+		// Trône (dossier du côté opposé au centre) et point d'assise invisible
+		if (thrones) {
+			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
+				+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
+		}
+		run("summon minecraft:item_display " + xyz(p.x, p.y + 0.35, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
+			+ "\"],Rotation:[" + f(s.yaw()) + "f,0f]}");
+		// Jeton et étiquette
+		run("summon minecraft:item_display " + xyz(p.x, p.y + TOKEN_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_tok_" + i
+			+ "\"],billboard:\"vertical\"," + item("jeton_vivant") + ",brightness:{sky:15,block:15},"
+			+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.1f,1.1f,1.1f]") + "}");
+		models.put(name, "jeton_vivant");
+		run("summon minecraft:text_display " + xyz(p.x, p.y + LABEL_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_lab_" + i
+			+ "\"],billboard:\"center\",background:1073741824,brightness:{sky:15,block:15},"
+			+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.8f,1.8f,1.8f]") + ",text:{text:\""
+			+ esc(name) + "\",color:\"white\"}}");
+		labels.put(name, "white|" + name);
+	}
+
+	/** Un voyageur arrive : son siège rejoint la scène, au bout du cercle. */
+	void addSeat(String name, Spot s) {
+		if (!active() || order.contains(name)) {
+			return;
+		}
+		order.add(name);
+		spots.put(name, s);
+		summonSeat(order.size() - 1, name, s);
 	}
 
 	/** Retire toute la scène. */

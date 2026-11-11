@@ -9,6 +9,15 @@ public interface Host {
 	default void storytellerTools(String name, boolean on) {
 	}
 
+	/** Un voyageur arrive : le placer sur un trône libre de la place. */
+	default void addSeat(String player) {
+	}
+
+	/** Parties jouées par ce joueur sur le serveur (figure du Doyen). */
+	default int gamesPlayed(String player) {
+		return 0;
+	}
+
 	/** Charge une carte de la bibliothèque (scénario) ; renvoie un message, ou lève GameException. */
 	default String loadMap(String id) {
 		return "";

@@ -169,6 +169,10 @@ final class BotBrain {
 		if (!me.alive() && rng.next(3) > 0) {
 			return false; // les morts gardent leur unique vote pour plus tard
 		}
+		if (target.traveller()) {
+			// Exil d'un voyageur : le mal chasse les voyageurs du bien, le bien hésite.
+			return me.team() == Team.EVIL ? target.team() == Team.GOOD : rng.next(10) < 4;
+		}
 		if (me.team() == Team.EVIL) {
 			if (target.role().type == RoleType.DEMON) {
 				return false;

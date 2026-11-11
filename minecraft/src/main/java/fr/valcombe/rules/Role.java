@@ -66,6 +66,10 @@ public enum Role {
 	// Démon
 	GOULE("La Goule", RoleType.DEMON, 0, 4, 1, false,
 		"Chaque nuit sauf la première, désigne un joueur : il meurt. Si tu te désignes, un Sbire devient la Goule."),
+	// Voyageur : joueur arrivé en cours de partie (hors script, jamais tiré au sort).
+	VOYAGEUR("Le Voyageur", RoleType.CITADIN, 0, 0, 0, false,
+		"Tu arrives à Valcombe en cours de partie, dans le camp que le Conteur t'a donné. Tu votes et tu peux "
+			+ "accuser ; le village peut t'exiler, et tu peux repartir quand tu veux."),
 	// Emplacements des rôles créés dans l'Atelier : remplis au démarrage du serveur (voir defineCustom).
 	PERSO_01,
 	PERSO_02,
@@ -169,9 +173,9 @@ public enum Role {
 		return slot;
 	}
 
-	/** Les rôles existants : les rôles intégrés et les rôles créés chargés. */
+	/** Les rôles existants : les rôles intégrés et les rôles créés chargés (sans le Voyageur, hors script). */
 	public static List<Role> all() {
-		return Arrays.stream(values()).filter(r -> r.active).toList();
+		return Arrays.stream(values()).filter(r -> r.active && r != VOYAGEUR).toList();
 	}
 
 	/** Identifiant d'échange : le nom de l'emplacement pour tous (PERSO_07, GOULE…). */
@@ -239,7 +243,7 @@ public enum Role {
 	public static java.util.EnumSet<Role> classic() {
 		java.util.EnumSet<Role> s = java.util.EnumSet.noneOf(Role.class);
 		for (Role r : values()) {
-			if (!r.slot) {
+			if (!r.slot && r != VOYAGEUR) {
 				s.add(r);
 			}
 		}
@@ -256,7 +260,7 @@ public enum Role {
 	}
 
 	public static List<Role> ofType(RoleType t) {
-		return Arrays.stream(values()).filter(r -> r.active && r.type == t).toList();
+		return Arrays.stream(values()).filter(r -> r.active && r.type == t && r != VOYAGEUR).toList();
 	}
 
 	/** Rôles qui se réveillent la première nuit, dans l'ordre. */

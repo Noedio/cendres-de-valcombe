@@ -340,8 +340,12 @@ Dans le salon, le Conteur (ou l'hôte, en partie automatique) choisit un scénar
   - **Conteur automatique plus fin** : ses faux-semblants s'ajustent pour garder la partie disputée ;
   - **mode daltonien** (formes en plus des couleurs) ;
   - **Session.java allégé** : la vie sociale (annonces, signes, apartés, conversations privées) passe dans Social.java, les joueurs fictifs dans BotBrain.java.
+- Ajouté ensuite :
+  - **voyageurs** : arrivée en cours de partie (trône libre, camp choisi par le Conteur ou tiré par le Conteur automatique), exil voté par tous, départ libre ; ils ne comptent pas pour la victoire du mal à deux vivants. Version simple : sans pouvoir propre ;
+  - **figures neutres** : la Sentinelle (un Étranger de plus ou de moins), le Doyen (les aguerris se taisent deux minutes chaque jour), le Sablier (journée de dix minutes au plus) ;
+  - séance réelle pilotée : l'Atelier utilisé depuis le navigateur sur un vrai serveur (rôle, scénario, simulation, partie d'essai) et le mode construction ; trois défauts trouvés et corrigés (tableau du jour face à la règle du scénario, texte de la simulation, repères trop discrets) ;
+  - reprise d'un téléchargement coupé vérifiée sur un serveur local.
 - Non fait, et pourquoi :
-  - **voyageurs et figures neutres** : ajouter un joueur en cours de partie touche à tout le moteur (sièges, votes, voisinages, conditions de victoire) ; à concevoir après la soirée de test, avec des retours réels ;
   - **launcher pour Linux et macOS** : le launcher est écrit pour Windows (WPF) ; il faudrait le réécrire avec une bibliothèque multiplateforme. En attendant, Prism Launcher et le modpack `.mrpack` fonctionnent partout ;
   - **certificat de signature** du launcher : payant (plusieurs centaines d'euros par an) ; l'aide explique comment passer l'avertissement de Windows.
 

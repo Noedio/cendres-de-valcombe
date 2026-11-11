@@ -60,6 +60,11 @@ public final class Setup {
 
 	/** Tire un rôle par joueur dans le script (non placés). Renvoie null si impossible. */
 	public static List<Entry> drawBag(int players, Rng rng, Set<Role> script) {
+		return drawBag(players, rng, script, 0);
+	}
+
+	/** Tirage avec un écart d'Étrangers imposé (figure de la Sentinelle : -1, 0 ou +1), si le script le permet. */
+	public static List<Entry> drawBag(int players, Rng rng, Set<Role> script, int outsiderShift) {
 		Distribution.Counts c = Distribution.counts(players);
 		if (c == null || check(script, players) != null) {
 			return null;
@@ -95,6 +100,11 @@ public final class Setup {
 		bonus = Math.max(-etrangers, Math.min(bonus, Math.min(outPool.size() - etrangers, citadins - 1)));
 		etrangers += bonus;
 		citadins -= bonus;
+		if (outsiderShift != 0 && etrangers + outsiderShift >= 0 && etrangers + outsiderShift <= outPool.size()
+			&& citadins - outsiderShift >= 1 && citadins - outsiderShift <= townPool.size()) {
+			etrangers += outsiderShift;
+			citadins -= outsiderShift;
+		}
 		// Le Somnambule a besoin d'un Citadin libre à croire incarner.
 		if (townPool.size() <= citadins) {
 			outPool.remove(Role.SOMNAMBULE);
