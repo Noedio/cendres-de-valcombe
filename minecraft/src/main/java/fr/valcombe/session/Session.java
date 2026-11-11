@@ -157,6 +157,27 @@ public final class Session {
 		return voteNom != null;
 	}
 
+	/** Main levée (intention) pour le vote en cours. */
+	public boolean handRaised(String name) {
+		return voteNom != null && Boolean.TRUE.equals(answers.get(name));
+	}
+
+	/**
+	 * Ce joueur peut encore lever ou baisser la main : pendant la défense (vivant, ou mort
+	 * avec son vote de fantôme), puis tant que l'aiguille n'est pas passée devant lui.
+	 */
+	public boolean canVote(String name) {
+		Game g = game;
+		if (g == null || voteNom == null || bots.contains(name)) {
+			return false;
+		}
+		if (!defense) {
+			return waitingVote.contains(name);
+		}
+		int s = g.seatOf(name);
+		return s >= 0 && (g.player(s).alive() || g.player(s).ghostVote());
+	}
+
 	/** Invite en cours d'un joueur, ou null. */
 	public Prompt currentPrompt(String name) {
 		return prompts.get(name);
@@ -1095,7 +1116,8 @@ public final class Session {
 		voteToken++;
 		defense = true;
 		defenseLeft = settings.defenseSeconds;
-		announce(game.player(nom.nominee()).name + " a " + defenseLeft + " secondes pour se défendre.");
+		announce(game.player(nom.nominee()).name + " a " + defenseLeft
+			+ " secondes pour se défendre. Vous pouvez déjà lever la main (touche H, ou clic droit avec la plume).");
 		host.sit(realNames(), false);
 		updateVoteScene(0);
 		int token = voteToken;
@@ -1184,14 +1206,17 @@ public final class Session {
 
 	/** Lever ou baisser la main, tant que l'aiguille n'est pas passée. */
 	public String vote(String name, boolean yes) {
-		if (voteNom == null || defense) {
+		if (voteNom == null) {
 			throw new GameException("Aucun vote en cours.");
 		}
-		if (!waitingVote.contains(name)) {
-			throw new GameException("L'aiguille est déjà passée devant toi.");
+		if (!canVote(name)) {
+			throw new GameException(defense ? "Tu n'as pas de voix pour ce vote." : "L'aiguille est déjà passée devant toi.");
 		}
 		answers.put(name, yes);
 		updateVoteScene(0);
+		if (defense) {
+			return yes ? "Tu lèves la main : elle sera comptée quand l'aiguille passera devant toi." : "Tu baisses la main.";
+		}
 		return yes ? "Tu lèves la main." : "Tu baisses la main.";
 	}
 
@@ -1483,6 +1508,7 @@ public final class Session {
 		}
 		Map<String, String> labels = new LinkedHashMap<>();
 		String accused = voteNom != null ? g.player(voteNom.nominee()).name : null;
+		String block = g.phase() == Game.Phase.DAY && g.onTheBlock() >= 0 ? g.player(g.onTheBlock()).name : null;
 		for (Game.Seat p : g.players()) {
 			String text = (p.alive() ? "" : "† ") + p.name + (!p.alive() && p.ghostVote() ? " ✋" : "");
 			String honor = bots.contains(p.name) ? "" : host.playerTitle(p.name);
@@ -1491,8 +1517,11 @@ public final class Session {
 			}
 			if (p.name.equals(accused)) {
 				text += "\n⚖ accusé";
+			} else if (p.name.equals(block)) {
+				text += "\n☠ sur le billot (" + g.blockVotes() + " voix)";
 			}
-			labels.put(p.name, (p.name.equals(accused) ? "gold" : p.alive() ? "white" : "gray") + "|" + text);
+			String color = p.name.equals(accused) ? "gold" : p.name.equals(block) ? "red" : p.alive() ? "white" : "gray";
+			labels.put(p.name, color + "|" + text);
 		}
 		host.seatBoards(labels);
 		Map<String, String> models = new LinkedHashMap<>();
@@ -1516,7 +1545,7 @@ public final class Session {
 		}
 		List<String> locked = lockedHands.stream().map(i -> g.player(i).name).toList();
 		List<String> raised = answers.entrySet().stream()
-			.filter(e -> Boolean.TRUE.equals(e.getValue()) && waitingVote.contains(e.getKey()))
+			.filter(e -> Boolean.TRUE.equals(e.getValue()) && (defense || waitingVote.contains(e.getKey())))
 			.map(Map.Entry::getKey).toList();
 		host.voteScene(new VoteScene(nominee, defense, pointing, moveTicks, raised, locked, (g.aliveCount() + 1) / 2));
 	}

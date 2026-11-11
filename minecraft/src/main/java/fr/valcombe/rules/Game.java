@@ -985,6 +985,35 @@ public final class Game {
 		addLog("Le jour " + day + " se lève.");
 	}
 
+	/** Nominations du jour, dans l'ordre : {nominateur, nominé, voix (-1 tant que le vote n'a pas eu lieu)}. */
+	public List<int[]> nominationsToday() {
+		List<int[]> out = new ArrayList<>();
+		nominations.forEach(n -> out.add(n.clone()));
+		return out;
+	}
+
+	/** Siège « sur le billot » (le plus de voix, au moins le seuil, sans égalité), ou -1. */
+	public int onTheBlock() {
+		return top >= 0 && !tie && executedToday < 0 ? nominations.get(top)[1] : -1;
+	}
+
+	public int blockVotes() {
+		return topVotes;
+	}
+
+	/** Égalité en tête : personne n'est sur le billot. */
+	public boolean blockTie() {
+		return tie && topVotes > 0;
+	}
+
+	public boolean hasNominatedToday(int seat) {
+		return hasNominated.contains(seat);
+	}
+
+	public boolean wasNominatedToday(int seat) {
+		return wasNominated.contains(seat);
+	}
+
 	public Nomination nominate(int nominator, int nominee) {
 		if (phase != Phase.DAY || dayOver) {
 			throw new GameException("Ce n'est pas le moment de nominer.");

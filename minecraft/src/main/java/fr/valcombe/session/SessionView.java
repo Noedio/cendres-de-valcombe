@@ -100,10 +100,33 @@ final class SessionView {
 				vote.put("count", ses.lockedHands.size());
 				vote.put("threshold", (g.aliveCount() + 1) / 2);
 				vote.put("myHand", Boolean.TRUE.equals(ses.answers.get(me)));
+				vote.put("canVote", ses.canVote(me));
+				vote.put("order", ses.clockOrder.stream().map(i -> g.player(i).name).toList());
+				vote.put("clockPos", ses.clockPos);
+				vote.put("lockedNames", ses.lockedHands.stream().map(i -> g.player(i).name).toList());
 				vote.put("hands", ses.answers.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList());
 				v.put("vote", vote);
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
+			if (g.phase() == Game.Phase.DAY) {
+				// Tableau du jour : qui a accusé qui, avec combien de voix, et qui est sur le billot.
+				Map<String, Object> day = new LinkedHashMap<>();
+				List<Map<String, Object>> noms = new ArrayList<>();
+				for (int[] n : g.nominationsToday()) {
+					Map<String, Object> m = new LinkedHashMap<>();
+					m.put("by", g.player(n[0]).name);
+					m.put("target", g.player(n[1]).name);
+					m.put("votes", n[2]);
+					noms.add(m);
+				}
+				day.put("nominations", noms);
+				day.put("block", g.onTheBlock() >= 0 ? g.player(g.onTheBlock()).name : null);
+				day.put("blockVotes", g.blockVotes());
+				day.put("tie", g.blockTie());
+				day.put("threshold", (g.aliveCount() + 1) / 2);
+				day.put("canNominate", mySeat >= 0 && g.player(mySeat).alive() && !g.hasNominatedToday(mySeat));
+				v.put("today", day);
+			}
 			boolean spyAwake = ses.prompts.get(me) instanceof Prompt.Grimoire;
 			boolean watcher = ses.spectators.contains(me) && ses.settings.spectatorGrimoire;
 			if (me.equals(ses.storyteller) || spyAwake || watcher) {

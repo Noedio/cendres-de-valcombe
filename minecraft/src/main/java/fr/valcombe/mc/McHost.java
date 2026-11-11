@@ -98,10 +98,160 @@ public final class McHost implements Host {
 			village = v;
 			ValcombeMod.LOG.info("Village de Valcombe construit en {}", v.center());
 		}
+		if (village.outdated()) {
+			// Plan plus ancien (place plus petite) : le village est reconstruit au même endroit.
+			village.clearLegacyHall(level);
+			Village v = village.regenerated();
+			v.build(level);
+			v.save(server);
+			village = v;
+			lanterns = null;
+			ValcombeMod.LOG.info("Village de Valcombe agrandi (plan {}) en {}", Village.LAYOUT, v.center());
+		}
 		if (village.isGenerated() && !village.hasHall()) {
 			buildHall();
 		}
 		applySpawn();
+	}
+
+	// ------------------------------------------------------------------
+	// S'asseoir sur un trône d'un clic droit
+	// ------------------------------------------------------------------
+	private int chairCount;
+
+	/**
+	 * Clic droit sur un trône de la carte. En partie, chacun s'assoit sur le sien (les autres
+	 * sont indiqués) ; hors partie, n'importe qui s'assoit sur un trône libre.
+	 * Renvoie false si le bloc n'est pas un siège.
+	 */
+	public boolean sitAt(ServerPlayer p, BlockPos clicked) {
+		if (village == null || server == null) {
+			return false;
+		}
+		int k = village.seatIndexAt(clicked);
+		if (k < 0) {
+			return false;
+		}
+		if (p.isPassenger()) {
+			return true;
+		}
+		String name = p.getScoreboardName();
+		Vec3 feet = village.seatFeet(k);
+		String owner = null;
+		for (var e : seats.entrySet()) {
+			if (e.getValue().pos().distanceToSqr(feet) < 0.5) {
+				owner = e.getKey();
+			}
+		}
+		SeatPos mine = seats.get(name);
+		if (mine != null) {
+			if (name.equals(owner)) {
+				teleport(p, mine);
+				sit(List.of(name), sitEnforced);
+			} else {
+				p.sendSystemMessage(Component.literal(owner != null ? "Ce trône est celui de " + owner + ". Le tien scintille."
+					: "Ce trône est libre. Le tien scintille.").withStyle(ChatFormatting.GRAY));
+				p.level().sendParticles(p, net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER, true, false,
+					mine.pos().x, mine.pos().y + 1, mine.pos().z, 20, 0.4, 0.6, 0.4, 0);
+			}
+			return true;
+		}
+		if (owner != null) {
+			p.sendSystemMessage(Component.literal("Ce trône est celui de " + owner + ".").withStyle(ChatFormatting.GRAY));
+			return true;
+		}
+		String tag = "vc_chair_" + (++chairCount);
+		float yaw = village.yawToCenter(feet);
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_chair\",\"%s\"],Rotation:[%.1ff,0f]}",
+			feet.x, feet.y + 0.35, feet.z, tag, yaw));
+		p.teleportTo(server.overworld(), feet.x, feet.y, feet.z, Set.of(), yaw, p.getXRot(), false);
+		WorldSetup.run(server, "ride " + name + " mount @e[type=minecraft:item_display,tag=" + tag + ",limit=1]");
+		p.sendSystemMessage(Component.literal("Accroupis-toi pour te lever.").withStyle(ChatFormatting.GRAY), true);
+		return true;
+	}
+
+	/** Les sièges libres (hors partie) disparaissent quand on se lève. */
+	private void cleanChairs() {
+		if (chairCount == 0 || server == null) {
+			return;
+		}
+		List<net.minecraft.world.entity.Entity> empty = new ArrayList<>();
+		for (var e : server.overworld().getAllEntities()) {
+			if (e.entityTags().contains("vc_chair") && e.getPassengers().isEmpty()) {
+				empty.add(e);
+			}
+		}
+		empty.forEach(net.minecraft.world.entity.Entity::discard);
+	}
+
+	// ------------------------------------------------------------------
+	// Plume d'accusation : viser un joueur de loin
+	// ------------------------------------------------------------------
+	/** Joueur de la partie visé par le regard (son corps ou son trône), à 48 blocs au plus ; null sinon. */
+	public String aimedPlayer(ServerPlayer p) {
+		Vec3 eye = p.getEyePosition();
+		Vec3 dir = p.getLookAngle();
+		String best = null;
+		double bestScore = Double.MAX_VALUE;
+		for (var e : seats.entrySet()) {
+			if (e.getKey().equals(p.getScoreboardName())) {
+				continue;
+			}
+			ServerPlayer o = player(e.getKey());
+			Vec3 body = o != null && o.level() == p.level() ? o.position() : e.getValue().pos();
+			Vec3 to = body.add(0, 1.0, 0).subtract(eye);
+			double t = to.dot(dir);
+			if (t <= 0.5 || t > 48) {
+				continue;
+			}
+			double off = to.subtract(dir.scale(t)).length();
+			if (off > 1.1 + t * 0.015) {
+				continue;
+			}
+			double score = off / t;
+			if (score < bestScore) {
+				bestScore = score;
+				best = e.getKey();
+			}
+		}
+		return best;
+	}
+
+	private final Map<String, String> featherHint = new HashMap<>();
+
+	/** Indication dans la barre d'action quand on tient la plume : qui est visé, ou comment voter. */
+	private void featherHints() {
+		var ses = ValcombeMod.session();
+		var g = ses.game();
+		for (String name : seats.keySet()) {
+			ServerPlayer p = player(name);
+			if (p == null) {
+				continue;
+			}
+			String hint = "";
+			if (g != null && g.phase() == fr.valcombe.rules.Game.Phase.DAY
+				&& ValcombeUi.isAccuseItem(p.getMainHandItem())) {
+				if (ses.voteOpen()) {
+					hint = !ses.canVote(name) ? "Ta voix n'est plus attendue pour ce vote."
+						: ses.handRaised(name) ? "✋ Main levée — clic droit (ou H) pour la baisser"
+						: "Main baissée — clic droit (ou H) pour la lever";
+				} else if (!ses.nominationsOpen()) {
+					hint = "Les nominations ne sont pas ouvertes.";
+				} else {
+					String target = aimedPlayer(p);
+					hint = target == null ? "Vise un joueur, puis clic droit pour l'accuser"
+						: "⚖ " + target + " — clic droit pour l'accuser";
+				}
+			}
+			String before = featherHint.getOrDefault(name, "");
+			if (!hint.equals(before) || (!hint.isEmpty() && tick % 40 == 0)) {
+				featherHint.put(name, hint);
+				if (!hint.isEmpty() || !before.isEmpty()) {
+					p.sendSystemMessage(Component.literal(hint).withStyle(ChatFormatting.GOLD), true);
+				}
+			}
+		}
 	}
 
 	/** Construit la salle d'attente du village et ses panneaux de règles. */
@@ -710,6 +860,12 @@ public final class McHost implements Host {
 		if (tick % 10 == 0) {
 			checkPads();
 		}
+		if (tick % 20 == 0) {
+			cleanChairs();
+		}
+		if (tick % 4 == 0 && !seats.isEmpty()) {
+			featherHints();
+		}
 		List<Task> due = new ArrayList<>();
 		for (Iterator<Task> it = tasks.iterator(); it.hasNext();) {
 			Task t = it.next();
@@ -827,9 +983,9 @@ public final class McHost implements Host {
 		if (lanterns == null) {
 			lanterns = new ArrayList<>();
 			BlockPos c = village.center();
-			for (int x = -40; x <= 40; x++) {
-				for (int z = -40; z <= 40; z++) {
-					for (int y = 1; y <= 10; y++) {
+			for (int x = -52; x <= 52; x++) {
+				for (int z = -52; z <= 52; z++) {
+					for (int y = 1; y <= 12; y++) {
 						BlockPos pos = c.offset(x, y, z);
 						if (level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.LANTERN)) {
 							lanterns.add(pos);
@@ -861,7 +1017,8 @@ public final class McHost implements Host {
 				spots.put(name, new Stage.Spot(s.pos(), s.yaw()));
 			}
 		}
-		stage.setup(server, center, handY, spots, lectern);
+		// Village généré : les trônes sont en blocs ; ailleurs, la scène pose des trônes sculptés.
+		stage.setup(server, center, handY, spots, lectern, village == null || !village.isGenerated());
 	}
 
 	@Override

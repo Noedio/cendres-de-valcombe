@@ -127,6 +127,118 @@ public final class Hud {
 		g.pose().popMatrix();
 	}
 
+	/**
+	 * L'horloge du vote, en bandeau : un carré par votant, dans l'ordre où l'aiguille passe.
+	 * Rouge : main comptée ; gris : passé sans voter ; bleu : main levée, pas encore passé ;
+	 * cadre doré : l'aiguille est là ; cadre blanc : toi.
+	 */
+	private static int drawClock(GuiGraphicsExtractor g, Minecraft mc, JsonObject vote, int w, int y) {
+		var order = vote.getAsJsonArray("order");
+		if (order == null || order.isEmpty()) {
+			return y;
+		}
+		java.util.Set<String> locked = new java.util.HashSet<>();
+		java.util.Set<String> hands = new java.util.HashSet<>();
+		if (vote.has("lockedNames")) {
+			vote.getAsJsonArray("lockedNames").forEach(e -> locked.add(e.getAsString()));
+		}
+		if (vote.has("hands")) {
+			vote.getAsJsonArray("hands").forEach(e -> hands.add(e.getAsString()));
+		}
+		String me = mc.player == null ? "" : mc.player.getScoreboardName();
+		int pos = ClientState.num(vote, "clockPos", -1);
+		int n = order.size();
+		int box = 12;
+		int gap = 3;
+		int total = n * box + (n - 1) * gap;
+		int x0 = w / 2 - total / 2;
+		g.fill(x0 - 4, y - 3, x0 + total + 4, y + box + 3, 0xB01B1214);
+		int mine = -1;
+		for (int i = 0; i < n; i++) {
+			String name = order.get(i).getAsString();
+			int x = x0 + i * (box + gap);
+			int fill = locked.contains(name) ? Theme.EVIL
+				: i < pos ? 0xFF4A4448
+				: hands.contains(name) ? 0xFF3F6FA8 : 0xFF2A2024;
+			g.fill(x, y, x + box, y + box, fill);
+			if (locked.contains(name)) {
+				g.text(mc.font, "✋", x + 2, y + 2, 0xFFFFFFFF, false);
+			}
+			if (i == pos) {
+				g.outline(x - 2, y - 2, box + 4, box + 4, Theme.GOLD);
+			}
+			if (name.equals(me)) {
+				g.outline(x, y, box, box, 0xFFFFFFFF);
+				mine = i;
+			}
+		}
+		y += box + 6;
+		if (mine >= 0 && mine >= pos) {
+			int left = mine - Math.max(0, pos);
+			String t = left == 0 ? "L'aiguille est devant toi !" : "L'aiguille arrive à toi dans " + left + " siège" + (left > 1 ? "s" : "");
+			g.text(mc.font, t, w / 2 - mc.font.width(t) / 2, y, Theme.GOLD, true);
+			y += 12;
+		}
+		return y;
+	}
+
+	/** Tableau du jour, en haut à gauche : nominations, voix, et qui est sur le billot. */
+	private static void drawToday(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int top) {
+		JsonObject day = ClientState.obj(v, "today");
+		if (day == null || !"DAY".equals(ClientState.phase())) {
+			return;
+		}
+		java.util.List<String[]> lines = new java.util.ArrayList<>(); // {texte, couleur}
+		String block = ClientState.str(day, "block");
+		var noms = day.getAsJsonArray("nominations");
+		if (noms == null || noms.isEmpty()) {
+			lines.add(new String[] {"Aucune accusation pour l'instant.", "gray"});
+		} else {
+			for (var e : noms) {
+				JsonObject n = e.getAsJsonObject();
+				String target = ClientState.str(n, "target");
+				int votes = ClientState.num(n, "votes", -1);
+				String t = ClientState.str(n, "by") + " → " + target + " : " + (votes < 0 ? "vote en cours" : votes + " voix");
+				lines.add(new String[] {t, target.equals(block) ? "red" : votes < 0 ? "gold" : "parch"});
+			}
+		}
+		int threshold = ClientState.num(day, "threshold", 1);
+		if (block != null && !block.isEmpty()) {
+			lines.add(new String[] {"☠ Sur le billot : " + block + " (" + ClientState.num(day, "blockVotes", 0) + " voix)", "red"});
+		} else if (ClientState.bool(day, "tie")) {
+			lines.add(new String[] {"Égalité : personne sur le billot", "gold"});
+		} else {
+			lines.add(new String[] {"Personne sur le billot (seuil : " + threshold + " voix)", "gray"});
+		}
+		if (!ClientState.bool(v, "nominationsOpen")) {
+			lines.add(new String[] {"Accusations fermées", "gray"});
+		} else if (ClientState.bool(day, "canNominate")) {
+			lines.add(new String[] {"Tu peux accuser : plume en main, vise, clic droit", "gold"});
+		}
+		String title = "Accusations du jour";
+		int width = mc.font.width(title);
+		for (String[] l : lines) {
+			width = Math.max(width, mc.font.width(l[0]));
+		}
+		int x = 6;
+		int y = top;
+		int h = 16 + lines.size() * 11;
+		g.fill(x - 3, y - 3, x + width + 5, y + h, 0xC01B1214);
+		g.outline(x - 3, y - 3, width + 8, h + 3, Theme.BRONZE);
+		g.text(mc.font, title, x, y, Theme.GOLD, false);
+		y += 14;
+		for (String[] l : lines) {
+			int c = switch (l[1]) {
+				case "red" -> 0xFFE05A4A;
+				case "gold" -> Theme.GOLD;
+				case "gray" -> 0xFF9A9090;
+				default -> Theme.PARCH;
+			};
+			g.text(mc.font, l[0], x, y, c, false);
+			y += 11;
+		}
+	}
+
 	private static void draw(GuiGraphicsExtractor g) {
 		Minecraft mc = Minecraft.getInstance();
 		String phase = ClientState.phase();
@@ -196,7 +308,20 @@ public final class Hud {
 				float frac = Math.min(1f, count / (float) threshold);
 				g.fill(vx + 1, 37, vx + 1 + (int) ((vw - 2) * frac), 38, count >= threshold ? Theme.EVIL : Theme.GOLD);
 			}
+			int y = 42;
+			if (!defense) {
+				y = drawClock(g, mc, vote, w, y);
+			}
+			if (ClientState.bool(vote, "canVote")) {
+				boolean up = ClientState.bool(vote, "myHand");
+				String hand = up ? "✋ Ta main est levée — H ou plume (clic droit) pour la baisser"
+					: "Ta main est baissée — H ou plume (clic droit) pour la lever";
+				int hw = mc.font.width(hand);
+				g.fill(w / 2 - hw / 2 - 4, y - 2, w / 2 + hw / 2 + 4, y + 10, 0xB01B1214);
+				g.text(mc.font, hand, w / 2 - hw / 2, y, up ? 0xFF8FD18F : Theme.PARCH, true);
+			}
 		}
+		drawToday(g, mc, v, vote == null ? 28 : 84);
 		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
 			String hint = "Une action t'attend — touche J";
 			int hw = mc.font.width(hint);

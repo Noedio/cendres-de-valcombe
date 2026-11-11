@@ -187,10 +187,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 					return null;
 				});
 				send(ctx, "vc nominer " + target);
-				ctx.waitTicks(30);
+				ctx.waitTicks(10);
+				send(ctx, "vc vote oui"); // main levée dès la défense
+				ctx.waitTicks(20);
 				shot(ctx, "5b-defense");
 				world.getServer().runCommand("vc voter");
-				ctx.waitTicks(100);
+				ctx.waitTicks(50);
+				shot(ctx, "5c-vote-horloge-hud");
+				ctx.waitTicks(50);
 				JsonObject p = prompt(ctx);
 				if (p != null) {
 					answer(ctx, p);
@@ -201,7 +205,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				ctx.setScreen(() -> null);
 				world.getServer().runCommand("ride Player0 dismount");
 				world.getServer().runCommand("gamemode spectator Player0");
-				world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~5 ~12 facing entity @e[tag=vc_hand,limit=1] feet");
+				world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
 				ctx.waitTicks(40);
 				shot(ctx, "14-horloge-vote");
 				world.getServer().runCommand("gamemode adventure Player0");
@@ -230,7 +234,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "13-revelation");
 			// Vue d'ensemble de la place, depuis les airs
 			world.getServer().runCommand("gamemode spectator Player0");
-			world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~5 ~12 facing entity @e[tag=vc_hand,limit=1] feet");
+			world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
 			ctx.waitTicks(30);
 			shot(ctx, "13b-place-revelation");
 			world.getServer().runCommand("gamemode creative Player0");
@@ -239,6 +243,37 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 			world.getServer().runCommand("vc arreter");
 			ctx.waitTicks(20);
+
+			// Hors partie : clic droit sur un trône pour s'y asseoir
+			ctx.setScreen(() -> null);
+			world.getServer().runCommand("gamemode adventure " + me);
+			var seat = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatFeet(0));
+			var center = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+				me, seat.x + (center.getX() + 0.5 - seat.x) * 0.2, seat.y, seat.z + (center.getZ() + 0.5 - seat.z) * 0.2,
+				seat.x, seat.y + 0.3, seat.z));
+			ctx.waitTicks(10);
+			ctx.runOnClient(mc -> {
+				var bp = net.minecraft.core.BlockPos.containing(seat);
+				mc.gameMode.useItemOn(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND,
+					new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(bp),
+						net.minecraft.core.Direction.UP, bp, false));
+			});
+			ctx.waitTicks(15);
+			ctx.setScreen(() -> null);
+			check(ctx.computeOnClient(mc -> mc.player.isPassenger()), "assis sur le trône d'un clic droit");
+			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
+			ctx.waitTicks(10);
+			shot(ctx, "16-trone-libre");
+			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.FIRST_PERSON));
+			world.getServer().runCommand("ride " + me + " dismount");
+			// Vue aérienne de tout le village
+			world.getServer().runCommand("gamemode spectator " + me);
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+				center.getX(), center.getY() + 34, center.getZ() + 46, center.getX(), center.getY(), center.getZ() + 4));
+			ctx.waitTicks(60);
+			shot(ctx, "8a-village-vue-aerienne");
+			world.getServer().runCommand("gamemode creative " + me);
 
 			// Le village de Valcombe
 			ctx.setScreen(() -> null);

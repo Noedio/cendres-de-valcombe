@@ -42,6 +42,10 @@ public final class ValcombeMod implements ModInitializer {
 	}
 
 	/** La table de jeu du serveur (utilisée par le plugin vocal). */
+	public static McHost host() {
+		return HOST;
+	}
+
 	public static Session session() {
 		return SESSION;
 	}
@@ -116,6 +120,28 @@ public final class ValcombeMod implements ModInitializer {
 		});
 		// Clic droit avec l'horloge « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
 		UseItemCallback.EVENT.register((player, level, hand) -> {
+			// Plume d'accusation : pendant un vote, lever ou baisser la main ; sinon accuser le joueur visé, même de loin.
+			if (ValcombeUi.isAccuseItem(player.getItemInHand(hand))) {
+				if (player instanceof ServerPlayer sp && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					String name = sp.getScoreboardName();
+					String cmd = null;
+					if (SESSION.voteOpen()) {
+						cmd = SESSION.handRaised(name) ? "vc vote non" : "vc vote oui";
+					} else {
+						String target = HOST.aimedPlayer(sp);
+						if (target != null) {
+							cmd = "vc nominer " + target;
+						} else {
+							sp.sendSystemMessage(Gui.plain("Vise un joueur (ou son trône), puis clic droit.",
+								net.minecraft.ChatFormatting.GRAY));
+						}
+					}
+					if (cmd != null) {
+						sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(), cmd);
+					}
+				}
+				return InteractionResult.SUCCESS;
+			}
 			if (ValcombeUi.isMenuItem(player.getItemInHand(hand))) {
 				if (player instanceof ServerPlayer sp) {
 					UI.openMain(sp);
@@ -152,6 +178,14 @@ public final class ValcombeMod implements ModInitializer {
 		});
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
 			if (!ValcombeUi.isWand(player.getItemInHand(hand))) {
+				// Trône : clic droit pour s'asseoir
+				if (player instanceof ServerPlayer sp && !player.isShiftKeyDown() && !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
+					&& HOST.village() != null && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
+					if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+						HOST.sitAt(sp, hit.getBlockPos());
+					}
+					return InteractionResult.SUCCESS;
+				}
 				return InteractionResult.PASS;
 			}
 			if (player instanceof ServerPlayer sp

@@ -1,5 +1,6 @@
 package fr.valcombe.session;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -298,10 +299,13 @@ class SessionTest {
 		assertThrows(GameException.class, () -> s.nominate("J1", "J2"), "nominations fermées");
 		s.setNominations(true);
 		s.nominate("J1", "J2");
-		assertThrows(GameException.class, () -> s.vote("J3", true), "pendant la défense");
+		// Pendant la défense, on peut déjà lever la main ; le Conteur n'a pas de voix.
+		assertTrue(s.canVote("J3"), "main levée possible dès la défense");
+		s.vote("J3", true);
+		assertTrue(s.handRaised("J3"));
+		assertThrows(GameException.class, () -> s.vote("Conteur", true), "le Conteur ne vote pas");
 		s.startVoteNow();
 		h.prompts.clear();
-		s.vote("J3", true);
 		s.vote("J4", true);
 		s.vote("J4", false); // il se ravise avant le passage de l'aiguille
 		s.vote("J5", true);
@@ -317,6 +321,17 @@ class SessionTest {
 		assertTrue(h.scenes.stream().anyMatch(v -> v != null && v.raised().contains("J3")), "main levée");
 		assertTrue(h.scenes.stream().anyMatch(v -> v != null && v.locked().contains("J5")), "main comptée");
 		assertNull(h.scenes.get(h.scenes.size() - 1), "scène retirée après le vote");
+		// Le tableau du jour montre l'accusation et ses voix.
+		@SuppressWarnings("unchecked")
+		var today = (java.util.Map<String, Object>) s.view("J4", false).get("today");
+		@SuppressWarnings("unchecked")
+		var noms = (List<java.util.Map<String, Object>>) today.get("nominations");
+		assertEquals(1, noms.size());
+		assertEquals("J1", noms.get(0).get("by"));
+		assertEquals("J2", noms.get(0).get("target"));
+		assertEquals(2, noms.get(0).get("votes"));
+		assertNull(today.get("block"), "2 voix sous le seuil : personne sur le billot");
+		assertEquals(true, today.get("canNominate"));
 	}
 
 	@Test

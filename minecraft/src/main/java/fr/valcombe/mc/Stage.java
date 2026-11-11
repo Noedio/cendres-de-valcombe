@@ -30,7 +30,6 @@ final class Stage {
 	private static final double TOKEN_Y = 2.9;
 	private static final double LABEL_Y = 3.7;
 	private static final double FLAME_Y = 2.05;
-	private static final double GIBET_DISTANCE = 5;
 
 	private final BiConsumer<Integer, Runnable> scheduler;
 	private MinecraftServer server;
@@ -43,6 +42,7 @@ final class Stage {
 	private double handY;
 	private double handLength;
 	private double handAngle;
+	private double gibetDistance = 5;
 	private String countText = "";
 	private String gibetFor;
 	private int gibetToken;
@@ -65,7 +65,7 @@ final class Stage {
 	}
 
 	/** Monte la scène pour ces sièges (dans l'ordre du cercle). */
-	void setup(MinecraftServer server, Vec3 center, double handY, Map<String, Spot> seats, boolean lectern) {
+	void setup(MinecraftServer server, Vec3 center, double handY, Map<String, Spot> seats, boolean lectern, boolean thrones) {
 		clear(server);
 		this.server = server;
 		this.center = center;
@@ -78,12 +78,15 @@ final class Stage {
 		}
 		radius = seats.isEmpty() ? 6 : radius / seats.size();
 		this.handLength = Math.max(2, radius - 1.6);
+		this.gibetDistance = Math.max(4, radius - 5);
 		for (int i = 0; i < order.size(); i++) {
 			Spot s = spots.get(order.get(i));
 			Vec3 p = s.pos();
 			// Trône (dossier du côté opposé au centre) et point d'assise invisible
-			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
-				+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
+			if (thrones) {
+				run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
+					+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
+			}
 			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.35, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
 				+ "\"],Rotation:[" + f(s.yaw()) + "f,0f]}");
 			// Jeton et étiquette
@@ -315,8 +318,8 @@ final class Stage {
 		double dx = s.pos().x - center.x;
 		double dz = s.pos().z - center.z;
 		double d = Math.max(0.1, Math.hypot(dx, dz));
-		double gx = center.x + dx / d * GIBET_DISTANCE;
-		double gz = center.z + dz / d * GIBET_DISTANCE;
+		double gx = center.x + dx / d * gibetDistance;
+		double gz = center.z + dz / d * gibetDistance;
 		// Lacet : l'axe Z local suit le rayon, la poutre (axe X) lui est perpendiculaire.
 		float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
 		for (int k = 0; k < GIBET.length; k++) {

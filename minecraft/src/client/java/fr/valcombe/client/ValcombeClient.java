@@ -31,7 +31,7 @@ public final class ValcombeClient implements ClientModInitializer {
 			while (handKey.consumeClick()) {
 				// Lever ou baisser la main pendant le vote à l'horloge
 				var vote = ClientState.obj(ClientState.view(), "vote");
-				if (vote != null && "CLOCK".equals(ClientState.str(vote, "stage"))) {
+				if (vote != null && ClientState.bool(vote, "canVote")) {
 					ClientState.send(ClientState.bool(vote, "myHand") ? "vc vote non" : "vc vote oui");
 				}
 			}

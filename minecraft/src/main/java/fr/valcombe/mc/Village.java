@@ -30,10 +30,15 @@ import net.minecraft.world.phys.Vec3;
  */
 public final class Village {
 	public static final int SEATS = 16;
-	private static final int SEAT_RADIUS = 9;
-	private static final int PLAZA_RADIUS = 13;
-	private static final int HOUSE_RADIUS = 27;
-	private static final int CLEAR_RADIUS = 36;
+	/** Version du plan du village généré : un village plus ancien est reconstruit au démarrage. */
+	public static final int LAYOUT = 2;
+	private static final int SEAT_RADIUS = 11;
+	private static final int PLAZA_RADIUS = 17;
+	private static final int ROAD_WIDTH = 3;
+	private static final int HOUSE_RADIUS = 37;
+	private static final int HOUSE_HALF = 4;
+	private static final int CLEAR_RADIUS = 50;
+	private static final int CLEAR_HEIGHT = 16;
 	private static final int FLAGS = Block.UPDATE_CLIENTS;
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -41,6 +46,7 @@ public final class Village {
 	private static final class Data {
 		int[] center;
 		boolean generated;
+		int layout;
 		boolean hall;
 		String theme;
 		List<int[]> seats = new ArrayList<>();
@@ -49,6 +55,7 @@ public final class Village {
 
 	private final BlockPos center;
 	private final boolean generated;
+	private int layout = LAYOUT;
 	private boolean hall;
 	private String theme = "gothique";
 	private final List<BlockPos> seats = new ArrayList<>();
@@ -70,8 +77,8 @@ public final class Village {
 		for (int i = 0; i < SEATS; i++) {
 			double a = angle(i, SEATS);
 			v.seats.add(center.offset((int) Math.round(SEAT_RADIUS * Math.cos(a)), 1, (int) Math.round(SEAT_RADIUS * Math.sin(a))));
-			v.houses.add(center.offset((int) Math.round((HOUSE_RADIUS + 1) * Math.cos(a)), 1,
-				(int) Math.round((HOUSE_RADIUS + 1) * Math.sin(a))));
+			v.houses.add(center.offset((int) Math.round(HOUSE_RADIUS * Math.cos(a)), 1,
+				(int) Math.round(HOUSE_RADIUS * Math.sin(a))));
 		}
 		return v;
 	}
@@ -87,6 +94,16 @@ public final class Village {
 
 	public boolean isGenerated() {
 		return generated;
+	}
+
+	/** Village généré selon un plan plus ancien (plus petit) : à reconstruire. */
+	public boolean outdated() {
+		return generated && layout < LAYOUT;
+	}
+
+	/** Le même village (centre et thème), selon le plan actuel. */
+	public Village regenerated() {
+		return generated(center, theme);
 	}
 
 	public int seatCount() {
@@ -139,11 +156,30 @@ public final class Village {
 		return houses.isEmpty() ? seat(i, n) : feet(houses.get(spread(i, n, houses.size())));
 	}
 
+	/**
+	 * Siège correspondant au bloc cliqué : le bloc du siège lui-même (le trône)
+	 * ou celui juste en dessous ; -1 sinon.
+	 */
+	public int seatIndexAt(BlockPos clicked) {
+		for (int i = 0; i < seats.size(); i++) {
+			BlockPos s = seats.get(i);
+			if (s.equals(clicked) || s.equals(clicked.above())) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** Pieds du joueur assis sur le siège k (numéro dans la carte). */
+	public Vec3 seatFeet(int k) {
+		return feet(seats.get(k));
+	}
+
 	/** Numéro de la maison où se trouve cette position (à 4 blocs près), ou -1. */
 	public int houseAt(Vec3 pos) {
 		for (int i = 0; i < houses.size(); i++) {
 			Vec3 h = feet(houses.get(i));
-			if (Math.abs(pos.y - h.y) < 4 && Math.hypot(pos.x - h.x, pos.z - h.z) < 4.5) {
+			if (Math.abs(pos.y - h.y) < 4 && Math.hypot(pos.x - h.x, pos.z - h.z) < HOUSE_HALF + 0.5) {
 				return i;
 			}
 		}
@@ -167,7 +203,7 @@ public final class Village {
 	// Salle d'attente
 	// ------------------------------------------------------------------
 	private static final double HALL_ANGLE = angle(0, SEATS) + Math.PI / SEATS;
-	private static final int HALL_DISTANCE = 47;
+	private static final int HALL_DISTANCE = 64;
 
 	/** Centre de la salle, relatif au centre de la place. */
 	private static int[] hallCenter() {
@@ -241,7 +277,7 @@ public final class Village {
 		set(level, hx - 6, 0, hz, Blocks.REDSTONE_BLOCK.defaultBlockState());
 		set(level, hx, 0, hz - 5, Blocks.CRYING_OBSIDIAN.defaultBlockState());
 		// Allée vers la place
-		for (int r = PLAZA_RADIUS + 1; r < HALL_DISTANCE - 6; r++) {
+		for (int r = PLAZA_RADIUS + ROAD_WIDTH; r < HALL_DISTANCE - 6; r++) {
 			int x = (int) Math.round(r * Math.cos(HALL_ANGLE));
 			int z = (int) Math.round(r * Math.sin(HALL_ANGLE));
 			for (int w = -1; w <= 1; w++) {
@@ -252,6 +288,23 @@ public final class Village {
 			}
 		}
 		hall = true;
+	}
+
+	/** Efface la salle d'attente de l'ancien plan (plus proche de la place), avant reconstruction. */
+	public void clearLegacyHall(ServerLevel level) {
+		if (!hall) {
+			return;
+		}
+		int hx = (int) Math.round(47 * Math.cos(HALL_ANGLE));
+		int hz = (int) Math.round(47 * Math.sin(HALL_ANGLE));
+		for (int x = -12; x <= 12; x++) {
+			for (int z = -10; z <= 10; z++) {
+				set(level, hx + x, 0, hz + z, Blocks.GRASS_BLOCK.defaultBlockState());
+				for (int y = 1; y <= 9; y++) {
+					set(level, hx + x, y, hz + z, Blocks.AIR.defaultBlockState());
+				}
+			}
+		}
 	}
 
 	/** Positions (absolues) des panneaux flottants de la salle : texte → position. */
@@ -292,7 +345,7 @@ public final class Village {
 	/** Matériaux d'un thème de village. */
 	private record Palette(Block plaza, Block plazaAlt1, Block plazaAlt2, Block ground, Block ground2, Block rim,
 		Block seatFloor, Block post, Block light, Block well, Block pillar, Block wallA, Block wallB, Block roof,
-		Block houseFloor, Block alley, Block hedge) {
+		Block houseFloor, Block alley, Block hedge, Block grass, Block log) {
 	}
 
 	public static final java.util.List<String> THEMES = java.util.List.of("gothique", "monastere", "port");
@@ -302,15 +355,16 @@ public final class Village {
 			case "monastere" -> new Palette(Blocks.POLISHED_DIORITE, Blocks.CALCITE, Blocks.DIORITE, Blocks.DIRT_PATH,
 				Blocks.GRAVEL, Blocks.TUFF_BRICK_WALL, Blocks.POLISHED_TUFF, Blocks.SPRUCE_FENCE, Blocks.SOUL_LANTERN,
 				Blocks.TUFF_BRICKS, Blocks.STRIPPED_SPRUCE_LOG, Blocks.CALCITE, Blocks.TUFF_BRICKS, Blocks.DEEPSLATE_TILES,
-				Blocks.SPRUCE_PLANKS, Blocks.SMOOTH_STONE, Blocks.BIRCH_LEAVES);
+				Blocks.SPRUCE_PLANKS, Blocks.SMOOTH_STONE, Blocks.BIRCH_LEAVES, Blocks.GRASS_BLOCK, Blocks.BIRCH_LOG);
 			case "port" -> new Palette(Blocks.SMOOTH_SANDSTONE, Blocks.CUT_SANDSTONE, Blocks.SANDSTONE, Blocks.SAND,
 				Blocks.GRAVEL, Blocks.SANDSTONE_WALL, Blocks.PRISMARINE_BRICKS, Blocks.OAK_FENCE, Blocks.LANTERN,
 				Blocks.PRISMARINE_BRICKS, Blocks.OAK_LOG, Blocks.OAK_PLANKS, Blocks.BIRCH_PLANKS, Blocks.DARK_PRISMARINE,
-				Blocks.OAK_PLANKS, Blocks.PACKED_MUD, Blocks.OAK_LEAVES);
+				Blocks.OAK_PLANKS, Blocks.PACKED_MUD, Blocks.OAK_LEAVES, Blocks.SAND, Blocks.OAK_LOG);
 			default -> new Palette(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.DIRT_PATH,
 				Blocks.GRAVEL, Blocks.STONE_BRICK_WALL, Blocks.POLISHED_ANDESITE, Blocks.SPRUCE_FENCE, Blocks.LANTERN,
 				Blocks.CHISELED_STONE_BRICKS, Blocks.DARK_OAK_LOG, Blocks.DEEPSLATE_BRICKS, Blocks.STONE_BRICKS,
-				Blocks.DEEPSLATE_TILES, Blocks.SPRUCE_PLANKS, Blocks.COBBLESTONE, Blocks.SPRUCE_LEAVES);
+				Blocks.DEEPSLATE_TILES, Blocks.SPRUCE_PLANKS, Blocks.COBBLESTONE, Blocks.SPRUCE_LEAVES, Blocks.GRASS_BLOCK,
+				Blocks.SPRUCE_LOG);
 		};
 	}
 
@@ -318,12 +372,18 @@ public final class Village {
 		return theme;
 	}
 
+	/**
+	 * Construit le village : la place pavée (rayon 17) et son cercle de 16 trônes, le puits
+	 * et la cloche au centre, une route circulaire, 16 allées vers 16 maisons meublées,
+	 * des étals de marché et des arbres entre les allées.
+	 */
 	public void build(ServerLevel level) {
 		Palette p = palette(theme);
 		BlockState air = Blocks.AIR.defaultBlockState();
 		BlockState hedge = p.hedge().defaultBlockState().setValue(LeavesBlock.PERSISTENT, true);
 		java.util.Random rnd = new java.util.Random(center.asLong());
 
+		// Terrain : socle de pierre, sols, et tout l'air au-dessus
 		for (int x = -CLEAR_RADIUS; x <= CLEAR_RADIUS; x++) {
 			for (int z = -CLEAR_RADIUS; z <= CLEAR_RADIUS; z++) {
 				double d = Math.hypot(x, z);
@@ -336,36 +396,45 @@ public final class Village {
 				Block floor;
 				if (d <= PLAZA_RADIUS) {
 					floor = rnd.nextInt(5) == 0 ? p.plazaAlt1() : rnd.nextInt(3) == 0 ? p.plazaAlt2() : p.plaza();
+				} else if (d <= PLAZA_RADIUS + ROAD_WIDTH) {
+					floor = rnd.nextInt(4) == 0 ? p.ground2() : p.alley();
 				} else {
-					floor = rnd.nextInt(6) == 0 ? p.ground2() : p.ground();
+					floor = rnd.nextInt(9) == 0 ? p.ground() : p.grass();
 				}
 				set(level, x, 0, z, floor.defaultBlockState());
-				for (int y = 1; y <= 14; y++) {
+				for (int y = 1; y <= CLEAR_HEIGHT; y++) {
 					set(level, x, y, z, air);
 				}
 			}
 		}
-		for (int k = 0; k < 360; k += 3) {
-			double a = Math.toRadians(k);
-			set(level, (int) Math.round((PLAZA_RADIUS + 0.5) * Math.cos(a)), 1,
-				(int) Math.round((PLAZA_RADIUS + 0.5) * Math.sin(a)), p.rim().defaultBlockState());
+		// Muret de la place, ouvert en face de chaque allée
+		for (int k = 0; k < 720; k++) {
+			double a = Math.toRadians(k / 2.0);
+			double gap = Double.MAX_VALUE;
+			for (int i = 0; i < SEATS; i++) {
+				double da = Math.atan2(Math.sin(a - angle(i, SEATS)), Math.cos(a - angle(i, SEATS)));
+				gap = Math.min(gap, Math.abs(da) * PLAZA_RADIUS);
+			}
+			if (gap > 2.2) {
+				set(level, (int) Math.round((PLAZA_RADIUS + 0.5) * Math.cos(a)), 1,
+					(int) Math.round((PLAZA_RADIUS + 0.5) * Math.sin(a)), p.rim().defaultBlockState());
+			}
 		}
+		// Trônes : une marche tournée vers le centre, un dossier, deux accoudoirs
 		for (int i = 0; i < SEATS; i++) {
 			double a = angle(i, SEATS);
 			int x = (int) Math.round(SEAT_RADIUS * Math.cos(a));
 			int z = (int) Math.round(SEAT_RADIUS * Math.sin(a));
-			set(level, x, 0, z, p.seatFloor().defaultBlockState());
-			int bx = (int) Math.round((SEAT_RADIUS + 1) * Math.cos(a));
-			int bz = (int) Math.round((SEAT_RADIUS + 1) * Math.sin(a));
-			set(level, bx, 1, bz, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, away(bx, bz)));
-			if (i % 4 == 0) {
-				int lx = (int) Math.round((SEAT_RADIUS + 2) * Math.cos(a + Math.PI / SEATS));
-				int lz = (int) Math.round((SEAT_RADIUS + 2) * Math.sin(a + Math.PI / SEATS));
+			throne(level, x, z, p);
+			if (i % 2 == 0) {
+				int lx = (int) Math.round((SEAT_RADIUS + 3) * Math.cos(a + Math.PI / SEATS));
+				int lz = (int) Math.round((SEAT_RADIUS + 3) * Math.sin(a + Math.PI / SEATS));
 				set(level, lx, 1, lz, p.post().defaultBlockState());
 				set(level, lx, 2, lz, p.post().defaultBlockState());
 				set(level, lx, 3, lz, p.light().defaultBlockState());
 			}
 		}
+		// Puits couvert et cloche, au centre
 		for (int x = -2; x <= 2; x++) {
 			for (int z = -2; z <= 2; z++) {
 				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
@@ -387,54 +456,169 @@ public final class Village {
 		}
 		set(level, 0, 5, 0, Blocks.BELL.defaultBlockState());
 		set(level, 0, 7, 0, Blocks.SOUL_LANTERN.defaultBlockState());
+
+		// Allées, maisons, étals, arbres et haies
 		for (int i = 0; i < SEATS; i++) {
 			double a = angle(i, SEATS);
-			int hx = (int) Math.round(HOUSE_RADIUS * Math.cos(a));
-			int hz = (int) Math.round(HOUSE_RADIUS * Math.sin(a));
-			house(level, hx, hz, i, p);
-			for (int r = PLAZA_RADIUS + 1; r < HOUSE_RADIUS - 2; r++) {
-				set(level, (int) Math.round(r * Math.cos(a)), 0, (int) Math.round(r * Math.sin(a)), p.alley().defaultBlockState());
+			for (int r = PLAZA_RADIUS + ROAD_WIDTH; r <= HOUSE_RADIUS - HOUSE_HALF; r++) {
+				for (int w = -1; w <= 1; w++) {
+					set(level, (int) Math.round(r * Math.cos(a) - w * Math.sin(a)), 0,
+						(int) Math.round(r * Math.sin(a) + w * Math.cos(a)), p.alley().defaultBlockState());
+				}
+			}
+			house(level, (int) Math.round(HOUSE_RADIUS * Math.cos(a)), (int) Math.round(HOUSE_RADIUS * Math.sin(a)), i, p);
+			if (i == 0) {
+				continue; // le chemin de la salle d'attente passe ici
 			}
 			double mid = a + Math.PI / SEATS;
-			for (int r = PLAZA_RADIUS + 4; r < HOUSE_RADIUS + 3 && i != 0; r++) {
+			int mx = (int) Math.round(27 * Math.cos(mid));
+			int mz = (int) Math.round(27 * Math.sin(mid));
+			if (i % 2 == 0) {
+				stall(level, mx, mz, i);
+			} else {
+				tree(level, mx, mz, p, hedge);
+			}
+			for (int r = 32; r <= 45; r++) {
 				int x = (int) Math.round(r * Math.cos(mid));
 				int z = (int) Math.round(r * Math.sin(mid));
 				set(level, x, 1, z, hedge);
-				if (r % 3 != 0) {
+				if (r % 4 != 0) {
 					set(level, x, 2, z, hedge);
 				}
 			}
 		}
 	}
 
+	/** Trône de bois : on s'y assoit d'un clic droit. */
+	private void throne(ServerLevel level, int x, int z, Palette p) {
+		Direction back = away(x, z);
+		Direction side = back.getClockWise();
+		set(level, x, 0, z, p.seatFloor().defaultBlockState());
+		set(level, x, 1, z, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, back));
+		int bx = x + back.getStepX();
+		int bz = z + back.getStepZ();
+		set(level, bx, 0, bz, p.seatFloor().defaultBlockState());
+		set(level, bx, 1, bz, p.pillar().defaultBlockState());
+		set(level, bx, 2, bz, p.pillar().defaultBlockState());
+		set(level, bx, 3, bz, Blocks.DARK_OAK_TRAPDOOR.defaultBlockState()
+			.setValue(net.minecraft.world.level.block.TrapDoorBlock.HALF, net.minecraft.world.level.block.state.properties.Half.BOTTOM));
+		for (int s : new int[] {-1, 1}) {
+			int ax = x + side.getStepX() * s;
+			int az = z + side.getStepZ() * s;
+			set(level, ax, 0, az, p.seatFloor().defaultBlockState());
+			set(level, ax, 1, az, Blocks.DARK_OAK_SLAB.defaultBlockState()
+				.setValue(net.minecraft.world.level.block.SlabBlock.TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP));
+		}
+	}
+
+	/** Étal de marché : quatre poteaux, un auvent rayé, un comptoir. */
+	private void stall(ServerLevel level, int cx, int cz, int index) {
+		Block stripe = switch (index % 6) {
+			case 0 -> Blocks.WOOL.red();
+			case 2 -> Blocks.WOOL.blue();
+			default -> Blocks.WOOL.green();
+		};
+		for (int x = -1; x <= 1; x++) {
+			for (int z = -1; z <= 1; z++) {
+				boolean corner = Math.abs(x) == 1 && Math.abs(z) == 1;
+				if (corner) {
+					set(level, cx + x, 1, cz + z, Blocks.SPRUCE_FENCE.defaultBlockState());
+					set(level, cx + x, 2, cz + z, Blocks.SPRUCE_FENCE.defaultBlockState());
+				}
+				set(level, cx + x, 3, cz + z, ((x + 1) % 2 == 0 ? stripe : Blocks.WOOL.white()).defaultBlockState());
+			}
+		}
+		set(level, cx, 1, cz, Blocks.BARREL.defaultBlockState());
+		set(level, cx + 1, 1, cz, Blocks.SPRUCE_SLAB.defaultBlockState()
+			.setValue(net.minecraft.world.level.block.SlabBlock.TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP));
+		set(level, cx - 1, 1, cz, Blocks.SPRUCE_SLAB.defaultBlockState()
+			.setValue(net.minecraft.world.level.block.SlabBlock.TYPE, net.minecraft.world.level.block.state.properties.SlabType.TOP));
+	}
+
+	/** Arbre simple : un tronc et une couronne de feuilles. */
+	private void tree(ServerLevel level, int cx, int cz, Palette p, BlockState leaves) {
+		for (int y = 1; y <= 5; y++) {
+			set(level, cx, y, cz, p.log().defaultBlockState());
+		}
+		for (int y = 4; y <= 7; y++) {
+			int r = y <= 5 ? 2 : 1;
+			for (int x = -r; x <= r; x++) {
+				for (int z = -r; z <= r; z++) {
+					boolean corner = Math.abs(x) == r && Math.abs(z) == r;
+					if ((x != 0 || z != 0 || y > 5) && !(corner && (y == 5 || y == 7))) {
+						set(level, cx + x, y, cz + z, leaves);
+					}
+				}
+			}
+		}
+	}
+
+	/** Maison de 9 × 9 : toit en pyramide, fenêtres, lit de paille, tonneaux et lanterne. */
 	private void house(ServerLevel level, int hx, int hz, int index, Palette p) {
 		BlockState wall = (index % 2 == 0 ? p.wallA() : p.wallB()).defaultBlockState();
 		BlockState log = p.pillar().defaultBlockState();
-		for (int x = -3; x <= 3; x++) {
-			for (int z = -3; z <= 3; z++) {
-				boolean edge = Math.abs(x) == 3 || Math.abs(z) == 3;
-				boolean corner = Math.abs(x) == 3 && Math.abs(z) == 3;
+		BlockState roof = p.roof().defaultBlockState();
+		int h = HOUSE_HALF;
+		for (int x = -h; x <= h; x++) {
+			for (int z = -h; z <= h; z++) {
+				boolean edge = Math.abs(x) == h || Math.abs(z) == h;
+				boolean corner = Math.abs(x) == h && Math.abs(z) == h;
 				set(level, hx + x, 0, hz + z, p.houseFloor().defaultBlockState());
 				for (int y = 1; y <= 4; y++) {
 					if (corner) {
 						set(level, hx + x, y, hz + z, log);
 					} else if (edge) {
-						boolean window = y == 2 && (x == 0 || z == 0);
+						boolean window = (y == 2 || y == 3) && (Math.abs(x) == 2 || Math.abs(z) == 2);
 						set(level, hx + x, y, hz + z, window ? Blocks.GLASS_PANE.defaultBlockState() : wall);
 					}
 				}
-				set(level, hx + x, 5, hz + z, p.roof().defaultBlockState());
 			}
 		}
-		set(level, hx, 6, hz, p.roof().defaultBlockState());
+		// Toit en pyramide, qui déborde d'un bloc
+		for (int y = 5, r = h + 1; r >= 0; y++, r--) {
+			for (int x = -r; x <= r; x++) {
+				for (int z = -r; z <= r; z++) {
+					if (r == 0 || Math.abs(x) == r || Math.abs(z) == r || y == 5) {
+						set(level, hx + x, y, hz + z, roof);
+					}
+				}
+			}
+		}
 		Direction toPlaza = away(-hx, -hz);
-		int ox = toPlaza.getStepX() * 3;
-		int oz = toPlaza.getStepZ() * 3;
+		int ox = toPlaza.getStepX() * h;
+		int oz = toPlaza.getStepZ() * h;
 		BlockState door = Blocks.SPRUCE_DOOR.defaultBlockState().setValue(DoorBlock.FACING, toPlaza);
 		set(level, hx + ox, 1, hz + oz, door.setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
 		set(level, hx + ox, 2, hz + oz, door.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-		set(level, hx - toPlaza.getStepX() * 2, 1, hz - toPlaza.getStepZ() * 2, Blocks.HAY_BLOCK.defaultBlockState());
-		set(level, hx, 4, hz, p.light().defaultBlockState());
+		set(level, hx + ox, 3, hz + oz, wall);
+		// Lit de paille au fond, sous une couverture
+		Direction side = toPlaza.getClockWise();
+		for (int k = 2; k <= 3; k++) {
+			int bx = hx - toPlaza.getStepX() * k + side.getStepX() * 2;
+			int bz = hz - toPlaza.getStepZ() * k + side.getStepZ() * 2;
+			set(level, bx, 1, bz, Blocks.HAY_BLOCK.defaultBlockState());
+			set(level, bx, 2, bz, Blocks.CARPET.white().defaultBlockState());
+		}
+		set(level, hx - toPlaza.getStepX() * 3 - side.getStepX() * 2, 1, hz - toPlaza.getStepZ() * 3 - side.getStepZ() * 2,
+			Blocks.BARREL.defaultBlockState());
+		set(level, hx - toPlaza.getStepX() * 3 - side.getStepX() * 3, 1, hz - toPlaza.getStepZ() * 3 - side.getStepZ() * 3,
+			Blocks.BARREL.defaultBlockState());
+		// Tapis au centre (là où l'on dort la nuit), lanterne suspendue au-dessus
+		for (int x = -1; x <= 1; x++) {
+			for (int z = -1; z <= 1; z++) {
+				set(level, hx + x, 1, hz + z, Blocks.CARPET.brown().defaultBlockState());
+			}
+		}
+		BlockState light = p.light().defaultBlockState();
+		if (light.hasProperty(net.minecraft.world.level.block.LanternBlock.HANGING)) {
+			light = light.setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+		}
+		set(level, hx, 4, hz, light);
+		// Lanterne sur poteau devant la porte
+		int px = hx + toPlaza.getStepX() * (h + 1) + side.getStepX() * 2;
+		int pz = hz + toPlaza.getStepZ() * (h + 1) + side.getStepZ() * 2;
+		set(level, px, 1, pz, p.post().defaultBlockState());
+		set(level, px, 2, pz, p.light().defaultBlockState());
 	}
 
 	// ------------------------------------------------------------------
@@ -456,6 +640,7 @@ public final class Village {
 		Data d = new Data();
 		d.center = arr(center);
 		d.generated = generated;
+		d.layout = layout;
 		d.hall = hall;
 		d.theme = theme;
 		seats.forEach(p -> d.seats.add(arr(p)));
@@ -475,6 +660,7 @@ public final class Village {
 			if (Files.exists(json)) {
 				Data d = GSON.fromJson(Files.readString(json), Data.class);
 				Village v = new Village(pos(d.center), d.generated);
+				v.layout = d.layout;
 				v.hall = d.hall;
 				v.theme = d.theme == null ? "gothique" : d.theme;
 				d.seats.forEach(a -> v.seats.add(pos(a)));
@@ -485,7 +671,9 @@ public final class Village {
 			Path old = json.resolveSibling("valcombe-village.txt");
 			if (Files.exists(old)) {
 				String[] p = Files.readString(old).trim().split(" ");
-				return generated(new BlockPos(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])));
+				Village v = generated(new BlockPos(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])));
+				v.layout = 1;
+				return v;
 			}
 		} catch (IOException | RuntimeException e) {
 			ValcombeMod.LOG.warn("Village illisible", e);

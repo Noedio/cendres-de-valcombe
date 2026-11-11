@@ -201,6 +201,13 @@ Les sons et musiques passent par le mod (`sounds.json` et fichiers `.ogg`). Ils 
   - **47 tests automatiques**, dont 40 parties complètes jouées avec le script des Brumes, et un test en jeu qui photographie chaque écran et la scène 3D.
 - Reste à faire : la **soirée de test réelle** à 8–12 joueurs.
 
+### Après la phase 8 : la place revue (novembre 2026)
+
+- **Village agrandi** : place de 35 blocs de large, trônes à 11 blocs du puits, route circulaire, maisons de 9 × 9 meublées, étals de marché et arbres entre les allées, salle d'attente déplacée plus loin. Un village généré par une version précédente est reconstruit automatiquement au démarrage du serveur, au même endroit.
+- **Vrais trônes en blocs** : un clic droit pour s'asseoir, en partie (son propre trône) comme hors partie.
+- **Vote simplifié** : la main se lève dès la défense, avec H ou la plume ; la plume vise de loin pour accuser ; un bandeau montre l'ordre de passage de l'aiguille.
+- **Qui est nommé** : tableau du jour (accusations, voix, billot) à l'écran, et « sur le billot » au-dessus du joueur concerné.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** avec la 0.3.0 : c'est elle qui dira quoi corriger en premier.

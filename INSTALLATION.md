@@ -17,8 +17,10 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
 5. En jeu :
    - **J** ou l'horloge « Menu de Valcombe » (clic droit) : menu du jeu ;
    - **V** : réglages du vocal (Simple Voice Chat). Choisissez votre micro au premier lancement ;
-   - **H** : lever ou baisser la main pendant un vote ;
-   - **plume d'accusation** (donnée en début de partie) : viser un joueur et faire un clic droit pour l'accuser, quand les nominations sont ouvertes ;
+   - **clic droit sur un trône** de la place : s'y asseoir (accroupi pour se lever). En partie, chacun a le sien ; cliquer sur celui d'un autre fait scintiller le vôtre ;
+   - **H** : lever ou baisser la main pendant un vote, dès que l'accusé commence sa défense ;
+   - **plume d'accusation** (donnée en début de partie) : viser un joueur, même à l'autre bout de la place, et faire un clic droit pour l'accuser. Pendant un vote, la plume lève ou baisse la main. La barre au-dessus de l'inventaire indique qui est visé ;
+   - en haut à gauche, le **tableau du jour** : qui a accusé qui, avec combien de voix, et qui est sur le billot ; pendant le vote, une rangée de cases montre l'aiguille, les mains comptées et quand elle arrivera à vous ;
    - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
    - menu → « Regarder » : suivre la partie en spectateur.
 
