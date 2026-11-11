@@ -4,9 +4,12 @@ Un seul `ValcombeLauncher.exe`, portable : il range tout dans le dossier `Valcom
 
 ## Ce qu'il fait
 
-1. Au premier clic sur **JOUER**, il installe Prism Launcher (version portable officielle) dans `ValcombeData/prism`. Prism se charge de la connexion au compte Microsoft, gardée en mémoire après la première fois, et du Java de Minecraft.
-2. Il lit la dernière version publiée sur GitHub (Réglages → dépôt), puis installe ou met à jour l'instance : Minecraft, Fabric et les mods. Chaque fichier est vérifié par son empreinte.
-3. Il applique les options choisies (distance d'affichage, champ de vision, images par seconde, volume, interface, langue, plein écran) et lance le jeu directement sur le serveur.
+1. Au premier clic sur **JOUER**, il affiche un code (déjà copié) et ouvre la page Microsoft où le saisir. La connexion est gardée chiffrée sur le PC (DPAPI) : on ne la refait pas à chaque fois. Elle passe par l'application Azure « Valcombe Launcher », validée par Microsoft.
+2. Il télécharge lui-même Minecraft, ses ressources, le Java officiel de Mojang et Fabric dans `ValcombeData/jeu`, chaque fichier vérifié par son empreinte.
+
+   Prism Launcher ne sert plus que de secours, si l'ID d'application est vidé dans les Réglages.
+3. Il lit la dernière version publiée sur GitHub (Réglages → dépôt), puis installe ou met à jour l'instance : Minecraft, Fabric et les mods. Chaque fichier est vérifié par son empreinte.
+4. Il applique les options choisies (distance d'affichage, champ de vision, images par seconde, volume, interface, langue, plein écran) et lance le jeu directement sur le serveur.
 
 Pages : Accueil (nouvelles, serveur, compte), Options du jeu, Personnalisation (couleur d'accent, fond, fermeture au lancement), Réglages (dépôt, serveur, mémoire, réparation), Compte.
 
