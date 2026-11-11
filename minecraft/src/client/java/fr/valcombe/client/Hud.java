@@ -288,6 +288,15 @@ public final class Hud {
 			}
 		}
 		drawCard(g, mc, w, h);
+		// Le serveur n'a pas la même version du mod : des écrans et des commandes ne marcheront pas.
+		String other = ClientState.serverVersionMismatch();
+		if (other != null) {
+			String t = "Le serveur a une autre version du mod Valcombe (serveur : " + other + ", vous : "
+				+ ClientState.modVersion() + "). L'hôte doit le mettre à jour.";
+			int tw2 = mc.font.width(t) + 12;
+			g.fill(w / 2 - tw2 / 2, h - 96, w / 2 + tw2 / 2, h - 82, 0xE0801818);
+			g.text(mc.font, t, w / 2 - tw2 / 2 + 6, h - 93, 0xFFFFFFFF, false);
+		}
 		if (phase.equals("LOBBY")) {
 			return;
 		}

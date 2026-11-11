@@ -117,6 +117,10 @@ public class NotebookScreen extends BaseScreen {
 		Theme.ink(g, font, "Ce que chacun prétend être, ses votes, vos soupçons. Gardé sur votre PC.", px + 14, py + 14, Theme.ASH);
 		List<String> names = players();
 		String me = ClientState.str(view(), "me");
+		if (names.stream().noneMatch(x -> !x.equals(me))) {
+			Theme.paragraph(g, font, "Le carnet se remplit pendant une partie : une ligne par joueur, pour noter ce qu'il "
+				+ "prétend être et vos soupçons. Rien à noter pour l'instant.", px + 14, py + 40, pw - 28, Theme.INK);
+		}
 		int rows = Math.max(1, Math.min(8, (ph - 70) / 21));
 		int colW = (pw - 36) / 2;
 		int i = 0;

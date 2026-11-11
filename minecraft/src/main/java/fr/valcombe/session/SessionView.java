@@ -60,6 +60,7 @@ final class SessionView {
 		sc.put("problem", fr.valcombe.rules.Setup.check(ses.script, Math.max(5, ses.lobby.size())));
 		v.put("script", sc);
 		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.
+		v.put("modVersion", ses.modVersion);
 		v.put("customRoles", Role.customDefs());
 		List<Map<String, Object>> figs = new ArrayList<>();
 		for (var e : Session.FIGURES.entrySet()) {

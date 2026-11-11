@@ -138,6 +138,8 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.setMaps(maps);
 			creations.load();
 			SESSION.carnetSource = community::carnet;
+			SESSION.modVersion = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
+				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
 			baseMotd = server.getMotd();
 			Atelier atelier = new Atelier(SESSION, creations, maps, HOST);
 			atelier.setServer(server);

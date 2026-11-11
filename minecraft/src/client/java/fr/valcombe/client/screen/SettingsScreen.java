@@ -32,7 +32,7 @@ public class SettingsScreen extends BaseScreen {
 		toggle(y += 24, "Écran noir la nuit", "nuit_sombre", ClientState.bool(st, "nightDark"));
 		toggle(y += 24, "Micros coupés la nuit", "nuit_muette", ClientState.bool(st, "nightMute"));
 		int defense = ClientState.num(st, "defenseSeconds", 20);
-		int clock = (int) Math.round(st.get("clockSeconds").getAsDouble() * 10);
+		int clock = (int) Math.round(ClientState.dbl(st, "clockSeconds", 1.5) * 10);
 		y += 30;
 		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_defense " + (defense - 5)));
 		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_defense " + (defense + 5)));
@@ -51,6 +51,6 @@ public class SettingsScreen extends BaseScreen {
 		JsonObject st = ClientState.obj(view(), "settings");
 		int y = py + 16 + 24 * 3 + 30 + 5;
 		Theme.centered(g, font, "Défense de l'accusé : " + ClientState.num(st, "defenseSeconds", 20) + " s", px + pw / 2, y, Theme.INK);
-		Theme.centered(g, font, "Aiguille : " + st.get("clockSeconds").getAsDouble() + " s par siège", px + pw / 2, y + 22, Theme.INK);
+		Theme.centered(g, font, "Aiguille : " + ClientState.dbl(st, "clockSeconds", 1.5) + " s par siège", px + pw / 2, y + 22, Theme.INK);
 	}
 }

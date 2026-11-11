@@ -81,6 +81,34 @@ public final class ClientState {
 		return e != null && e.isJsonObject() ? e.getAsJsonObject() : null;
 	}
 
+	/** Nombre à virgule, ou la valeur par défaut si le serveur ne l'envoie pas. */
+	public static double dbl(JsonObject o, String key, double def) {
+		JsonElement e = o == null ? null : o.get(key);
+		return e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber() ? e.getAsDouble() : def;
+	}
+
+	/** Version du mod chez ce joueur. */
+	public static String modVersion() {
+		return net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
+			.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+	}
+
+	/**
+	 * Version du mod sur le serveur, ou null si elle est identique à celle du joueur. Un serveur
+	 * d'avant la 0.5.3 n'envoie pas sa version : il est forcément différent.
+	 */
+	public static String serverVersionMismatch() {
+		if (view == null || !view.has("phase")) {
+			return null;
+		}
+		String server = str(view, "modVersion");
+		String mine = modVersion();
+		if (server != null && server.equals(mine)) {
+			return null;
+		}
+		return server == null ? "plus ancienne" : server;
+	}
+
 	public static String str(JsonObject o, String key) {
 		JsonElement e = o == null ? null : o.get(key);
 		return e != null && e.isJsonPrimitive() ? e.getAsString() : null;

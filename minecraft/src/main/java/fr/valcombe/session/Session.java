@@ -172,6 +172,9 @@ public final class Session {
 		return List.of();
 	}
 
+	/** Version du mod sur le serveur (envoyée aux joueurs pour repérer un serveur pas à jour). */
+	public String modVersion = "?";
+
 	/** Carnet d'un joueur (statistiques du serveur), fourni par le serveur ; null dans les tests. */
 	public java.util.function.Function<String, Map<String, Object>> carnetSource;
 
