@@ -51,6 +51,8 @@ public partial class MainWindow : Window
                 await CaptureAsync(_captureDir);
                 return;
             }
+            // Le launcher est portable : il se range lui-même dans le menu Démarrer (et une fois sur le Bureau).
+            Shortcuts.Ensure(_config);
             int check = Array.IndexOf(args, "--verifier-moteur");
             if (check >= 0 && check + 1 < args.Length)
             {
@@ -140,6 +142,7 @@ public partial class MainWindow : Window
         ServerBox.Text = _config.Server;
         MemorySlider.Value = _config.MaxMemoryMb / 1024;
         CloseOnLaunchBox.IsChecked = _config.CloseOnLaunch;
+        ShortcutsBox.IsChecked = _config.Shortcuts;
         UpdateLabels();
     }
 
@@ -237,6 +240,20 @@ public partial class MainWindow : Window
             _config.Background = bg;
         }
         _config.CloseOnLaunch = CloseOnLaunchBox.IsChecked == true;
+        bool shortcuts = ShortcutsBox.IsChecked == true;
+        if (shortcuts != _config.Shortcuts)
+        {
+            _config.Shortcuts = shortcuts;
+            _config.DesktopShortcutDone = false;
+            if (shortcuts)
+            {
+                Shortcuts.Ensure(_config);
+            }
+            else
+            {
+                Shortcuts.Remove();
+            }
+        }
         _config.Save();
         ApplyLook();
     }

@@ -226,6 +226,8 @@
             <TextBlock Style="{StaticResource Label}" Text="Fond de la fenêtre"/>
             <WrapPanel x:Name="BackgroundPanel"/>
             <CheckBox x:Name="CloseOnLaunchBox" Content="Fermer le launcher quand le jeu démarre" Checked="LookChanged" Unchecked="LookChanged"/>
+            <CheckBox x:Name="ShortcutsBox" Content="Raccourcis dans le menu Démarrer et sur le Bureau" Margin="0,8,0,0"
+                      Checked="LookChanged" Unchecked="LookChanged"/>
           </StackPanel>
 
           <!-- Réglages -->

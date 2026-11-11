@@ -39,6 +39,10 @@ public sealed class LauncherConfig
     public string MicrosoftClientId { get; set; } = DefaultClientId;
     public int MaxMemoryMb { get; set; } = 4096;
     public bool CloseOnLaunch { get; set; } = true;
+    /// <summary>Raccourcis dans le menu Démarrer et sur le Bureau (le launcher est portable).</summary>
+    public bool Shortcuts { get; set; } = true;
+    /// <summary>Le raccourci du Bureau a déjà été créé une fois (on ne le recrée pas s'il a été supprimé).</summary>
+    public bool DesktopShortcutDone { get; set; }
     public string Accent { get; set; } = "Lie-de-vin";
     public string Background { get; set; } = "Parchemin";
     public MinecraftOptions Minecraft { get; set; } = new();
