@@ -28,28 +28,35 @@ import java.util.Set;
 public final class Session {
 	public enum Mode { AUTO, HUMAIN }
 
-	private final Host host;
+	final Host host;
 	private final Rng rng;
 	public final Settings settings = new Settings();
-	private final List<String> lobby = new ArrayList<>();
-	private final Set<String> bots = new LinkedHashSet<>();
-	private final Map<String, Prompt> prompts = new HashMap<>();
-	private String storyteller;
-	private Mode mode = Mode.AUTO;
+	final List<String> lobby = new ArrayList<>();
+	final Set<String> bots = new LinkedHashSet<>();
+	/** Spectateurs : ils regardent la partie sans y jouer. */
+	final Set<String> spectators = new LinkedHashSet<>();
+	/** Jetons de rappel posés par le Conteur sur les sièges (« ivre », « a choisi X »…). */
+	final Map<String, List<String>> reminders = new LinkedHashMap<>();
+	/** Partie d'entraînement : le joueur guidé, et les conseils déjà donnés. */
+	String trainee;
+	private final Set<String> tipsGiven = new java.util.HashSet<>();
+	final Map<String, Prompt> prompts = new HashMap<>();
+	String storyteller;
+	Mode mode = Mode.AUTO;
 	/** Consignes du Conteur humain et notes par joueur. */
 	public final HumanDecisions policies = new HumanDecisions();
-	private final Map<String, String> notes = new HashMap<>();
+	final Map<String, String> notes = new HashMap<>();
 	/** Script de la prochaine partie : les rôles qui peuvent être tirés. */
-	private java.util.EnumSet<Role> script = java.util.EnumSet.allOf(Role.class);
-	private String scriptName = "Valcombe (complet)";
-	private List<String> savedScripts = List.of();
-	private Game game;
-	private Game lastGame;
+	java.util.EnumSet<Role> script = Role.classic();
+	String scriptName = "Les Cendres de Valcombe";
+	List<String> savedScripts = List.of();
+	Game game;
+	Game lastGame;
 
 	// Nuit : étape en attente
-	private Step pendingStep;
-	private String pendingChooser;
-	private final Set<Integer> selected = new LinkedHashSet<>();
+	Step pendingStep;
+	String pendingChooser;
+	final Set<Integer> selected = new LinkedHashSet<>();
 	private String waitingAck;
 	private String deliverTo;
 	private String deliverTitle;
@@ -57,18 +64,18 @@ public final class Session {
 	private int nightToken;
 
 	// Jour : vote en cours
-	private Game.Nomination voteNom;
+	Game.Nomination voteNom;
 	/** Main levée ou non, modifiable jusqu'au passage de l'aiguille. */
-	private final Map<String, Boolean> answers = new LinkedHashMap<>();
-	private final Set<String> waitingVote = new LinkedHashSet<>();
+	final Map<String, Boolean> answers = new LinkedHashMap<>();
+	final Set<String> waitingVote = new LinkedHashSet<>();
 	/** Sièges dans l'ordre de passage de l'aiguille, position actuelle, mains verrouillées. */
-	private final List<Integer> clockOrder = new ArrayList<>();
-	private int clockPos = -1;
-	private final List<Integer> lockedHands = new ArrayList<>();
-	private boolean defense;
-	private int defenseLeft;
+	final List<Integer> clockOrder = new ArrayList<>();
+	int clockPos = -1;
+	final List<Integer> lockedHands = new ArrayList<>();
+	boolean defense;
+	int defenseLeft;
 	/** Nominations ouvertes par le Conteur (automatiquement en mode automatique). */
-	private boolean nominationsOpen;
+	boolean nominationsOpen;
 	private int voteToken;
 
 	public Session(Host host) {
@@ -89,6 +96,10 @@ public final class Session {
 
 	public Game lastGame() {
 		return lastGame;
+	}
+
+	public Settings settings() {
+		return settings;
 	}
 
 	public String storyteller() {
@@ -114,6 +125,34 @@ public final class Session {
 			&& !name.equals(storyteller) && g.seatOf(name) >= 0;
 	}
 
+	/**
+	 * Vocal piloté par le jeu, la nuit : à qui parle ce joueur ? null : vocal normal ;
+	 * liste vide : personne ne l'entend. Le Conteur parle aux joueurs réveillés, et
+	 * chaque joueur réveillé ne parle qu'au Conteur.
+	 */
+	public List<String> voiceTargets(String name) {
+		Game g = game;
+		if (!settings.nightMute || g == null || g.phase() != Game.Phase.NIGHT) {
+			return null;
+		}
+		List<String> awake = new ArrayList<>();
+		for (var e : prompts.entrySet()) {
+			if (!bots.contains(e.getKey()) && !(e.getValue() instanceof Prompt.Vote)) {
+				awake.add(e.getKey());
+			}
+		}
+		if (name.equals(storyteller)) {
+			return awake;
+		}
+		if (g.seatOf(name) < 0) {
+			return null; // spectateurs et visiteurs : vocal normal entre eux
+		}
+		if (awake.contains(name) && storyteller != null && host.online(storyteller)) {
+			return List.of(storyteller);
+		}
+		return List.of();
+	}
+
 	public boolean voteOpen() {
 		return voteNom != null;
 	}
@@ -131,7 +170,7 @@ public final class Session {
 	}
 
 	/** Annonces publiques récentes, affichées par le client. */
-	private final List<String> feed = new ArrayList<>();
+	final List<String> feed = new ArrayList<>();
 
 	private void announce(String text) {
 		feed.add(text);
@@ -163,6 +202,18 @@ public final class Session {
 			return;
 		}
 		prompts.put(name, prompt);
+		if (name.equals(trainee)) {
+			switch (prompt) {
+				case Prompt.Choose c -> tip("choisir", "Ton pouvoir s'éveille", "Choisis le ou les joueurs demandés, puis "
+					+ "valide. Le Conteur (ici automatique) applique ton pouvoir.");
+				case Prompt.Info i -> tip("info", "Une information", "Le Conteur te confie une information. Retiens-la : "
+					+ "elle peut être fausse si tu es ivre ou empoisonné. Note-la dans ton carnet.");
+				case Prompt.Vote v -> tip("vote", "Le vote", "L'aiguille fait le tour du cercle. Lève la main (bouton, "
+					+ "ou touche H) avant qu'elle ne passe devant toi pour voter l'exécution.");
+				default -> {
+				}
+			}
+		}
 		if (bots.contains(name)) {
 			host.schedule(15, () -> botAct(name, prompt));
 		} else {
@@ -219,6 +270,99 @@ public final class Session {
 	// ------------------------------------------------------------------
 	// Inscriptions, Conteur, joueurs fictifs
 	// ------------------------------------------------------------------
+	// ------------------------------------------------------------------
+	// Jetons de rappel du Conteur
+	// ------------------------------------------------------------------
+	public String reminder(String target, String text) {
+		Game g = requireGame();
+		String name = g.player(seatByName(target)).name;
+		String t = text.trim();
+		if (t.equalsIgnoreCase("effacer")) {
+			reminders.remove(name);
+			return "Rappels de " + name + " effacés.";
+		}
+		if (t.isEmpty() || t.length() > 40) {
+			throw new GameException("Un rappel tient en 40 caractères.");
+		}
+		List<String> list = reminders.computeIfAbsent(name, k -> new ArrayList<>());
+		if (list.size() >= 6) {
+			throw new GameException("Six rappels au plus par joueur.");
+		}
+		list.add(t);
+		return "Rappel posé sur " + name + " : « " + t + " ».";
+	}
+
+	// ------------------------------------------------------------------
+	// Spectateurs
+	// ------------------------------------------------------------------
+	public boolean isSpectator(String name) {
+		return spectators.contains(name);
+	}
+
+	/** Devenir spectateur (ou redevenir joueur). */
+	public String spectate(String name) {
+		if (spectators.remove(name)) {
+			host.spectator(name, false);
+			announce(name + " ne regarde plus la partie.");
+			return "Tu n'es plus spectateur.";
+		}
+		if (lobby.contains(name)) {
+			throw new GameException("Quitte d'abord le salon (tu es inscrit pour jouer).");
+		}
+		if (game != null && game.seatOf(name) >= 0) {
+			throw new GameException("Tu joues dans la partie en cours.");
+		}
+		if (name.equals(storyteller)) {
+			throw new GameException("Le Conteur ne peut pas être spectateur.");
+		}
+		spectators.add(name);
+		host.spectator(name, true);
+		announce(name + " regarde la partie en spectateur.");
+		return "Tu es spectateur : tu vois tout le monde, mais tu ne joues pas et ton micro ne porte pas jusqu'aux joueurs."
+			+ " /vc spectateur pour revenir.";
+	}
+
+	// ------------------------------------------------------------------
+	// Partie d'entraînement guidée
+	// ------------------------------------------------------------------
+	public boolean isTrainee(String name) {
+		return name.equals(trainee) && game != null;
+	}
+
+	/** Une partie d'entraînement : le joueur, six joueurs fictifs et un guide qui explique chaque étape. */
+	public String training(String name) {
+		if (game != null) {
+			throw new GameException("Une partie est déjà en cours.");
+		}
+		if (name.equals(storyteller)) {
+			storyteller = null;
+		}
+		spectators.remove(name);
+		lobby.removeIf(n -> !n.equals(name) && !bots.contains(n));
+		if (!lobby.contains(name)) {
+			lobby.add(name);
+		}
+		int missing = 7 - lobby.size();
+		if (missing > 0) {
+			addBots(missing);
+		}
+		trainee = name;
+		tipsGiven.clear();
+		start(name, Mode.AUTO);
+		tip("debut", "Bienvenue à Valcombe !", "Ta carte de rôle vient de tomber : lis-la bien. Les autres sont des joueurs "
+			+ "fictifs. Ouvre le menu avec J ; le bouton « Nuit » du panneau fait tomber la première nuit.");
+		return "";
+	}
+
+	/** Un conseil du guide, donné une seule fois par partie d'entraînement. */
+	private void tip(String key, String title, String text) {
+		if (trainee == null || game == null || !tipsGiven.add(key)) {
+			return;
+		}
+		host.title(List.of(trainee), title, "");
+		tell(trainee, new Msg().colored("[Guide] ", "aqua").text(text));
+	}
+
 	public String join(String name) {
 		if (game != null) {
 			throw new GameException("Une partie est en cours.");
@@ -319,6 +463,7 @@ public final class Session {
 			g.decide = policies;
 		}
 		notes.clear();
+		reminders.clear();
 		mode = wanted;
 		game = g;
 		clearNight();
@@ -335,6 +480,7 @@ public final class Session {
 	}
 
 	public String stop() {
+		trainee = null;
 		if (game != null) {
 			host.endGame(realNames());
 		}
@@ -442,8 +588,12 @@ public final class Session {
 			case "nuit_muette" -> settings.nightMute = yes;
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
+			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
+			case "effets" -> settings.fullEffects = !value.equalsIgnoreCase("reduits") && !value.equalsIgnoreCase("réduits")
+				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, temps_horloge <dixièmes de seconde par siège>.");
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, "
+					+ "temps_horloge <dixièmes de seconde par siège>, effets (complets|reduits).");
 		}
 		return "Réglage modifié.";
 	}
@@ -472,6 +622,10 @@ public final class Session {
 			throw new GameException("Un vote est en cours.");
 		}
 		g.startNight();
+		tip("nuit", "La nuit tombe", "La nuit, chacun dort. Quand vient ton tour, tu te réveilles : un écran s'ouvre "
+			+ "pour utiliser ton pouvoir. Les autres ne savent pas qui se réveille.");
+		discussionToken++;
+		host.timer(realNames(), "", 0);
 		host.nightEffects(realNames(), true, settings);
 		save();
 		announce("La nuit " + g.night() + " tombe sur Valcombe. Fermez les yeux…");
@@ -815,6 +969,8 @@ public final class Session {
 		save();
 		updateBoards();
 		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
+		tip("jour", "Le jour se lève", "Le jour, on discute. Chuchoter (bouton du menu) est privé, mais tout le monde "
+			+ "voit qui chuchote. Avec la plume d'accusation, vise un joueur et fais un clic droit pour l'accuser.");
 	}
 
 	// ------------------------------------------------------------------
@@ -830,6 +986,7 @@ public final class Session {
 		defense = false;
 		voteToken++;
 		clearPrompts(Prompt.Vote.class);
+		host.voteScene(null);
 	}
 
 	public boolean nominationsOpen() {
@@ -853,10 +1010,44 @@ public final class Session {
 		return "";
 	}
 
+	private int discussionToken;
+
+	/** Discussion libre minutée : une barre décompte pour tous, la cloche sonne à la fin. */
+	public String discussion(int minutes) {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
+			throw new GameException("La discussion n'a lieu que de jour.");
+		}
+		int token = ++discussionToken;
+		if (minutes <= 0) {
+			host.timer(realNames(), "", 0);
+			return "Minuteur arrêté.";
+		}
+		int seconds = Math.min(30, minutes) * 60;
+		host.timer(realNames(), "Discussion libre", seconds);
+		announce("Discussion libre : " + minutes + " minute(s). Allez chuchoter, puis revenez au cercle.");
+		host.schedule(seconds * 20, () -> {
+			if (token != discussionToken || game == null || game.phase() != Game.Phase.DAY) {
+				return;
+			}
+			host.timer(realNames(), "", 0);
+			host.sound(realNames(), "bell");
+			host.title(realNames(), "Fin de la discussion", "Tout le monde au cercle");
+			announce("Fin de la discussion : tout le monde au cercle.");
+			if (mode == Mode.AUTO) {
+				host.gather(realNames());
+				host.sit(realNames(), false);
+				setNominations(true);
+			}
+		});
+		return "";
+	}
+
 	/** Le Conteur rassemble tout le monde à sa place sur la place du village. */
 	public String gather() {
 		requireGame();
 		host.gather(realNames());
+		host.sit(realNames(), false);
 		host.sound(realNames(), "bell");
 		announce("La cloche sonne : tout le monde au cercle !");
 		return "";
@@ -877,6 +1068,7 @@ public final class Session {
 		int b = seatByName(target);
 		Game.Nomination nom = g.nominate(a, b);
 		announce(name + " accuse " + g.player(b).name + ".");
+		host.accusation(name, g.player(b).name);
 		host.title(realNames(), name + " accuse " + g.player(b).name, "");
 		if (nom.pelerine()) {
 			announce(name + " est exécuté sur-le-champ !");
@@ -904,6 +1096,8 @@ public final class Session {
 		defense = true;
 		defenseLeft = settings.defenseSeconds;
 		announce(game.player(nom.nominee()).name + " a " + defenseLeft + " secondes pour se défendre.");
+		host.sit(realNames(), false);
+		updateVoteScene(0);
 		int token = voteToken;
 		tickDefense(token);
 	}
@@ -958,6 +1152,7 @@ public final class Session {
 			}
 		}
 		clockPos = 0;
+		updateVoteScene(20);
 		host.sound(realNames(), "clock");
 		announce("Vote sur " + nominee + " : l'aiguille fait le tour du cercle. Levez la main avant qu'elle ne passe.");
 		int token = voteToken;
@@ -983,6 +1178,7 @@ public final class Session {
 		waitingVote.remove(name);
 		setPrompt(name, null);
 		clockPos++;
+		updateVoteScene(settings.clockTicks);
 		host.schedule(settings.clockTicks, () -> advanceClock(token));
 	}
 
@@ -995,6 +1191,7 @@ public final class Session {
 			throw new GameException("L'aiguille est déjà passée devant toi.");
 		}
 		answers.put(name, yes);
+		updateVoteScene(0);
 		return yes ? "Tu lèves la main." : "Tu baisses la main.";
 	}
 
@@ -1034,6 +1231,7 @@ public final class Session {
 		String target = g.player(b).name;
 		tell(target, new Msg().colored("[" + from + " te chuchote] ", "light_purple").text(text));
 		announce(from + " chuchote à " + target + ".");
+		host.whisperBubble(from, target);
 		return "Chuchoté à " + target + ".";
 	}
 
@@ -1130,6 +1328,9 @@ public final class Session {
 		host.celebrate(realNames());
 		host.report(report(g));
 		host.title(realNames(), g.winner() == Team.GOOD ? "Victoire du bien" : "Victoire du mal", g.winReason());
+		tip("fin", "Partie terminée", "Les jetons se retournent : chacun découvre les vrais rôles. Relis la chronique "
+			+ "(menu) pour comprendre ce qui s'est passé. Prêt pour une vraie partie avec tes amis !");
+		trainee = null;
 		announce("Fin de la partie : victoire du " + (g.winner() == Team.GOOD ? "bien" : "mal") + " ! "
 			+ g.winReason());
 		announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
@@ -1284,12 +1485,40 @@ public final class Session {
 		String accused = voteNom != null ? g.player(voteNom.nominee()).name : null;
 		for (Game.Seat p : g.players()) {
 			String text = (p.alive() ? "" : "† ") + p.name + (!p.alive() && p.ghostVote() ? " ✋" : "");
+			String honor = bots.contains(p.name) ? "" : host.playerTitle(p.name);
+			if (!honor.isEmpty() && p.alive()) {
+				text += "\n« " + honor + " »";
+			}
 			if (p.name.equals(accused)) {
 				text += "\n⚖ accusé";
 			}
 			labels.put(p.name, (p.name.equals(accused) ? "gold" : p.alive() ? "white" : "gray") + "|" + text);
 		}
 		host.seatBoards(labels);
+		Map<String, String> models = new LinkedHashMap<>();
+		for (Game.Seat p : g.players()) {
+			models.put(p.name, p.alive() ? "jeton_vivant" : p.ghostVote() ? "jeton_fantome" : "jeton_mort");
+		}
+		host.seatTokens(models, false);
+	}
+
+	/** Vote en cours, tel que le monde le montre (horloge géante, mains, gibet). */
+	private void updateVoteScene(int moveTicks) {
+		Game g = game;
+		if (g == null || voteNom == null) {
+			host.voteScene(null);
+			return;
+		}
+		String nominee = g.player(voteNom.nominee()).name;
+		String pointing = null;
+		if (!defense) {
+			pointing = clockPos >= 0 && clockPos < clockOrder.size() ? g.player(clockOrder.get(clockPos)).name : nominee;
+		}
+		List<String> locked = lockedHands.stream().map(i -> g.player(i).name).toList();
+		List<String> raised = answers.entrySet().stream()
+			.filter(e -> Boolean.TRUE.equals(e.getValue()) && waitingVote.contains(e.getKey()))
+			.map(Map.Entry::getKey).toList();
+		host.voteScene(new VoteScene(nominee, defense, pointing, moveTicks, raised, locked, (g.aliveCount() + 1) / 2));
 	}
 
 	/** Fin de partie : chaque jeton révèle le rôle, aux couleurs du camp. */
@@ -1300,6 +1529,11 @@ public final class Session {
 			labels.put(p.name, (p.team() == Team.EVIL ? "red" : "aqua") + "|" + p.name + "\n" + role);
 		}
 		host.seatBoards(labels);
+		Map<String, String> models = new LinkedHashMap<>();
+		for (Game.Seat p : g.players()) {
+			models.put(p.name, "jeton_" + p.role().name().toLowerCase(java.util.Locale.ROOT));
+		}
+		host.seatTokens(models, true);
 	}
 
 	// ------------------------------------------------------------------
@@ -1311,6 +1545,7 @@ public final class Session {
 		List<String> lobby;
 		List<String> bots;
 		Map<String, String> notes;
+		Map<String, List<String>> reminders;
 		List<String> script;
 		String scriptName;
 		Settings settings;
@@ -1335,6 +1570,7 @@ public final class Session {
 		d.lobby = List.copyOf(lobby);
 		d.bots = List.copyOf(bots);
 		d.notes = Map.copyOf(notes);
+		d.reminders = new LinkedHashMap<>(reminders);
 		d.script = script.stream().map(Role::name).toList();
 		d.scriptName = scriptName;
 		d.settings = settings;
@@ -1357,6 +1593,10 @@ public final class Session {
 		bots.addAll(d.bots);
 		notes.clear();
 		notes.putAll(d.notes);
+		reminders.clear();
+		if (d.reminders != null) {
+			d.reminders.forEach((k, v) -> reminders.put(k, new ArrayList<>(v)));
+		}
 		script = java.util.EnumSet.noneOf(Role.class);
 		d.script.forEach(r -> script.add(Role.valueOf(r)));
 		scriptName = d.scriptName;
@@ -1391,159 +1631,14 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
-	// Vue envoyée au client (écrans sur mesure)
+	// Vue envoyée au client : voir SessionView
 	// ------------------------------------------------------------------
-	private static Map<String, Object> roleView(Role r) {
-		Map<String, Object> m = new LinkedHashMap<>();
-		m.put("id", r.name());
-		m.put("name", r.displayName);
-		m.put("type", r.type.name());
-		m.put("team", Team.of(r).name());
-		m.put("text", r.text);
-		return m;
-	}
-
 	/**
 	 * Ce qu'un joueur a le droit de voir, sous forme d'arbre simple (sérialisé en JSON).
-	 * leader : opérateur ou Conteur (accès au panneau). Le grimoire n'est inclus que pour
-	 * le Conteur, ou pour le Mouchard pendant son réveil.
+	 * leader : opérateur ou Conteur (accès au panneau).
 	 */
 	public Map<String, Object> view(String me, boolean leader) {
-		Map<String, Object> v = new LinkedHashMap<>();
-		v.put("me", me);
-		v.put("leader", leader);
-		v.put("storyteller", storyteller);
-		v.put("isStoryteller", me.equals(storyteller));
-		v.put("mode", mode.name());
-		v.put("lobby", List.copyOf(lobby));
-		v.put("bots", List.copyOf(bots));
-		v.put("inLobby", lobby.contains(me));
-		Map<String, Object> sc = new LinkedHashMap<>();
-		sc.put("name", scriptName);
-		sc.put("roles", script.stream().map(Role::name).toList());
-		sc.put("saved", savedScripts);
-		sc.put("problem", fr.valcombe.rules.Setup.check(script, Math.max(5, lobby.size())));
-		v.put("script", sc);
-		v.put("feed", feed.subList(Math.max(0, feed.size() - 8), feed.size()));
-		Map<String, Object> st = new LinkedHashMap<>();
-		st.put("nightFreeze", settings.nightFreeze);
-		st.put("nightDark", settings.nightDark);
-		st.put("nightHouses", settings.nightHouses);
-		st.put("nightMute", settings.nightMute);
-		st.put("defenseSeconds", settings.defenseSeconds);
-		st.put("clockSeconds", settings.clockTicks / 20.0);
-		v.put("settings", st);
-		Game g = game;
-		if (g == null) {
-			v.put("phase", "LOBBY");
-			v.put("lastWinner", lastGame != null && lastGame.winner() != null ? lastGame.winner().name() : null);
-		} else {
-			v.put("phase", g.phase().name());
-			v.put("night", g.night());
-			v.put("day", g.day());
-			v.put("dayOver", g.dayOver());
-			int mySeat = g.seatOf(me);
-			v.put("mySeat", mySeat);
-			List<Map<String, Object>> seats = new ArrayList<>();
-			for (int i = 0; i < g.size(); i++) {
-				Game.Seat p = g.player(i);
-				Map<String, Object> s = new LinkedHashMap<>();
-				s.put("seat", i);
-				s.put("name", p.name);
-				s.put("alive", p.alive());
-				s.put("ghostVote", p.ghostVote());
-				s.put("bot", bots.contains(p.name));
-				seats.add(s);
-			}
-			v.put("seats", seats);
-			if (mySeat >= 0) {
-				v.put("role", roleView(g.player(mySeat).believed()));
-			}
-			if (voteNom != null) {
-				Map<String, Object> vote = new LinkedHashMap<>();
-				vote.put("nominator", g.player(voteNom.nominator()).name);
-				vote.put("nominee", g.player(voteNom.nominee()).name);
-				vote.put("stage", defense ? "DEFENSE" : "CLOCK");
-				vote.put("defenseLeft", defenseLeft);
-				vote.put("clockSeat", clockPos >= 0 && clockPos < clockOrder.size() ? clockOrder.get(clockPos) : -1);
-				vote.put("locked", List.copyOf(lockedHands));
-				vote.put("count", lockedHands.size());
-				vote.put("threshold", (g.aliveCount() + 1) / 2);
-				vote.put("myHand", Boolean.TRUE.equals(answers.get(me)));
-				vote.put("hands", answers.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList());
-				v.put("vote", vote);
-			}
-			v.put("nominationsOpen", nominationsOpen);
-			boolean spyAwake = prompts.get(me) instanceof Prompt.Grimoire;
-			if (me.equals(storyteller) || spyAwake) {
-				List<Map<String, Object>> grim = new ArrayList<>();
-				List<String> lines = g.grimoireLines();
-				for (int i = 0; i < g.size(); i++) {
-					Game.Seat p = g.player(i);
-					Map<String, Object> row = new LinkedHashMap<>();
-					row.put("seat", i);
-					row.put("role", roleView(p.role()));
-					row.put("believed", p.believed() != p.role() ? roleView(p.believed()) : null);
-					row.put("line", lines.get(i));
-					row.put("note", notes.get(p.name));
-					row.put("poisoned", g.poisonedSeat() == i);
-					row.put("protected", g.protectedSeat() == i);
-					row.put("redHerring", g.redHerring() == i);
-					row.put("master", g.masterSeat() == i);
-					grim.add(row);
-				}
-				v.put("grimoire", grim);
-				v.put("bluffs", g.bluffs().stream().map(Role::name).toList());
-				v.put("distWarning", g.distributionWarning());
-				Map<String, Object> pol = new LinkedHashMap<>();
-				pol.put("misregister", policies.misregister.name());
-				pol.put("mayorTarget", policies.mayorTarget);
-				pol.put("successor", policies.successor);
-				v.put("policies", pol);
-			}
-		}
-		Prompt pr = prompts.get(me);
-		if (pr != null) {
-			Map<String, Object> m = new LinkedHashMap<>();
-			switch (pr) {
-				case Prompt.Choose c -> {
-					m.put("type", "choose");
-					m.put("title", c.title());
-					m.put("count", c.count());
-					List<Map<String, Object>> opts = new ArrayList<>();
-					for (Prompt.Option o : c.options()) {
-						opts.add(Map.of("seat", o.seat(), "name", o.name(), "alive", o.alive(), "selected", o.selected()));
-					}
-					m.put("options", opts);
-				}
-				case Prompt.Info i -> {
-					m.put("type", "info");
-					m.put("title", i.title());
-					m.put("text", i.text());
-				}
-				case Prompt.Grimoire gr -> m.put("type", "grimoire");
-				case Prompt.Vote vo -> {
-					m.put("type", "vote");
-					m.put("nominee", vo.nominee());
-					m.put("ghost", vo.ghost());
-				}
-				case Prompt.Decide dc -> {
-					m.put("type", "decide");
-					m.put("title", dc.title());
-					m.put("question", dc.question());
-					m.put("options", dc.options());
-				}
-				case Prompt.Confirm cf -> {
-					m.put("type", "confirm");
-					m.put("title", cf.title());
-					m.put("to", cf.to());
-					m.put("text", cf.text());
-					m.put("truth", cf.truth());
-				}
-			}
-			v.put("prompt", m);
-		}
-		return v;
+		return SessionView.build(this, me, leader);
 	}
 
 	// ------------------------------------------------------------------

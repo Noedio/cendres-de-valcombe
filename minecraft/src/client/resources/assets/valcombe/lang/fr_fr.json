@@ -1,4 +1,15 @@
 {
 	"key.valcombe.menu": "Ouvrir le menu de Valcombe",
-	"key.category.valcombe.main": "Les Cendres de Valcombe"
+	"key.category.valcombe.main": "Les Cendres de Valcombe",
+	"key.valcombe.hand": "Lever / baisser la main (vote)",
+	"subtitles.valcombe.cloche": "Cloche du beffroi",
+	"subtitles.valcombe.glas": "Glas",
+	"subtitles.valcombe.tic": "Aiguille de l'horloge",
+	"subtitles.valcombe.reveil": "Réveil",
+	"subtitles.valcombe.parchemin": "Carte retournée",
+	"subtitles.valcombe.craquement": "Le gibet se dresse",
+	"subtitles.valcombe.victoire_bien": "Victoire du bien",
+	"subtitles.valcombe.victoire_mal": "Victoire du mal",
+	"subtitles.valcombe.ambiance_nuit": "Nuit sur Valcombe",
+	"subtitles.valcombe.ambiance_jour": "Jour sur Valcombe"
 }

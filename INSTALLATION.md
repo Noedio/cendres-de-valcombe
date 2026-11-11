@@ -16,7 +16,11 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
 4. Lancez l'instance, puis Multijoueur → « Ajouter un serveur », avec l'adresse donnée par l'hôte.
 5. En jeu :
    - **J** ou l'horloge « Menu de Valcombe » (clic droit) : menu du jeu ;
-   - **V** : réglages du vocal (Simple Voice Chat). Choisissez votre micro au premier lancement.
+   - **V** : réglages du vocal (Simple Voice Chat). Choisissez votre micro au premier lancement ;
+   - **H** : lever ou baisser la main pendant un vote ;
+   - **plume d'accusation** (donnée en début de partie) : viser un joueur et faire un clic droit pour l'accuser, quand les nominations sont ouvertes ;
+   - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
+   - menu → « Regarder » : suivre la partie en spectateur.
 
 ## Pour l'hôte (serveur)
 
@@ -55,5 +59,11 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 3. Les joueurs s'inscrivent depuis leur menu. Pour tester seul, ajoutez des joueurs fictifs.
 4. « Lancer (automatique) » : le jeu mène tout seul. « Lancer (Conteur humain) » : vous relisez chaque information, et vous pouvez retoucher la distribution avant la première nuit en cliquant sur les jetons du grimoire.
 5. « Faire tomber la nuit », puis « Clore la journée » après les votes.
+
+6. Pendant le jour, « Discussion libre (5 min) » lance un minuteur visible de tous.
+7. Le lutrin au centre de la place ouvre aussi le grimoire. Sur un siège du grimoire, « Rappel » pose un jeton de rappel (« ivre », « a choisi Bot3 »…).
+8. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
+
+Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
 
 Toutes les actions existent aussi en commandes `/vc` (voir `minecraft/README.md`).

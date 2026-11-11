@@ -100,6 +100,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
                            Text="13 Citadins et 4 Étrangers cherchent le Démon et ses 4 Sbires. Le bien gagne quand le Démon meurt ; le mal, quand il ne reste que deux vivants."/>
                 <TextBlock Text="Serveur" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}" Margin="0,14,0,0"/>
+                <ComboBox x:Name="ServerPicker" Margin="0,4,0,4" SelectionChanged="ServerPicked"/>
                 <TextBlock x:Name="ServerText" Style="{StaticResource Hint}"/>
                 <TextBlock Text="Compte" FontFamily="{StaticResource Title}" FontSize="17" Foreground="{StaticResource Ink}" Margin="0,14,0,0"/>
                 <TextBlock x:Name="AccountShort" Style="{StaticResource Hint}"/>
@@ -157,6 +158,23 @@
               <TextBlock Style="{StaticResource Label}" Text="Adresse du serveur"/>
               <TextBox x:Name="ServerBox" LostFocus="SettingsChanged"/>
               <TextBlock Style="{StaticResource Hint}" Text="Laissez vide pour utiliser l'adresse annoncée par la version publiée."/>
+              <TextBlock Style="{StaticResource Label}" Text="Serveurs enregistrés"/>
+              <ListBox x:Name="SavedServersList" MinHeight="60" MaxHeight="140" Margin="0,4,0,4"/>
+              <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="NewServerName" ToolTip="Nom (ex. Serveur de Léa)"/>
+                <TextBox x:Name="NewServerAddress" Grid.Column="2" ToolTip="Adresse (ex. valcombe.exemple.fr:25565)"/>
+              </Grid>
+              <TextBlock Style="{StaticResource Hint}" Text="À gauche le nom, à droite l'adresse."/>
+              <WrapPanel>
+                <Button Style="{StaticResource Wax}" Content="Ajouter le serveur" Click="AddServer" Margin="0,0,8,8"/>
+                <Button Style="{StaticResource Wax}" Content="Retirer la sélection" Click="RemoveServer" Margin="0,0,8,8"/>
+              </WrapPanel>
+              <TextBlock Style="{StaticResource Hint}" Text="Choisissez ensuite le serveur sur l'accueil, sous « Serveur »."/>
               <TextBlock Style="{StaticResource Label}" Text="ID d'application Microsoft (connexion intégrée)"/>
               <TextBox x:Name="ClientIdBox" LostFocus="SettingsChanged"/>
               <TextBlock Style="{StaticResource Hint}" Text="À renseigner une fois l'application validée par Microsoft : le launcher se connecte et lance alors le jeu lui-même, sans Prism."/>
@@ -165,6 +183,8 @@
               <WrapPanel Margin="0,18,0,0">
                 <Button Style="{StaticResource Wax}" Content="Ouvrir le dossier" Click="OpenFolder" Margin="0,0,8,8"/>
                 <Button Style="{StaticResource Wax}" Content="Réparer l'installation" Click="RepairInstall" Margin="0,0,8,8"/>
+                <Button Style="{StaticResource Wax}" Content="Rapport de plantage" Click="MakeCrashReport" Margin="0,0,8,8"
+                        ToolTip="Rassemble les journaux du jeu dans une archive sur le Bureau, à envoyer à l'hôte."/>
               </WrapPanel>
             </StackPanel>
           </ScrollViewer>

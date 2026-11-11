@@ -44,6 +44,42 @@ public interface Host {
 	default void celebrate(List<String> players) {
 	}
 
+	/**
+	 * Jetons 3D au-dessus des sièges : nom du joueur → modèle (jeton_vivant, jeton_mort,
+	 * jeton_fantome, jeton_<rôle>). flip : les jetons se retournent (révélation).
+	 */
+	default void seatTokens(Map<String, String> models, boolean flip) {
+	}
+
+	/** Vote en cours à montrer dans le monde ; null : plus de vote. */
+	default void voteScene(VoteScene scene) {
+	}
+
+	/** Les joueurs s'assoient sur leur siège (enforce : ils ne peuvent pas se lever). */
+	default void sit(List<String> players, boolean enforce) {
+	}
+
+	/** Minuteur affiché à tous (barre en haut de l'écran) ; seconds <= 0 : on le retire. */
+	default void timer(List<String> players, String title, int seconds) {
+	}
+
+	/** Deux joueurs chuchotent : une bulle apparaît au-dessus d'eux. */
+	default void whisperBubble(String from, String to) {
+	}
+
+	/** Une accusation : un trait de lumière relie l'accusateur à l'accusé. */
+	default void accusation(String from, String to) {
+	}
+
+	/** Titre honorifique d'un joueur (tiré de ses statistiques), ou chaîne vide. */
+	default String playerTitle(String player) {
+		return "";
+	}
+
+	/** Passe un joueur en spectateur (ou le remet en jeu). */
+	default void spectator(String player, boolean on) {
+	}
+
 	/** Bilan d'une partie terminée (statistiques, compte rendu). */
 	default void report(GameReport report) {
 	}

@@ -32,7 +32,8 @@ public final class ViewSync {
 
 	public boolean isLeader(ServerPlayer p) {
 		return p.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)
-			|| p.getScoreboardName().equals(session.storyteller());
+			|| p.getScoreboardName().equals(session.storyteller())
+			|| session.isTrainee(p.getScoreboardName());
 	}
 
 	/** Appelé à chaque tick : synchronise toutes les 4 ticks (5 fois par seconde). */

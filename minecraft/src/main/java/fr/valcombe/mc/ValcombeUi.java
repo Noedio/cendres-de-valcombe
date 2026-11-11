@@ -120,6 +120,36 @@ public final class ValcombeUi {
 		return stack.is(Items.BLAZE_ROD) && n != null && n.getString().equals(WAND_NAME);
 	}
 
+	public static final String ACCUSE_NAME = "Plume d'accusation";
+
+	public static ItemStack accuseItem() {
+		return Gui.glow(Gui.icon(Items.FEATHER, ACCUSE_NAME, "Le jour, quand les nominations sont ouvertes :",
+			"clic droit sur un joueur pour l'accuser."));
+	}
+
+	public static boolean isAccuseItem(ItemStack stack) {
+		Component n = stack.get(DataComponents.CUSTOM_NAME);
+		return stack.is(Items.FEATHER) && n != null && n.getString().equals(ACCUSE_NAME);
+	}
+
+	/** Donne (on = true) ou reprend la plume d'accusation. */
+	public static void accuseItem(ServerPlayer p, boolean on) {
+		var inv = p.getInventory();
+		boolean has = false;
+		for (int i = 0; i < inv.getContainerSize(); i++) {
+			if (isAccuseItem(inv.getItem(i))) {
+				if (on) {
+					has = true;
+				} else {
+					inv.setItem(i, ItemStack.EMPTY);
+				}
+			}
+		}
+		if (on && !has) {
+			inv.add(accuseItem());
+		}
+	}
+
 	public static boolean isMenuItem(ItemStack stack) {
 		Component n = stack.get(DataComponents.CUSTOM_NAME);
 		return stack.is(Items.CLOCK) && n != null && n.getString().equals(MENU_ITEM_NAME);

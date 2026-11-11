@@ -35,7 +35,7 @@ public class SheetsScreen extends BaseScreen {
 		int y = py + 30;
 		List<Role> town = Role.ofType(RoleType.CITADIN);
 		for (int i = 0; i < town.size(); i++) {
-			spots.add(new Spot(town.get(i), x0 + (i % 7) * 28, y + (i / 7) * 28));
+			spots.add(new Spot(town.get(i), x0 + (i % 8) * 28, y + (i / 8) * 28));
 		}
 		y += 2 * 28 + 14;
 		List<Role> out = Role.ofType(RoleType.ETRANGER);

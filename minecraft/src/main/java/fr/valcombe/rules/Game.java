@@ -76,6 +76,8 @@ public final class Game {
 	private List<Role> bluffs = List.of();
 	private int redHerring = -1;
 	private int poisoned = -1;
+	/** Joueur désigné par la Faussaire : ses informations de la nuit sont fausses. */
+	private int forged = -1;
 	private int protectedSeat = -1;
 	private int master = -1;
 	private boolean pelerineUsed;
@@ -395,7 +397,7 @@ public final class Game {
 
 	/** Ivre ou empoisonné : le pouvoir ne fonctionne pas. */
 	public boolean impaired(int seat) {
-		return isDrunk(seat) || isPoisoned(seat);
+		return isDrunk(seat) || isPoisoned(seat) || (phase == Phase.NIGHT && forged == seat);
 	}
 
 	public int demonSeat() {
@@ -513,6 +515,9 @@ public final class Game {
 		if (p.role == Role.ALCHIMISTE) {
 			poisoned = -1;
 		}
+		if (p.role == Role.FAUSSAIRE) {
+			forged = -1;
+		}
 		if (p.role.type == RoleType.DEMON) {
 			onDemonDeath(cause, aliveBefore);
 		}
@@ -577,6 +582,7 @@ public final class Game {
 		phase = Phase.NIGHT;
 		// Le poison de la veille et la protection du Chapelain prennent fin au crépuscule.
 		poisoned = -1;
+		forged = -1;
 		protectedSeat = -1;
 		deathsTonight = new ArrayList<>();
 		fauconnierWakes = -1;
@@ -761,6 +767,39 @@ public final class Game {
 			case ALCHIMISTE:
 				poisoned = targets.get(0);
 				return Info.none();
+			case FAUSSAIRE:
+				if (!impaired(seat)) {
+					forged = targets.get(0);
+				}
+				return Info.none();
+			case SONNEUR: {
+				Ctx ctx = new Ctx("sonneur");
+				int count = 0;
+				for (int t : targets) {
+					if (reg(t, "evil", ctx)) {
+						count++;
+					}
+				}
+				Info i = numberInfo(seat, count, 2);
+				i.text = "Parmi ces deux joueurs, mauvais : " + i.value + ".";
+				return i;
+			}
+			case CARTOGRAPHE: {
+				Ctx ctx = new Ctx("cartographe");
+				int best = size();
+				for (int s = 0; s < size(); s++) {
+					if (s != seat && reg(s, "demon", ctx)) {
+						int d = Math.abs(s - seat);
+						best = Math.min(best, Math.min(d, size() - d));
+					}
+				}
+				if (best == size()) {
+					best = 0;
+				}
+				Info i = numberInfo(seat, best, size() / 2);
+				i.text = "Le Démon est à " + i.value + " siège(s) de toi.";
+				return i;
+			}
 			case CHAPELAIN:
 				if (!impaired(seat)) {
 					protectedSeat = targets.get(0);

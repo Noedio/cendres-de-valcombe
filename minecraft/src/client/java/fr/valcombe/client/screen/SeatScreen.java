@@ -66,7 +66,8 @@ public class SeatScreen extends BaseScreen {
 			button(bx, y, 136, "Successeur de la Goule", () -> send("vc consigne successeur " + name));
 			y += 22;
 		}
-		button(bx, y, 136, "Écrire une note", () -> minecraft.gui.setScreen(new ChatScreen("/vc note " + name + " ", false)));
+		button(bx, y, 66, "Note", () -> minecraft.gui.setScreen(new ChatScreen("/vc note " + name + " ", false)));
+		button(bx + 70, y, 66, "Rappel", () -> minecraft.gui.setScreen(new ChatScreen("/vc rappel " + name + " ", false)));
 		y += 22;
 		String phase = ClientState.phase();
 		if (phase.equals("DAY") || phase.equals("NIGHT")) {
@@ -99,7 +100,11 @@ public class SeatScreen extends BaseScreen {
 		y += Theme.paragraph(g, font, ClientState.str(role, "text"), x, y, pw - 180, Theme.INK) + 6;
 		String note = ClientState.str(row, "note");
 		if (note != null) {
-			Theme.paragraph(g, font, "Note : " + note, x, y, pw - 180, Theme.BLOOD);
+			y += Theme.paragraph(g, font, "Note : " + note, x, y, pw - 180, Theme.BLOOD) + 4;
+		}
+		List<String> marks = strings(row, "reminders");
+		if (!marks.isEmpty()) {
+			Theme.paragraph(g, font, "Rappels : " + String.join(" · ", marks), x, y, pw - 180, Theme.BRONZE);
 		}
 		JsonObject pol = ClientState.obj(view(), "policies");
 		if (name.equals(ClientState.str(pol, "mayorTarget"))) {

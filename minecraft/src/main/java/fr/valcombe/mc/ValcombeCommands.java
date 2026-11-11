@@ -69,7 +69,8 @@ public final class ValcombeCommands {
 		Predicate<CommandSourceStack> admin = src -> src.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
 		// Le Conteur (même sans être opérateur) ou un opérateur mène la partie.
 		Predicate<CommandSourceStack> leader = src -> admin.test(src)
-			|| (src.getPlayer() != null && src.getPlayer().getScoreboardName().equals(session.storyteller()));
+			|| (src.getPlayer() != null && (src.getPlayer().getScoreboardName().equals(session.storyteller())
+				|| session.isTrainee(src.getPlayer().getScoreboardName())));
 
 		SuggestionProvider<CommandSourceStack> playerNames = (ctx, builder) -> {
 			List<String> names = new ArrayList<>();
@@ -130,8 +131,10 @@ public final class ValcombeCommands {
 				.then(Commands.literal("basculer")
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
 						.executes(c -> exec(c, x -> session.toggleScriptRole(arg(x, "role"))))))
-				.then(Commands.literal("complet").executes(c -> exec(c, x -> session.useScript("Valcombe (complet)",
-					java.util.EnumSet.allOf(fr.valcombe.rules.Role.class)))))
+				.then(Commands.literal("complet").executes(c -> exec(c, x -> session.useScript("Les Cendres de Valcombe",
+					fr.valcombe.rules.Role.classic()))))
+				.then(Commands.literal("brumes").executes(c -> exec(c, x -> session.useScript("Les Brumes de Valcombe",
+					fr.valcombe.rules.Role.brumes()))))
 				.then(Commands.literal("sauver")
 					.then(Commands.argument("nom", StringArgumentType.greedyString()).executes(c -> exec(c, x -> {
 						var server = x.getSource().getServer();
@@ -160,6 +163,11 @@ public final class ValcombeCommands {
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
 						.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException(),
 							arg(x, "theme"))))))
+				.then(Commands.literal("importer")
+					.then(Commands.argument("structure", StringArgumentType.greedyString())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ui.host().structures(), b))
+						.executes(c -> exec(c, x -> ui.host().importStructure(x.getSource().getPlayerOrException(),
+							arg(x, "structure"))))))
 				.then(Commands.literal("baguette").executes(c -> exec(c, x -> {
 					x.getSource().getPlayerOrException().getInventory().add(ValcombeUi.wandItem());
 					return "Baguette de carte : clic droit sur un bloc pour y poser un siège, accroupi pour une maison.";
@@ -247,6 +255,17 @@ public final class ValcombeCommands {
 			.then(Commands.literal("mp")
 				.then(Commands.argument("message", StringArgumentType.greedyString())
 					.executes(c -> exec(c, x -> session.messageStoryteller(name(x), arg(x, "message"))))))
+			.then(Commands.literal("rappel").requires(leader)
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.then(Commands.argument("texte", StringArgumentType.greedyString())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(
+							List.of("ivre", "empoisonné", "protégé", "fausse piste", "a choisi", "effacer"), b))
+						.executes(c -> exec(c, x -> session.reminder(arg(x, "joueur"), arg(x, "texte")))))))
+			.then(Commands.literal("discussion").requires(leader)
+				.then(Commands.argument("minutes", IntegerArgumentType.integer(0, 30))
+					.executes(c -> exec(c, x -> session.discussion(IntegerArgumentType.getInteger(x, "minutes"))))))
+			.then(Commands.literal("spectateur").executes(c -> exec(c, x -> session.spectate(name(x)))))
+			.then(Commands.literal("entrainement").executes(c -> exec(c, x -> session.training(name(x)))))
 			.then(Commands.literal("stats")
 				.executes(c -> exec(c, x -> lines(x, ValcombeMod.community().statsLines(null))))
 				.then(Commands.argument("joueur", StringArgumentType.word())
@@ -284,13 +303,17 @@ public final class ValcombeCommands {
 					ValcombeMod.tablet().close();
 					return "Tablette fermée : le lien ne fonctionne plus.";
 				})))
+				.then(Commands.literal("internet").requires(admin)
+					.then(Commands.literal("oui").executes(c -> exec(c, x -> ValcombeMod.community().setTabletInternet(true))))
+					.then(Commands.literal("non").executes(c -> exec(c, x -> ValcombeMod.community().setTabletInternet(false)))))
 				.then(Commands.literal("port").requires(admin)
 					.then(Commands.argument("port", IntegerArgumentType.integer(1024, 65535))
 						.executes(c -> exec(c, x -> ValcombeMod.community().setTabletPort(IntegerArgumentType.getInteger(x, "port")))))))
 			.then(Commands.literal("reglage").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
-						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "temps_defense", "temps_horloge"), b))
+						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "temps_defense", "temps_horloge",
+							"effets", "spectateurs_grimoire"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
 

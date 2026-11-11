@@ -91,6 +91,9 @@ public final class ValcombeMod implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			HOST.onTick();
 			SYNC.onTick(server);
+			if (server.getTickCount() % 5 == 0) {
+				VoiceRouter.update(server, SESSION, HOST.village());
+			}
 		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayer p = handler.getPlayer();
@@ -122,6 +125,31 @@ public final class ValcombeMod implements ModInitializer {
 			return InteractionResult.PASS;
 		});
 		// Baguette de carte : poser sièges et maisons d'un clic sur un bloc (opérateurs)
+		// Lutrin du Conteur, sur la place : un clic ouvre le grimoire
+		net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+			if (!(player instanceof ServerPlayer sp)) {
+				return InteractionResult.PASS;
+			}
+			// Plume d'accusation : clic droit sur un joueur pour le nominer
+			if (entity instanceof ServerPlayer target && ValcombeUi.isAccuseItem(sp.getItemInHand(hand))) {
+				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(),
+						"vc nominer " + target.getScoreboardName());
+				}
+				return InteractionResult.SUCCESS;
+			}
+			if (!entity.entityTags().contains("vc_lutrin")) {
+				return InteractionResult.PASS;
+			}
+			if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+				if (SYNC.isLeader(sp)) {
+					UI.openStoryteller(sp);
+				} else {
+					sp.sendSystemMessage(Gui.plain("Le grimoire est réservé au Conteur.", net.minecraft.ChatFormatting.GRAY));
+				}
+			}
+			return InteractionResult.SUCCESS;
+		});
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
 			if (!ValcombeUi.isWand(player.getItemInHand(hand))) {
 				return InteractionResult.PASS;

@@ -64,6 +64,21 @@ public final class ClientState {
 		return e != null && e.isJsonPrimitive() ? e.getAsInt() : def;
 	}
 
+	/** Ce joueur est-il un fantôme (mort) dans la partie en cours ? */
+	public static boolean isGhost(String name) {
+		JsonObject v = view();
+		if (v == null || !v.has("seats")) {
+			return false;
+		}
+		for (var e : v.getAsJsonArray("seats")) {
+			JsonObject s = e.getAsJsonObject();
+			if (name.equals(str(s, "name"))) {
+				return !bool(s, "alive");
+			}
+		}
+		return false;
+	}
+
 	public static String phase() {
 		String p = str(view, "phase");
 		return p == null ? "LOBBY" : p;

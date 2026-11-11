@@ -16,6 +16,13 @@ public sealed class MinecraftOptions
     public string Language { get; set; } = "fr_fr";
 }
 
+/// <summary>Un serveur enregistré par le joueur.</summary>
+public sealed class SavedServer
+{
+    public string Name { get; set; } = "";
+    public string Address { get; set; } = "";
+}
+
 /// <summary>Réglages du launcher, enregistrés à côté de l'exe (mode portable).</summary>
 public sealed class LauncherConfig
 {
@@ -23,6 +30,8 @@ public sealed class LauncherConfig
     public string Repository { get; set; } = "Noedio/cendres-de-valcombe";
     /// <summary>Adresse du serveur ; vide = celle annoncée par la version publiée.</summary>
     public string Server { get; set; } = "";
+    /// <summary>Autres serveurs enregistrés (le serveur annoncé par la version publiée est toujours proposé).</summary>
+    public List<SavedServer> Servers { get; set; } = new();
     /// <summary>ID de l'application Azure « Valcombe Launcher », validée par Microsoft (identifiant public).</summary>
     public const string DefaultClientId = "572985ad-7515-4b67-838c-2361d2c33adc";
 

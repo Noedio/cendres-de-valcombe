@@ -43,10 +43,14 @@ public class ScriptScreen extends BaseScreen {
 		}
 		int bx = px + pw - 142;
 		int y = py + 14;
-		button(bx, y, 128, "Script complet", () -> send("vc script complet"));
+		button(bx, y, 62, "Cendres", () -> send("vc script complet"));
+		button(bx + 66, y, 62, "Brumes", () -> send("vc script brumes"));
 		button(bx, y += 22, 128, "Enregistrer sous…", () -> minecraft.gui.setScreen(new ChatScreen("/vc script sauver ", false)));
 		y += 30;
 		for (String name : strings(script, "saved")) {
+			if (name.startsWith("Les Cendres de Valcombe") || name.startsWith("Les Brumes de Valcombe")) {
+				continue; // scripts fournis : boutons Cendres et Brumes
+			}
 			if (y > py + ph - 52) {
 				break;
 			}

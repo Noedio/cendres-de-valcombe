@@ -36,6 +36,8 @@ public final class Community {
 	static final class Config {
 		String discordWebhook = "";
 		int tabletPort = 25570;
+		/** La tablette n'accepte que les appareils du réseau local. */
+		boolean tabletLocalOnly = true;
 	}
 
 	/** Statistiques d'un joueur. */
@@ -46,6 +48,8 @@ public final class Community {
 		int evil;
 		int survived;
 		int storyteller;
+		int goodWins;
+		int evilWins;
 		String last = "";
 		Map<String, Integer> roles = new LinkedHashMap<>();
 	}
@@ -86,6 +90,18 @@ public final class Community {
 		return "Port de la tablette : " + port + " (pris en compte au prochain /vc tablette).";
 	}
 
+	public boolean tabletLocalOnly() {
+		return config().tabletLocalOnly;
+	}
+
+	public String setTabletInternet(boolean allowed) {
+		config().tabletLocalOnly = !allowed;
+		saveConfig();
+		return allowed
+			? "La tablette accepte maintenant les appareils venus d'Internet (page non chiffrée : fermez-la après la partie)."
+			: "La tablette n'accepte plus que les appareils du réseau local.";
+	}
+
 	public boolean hasWebhook() {
 		return !config().discordWebhook.isEmpty();
 	}
@@ -121,6 +137,11 @@ public final class Community {
 			s.games++;
 			if (p.won(r.winner())) {
 				s.wins++;
+				if (p.team().equals("EVIL")) {
+					s.evilWins++;
+				} else {
+					s.goodWins++;
+				}
 			}
 			if (p.team().equals("EVIL")) {
 				s.evil++;
@@ -264,6 +285,10 @@ public final class Community {
 		out.add("Statistiques de " + name + " :");
 		out.add("  Parties : " + s.games + ", victoires : " + s.wins + " (" + percent(s.wins, s.games) + ")");
 		out.add("  Dans le bien : " + s.good + ", dans le mal : " + s.evil + ", survivant en fin de partie : " + s.survived);
+		String honor = title(name);
+		if (!honor.isEmpty()) {
+			out.add("  Titre : « " + honor + " »");
+		}
 		if (s.storyteller > 0) {
 			out.add("  Parties menées comme Conteur : " + s.storyteller);
 		}
@@ -275,6 +300,30 @@ public final class Community {
 			out.add(roles.substring(0, roles.length() - 2));
 		}
 		return out;
+	}
+
+	/** Titre honorifique affiché sous le nom du joueur, ou chaîne vide. */
+	public String title(String name) {
+		Stats s = stats().get(name);
+		if (s == null) {
+			return "";
+		}
+		if (s.games >= 10) {
+			return "Pilier de Valcombe";
+		}
+		if (s.evilWins >= 3) {
+			return "Ombre de Valcombe";
+		}
+		if (s.goodWins >= 3) {
+			return "Gardien du bourg";
+		}
+		if (s.survived >= 5) {
+			return "Increvable";
+		}
+		if (s.storyteller >= 3) {
+			return "Conteur chevronné";
+		}
+		return "";
 	}
 
 	private static String percent(int a, int b) {

@@ -13,4 +13,8 @@ public final class Settings {
 	/** Ticks entre deux sièges pour l'aiguille du vote (20 = 1 seconde). */
 	public int clockTicks = 30;
 	public int stepDelayTicks = 30;
+	/** Effets complets (flammes, gibet, feux d'artifice) ; false : effets réduits pour les petites machines. */
+	public boolean fullEffects = true;
+	/** Les spectateurs voient le grimoire (pour apprendre en regardant). */
+	public boolean spectatorGrimoire;
 }

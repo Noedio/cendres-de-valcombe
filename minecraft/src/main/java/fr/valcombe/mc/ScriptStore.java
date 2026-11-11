@@ -31,17 +31,24 @@ public final class ScriptStore {
 		return n;
 	}
 
+	/** Scripts fournis avec le jeu, toujours disponibles. */
+	public static final java.util.Map<String, Set<Role>> BUILT_IN = java.util.Map.of(
+		"Les Cendres de Valcombe", Role.classic(),
+		"Les Brumes de Valcombe", Role.brumes());
+
 	public static List<String> list(MinecraftServer server) {
+		List<String> out = new java.util.ArrayList<>(BUILT_IN.keySet().stream().sorted().toList());
 		Path d = dir(server);
 		if (!Files.isDirectory(d)) {
-			return List.of();
+			return out;
 		}
 		try (Stream<Path> files = Files.list(d)) {
-			return files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".txt"))
-				.map(n -> n.substring(0, n.length() - 4)).sorted().toList();
+			files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".txt"))
+				.map(n -> n.substring(0, n.length() - 4)).sorted().forEach(out::add);
 		} catch (IOException e) {
-			return List.of();
+			// dossier illisible : on garde les scripts fournis
 		}
+		return out;
 	}
 
 	public static void save(MinecraftServer server, String name, Set<Role> roles) {
@@ -56,6 +63,9 @@ public final class ScriptStore {
 	}
 
 	public static List<Role> load(MinecraftServer server, String name) {
+		if (BUILT_IN.containsKey(name)) {
+			return List.copyOf(BUILT_IN.get(name));
+		}
 		Path f = dir(server).resolve(clean(name) + ".txt");
 		if (!Files.exists(f)) {
 			throw new GameException("Script introuvable : " + name);

@@ -57,8 +57,21 @@ public class MainScreen extends BaseScreen {
 		}
 		if (!inGame) {
 			boolean inLobby = ClientState.bool(v, "inLobby");
-			actions.add(new Action(inLobby ? "Se désinscrire" : "S'inscrire",
-				() -> send(inLobby ? "vc quitter" : "vc rejoindre")));
+			boolean spectator = ClientState.bool(v, "spectator");
+			if (!spectator) {
+				actions.add(new Action(inLobby ? "Se désinscrire" : "S'inscrire",
+					() -> send(inLobby ? "vc quitter" : "vc rejoindre")));
+				actions.add(new Action("S'entraîner", () -> {
+					send("vc entrainement");
+					onClose();
+				}));
+			}
+			if (!inLobby) {
+				actions.add(new Action(spectator ? "Quitter les gradins" : "Regarder", () -> send("vc spectateur")));
+			}
+			if (v.has("chronicle")) {
+				actions.add(new Action("Chronique", () -> minecraft.gui.setScreen(new ChronicleScreen())));
+			}
 		} else if (role != null && ClientState.phase().equals("DAY") && !ClientState.bool(v, "dayOver")) {
 			actions.add(new Action("Nominer", () -> minecraft.gui.setScreen(new PickerScreen("Nominer qui ?", "vc nominer "))));
 			actions.add(new Action("Tirer", () -> minecraft.gui.setScreen(new PickerScreen("Tirer sur qui ?", "vc tirer "))));

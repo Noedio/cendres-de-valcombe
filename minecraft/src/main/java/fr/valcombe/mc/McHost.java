@@ -58,6 +58,12 @@ public final class McHost implements Host {
 	private boolean inHouses;
 
 	private Community community;
+	/** La scène 3D de la place (trônes, jetons, horloge, gibet). */
+	private final Stage stage = new Stage(this::schedule);
+	/** Les joueurs assis ne peuvent pas se lever (nuit). */
+	private boolean sitEnforced;
+	/** Joueurs morts de la partie en cours (traînée d'âme). */
+	private final java.util.Set<String> ghostNames = new java.util.HashSet<>();
 
 	public void setCommunity(Community community) {
 		this.community = community;
@@ -160,6 +166,7 @@ public final class McHost implements Host {
 	// ------------------------------------------------------------------
 	public String customMap(ServerPlayer p) {
 		village = Village.custom(p.blockPosition().below());
+		lanterns = null;
 		village.save(server);
 		applySpawn();
 		return "Nouvelle carte : la place est ici. Placez-vous sur chaque siège puis faites /vc carte siege, "
@@ -171,6 +178,38 @@ public final class McHost implements Host {
 			throw new fr.valcombe.rules.GameException("Aucune carte : /vc carte construire ou /vc carte nouvelle.");
 		}
 		return village;
+	}
+
+	/**
+	 * Importe une construction (fichier de structure .nbt, par exemple enregistré avec un bloc
+	 * de structure, ou copié dans world/generated/minecraft/structures/) sous les pieds du joueur,
+	 * puis en fait la carte : il reste à poser les sièges et les maisons avec la baguette.
+	 */
+	public String importStructure(ServerPlayer p, String name) {
+		var id = net.minecraft.resources.Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
+		if (id == null) {
+			throw new fr.valcombe.rules.GameException("Nom de structure invalide : " + name);
+		}
+		var template = server.getStructureTemplateManager().get(id)
+			.orElseThrow(() -> new fr.valcombe.rules.GameException("Structure introuvable : " + id
+				+ ". Placez le fichier dans world/generated/" + id.getNamespace() + "/structures/" + id.getPath() + ".nbt."));
+		var size = template.getSize();
+		BlockPos corner = p.blockPosition().offset(-size.getX() / 2, -1, -size.getZ() / 2);
+		template.placeInWorld(p.level(), corner, corner,
+			new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings(),
+			p.level().getRandom(), 2);
+		village = Village.custom(p.blockPosition().below());
+		village.save(server);
+		lanterns = null;
+		applySpawn();
+		return "Construction « " + id + " » importée (" + size.getX() + " × " + size.getY() + " × " + size.getZ()
+			+ "). Posez maintenant les sièges et les maisons avec /vc carte baguette.";
+	}
+
+	public List<String> structures() {
+		return server.getStructureTemplateManager().listTemplates()
+			.filter(i -> !i.getNamespace().equals("minecraft") || !i.getPath().contains("/"))
+			.map(Object::toString).limit(60).toList();
 	}
 
 	public String addSeat(ServerPlayer p) {
@@ -268,6 +307,7 @@ public final class McHost implements Host {
 		v.build(p.level());
 		v.save(server);
 		village = v;
+		lanterns = null;
 		applySpawn();
 		buildHall();
 		Vec3 spot = new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 4.5);
@@ -363,12 +403,15 @@ public final class McHost implements Host {
 
 	@Override
 	public void sound(List<String> players, String sound) {
-		Holder<SoundEvent> event = switch (sound) {
-			case "death" -> Holder.direct(SoundEvents.BELL_RESONATE);
-			case "clock" -> SoundEvents.NOTE_BLOCK_HAT;
-			default -> Holder.direct(SoundEvents.BELL_BLOCK);
+		// Sons originaux du mod (assets/valcombe/sounds) ; un client sans le mod n'entend rien.
+		String id = switch (sound) {
+			case "death" -> "glas";
+			case "clock" -> "tic";
+			default -> "cloche";
 		};
-		float pitch = sound.equals("death") ? 0.5f : 1f;
+		Holder<SoundEvent> event = Holder.direct(SoundEvent.createVariableRangeEvent(
+			net.minecraft.resources.Identifier.fromNamespaceAndPath("valcombe", id)));
+		float pitch = 1f;
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p != null) {
@@ -383,19 +426,173 @@ public final class McHost implements Host {
 		if (server == null) {
 			return;
 		}
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_jeton]");
-		for (var e : labels.entrySet()) {
-			SeatPos s = seats.get(e.getKey());
-			if (s == null) {
+		if (labels.isEmpty()) {
+			stage.clear(server);
+			return;
+		}
+		stage.labels(labels);
+	}
+
+	@Override
+	public void seatTokens(Map<String, String> models, boolean flip) {
+		stage.tokens(models, flip);
+	}
+
+	@Override
+	public void voteScene(fr.valcombe.session.VoteScene scene) {
+		stage.setFullEffects(ValcombeMod.session().settings().fullEffects);
+		stage.vote(scene);
+	}
+
+	@Override
+	public void sit(List<String> players, boolean enforce) {
+		sitEnforced = enforce;
+		if (server == null || !stage.active()) {
+			return;
+		}
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			int i = stage.index(name);
+			if (p != null && i >= 0 && !p.isPassenger()) {
+				WorldSetup.run(server, "ride " + name + " mount @e[type=minecraft:item_display,tag=vc_seat_" + i + ",limit=1]");
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Minuteur, nuit brumeuse, chuchotements, accusations, titres, spectateurs
+	// ------------------------------------------------------------------
+	private net.minecraft.server.level.ServerBossEvent timerBar;
+	private int timerToken;
+	private net.minecraft.server.level.ServerBossEvent nightBar;
+
+	@Override
+	public void timer(List<String> players, String title, int seconds) {
+		int token = ++timerToken;
+		if (timerBar != null) {
+			timerBar.removeAllPlayers();
+			timerBar = null;
+		}
+		if (seconds <= 0 || server == null) {
+			return;
+		}
+		var bar = new net.minecraft.server.level.ServerBossEvent(java.util.UUID.randomUUID(), Component.literal(title),
+			net.minecraft.world.BossEvent.BossBarColor.YELLOW, net.minecraft.world.BossEvent.BossBarOverlay.NOTCHED_10);
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				bar.addPlayer(p);
+			}
+		}
+		timerBar = bar;
+		tickTimer(token, bar, title, seconds, seconds);
+	}
+
+	private void tickTimer(int token, net.minecraft.server.level.ServerBossEvent bar, String title, int left, int total) {
+		if (token != timerToken) {
+			return;
+		}
+		bar.setProgress(Math.max(0f, left / (float) total));
+		bar.setName(Component.literal(title + " — " + left / 60 + ":" + String.format("%02d", left % 60)));
+		if (left > 0) {
+			schedule(20, () -> tickTimer(token, bar, title, left - 1, total));
+		}
+	}
+
+	/** La nuit : brume et ciel assombri pour tous (barre de nuit), si les effets complets sont activés. */
+	private void nightFog(List<String> players, boolean night, boolean full) {
+		if (nightBar != null) {
+			nightBar.removeAllPlayers();
+			nightBar = null;
+		}
+		if (!night || !full || server == null) {
+			return;
+		}
+		nightBar = new net.minecraft.server.level.ServerBossEvent(java.util.UUID.randomUUID(),
+			Component.literal("La nuit est tombée sur Valcombe"),
+			net.minecraft.world.BossEvent.BossBarColor.PURPLE, net.minecraft.world.BossEvent.BossBarOverlay.PROGRESS);
+		nightBar.setProgress(1f);
+		nightBar.setCreateWorldFog(true);
+		nightBar.setDarkenScreen(true);
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				nightBar.addPlayer(p);
+			}
+		}
+	}
+
+	@Override
+	public void whisperBubble(String from, String to) {
+		if (server == null) {
+			return;
+		}
+		for (String name : List.of(from, to)) {
+			ServerPlayer p = player(name);
+			if (p == null) {
 				continue;
 			}
-			String[] parts = e.getValue().split("\\|", 2);
-			String text = parts[1].replace("\"", "'").replace("\n", "\\n");
+			String tag = "vc_bulle_" + Math.abs(name.hashCode());
+			WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
 			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
-				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_jeton\"],billboard:\"center\","
-					+ "background:1073741824,transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
-					+ "translation:[0f,0f,0f],scale:[2.5f,2.5f,2.5f]},text:{text:\"%s\",color:\"%s\"}}",
-				s.pos().x, s.pos().y + 2.6, s.pos().z, text, parts[0]));
+				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"%s\"],billboard:\"center\",background:-1073741824,"
+					+ "transformation:{translation:[0f,0.55f,0f],left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
+					+ "scale:[1.4f,1.4f,1.4f]},text:{text:\"…\",color:\"light_purple\"}}",
+				p.getX(), p.getY() + 2.1, p.getZ(), tag));
+			WorldSetup.run(server, "ride @e[type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + name);
+			schedule(160, () -> WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]"));
+		}
+	}
+
+	@Override
+	public void accusation(String from, String to) {
+		ServerPlayer a = player(from);
+		ServerPlayer b = player(to);
+		if (server == null || a == null || b == null) {
+			return;
+		}
+		for (int k = 0; k < 4; k++) {
+			schedule(1 + k * 10, () -> {
+				Vec3 s = a.position().add(0, 1.4, 0);
+				Vec3 e = b.position().add(0, 1.4, 0);
+				int steps = (int) Math.max(4, s.distanceTo(e) * 3);
+				for (int i = 0; i <= steps; i++) {
+					Vec3 q = s.lerp(e, i / (double) steps);
+					a.level().sendParticles(net.minecraft.core.particles.ParticleTypes.END_ROD, q.x, q.y, q.z, 1, 0, 0, 0, 0);
+				}
+			});
+		}
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT, "playsound valcombe:cloche master @a %.1f %.1f %.1f 1.5 1.4",
+			b.getX(), b.getY(), b.getZ()));
+	}
+
+	@Override
+	public String playerTitle(String name) {
+		return community == null ? "" : community.title(name);
+	}
+
+	@Override
+	public void spectator(String name, boolean on) {
+		ServerPlayer p = player(name);
+		if (p == null) {
+			return;
+		}
+		if (on) {
+			previousMode.putIfAbsent(name, p.gameMode.getGameModeForPlayer());
+			p.setGameMode(GameType.SPECTATOR);
+		} else {
+			GameType mode = previousMode.remove(name);
+			p.setGameMode(mode != null ? mode : GameType.ADVENTURE);
+		}
+	}
+
+	private void standUp(List<String> players) {
+		sitEnforced = false;
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null && p.isPassenger()) {
+				p.stopRiding();
+			}
 		}
 	}
 
@@ -409,6 +606,7 @@ public final class McHost implements Host {
 		WorldSetup.run(server, "particle minecraft:large_smoke " + at + " 0.4 1 0.4 0.02 60 force");
 		WorldSetup.run(server, "particle minecraft:soul_fire_flame " + at + " 0.3 0.8 0.3 0.03 50 force");
 		WorldSetup.run(server, "playsound minecraft:entity.wither.death master @a " + at + " 0.6 0.7");
+		stage.execution(name);
 	}
 
 	@Override
@@ -432,7 +630,7 @@ public final class McHost implements Host {
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			SeatPos s = seats.get(name);
-			if (p != null && s != null) {
+			if (p != null && s != null && !p.isPassenger()) {
 				teleport(p, s);
 			}
 		}
@@ -445,6 +643,20 @@ public final class McHost implements Host {
 			return;
 		}
 		var board = server.getScoreboard();
+		ghostNames.clear();
+		ghostNames.addAll(dead);
+		for (String name : seats.keySet()) {
+			ServerPlayer p = player(name);
+			if (p == null) {
+				continue;
+			}
+			// Les morts deviennent translucides (le mod client les garde visibles, en transparence).
+			if (dead.contains(name)) {
+				p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, -1, 0, false, false));
+			} else {
+				p.removeEffect(MobEffects.INVISIBILITY);
+			}
+		}
 		PlayerTeam ghosts = team(board, "valcombe_fantomes", "† ", "");
 		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
 		for (String name : seats.keySet()) {
@@ -513,11 +725,23 @@ public final class McHost implements Host {
 				ValcombeMod.LOG.error("Erreur dans une tâche de partie", e);
 			}
 		}
+		if (tick % 30 == 0 && !ghostNames.isEmpty() && ValcombeMod.session().settings().fullEffects) {
+			for (String name : ghostNames) {
+				ServerPlayer p = player(name);
+				if (p != null) {
+					p.level().sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL, p.getX(), p.getY() + 0.4, p.getZ(),
+						3, 0.25, 0.4, 0.25, 0.01);
+				}
+			}
+		}
+		if (sitEnforced && !inHouses && tick % 10 == 0) {
+			sit(new ArrayList<>(seats.keySet()), true);
+		}
 		if (frozen) {
 			for (Map.Entry<String, SeatPos> e : (inHouses ? houses : seats).entrySet()) {
 				ServerPlayer p = player(e.getKey());
 				SeatPos s = e.getValue();
-				if (p != null && p.position().distanceToSqr(s.pos()) > 0.36) {
+				if (p != null && !p.isPassenger() && p.position().distanceToSqr(s.pos()) > 0.36) {
 					p.teleportTo(s.level(), s.pos().x, s.pos().y, s.pos().z, Set.of(), s.yaw(), p.getXRot(), false);
 				}
 			}
@@ -552,8 +776,12 @@ public final class McHost implements Host {
 					previousMode.putIfAbsent(p.getScoreboardName(), p.gameMode.getGameModeForPlayer());
 					p.setGameMode(GameType.ADVENTURE);
 					teleport(p, seats.get(players.get(i)));
+					ValcombeUi.accuseItem(p, true);
 				}
 			}
+			BlockPos c = village.center();
+			setupStage(new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 0.5),
+				village.isGenerated() ? c.getY() + 6.55 : c.getY() + 4.5, players, village.isGenerated());
 			return;
 		}
 		ServerPlayer center = player(anchor);
@@ -585,6 +813,55 @@ public final class McHost implements Host {
 				p.teleportTo(level, x, y, z, Set.of(), yaw, 0, false);
 			}
 		}
+		setupStage(new Vec3(cx, center.getY(), cz), center.getY() + 3.5, players, false);
+	}
+
+	/** Lanternes du village : la nuit, elles virent une à une à la flamme d'âme. */
+	private List<BlockPos> lanterns;
+
+	private void lights(boolean night) {
+		if (server == null || village == null) {
+			return;
+		}
+		ServerLevel level = server.overworld();
+		if (lanterns == null) {
+			lanterns = new ArrayList<>();
+			BlockPos c = village.center();
+			for (int x = -40; x <= 40; x++) {
+				for (int z = -40; z <= 40; z++) {
+					for (int y = 1; y <= 10; y++) {
+						BlockPos pos = c.offset(x, y, z);
+						if (level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.LANTERN)) {
+							lanterns.add(pos);
+						}
+					}
+				}
+			}
+		}
+		var to = night ? net.minecraft.world.level.block.Blocks.SOUL_LANTERN : net.minecraft.world.level.block.Blocks.LANTERN;
+		for (int i = 0; i < lanterns.size(); i++) {
+			BlockPos pos = lanterns.get(i);
+			schedule(1 + i * 3, () -> {
+				var state = level.getBlockState(pos);
+				if (state.getBlock() instanceof net.minecraft.world.level.block.LanternBlock) {
+					level.setBlock(pos, to.defaultBlockState()
+						.setValue(net.minecraft.world.level.block.LanternBlock.HANGING,
+							state.getValue(net.minecraft.world.level.block.LanternBlock.HANGING)), 2);
+				}
+			});
+		}
+	}
+
+	private void setupStage(Vec3 center, double handY, List<String> players, boolean lectern) {
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_jeton]"); // anciennes versions
+		Map<String, Stage.Spot> spots = new java.util.LinkedHashMap<>();
+		for (String name : players) {
+			SeatPos s = seats.get(name);
+			if (s != null) {
+				spots.put(name, new Stage.Spot(s.pos(), s.yaw()));
+			}
+		}
+		stage.setup(server, center, handY, spots, lectern);
 	}
 
 	@Override
@@ -598,6 +875,13 @@ public final class McHost implements Host {
 			}
 		}
 		boolean toHouses = night && settings.nightHouses && !houses.isEmpty();
+		if (toHouses) {
+			standUp(players);
+		} else if (night && settings.nightFreeze) {
+			sit(players, true);
+		} else {
+			sitEnforced = false;
+		}
 		if (toHouses != inHouses) {
 			inHouses = toHouses;
 			for (String name : players) {
@@ -608,6 +892,11 @@ public final class McHost implements Host {
 				}
 			}
 		}
+		if (!night && !inHouses) {
+			sit(players, false); // à l'aube, chacun se réveille sur son trône
+		}
+		lights(night);
+		nightFog(players, night, settings.fullEffects);
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p == null) {
@@ -623,6 +912,22 @@ public final class McHost implements Host {
 
 	@Override
 	public void endGame(List<String> players) {
+		standUp(players);
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				ValcombeUi.accuseItem(p, false);
+			}
+		}
+		nightFog(players, false, false);
+		timer(players, "", 0);
+		ghostNames.clear();
+		for (String name : players) {
+			ServerPlayer p = player(name);
+			if (p != null) {
+				p.removeEffect(MobEffects.INVISIBILITY);
+			}
+		}
 		deadPlayers(List.of(), List.of());
 		frozen = false;
 		inHouses = false;

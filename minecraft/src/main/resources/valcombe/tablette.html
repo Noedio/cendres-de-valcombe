@@ -281,6 +281,7 @@ function renderControls(v) {
 	if (v.phase === "NIGHT") c.append(btn("Étape suivante", "vc suivant", "main"));
 	if (v.phase === "DAY") {
 		c.append(btn("Rassembler", "vc rassembler"));
+		c.append(btn("Discussion 5 min", "vc discussion 5"));
 		c.append(v.nominationsOpen ? btn("Fermer les nominations", "vc nominations fermer") : btn("Ouvrir les nominations", "vc nominations ouvrir", "main"));
 		c.append(btn("Finir le jour", "vc finjour"));
 	}
@@ -324,6 +325,7 @@ function renderSeats(v) {
 		if (g && g.master) chips.append(el("span", "chip", "maître"));
 		if (!s.alive) chips.append(el("span", "chip ghost", s.ghostVote ? "vote de fantôme" : "vote utilisé"));
 		if (s.bot) chips.append(el("span", "chip", "fictif"));
+		for (const r of (g && g.reminders) || []) chips.append(el("span", "chip herring", r));
 		if (chips.childElementCount) card.append(chips);
 		card.addEventListener("click", () => openSheet(s, g));
 		box.append(card);
@@ -338,6 +340,13 @@ function openSheet(s, g) {
 	if (s.alive) a.append(btn("Tuer", "vc tuer " + s.name, "danger"));
 	else a.append(btn("Ressusciter", "vc ressusciter " + s.name));
 	if (!(g && g.poisoned)) a.append(btn("Empoisonner", "vc empoisonner " + s.name));
+	const remind = el("button", "", "Poser un rappel");
+	remind.addEventListener("click", () => {
+		const text = window.prompt("Rappel sur " + s.name + " (ex. ivre, a choisi Bot3) :");
+		if (text && text.trim()) send("vc rappel " + s.name + " " + text.trim().slice(0, 40));
+	});
+	a.append(remind);
+	if (g && g.reminders && g.reminders.length) a.append(btn("Effacer les rappels", "vc rappel " + s.name + " effacer"));
 	const close = el("button", "", "Fermer");
 	close.addEventListener("click", closeSheet);
 	a.append(close);

@@ -1,0 +1,9 @@
+{
+	"required": true,
+	"package": "fr.valcombe.client.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": ["EntityMixin"],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

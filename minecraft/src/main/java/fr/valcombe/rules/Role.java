@@ -37,6 +37,11 @@ public enum Role {
 		"Le Démon ne peut pas te tuer."),
 	CHATELAIN("Le Châtelain", RoleType.CITADIN, 0, 0, 0, false,
 		"S'il ne reste que 3 vivants et qu'aucune exécution n'a lieu, le bien gagne. Si tu meurs la nuit, un autre joueur peut mourir à ta place."),
+	// Citadins des Brumes de Valcombe
+	SONNEUR("Le Sonneur", RoleType.CITADIN, 0, 7, 2, false,
+		"Chaque nuit sauf la première, désigne deux joueurs : tu apprends combien d'entre eux sont mauvais."),
+	CARTOGRAPHE("Le Cartographe", RoleType.CITADIN, 8, 0, 0, false,
+		"La première nuit, tu apprends à combien de sièges de toi se trouve le Démon, par le plus court côté du cercle."),
 	// Étrangers
 	ECUYER("L'Écuyer", RoleType.ETRANGER, 11, 9, 1, true,
 		"Chaque nuit, choisis un maître (pas toi) : demain, tu ne peux voter que si ton maître vote aussi."),
@@ -55,6 +60,9 @@ public enum Role {
 		"S'il reste au moins 5 vivants et que le Démon meurt, tu deviens le Démon."),
 	MARGRAVE("Le Margrave", RoleType.SBIRE, 0, 0, 0, false,
 		"Deux Étrangers de plus sont en jeu."),
+	// Sbire des Brumes de Valcombe
+	FAUSSAIRE("La Faussaire", RoleType.SBIRE, 3, 1, 1, false,
+		"Chaque nuit, désigne un joueur : s'il reçoit une information cette nuit, elle est fausse."),
 	// Démon
 	GOULE("La Goule", RoleType.DEMON, 0, 4, 1, false,
 		"Chaque nuit sauf la première, désigne un joueur : il meurt. Si tu te désignes, un Sbire devient la Goule.");
@@ -79,6 +87,24 @@ public enum Role {
 
 	public boolean evil() {
 		return type.evil();
+	}
+
+	/** Rôles ajoutés par le script des Brumes (absents du script classique). */
+	private static final java.util.Set<Role> BRUMES_ONLY = java.util.EnumSet.of(SONNEUR, CARTOGRAPHE, FAUSSAIRE);
+
+	/** Le script classique : les 22 rôles des Cendres de Valcombe. */
+	public static java.util.EnumSet<Role> classic() {
+		java.util.EnumSet<Role> s = java.util.EnumSet.allOf(Role.class);
+		s.removeAll(BRUMES_ONLY);
+		return s;
+	}
+
+	/** Le script des Brumes : informations plus troubles et une Faussaire parmi les Sbires. */
+	public static java.util.EnumSet<Role> brumes() {
+		java.util.EnumSet<Role> s = classic();
+		s.removeAll(java.util.EnumSet.of(COMMERE, AUBERGISTE, ALCHIMISTE));
+		s.addAll(BRUMES_ONLY);
+		return s;
 	}
 
 	public static List<Role> ofType(RoleType t) {

@@ -67,6 +67,7 @@ public class StorytellerScreen extends BaseScreen {
 			} else {
 				boolean open = ClientState.bool(v, "nominationsOpen");
 				col.add(new Entry("Rassembler le village", () -> send("vc rassembler"), false));
+				col.add(new Entry("Discussion libre (5 min)", () -> send("vc discussion 5"), false));
 				col.add(new Entry(open ? "Fermer les nominations" : "Ouvrir les nominations",
 					() -> send("vc nominations " + (open ? "fermer" : "ouvrir")), false));
 				JsonObject vote = ClientState.obj(v, "vote");

@@ -29,6 +29,22 @@ class SessionTest {
 		final List<String> announces = new ArrayList<>();
 		boolean night;
 		String saved = "";
+		final List<VoteScene> scenes = new ArrayList<>();
+		final List<String> spectators = new ArrayList<>();
+
+		@Override
+		public void voteScene(VoteScene scene) {
+			scenes.add(scene);
+		}
+
+		@Override
+		public void spectator(String player, boolean on) {
+			if (on) {
+				spectators.add(player);
+			} else {
+				spectators.remove(player);
+			}
+		}
 
 		@Override
 		public void persist(String json) {
@@ -188,10 +204,22 @@ class SessionTest {
 
 	@Test
 	void partiesJoueesParDesJoueursFictifs() {
+		botGames(false);
+	}
+
+	@Test
+	void partiesDesBrumesDeValcombe() {
+		botGames(true);
+	}
+
+	private static void botGames(boolean brumes) {
 		for (int seed = 0; seed < 40; seed++) {
 			Random random = new Random(seed);
 			FakeHost h = new FakeHost();
 			Session s = new Session(h, Rng.of(random));
+			if (brumes) {
+				s.useScript("Les Brumes de Valcombe", fr.valcombe.rules.Role.brumes());
+			}
 			s.addBots(5 + seed % 12);
 			s.start("Conteur", Session.Mode.AUTO);
 			for (int day = 0; day < 300 && s.game() != null; day++) {
@@ -283,6 +311,64 @@ class SessionTest {
 		assertTrue(!s.voteOpen(), "le vote est terminé");
 		assertThrows(GameException.class, () -> s.vote("J5", false), "trop tard");
 		assertTrue(h.announces.stream().anyMatch(a -> a.startsWith("2 voix contre J2")), String.join(" | ", h.announces));
+		// La scène 3D a suivi le vote : défense, aiguille, mains levées, puis plus rien.
+		assertTrue(h.scenes.stream().anyMatch(v -> v != null && v.defense() && v.nominee().equals("J2")), "défense");
+		assertTrue(h.scenes.stream().anyMatch(v -> v != null && !v.defense() && v.pointing() != null), "aiguille");
+		assertTrue(h.scenes.stream().anyMatch(v -> v != null && v.raised().contains("J3")), "main levée");
+		assertTrue(h.scenes.stream().anyMatch(v -> v != null && v.locked().contains("J5")), "main comptée");
+		assertNull(h.scenes.get(h.scenes.size() - 1), "scène retirée après le vote");
+	}
+
+	@Test
+	void vocalDeNuitConteurEtJoueurReveille() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(8)));
+		for (int i = 1; i <= 6; i++) {
+			s.join("J" + i);
+		}
+		s.toggleStoryteller("Conteur");
+		s.start("Conteur", Session.Mode.HUMAIN);
+		assertNull(s.voiceTargets("J1"), "avant la nuit : vocal normal");
+		s.startNight();
+		// On avance jusqu'au premier joueur réveillé
+		String awake = null;
+		for (int guard = 0; guard < 500 && awake == null; guard++) {
+			awake = h.prompts.keySet().stream().filter(n -> !n.equals("Conteur")).findFirst().orElse(null);
+			if (awake == null && !h.tasks.isEmpty()) {
+				h.tasks.poll().run();
+			} else if (awake == null) {
+				h.prompts.clear();
+				break;
+			}
+		}
+		assertNotNull(awake, "un joueur se réveille");
+		assertTrue(s.voiceTargets(awake).equals(List.of("Conteur")), "le réveillé ne parle qu'au Conteur");
+		assertTrue(s.voiceTargets("Conteur").contains(awake), "le Conteur parle au réveillé");
+		final String woken = awake;
+		String asleep = s.game().players().stream().map(p -> p.name).filter(n -> !n.equals(woken)).findFirst().get();
+		assertTrue(s.voiceTargets(asleep).isEmpty(), "les dormeurs ne sont entendus de personne");
+		assertNull(s.voiceTargets("Visiteur"), "un visiteur hors partie garde le vocal normal");
+	}
+
+	@Test
+	void spectateursEtEntrainement() {
+		FakeHost h = new FakeHost();
+		Session s = new Session(h, Rng.of(new Random(2)));
+		s.spectate("Spec");
+		assertTrue(s.isSpectator("Spec") && h.spectators.contains("Spec"));
+		s.join("A");
+		assertThrows(GameException.class, () -> s.spectate("A"), "un inscrit ne peut pas regarder");
+		s.leave("A");
+		s.training("Eleve");
+		assertNotNull(s.game());
+		assertTrue(s.isTrainee("Eleve"));
+		assertTrue(s.game().size() == 7, "l'élève et six joueurs fictifs");
+		assertTrue(s.game().seatOf("Spec") < 0, "le spectateur ne joue pas");
+		assertThrows(GameException.class, () -> s.discussion(5), "pas de discussion avant le jour");
+		s.spectate("Spec");
+		assertTrue(!s.isSpectator("Spec") && h.spectators.isEmpty());
+		s.stop();
+		assertTrue(!s.isTrainee("Eleve"));
 	}
 
 	@Test

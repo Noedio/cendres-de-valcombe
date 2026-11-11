@@ -130,15 +130,23 @@ class GameTest {
 
 	@Test
 	void vingtDeuxRolesEtOrdreDeNuit() {
-		assertEquals(22, Role.values().length);
-		assertEquals(13, Role.ofType(RoleType.CITADIN).size());
-		assertEquals(4, Role.ofType(RoleType.ETRANGER).size());
-		assertEquals(4, Role.ofType(RoleType.SBIRE).size());
+		assertEquals(25, Role.values().length);
+		assertEquals(22, Role.classic().size());
+		assertEquals(22, Role.brumes().size());
+		var classic = Role.classic();
+		assertEquals(13, Role.ofType(RoleType.CITADIN).stream().filter(classic::contains).count());
+		assertEquals(4, Role.ofType(RoleType.ETRANGER).stream().filter(classic::contains).count());
+		assertEquals(4, Role.ofType(RoleType.SBIRE).stream().filter(classic::contains).count());
 		assertEquals(1, Role.ofType(RoleType.DEMON).size());
 		assertEquals(List.of(ALCHIMISTE, MOUCHARD, COMMERE, GREFFIER, INQUISITEUR, AUBERGISTE, VEILLEUSE,
-			ASTROLOGUE, ECUYER), Role.firstNightOrder());
+			ASTROLOGUE, ECUYER), Role.firstNightOrder().stream().filter(classic::contains).toList());
 		assertEquals(List.of(ALCHIMISTE, CHAPELAIN, HERITIERE, GOULE, FAUCONNIER, VEILLEUSE, ASTROLOGUE,
-			EMBAUMEUR, ECUYER, MOUCHARD), Role.otherNightsOrder());
+			EMBAUMEUR, ECUYER, MOUCHARD), Role.otherNightsOrder().stream().filter(classic::contains).toList());
+		// Les Brumes : la Faussaire agit avant les rôles d'information
+		var first = Role.firstNightOrder();
+		assertTrue(first.indexOf(Role.FAUSSAIRE) < first.indexOf(Role.CARTOGRAPHE));
+		var other = Role.otherNightsOrder();
+		assertTrue(other.indexOf(Role.FAUSSAIRE) < other.indexOf(Role.SONNEUR));
 	}
 
 	@Test

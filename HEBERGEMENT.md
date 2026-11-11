@@ -124,7 +124,8 @@ Le Conteur tape `/vc tablette` dans le jeu. Un lien s'affiche : il l'ouvre sur s
 - Le lien contient un jeton secret : ne le partagez pas. `/vc tablette` en génère un nouveau (l'ancien cesse de marcher), `/vc tablette fermer` coupe la page.
 - La tablette agit au nom du Conteur, avec ses droits : il doit rester connecté au jeu.
 - Sur un serveur loué, le lien affiché utilise l'adresse du serveur ; ouvrez le port 25570 (ou changez-le avec `/vc tablette port <numéro>`).
-- La page n'est pas chiffrée (HTTP). Sur un réseau public, préférez un réseau de confiance ou fermez la tablette après la partie.
+- Par défaut, la tablette ne répond qu'aux appareils du **réseau local** (même box que le serveur). Sur un serveur loué, autorisez l'accès par Internet avec `/vc tablette internet oui` (et `non` pour revenir au réseau local seul).
+- La page n'est pas chiffrée (HTTP). Hors réseau local, fermez la tablette après la partie.
 
 ### Compte rendu sur Discord
 

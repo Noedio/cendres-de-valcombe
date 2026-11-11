@@ -75,6 +75,139 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 - Corrigé au passage : la révélation des rôles sur les jetons en fin de partie (les sièges étaient oubliés trop tôt).
 - Reporté : plusieurs serveurs enregistrés et rapport de plantage dans le launcher.
 
+## État des lieux après la phase 4 (novembre 2026)
+
+**Ce qui tient** : les règles des 22 rôles, une partie complète du salon à la révélation, le vote à l'horloge, le Conteur humain avec ses pouvoirs et la tablette, la sauvegarde automatique, le launcher qui se met à jour seul. 44 tests automatiques et un test en jeu complet passent.
+
+**Ce qui manque le plus** :
+
+| Constat | Conséquence |
+| --- | --- |
+| Aucune vraie soirée jouée à 8–12 joueurs en réseau | Latence, vocal, durée des étapes et ergonomie réelle du Conteur restent inconnus. C'est le premier risque. |
+| Le monde est fait de blocs ordinaires, de textes flottants et de particules : le mod n'apporte aucun modèle 3D ni aucun son | Le village a l'air d'une maquette ; le jeu d'origine vit de ses jetons, de son grimoire et de son ambiance |
+| Le vote, la nomination et l'exécution se jouent dans des menus | On regarde l'écran au lieu de regarder les autres joueurs |
+| Le vocal ne suit pas le jeu (pas de salon Conteur ↔ joueur réveillé, pas de salles privées) | Le Conteur doit tout écrire ; les apartés ne sont pas naturels |
+| Session.java fait 1 576 lignes ; un seul long scénario de test en jeu ; aucune intégration continue | Chaque ajout devient plus risqué |
+| La tablette passe en HTTP simple ; les rôles se limitent à un seul script | Limites connues, acceptables entre amis pour l'instant |
+
+Reportés des phases précédentes : salons vocaux dans les maisons, joueurs assis, sons et musiques, écrans animés, nouveaux scripts de rôles, voyageurs, partie d'entraînement guidée, import de structures, plusieurs serveurs et rapport de plantage dans le launcher.
+
+## Comment faire de la 3D dans Minecraft
+
+Pas besoin de moteur à part : trois outils suffisent, du plus simple au plus riche.
+
+1. **Entités d'affichage** (`block_display`, `item_display`, `text_display`), pilotées par le serveur. Elles se déplacent, tournent et changent d'échelle avec une **interpolation fluide** côté client. Tout le monde les voit, même sans le mod client. Idéal pour l'horloge de vote, les jetons et le gibet.
+2. **Modèles et textures du mod** (fichiers JSON de modèles 3D, faits avec Blockbench ou générés par script comme les textures actuelles), affichés par des `item_display`. Exemples : trônes sculptés, jetons en relief, lutrin et grimoire, cloche.
+3. **Rendu client du mod Fabric** : effets réservés aux joueurs qui ont le mod (brouillard et ciel de nuit, contour lumineux de l'accusé, animation du bras levé, caméra cinématique, carte de rôle qui se retourne en 3D à l'écran).
+
+Les sons et musiques passent par le mod (`sounds.json` et fichiers `.ogg`). Ils doivent être originaux, créés ou générés par nous.
+
+## Phase 5 — Le village en 3D (visuels)
+
+| Ajout | Ce que voient les joueurs | Outil | Effort |
+| --- | --- | --- | --- |
+| **Horloge de vote géante** au centre du cercle | Une grande aiguille tourne de siège en siège. Une flamme s'allume au-dessus de chaque main levée, et le compteur grandit au sol. | 1 | Moyen |
+| **Jetons de rôle en relief** au-dessus des sièges | Disques sculptés qui tournent lentement. Côté pile pendant la partie, ils se **retournent** à la révélation pour montrer l'emblème du rôle. Un crâne apparaît à la mort, un cierge pour le vote de fantôme. | 1 + 2 | Moyen |
+| **Trônes sculptés et joueurs assis** | Chacun s'assoit vraiment sur son siège. L'immobilité de nuit est assurée par la monture, ce qui règle le conflit qui bloquait cette idée. | 1 + 2 | Moyen |
+| **Gibet au centre et exécution mise en scène** | Le gibet sort du sol à l'annonce du vote. La cloche du beffroi se balance et sonne, puis la caméra des joueurs moddés se tourne vers l'accusé. | 1 + 3 | Moyen |
+| **Grimoire physique du Conteur** | Un lutrin portant un livre ouvert devant le siège du Conteur. Un clic dessus ouvre le grimoire. | 2 | Petit |
+| **Nuit qui tombe vraiment** | Brume violette, lune pâle, lanternes du village qui s'éteignent une à une. Elles se rallument à l'aube. | 1 + 3 | Moyen |
+| **Fantômes** | Les morts deviennent translucides, avec une traîne de particules d'âme. Leur jeton porte le cierge tant que le vote de fantôme reste. | 3 | Moyen |
+| **Carte de rôle à l'écran** | Au début de la partie, une carte en 3D tombe face cachée puis se retourne, avec le son d'un parchemin. | 3 | Petit |
+| **Sons et musiques originaux** | Ambiance du jour (vent, corbeaux), ambiance de nuit, tic-tac de l'horloge de vote, glas, thème de victoire. Ils sont générés par script puis mixés. | 2 | Moyen |
+| **Décor par thème** | Feuillage, bannières, puits et étals propres à chaque thème (gothique, monastère, port), plus quelques modèles 3D de décor | 1 + 2 | Moyen |
+
+### Avancement de la phase 5
+
+- Fait :
+  - **horloge de vote géante** : une aiguille dorée au-dessus du puits, qui tourne de siège en siège avec son tic-tac ; le compte des voix flotte au-dessus ;
+  - **mains levées** : une flamme bleue pour une intention, orange pour une voix comptée ;
+  - **gibet** : il sort du pavé devant l'accusé, en grinçant, puis redescend ;
+  - **jetons en relief** au-dessus des sièges (dos à la tour de Valcombe, crâne à la mort, cierge pour le vote de fantôme), qui **se retournent** un à un à la révélation pour montrer l'emblème du rôle ;
+  - **trônes sculptés** et **joueurs assis** (de nuit, on ne peut pas se lever) ;
+  - **lutrin du Conteur** au centre : un clic ouvre le grimoire ;
+  - **nuit** : brume et ciel assombri, lanternes du village qui passent une à une à la flamme d'âme ;
+  - **fantômes** translucides avec une traînée d'âme ;
+  - **carte de rôle** qui tombe et se retourne à l'écran au début de la partie ;
+  - **sons et musiques originaux**, synthétisés par script : cloche, glas, tic-tac, réveil, parchemin, gibet, ambiances de jour et de nuit, thèmes de victoire.
+- Réglage `effets reduits` pour les petites machines : sans flammes, gibet ni brume.
+- Reporté : décor 3D propre à chaque thème (bannières, étals, puits).
+
+## Phase 6 — Jouer avec son corps, pas avec des menus
+
+| Ajout | Détail | Effort |
+| --- | --- | --- |
+| **Nominer en pointant** | Viser un joueur et faire un clic droit avec la « main accusatrice » (objet du mod). Un rayon de lumière relie l'accusateur à l'accusé, et le menu ne sert plus qu'à confirmer. | Moyen |
+| **Lever la main pour voter** | Au passage de l'aiguille, appuyer sur une touche (ou sneak). Le bras se lève sur le modèle du joueur, visible de tous. | Moyen |
+| **Vocal piloté par le jeu** | La nuit, un groupe vocal temporaire relie le Conteur et le joueur réveillé. Le jour, les salles privées (maisons, recoins) créent un groupe en entrant. Les morts gardent la parole, mais avec un écho. | Grand |
+| **Chuchotements visibles** | En plus de l'annonce, une bulle « … » apparaît au-dessus des deux joueurs tant qu'ils sont à l'écart | Petit |
+| **Minuteur de discussion** | Barre de boss « Discussion libre — 4:30 » réglable par le Conteur. Une cloche sonne à la fin. | Petit |
+| **Spectateurs** | Rejoindre une partie en cours comme observateur, sans voix et sans grimoire. Une option permet de voir le grimoire pour apprendre. | Moyen |
+| **Chronique de la partie** | Écran de fin en frise : nuits, morts, nominations, votes (qui a levé la main) et rôles. On peut le relire depuis le menu. | Moyen |
+| **Titres et trophées** | À partir des statistiques, des titres apparaissent sous le nom (« Démon redouté », « Œil de lynx »). Ils sont purement cosmétiques. | Petit |
+| **Partie d'entraînement guidée** | Un joueur seul face à des joueurs fictifs, avec des bulles qui expliquent chaque étape | Grand |
+
+### Avancement de la phase 6
+
+- Fait :
+  - **plume d'accusation** : viser un joueur, clic droit, et un trait de lumière relie l'accusateur à l'accusé ;
+  - **touche H** pour lever ou baisser la main pendant le vote ;
+  - **vocal piloté par le jeu** : la nuit, seuls le Conteur et le joueur réveillé se parlent ; le jour, une maison est une salle privée ;
+  - **bulles** au-dessus de ceux qui chuchotent ;
+  - **minuteur de discussion** (barre en haut de l'écran, cloche à la fin) ;
+  - **spectateurs**, avec en option la vue du grimoire ;
+  - **chronique** de la partie, à relire depuis le menu ;
+  - **titres** tirés des statistiques, affichés sous le nom ;
+  - **partie d'entraînement guidée** avec six joueurs fictifs.
+- Reporté : bras réellement levé sur le modèle du joueur (les flammes en tiennent lieu), écho sur la voix des morts.
+
+## Phase 7 — Contenu
+
+| Ajout | Détail | Effort |
+| --- | --- | --- |
+| Deuxième et troisième scripts | Deux scripts originaux de rôles, plus retors (informations fausses, morts multiples, Démons différents), avec leurs textes et emblèmes | Grand |
+| Voyageurs | Joueurs qui arrivent ou partent en cours de partie, avec un rôle à part, pour les soirées où l'on entre et sort | Moyen |
+| Figures neutres | Rôles hors camp pour les grands groupes (15 et plus) | Moyen |
+| Jetons de rappel du Conteur | Marqueurs libres (« empoisonné », « protégé », « ivre », « a choisi X ») posés depuis la tablette et visibles en 3D sur le grimoire physique | Moyen |
+| Import de structures | Charger un fichier `.nbt` (village fait à la main par un ami) puis y placer sièges et maisons avec la baguette | Petit |
+
+### Avancement de la phase 7
+
+- Fait :
+  - **deuxième script, « Les Brumes de Valcombe »**, avec trois rôles originaux : le Sonneur (combien de mauvais parmi deux joueurs), le Cartographe (distance du Démon) et la Faussaire (Sbire qui fausse les informations d'un joueur pour la nuit) ;
+  - **jetons de rappel** du Conteur, posés depuis le grimoire ou la tablette ;
+  - **import de constructions** `.nbt` comme carte (`/vc carte importer`).
+- Reporté : troisième script, voyageurs, figures neutres, rappels visibles en 3D (un objet du monde est vu par tous les joueurs, pas seulement par le Conteur).
+
+## Phase 8 — Solidité, tests réels et confort
+
+| Ajout | Détail | Effort |
+| --- | --- | --- |
+| **Soirée de test à 8–12 joueurs** | Grille d'observation (durées, bugs, ressenti du Conteur), puis correctifs. À faire **avant** les phases 5 à 7, puis à refaire après chacune. | Petit |
+| Découpage du code | Séparer Session.java en morceaux (vote, nuit, Conteur, vue), plusieurs scénarios de test en jeu indépendants | Moyen |
+| Intégration continue | Tests lancés automatiquement à chaque envoi sur GitHub | Petit |
+| Tablette sécurisée | Accès par un relais chiffré (HTTPS), ou proposé seulement sur le réseau local | Moyen |
+| Launcher | Plusieurs serveurs, rapport de plantage en un clic, réglage de la mémoire, curseurs et listes aux couleurs de Valcombe | Moyen |
+| Performances | Mesurer le coût des entités d'affichage et des particules à 15 joueurs ; prévoir un réglage « effets réduits » | Petit |
+
+### Avancement de la phase 8
+
+- Fait :
+  - **découpage du code** : la vue envoyée aux écrans quitte Session.java, et la scène 3D est une classe à part ;
+  - **mises à jour ciblées** : les jetons, étiquettes et flammes ne sont modifiés que s'ils changent, sans recréer d'entités ;
+  - **intégration continue** : tests du mod et compilation du launcher à chaque envoi sur GitHub ;
+  - **tablette réservée au réseau local** par défaut ;
+  - **launcher** : plusieurs serveurs enregistrés et rapport de plantage en un clic ;
+  - **47 tests automatiques**, dont 40 parties complètes jouées avec le script des Brumes, et un test en jeu qui photographie chaque écran et la scène 3D.
+- Reste à faire : la **soirée de test réelle** à 8–12 joueurs.
+
+## Ordre conseillé
+
+1. **Soirée de test réelle** avec la 0.3.0 : c'est elle qui dira quoi corriger en premier.
+2. **Phase 5, premier lot**, ce que tout le monde voit, même sans le mod : horloge de vote géante, gibet, jetons qui se retournent, joueurs assis, sons.
+3. **Vocal piloté par le jeu** (phase 6) : c'est le plus gros gain de confort pour le Conteur.
+4. Le reste de la phase 6, puis les phases 7 et 8, au fil des retours des joueurs.
+
 ## Déjà fait
 
 - Moteur de règles des 22 rôles, testé.

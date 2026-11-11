@@ -150,7 +150,17 @@ public final class Tablet {
 		}
 	}
 
+	/** Réseau local (box, maison) ou la machine elle-même. */
+	private static boolean local(HttpExchange ex) {
+		InetAddress a = ex.getRemoteAddress().getAddress();
+		return a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()
+			|| (a.getAddress().length == 16 && (a.getAddress()[0] & 0xFE) == 0xFC); // IPv6 locale (fc00::/7)
+	}
+
 	private boolean authorized(HttpExchange ex) {
+		if (community.tabletLocalOnly() && !local(ex)) {
+			return false;
+		}
 		String given = ex.getRequestHeaders().getFirst("X-Valcombe-Jeton");
 		String expected = token;
 		return given != null && expected != null

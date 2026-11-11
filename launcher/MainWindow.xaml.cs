@@ -270,6 +270,7 @@ public partial class MainWindow : Window
             string installed = Instance.InstalledVersion ?? "aucune";
             SetStatus(installed == _release.Tag ? $"Version {_release.Tag} installée. Prêt."
                 : $"Version {_release.Tag} disponible (installée : {installed}).", 0);
+            RefreshServerPicker();
         }
         catch (Exception ex)
         {
@@ -281,8 +282,116 @@ public partial class MainWindow : Window
     private string ServerAddress =>
         !string.IsNullOrWhiteSpace(_config.Server) ? _config.Server : _release?.Manifest.Server ?? "";
 
+    private bool _pickerLoading;
+
+    /// <summary>Liste des serveurs sur l'accueil : celui de la version publiée, puis les serveurs enregistrés.</summary>
+    private void RefreshServerPicker()
+    {
+        _pickerLoading = true;
+        ServerPicker.Items.Clear();
+        string official = _release?.Manifest.Server ?? "";
+        ServerPicker.Items.Add(new ComboBoxItem
+        {
+            Content = string.IsNullOrWhiteSpace(official) ? "Serveur de la version publiée" : $"Valcombe ({official})",
+            Tag = "",
+        });
+        foreach (var sv in _config.Servers)
+        {
+            ServerPicker.Items.Add(new ComboBoxItem { Content = $"{sv.Name} ({sv.Address})", Tag = sv.Address });
+        }
+        // Une adresse saisie à la main dans les réglages reste proposée.
+        bool known = string.IsNullOrWhiteSpace(_config.Server) || _config.Servers.Any(x => x.Address == _config.Server);
+        if (!known)
+        {
+            ServerPicker.Items.Add(new ComboBoxItem { Content = _config.Server, Tag = _config.Server });
+        }
+        foreach (ComboBoxItem item in ServerPicker.Items)
+        {
+            if ((string)item.Tag == _config.Server)
+            {
+                ServerPicker.SelectedItem = item;
+            }
+        }
+        SavedServersList.Items.Clear();
+        foreach (var sv in _config.Servers)
+        {
+            SavedServersList.Items.Add(new ListBoxItem { Content = $"{sv.Name} — {sv.Address}", Tag = sv.Address });
+        }
+        _pickerLoading = false;
+    }
+
+    private void ServerPicked(object sender, SelectionChangedEventArgs e)
+    {
+        if (_pickerLoading || ServerPicker.SelectedItem is not ComboBoxItem item)
+        {
+            return;
+        }
+        _config.Server = (string)item.Tag;
+        ServerBox.Text = _config.Server;
+        _config.Save();
+        UpdateServerText();
+    }
+
+    private void AddServer(object sender, RoutedEventArgs e)
+    {
+        string address = NewServerAddress.Text.Trim();
+        if (address.Length == 0)
+        {
+            SetStatus("Indiquez l'adresse du serveur à enregistrer.", 0);
+            return;
+        }
+        string name = NewServerName.Text.Trim();
+        if (name.Length == 0)
+        {
+            name = address;
+        }
+        _config.Servers.RemoveAll(x => x.Address == address);
+        _config.Servers.Add(new SavedServer { Name = name, Address = address });
+        _config.Save();
+        NewServerName.Text = "";
+        NewServerAddress.Text = "";
+        RefreshServerPicker();
+        SetStatus($"Serveur « {name} » enregistré.", 0);
+    }
+
+    private void RemoveServer(object sender, RoutedEventArgs e)
+    {
+        if (SavedServersList.SelectedItem is not ListBoxItem item)
+        {
+            return;
+        }
+        string address = (string)item.Tag;
+        _config.Servers.RemoveAll(x => x.Address == address);
+        if (_config.Server == address)
+        {
+            _config.Server = "";
+            ServerBox.Text = "";
+        }
+        _config.Save();
+        RefreshServerPicker();
+        UpdateServerText();
+    }
+
+    private void MakeCrashReport(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string zip = CrashReport.Create();
+            SetStatus("Rapport enregistré sur le Bureau : " + Path.GetFileName(zip), 0);
+            CrashReport.Reveal(zip);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Rapport impossible : " + ex.Message, 0);
+        }
+    }
+
     private void UpdateServerText()
     {
+        if (!_pickerLoading && ServerPicker.Items.Count == 0)
+        {
+            RefreshServerPicker();
+        }
         ServerText.Text = string.IsNullOrWhiteSpace(ServerAddress) ? "Non renseigné (Réglages)." : ServerAddress;
         _ = RefreshServerStatusAsync();
     }
@@ -476,7 +585,21 @@ public partial class MainWindow : Window
         await Instance.SyncModsAsync(release, Engine.ModsDir, progress, repair: false);
         Instance.ApplyOptions(_config.Minecraft, Engine.GameDir);
         SetStatus("Lancement de Minecraft…", 1);
-        Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));
+        var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));
+        if (!_config.CloseOnLaunch)
+        {
+            // Le jeu s'arrête brutalement : on propose le rapport de plantage.
+            game.EnableRaisingEvents = true;
+            game.Exited += (_, _) => Dispatcher.Invoke(() =>
+            {
+                if (game.ExitCode != 0
+                    && MessageBox.Show(this, "Le jeu s'est arrêté brutalement. Préparer un rapport de plantage à envoyer à l'hôte ?",
+                        "Les Cendres de Valcombe", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                {
+                    MakeCrashReport(this, new RoutedEventArgs());
+                }
+            });
+        }
         if (_config.CloseOnLaunch)
         {
             await Task.Delay(1500);
@@ -520,6 +643,13 @@ public partial class MainWindow : Window
             new NewsItem { Title = "Version 0.1.0", Date = "8 nov.", Text = "Écrans sur mesure, Conteur humain, éditeur de scripts et vocal coupé la nuit." },
         };
         ServerText.Text = "valcombe.exemple.fr";
+        _config.Servers = new List<SavedServer>
+        {
+            new() { Name = "Serveur de Léa", Address = "lea.exemple.fr" },
+            new() { Name = "Soirée du vendredi", Address = "vendredi.exemple.fr:25570" },
+        };
+        RefreshServerPicker();
+        ServerText.Text = "valcombe.exemple.fr — en ligne, 7/20 joueur(s)";
         foreach (string page in new[] { "Home", "Game", "Look", "Settings", "Account" })
         {
             ShowPage(page);

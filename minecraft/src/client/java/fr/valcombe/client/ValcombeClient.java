@@ -14,6 +14,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 /** Point d'entrée du mod côté client : écrans sur mesure et HUD. */
 public final class ValcombeClient implements ClientModInitializer {
 	private static KeyMapping menuKey;
+	private static KeyMapping handKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -25,7 +26,15 @@ public final class ValcombeClient implements ClientModInitializer {
 		Hud.register();
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("valcombe", "main"));
 		menuKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.menu", InputConstants.KEY_J, category));
+		handKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.hand", InputConstants.KEY_H, category));
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			while (handKey.consumeClick()) {
+				// Lever ou baisser la main pendant le vote à l'horloge
+				var vote = ClientState.obj(ClientState.view(), "vote");
+				if (vote != null && "CLOCK".equals(ClientState.str(vote, "stage"))) {
+					ClientState.send(ClientState.bool(vote, "myHand") ? "vc vote non" : "vc vote oui");
+				}
+			}
 			while (menuKey.consumeClick()) {
 				if (client.gui.screen() == null) {
 					// Une action en attente passe avant le menu principal.

@@ -12,6 +12,9 @@
 		"client": ["fr.valcombe.client.ValcombeClient"],
 		"voicechat": ["fr.valcombe.mc.ValcombeVoicePlugin"]
 	},
+	"mixins": [
+		{"config": "valcombe.client.mixins.json", "environment": "client"}
+	],
 	"depends": {
 		"fabricloader": ">=0.20.1",
 		"minecraft": "~26.3",

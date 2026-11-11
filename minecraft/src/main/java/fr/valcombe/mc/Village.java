@@ -139,6 +139,17 @@ public final class Village {
 		return houses.isEmpty() ? seat(i, n) : feet(houses.get(spread(i, n, houses.size())));
 	}
 
+	/** Numéro de la maison où se trouve cette position (à 4 blocs près), ou -1. */
+	public int houseAt(Vec3 pos) {
+		for (int i = 0; i < houses.size(); i++) {
+			Vec3 h = feet(houses.get(i));
+			if (Math.abs(pos.y - h.y) < 4 && Math.hypot(pos.x - h.x, pos.z - h.z) < 4.5) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	/** Point d'apparition : sur la place, un peu au sud du centre. */
 	public BlockPos spawn() {
 		if (hall) {

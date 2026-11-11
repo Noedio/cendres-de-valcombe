@@ -15,9 +15,9 @@ public final class Setup {
 		}
 	}
 
-	/** Le script complet : les 22 rôles. */
+	/** Le script classique : les 22 rôles des Cendres de Valcombe. */
 	public static Set<Role> fullScript() {
-		return EnumSet.allOf(Role.class);
+		return Role.classic();
 	}
 
 	private Setup() {
