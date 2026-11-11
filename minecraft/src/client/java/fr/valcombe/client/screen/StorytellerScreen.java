@@ -19,6 +19,10 @@ public class StorytellerScreen extends BaseScreen {
 	private record Entry(String label, Runnable run, boolean gap) {
 	}
 
+	private static final String[] THEMES = {"gothique", "monastere", "port"};
+	private static final String[] THEME_NAMES = {"gothique", "monastère", "port"};
+	private static int theme;
+
 	public StorytellerScreen() {
 		super("Panneau du Conteur");
 	}
@@ -44,9 +48,13 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Lancer (automatique)", () -> send("vc lancer auto"), true));
 			col.add(new Entry("Lancer (Conteur humain)", () -> send("vc lancer humain"), false));
 			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
-			button(px + 14, py + ph - 26, 150, "Construire le village ici", () -> {
-				send("vc carte construire");
+			button(px + 14, py + ph - 26, 104, "Bâtir le village", () -> {
+				send("vc carte construire " + THEMES[theme]);
 				onClose();
+			});
+			button(px + 122, py + ph - 26, 104, "Thème : " + THEME_NAMES[theme], () -> {
+				theme = (theme + 1) % THEMES.length;
+				rebuildWidgets();
 			});
 		} else {
 			col.add(new Entry("Faire tomber la nuit", () -> {

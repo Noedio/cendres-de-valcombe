@@ -109,6 +109,17 @@ public final class ValcombeUi {
 		return Gui.glow(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."));
 	}
 
+	public static final String WAND_NAME = "Baguette de carte";
+
+	public static ItemStack wandItem() {
+		return Gui.glow(Gui.icon(Items.BLAZE_ROD, WAND_NAME, "Clic droit sur un bloc : siège.", "Accroupi + clic droit : maison."));
+	}
+
+	public static boolean isWand(ItemStack stack) {
+		Component n = stack.get(DataComponents.CUSTOM_NAME);
+		return stack.is(Items.BLAZE_ROD) && n != null && n.getString().equals(WAND_NAME);
+	}
+
 	public static boolean isMenuItem(ItemStack stack) {
 		Component n = stack.get(DataComponents.CUSTOM_NAME);
 		return stack.is(Items.CLOCK) && n != null && n.getString().equals(MENU_ITEM_NAME);

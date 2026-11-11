@@ -55,6 +55,11 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 | Joueurs | **Carnet du joueur** : noter qui prétend être quoi, ses soupçons, l'historique des votes |
 | Prise en main | Partie d'entraînement guidée avec des joueurs fictifs, pour apprendre les règles |
 
+### Avancement de la phase 3
+
+- Fait : trois thèmes de village générés (`/vc carte construire gothique|monastere|port`, ou bouton « Thème » du panneau), salle d'attente bâtie avec le village, baguette d'édition (`/vc carte baguette` : clic droit sur un bloc pour poser un siège, accroupi pour une maison), carnet du joueur (bouton « Mon carnet », enregistré sur le PC).
+- Reporté : nouveaux scripts de rôles originaux, voyageurs, partie d'entraînement guidée (les parties avec bots restent possibles via `/vc bots`), import de fichiers de structure.
+
 ## Phase 4 — Confort et vie de la communauté
 
 | Domaine | Ajout |

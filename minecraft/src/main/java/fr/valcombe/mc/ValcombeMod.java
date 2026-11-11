@@ -96,6 +96,25 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			return InteractionResult.PASS;
 		});
+		// Baguette de carte : poser sièges et maisons d'un clic sur un bloc (opérateurs)
+		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+			if (!ValcombeUi.isWand(player.getItemInHand(hand))) {
+				return InteractionResult.PASS;
+			}
+			if (player instanceof ServerPlayer sp
+				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+				var at = hit.getBlockPos().above();
+				try {
+					String msg = sp.isShiftKeyDown() ? HOST.addHouseAt(at) : HOST.addSeatAt(at);
+					sp.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
+					WorldSetup.run(sp.level().getServer(), String.format(java.util.Locale.ROOT,
+						"particle minecraft:happy_villager %d %d %d 0.3 0.3 0.3 0 12", at.getX(), at.getY(), at.getZ()));
+				} catch (fr.valcombe.rules.GameException e) {
+					sp.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
+				}
+			}
+			return InteractionResult.SUCCESS;
+		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
 			ValcombeCommands.register(dispatcher, SESSION, UI));
 		LOG.info("Les Cendres de Valcombe : prêt.");

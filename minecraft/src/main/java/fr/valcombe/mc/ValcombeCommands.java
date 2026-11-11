@@ -148,7 +148,15 @@ public final class ValcombeCommands {
 						})))))
 			.then(Commands.literal("carte").requires(admin)
 				.then(Commands.literal("construire")
-					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException())))
+					.then(Commands.argument("theme", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
+						.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException(),
+							arg(x, "theme"))))))
+				.then(Commands.literal("baguette").executes(c -> exec(c, x -> {
+					x.getSource().getPlayerOrException().getInventory().add(ValcombeUi.wandItem());
+					return "Baguette de carte : clic droit sur un bloc pour y poser un siège, accroupi pour une maison.";
+				})))
 				.then(Commands.literal("oublier").executes(c -> exec(c, x -> ui.host().forgetVillage())))
 				.then(Commands.literal("nouvelle")
 					.executes(c -> exec(c, x -> ui.host().customMap(x.getSource().getPlayerOrException()))))

@@ -65,6 +65,7 @@ public class MainScreen extends BaseScreen {
 			actions.add(new Action("Chuchoter", () -> minecraft.gui.setScreen(new PickerScreen("Chuchoter à qui ?", "vc chuchoter "))));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
+		actions.add(new Action("Mon carnet", () -> minecraft.gui.setScreen(new NotebookScreen())));
 		actions.add(new Action("Historique", () -> {
 			send("vc historique");
 			onClose();

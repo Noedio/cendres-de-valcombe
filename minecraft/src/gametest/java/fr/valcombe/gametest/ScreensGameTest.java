@@ -96,6 +96,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "1-salon");
 			ctx.setScreen(SheetsScreen::new);
 			shot(ctx, "2-fiches");
+			ctx.setScreen(fr.valcombe.client.screen.NotebookScreen::new);
+			shot(ctx, "2b-carnet");
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "3-panneau-salon");
 			world.getServer().runCommand("vc script basculer margrave");
@@ -159,7 +161,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 
 			// Le village de Valcombe
 			ctx.setScreen(() -> null);
-			send(ctx, "vc carte construire");
+			send(ctx, "vc carte construire port");
 			ctx.waitTicks(120);
 			shot(ctx, "8-village");
 			ctx.runOnClient(mc -> mc.player.setXRot(35));

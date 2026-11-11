@@ -170,6 +170,20 @@ public final class McHost implements Host {
 		return "Maison n°" + v.houseCount() + " enregistrée.";
 	}
 
+	public String addSeatAt(BlockPos pos) {
+		Village v = requireVillage();
+		v.addSeat(pos);
+		v.save(server);
+		return "Siège n°" + v.seatCount() + " posé.";
+	}
+
+	public String addHouseAt(BlockPos pos) {
+		Village v = requireVillage();
+		v.addHouse(pos);
+		v.save(server);
+		return "Maison n°" + v.houseCount() + " posée.";
+	}
+
 	public String removeSeat() {
 		Village v = requireVillage();
 		boolean ok = v.removeLastSeat();
@@ -228,15 +242,20 @@ public final class McHost implements Host {
 
 	/** Construit le village de Valcombe sous les pieds du joueur. */
 	public String buildVillage(ServerPlayer p) {
+		return buildVillage(p, "gothique");
+	}
+
+	public String buildVillage(ServerPlayer p, String theme) {
 		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
-		Village v = Village.generated(c);
+		Village v = Village.generated(c, theme);
 		v.build(p.level());
 		v.save(server);
 		village = v;
 		applySpawn();
+		buildHall();
 		Vec3 spot = new Vec3(c.getX() + 0.5, c.getY() + 1, c.getZ() + 4.5);
 		p.teleportTo(p.level(), spot.x, spot.y, spot.z, Set.of(), 180, 0, false);
-		return "Le village de Valcombe est construit. Les parties s'y joueront désormais.";
+		return "Le village de Valcombe (" + v.theme() + ") est construit, avec sa salle d'attente.";
 	}
 
 	public String forgetVillage() {

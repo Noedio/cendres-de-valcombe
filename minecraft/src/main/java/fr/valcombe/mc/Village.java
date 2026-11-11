@@ -42,6 +42,7 @@ public final class Village {
 		int[] center;
 		boolean generated;
 		boolean hall;
+		String theme;
 		List<int[]> seats = new ArrayList<>();
 		List<int[]> houses = new ArrayList<>();
 	}
@@ -49,6 +50,7 @@ public final class Village {
 	private final BlockPos center;
 	private final boolean generated;
 	private boolean hall;
+	private String theme = "gothique";
 	private final List<BlockPos> seats = new ArrayList<>();
 	private final List<BlockPos> houses = new ArrayList<>();
 
@@ -59,7 +61,12 @@ public final class Village {
 
 	/** Village de Valcombe généré autour de center (le sol de la place). */
 	public static Village generated(BlockPos center) {
+		return generated(center, "gothique");
+	}
+
+	public static Village generated(BlockPos center, String theme) {
 		Village v = new Village(center, true);
+		v.theme = THEMES.contains(theme) ? theme : "gothique";
 		for (int i = 0; i < SEATS; i++) {
 			double a = angle(i, SEATS);
 			v.seats.add(center.offset((int) Math.round(SEAT_RADIUS * Math.cos(a)), 1, (int) Math.round(SEAT_RADIUS * Math.sin(a))));
@@ -271,10 +278,39 @@ public final class Village {
 		return dz > 0 ? Direction.SOUTH : Direction.NORTH;
 	}
 
+	/** Matériaux d'un thème de village. */
+	private record Palette(Block plaza, Block plazaAlt1, Block plazaAlt2, Block ground, Block ground2, Block rim,
+		Block seatFloor, Block post, Block light, Block well, Block pillar, Block wallA, Block wallB, Block roof,
+		Block houseFloor, Block alley, Block hedge) {
+	}
+
+	public static final java.util.List<String> THEMES = java.util.List.of("gothique", "monastere", "port");
+
+	private static Palette palette(String theme) {
+		return switch (theme == null ? "gothique" : theme) {
+			case "monastere" -> new Palette(Blocks.POLISHED_DIORITE, Blocks.CALCITE, Blocks.DIORITE, Blocks.DIRT_PATH,
+				Blocks.GRAVEL, Blocks.TUFF_BRICK_WALL, Blocks.POLISHED_TUFF, Blocks.SPRUCE_FENCE, Blocks.SOUL_LANTERN,
+				Blocks.TUFF_BRICKS, Blocks.STRIPPED_SPRUCE_LOG, Blocks.CALCITE, Blocks.TUFF_BRICKS, Blocks.DEEPSLATE_TILES,
+				Blocks.SPRUCE_PLANKS, Blocks.SMOOTH_STONE, Blocks.BIRCH_LEAVES);
+			case "port" -> new Palette(Blocks.SMOOTH_SANDSTONE, Blocks.CUT_SANDSTONE, Blocks.SANDSTONE, Blocks.SAND,
+				Blocks.GRAVEL, Blocks.SANDSTONE_WALL, Blocks.PRISMARINE_BRICKS, Blocks.OAK_FENCE, Blocks.LANTERN,
+				Blocks.PRISMARINE_BRICKS, Blocks.OAK_LOG, Blocks.OAK_PLANKS, Blocks.BIRCH_PLANKS, Blocks.DARK_PRISMARINE,
+				Blocks.OAK_PLANKS, Blocks.PACKED_MUD, Blocks.OAK_LEAVES);
+			default -> new Palette(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.DIRT_PATH,
+				Blocks.GRAVEL, Blocks.STONE_BRICK_WALL, Blocks.POLISHED_ANDESITE, Blocks.SPRUCE_FENCE, Blocks.LANTERN,
+				Blocks.CHISELED_STONE_BRICKS, Blocks.DARK_OAK_LOG, Blocks.DEEPSLATE_BRICKS, Blocks.STONE_BRICKS,
+				Blocks.DEEPSLATE_TILES, Blocks.SPRUCE_PLANKS, Blocks.COBBLESTONE, Blocks.SPRUCE_LEAVES);
+		};
+	}
+
+	public String theme() {
+		return theme;
+	}
+
 	public void build(ServerLevel level) {
+		Palette p = palette(theme);
 		BlockState air = Blocks.AIR.defaultBlockState();
-		BlockState path = Blocks.DIRT_PATH.defaultBlockState();
-		BlockState hedge = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true);
+		BlockState hedge = p.hedge().defaultBlockState().setValue(LeavesBlock.PERSISTENT, true);
 		java.util.Random rnd = new java.util.Random(center.asLong());
 
 		for (int x = -CLEAR_RADIUS; x <= CLEAR_RADIUS; x++) {
@@ -286,14 +322,13 @@ public final class Village {
 				for (int y = -3; y < 0; y++) {
 					set(level, x, y, z, Blocks.STONE.defaultBlockState());
 				}
-				BlockState floor;
+				Block floor;
 				if (d <= PLAZA_RADIUS) {
-					floor = rnd.nextInt(5) == 0 ? Blocks.MOSSY_COBBLESTONE.defaultBlockState()
-						: rnd.nextInt(3) == 0 ? Blocks.COBBLESTONE.defaultBlockState() : Blocks.STONE_BRICKS.defaultBlockState();
+					floor = rnd.nextInt(5) == 0 ? p.plazaAlt1() : rnd.nextInt(3) == 0 ? p.plazaAlt2() : p.plaza();
 				} else {
-					floor = rnd.nextInt(6) == 0 ? Blocks.GRAVEL.defaultBlockState() : path;
+					floor = rnd.nextInt(6) == 0 ? p.ground2() : p.ground();
 				}
-				set(level, x, 0, z, floor);
+				set(level, x, 0, z, floor.defaultBlockState());
 				for (int y = 1; y <= 14; y++) {
 					set(level, x, y, z, air);
 				}
@@ -302,36 +337,36 @@ public final class Village {
 		for (int k = 0; k < 360; k += 3) {
 			double a = Math.toRadians(k);
 			set(level, (int) Math.round((PLAZA_RADIUS + 0.5) * Math.cos(a)), 1,
-				(int) Math.round((PLAZA_RADIUS + 0.5) * Math.sin(a)), Blocks.STONE_BRICK_WALL.defaultBlockState());
+				(int) Math.round((PLAZA_RADIUS + 0.5) * Math.sin(a)), p.rim().defaultBlockState());
 		}
 		for (int i = 0; i < SEATS; i++) {
 			double a = angle(i, SEATS);
 			int x = (int) Math.round(SEAT_RADIUS * Math.cos(a));
 			int z = (int) Math.round(SEAT_RADIUS * Math.sin(a));
-			set(level, x, 0, z, Blocks.POLISHED_ANDESITE.defaultBlockState());
+			set(level, x, 0, z, p.seatFloor().defaultBlockState());
 			int bx = (int) Math.round((SEAT_RADIUS + 1) * Math.cos(a));
 			int bz = (int) Math.round((SEAT_RADIUS + 1) * Math.sin(a));
 			set(level, bx, 1, bz, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, away(bx, bz)));
 			if (i % 4 == 0) {
 				int lx = (int) Math.round((SEAT_RADIUS + 2) * Math.cos(a + Math.PI / SEATS));
 				int lz = (int) Math.round((SEAT_RADIUS + 2) * Math.sin(a + Math.PI / SEATS));
-				set(level, lx, 1, lz, Blocks.SPRUCE_FENCE.defaultBlockState());
-				set(level, lx, 2, lz, Blocks.SPRUCE_FENCE.defaultBlockState());
-				set(level, lx, 3, lz, Blocks.LANTERN.defaultBlockState());
+				set(level, lx, 1, lz, p.post().defaultBlockState());
+				set(level, lx, 2, lz, p.post().defaultBlockState());
+				set(level, lx, 3, lz, p.light().defaultBlockState());
 			}
 		}
 		for (int x = -2; x <= 2; x++) {
 			for (int z = -2; z <= 2; z++) {
 				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
-				set(level, x, 0, z, rim ? Blocks.CHISELED_STONE_BRICKS.defaultBlockState() : Blocks.WATER.defaultBlockState());
+				set(level, x, 0, z, rim ? p.well().defaultBlockState() : Blocks.WATER.defaultBlockState());
 				if (rim) {
-					set(level, x, 1, z, Blocks.STONE_BRICK_WALL.defaultBlockState());
+					set(level, x, 1, z, p.rim().defaultBlockState());
 				}
 			}
 		}
 		for (int[] c : new int[][] {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}}) {
 			for (int y = 1; y <= 5; y++) {
-				set(level, c[0], y, c[1], Blocks.DARK_OAK_LOG.defaultBlockState());
+				set(level, c[0], y, c[1], p.pillar().defaultBlockState());
 			}
 		}
 		for (int x = -2; x <= 2; x++) {
@@ -345,10 +380,9 @@ public final class Village {
 			double a = angle(i, SEATS);
 			int hx = (int) Math.round(HOUSE_RADIUS * Math.cos(a));
 			int hz = (int) Math.round(HOUSE_RADIUS * Math.sin(a));
-			house(level, hx, hz, i);
+			house(level, hx, hz, i, p);
 			for (int r = PLAZA_RADIUS + 1; r < HOUSE_RADIUS - 2; r++) {
-				set(level, (int) Math.round(r * Math.cos(a)), 0, (int) Math.round(r * Math.sin(a)),
-					Blocks.COBBLESTONE.defaultBlockState());
+				set(level, (int) Math.round(r * Math.cos(a)), 0, (int) Math.round(r * Math.sin(a)), p.alley().defaultBlockState());
 			}
 			double mid = a + Math.PI / SEATS;
 			for (int r = PLAZA_RADIUS + 4; r < HOUSE_RADIUS + 3 && i != 0; r++) {
@@ -362,14 +396,14 @@ public final class Village {
 		}
 	}
 
-	private void house(ServerLevel level, int hx, int hz, int index) {
-		BlockState wall = (index % 2 == 0 ? Blocks.DEEPSLATE_BRICKS : Blocks.STONE_BRICKS).defaultBlockState();
-		BlockState log = Blocks.DARK_OAK_LOG.defaultBlockState();
+	private void house(ServerLevel level, int hx, int hz, int index, Palette p) {
+		BlockState wall = (index % 2 == 0 ? p.wallA() : p.wallB()).defaultBlockState();
+		BlockState log = p.pillar().defaultBlockState();
 		for (int x = -3; x <= 3; x++) {
 			for (int z = -3; z <= 3; z++) {
 				boolean edge = Math.abs(x) == 3 || Math.abs(z) == 3;
 				boolean corner = Math.abs(x) == 3 && Math.abs(z) == 3;
-				set(level, hx + x, 0, hz + z, Blocks.SPRUCE_PLANKS.defaultBlockState());
+				set(level, hx + x, 0, hz + z, p.houseFloor().defaultBlockState());
 				for (int y = 1; y <= 4; y++) {
 					if (corner) {
 						set(level, hx + x, y, hz + z, log);
@@ -378,10 +412,10 @@ public final class Village {
 						set(level, hx + x, y, hz + z, window ? Blocks.GLASS_PANE.defaultBlockState() : wall);
 					}
 				}
-				set(level, hx + x, 5, hz + z, Blocks.DEEPSLATE_TILES.defaultBlockState());
+				set(level, hx + x, 5, hz + z, p.roof().defaultBlockState());
 			}
 		}
-		set(level, hx, 6, hz, Blocks.DEEPSLATE_TILES.defaultBlockState());
+		set(level, hx, 6, hz, p.roof().defaultBlockState());
 		Direction toPlaza = away(-hx, -hz);
 		int ox = toPlaza.getStepX() * 3;
 		int oz = toPlaza.getStepZ() * 3;
@@ -389,7 +423,7 @@ public final class Village {
 		set(level, hx + ox, 1, hz + oz, door.setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
 		set(level, hx + ox, 2, hz + oz, door.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
 		set(level, hx - toPlaza.getStepX() * 2, 1, hz - toPlaza.getStepZ() * 2, Blocks.HAY_BLOCK.defaultBlockState());
-		set(level, hx, 4, hz, Blocks.LANTERN.defaultBlockState());
+		set(level, hx, 4, hz, p.light().defaultBlockState());
 	}
 
 	// ------------------------------------------------------------------
@@ -412,6 +446,7 @@ public final class Village {
 		d.center = arr(center);
 		d.generated = generated;
 		d.hall = hall;
+		d.theme = theme;
 		seats.forEach(p -> d.seats.add(arr(p)));
 		houses.forEach(p -> d.houses.add(arr(p)));
 		try {
@@ -430,6 +465,7 @@ public final class Village {
 				Data d = GSON.fromJson(Files.readString(json), Data.class);
 				Village v = new Village(pos(d.center), d.generated);
 				v.hall = d.hall;
+				v.theme = d.theme == null ? "gothique" : d.theme;
 				d.seats.forEach(a -> v.seats.add(pos(a)));
 				d.houses.forEach(a -> v.houses.add(pos(a)));
 				return v;
