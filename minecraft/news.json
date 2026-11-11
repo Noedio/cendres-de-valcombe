@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Launcher 0.5.1",
+    "text": "Le launcher se range tout seul dans le menu Démarrer et pose un raccourci sur le Bureau. Rangez-le dans un dossier fixe (par exemple %LOCALAPPDATA%\\Programs\\Les Cendres de Valcombe) : il se met ensuite à jour tout seul."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Version 0.5.0",
     "text": "Voyageurs (rejoindre une partie en cours), figures neutres (Sentinelle, Doyen, Sablier), joueurs fictifs qui annoncent, accusent et votent, salle d'attente vivante, veillée de fin, mode daltonien. Launcher : Mon carnet, prochaine soirée, téléchargements avec vitesse et reprise."
   },
