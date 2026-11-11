@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Version 0.6.1",
+    "text": "Assis sur un trône, un clic droit n'affiche plus le message « hauteur maximale de construction ». Le launcher garde la sortie du jeu pour comprendre un plantage (jointe au rapport) et affiche les nouvelles proprement. Hôtes : mettez à jour le mod du serveur."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Version 0.6.0 : Valcombe en haute définition",
     "text": "Textures HD et shaders (ombres, lumière, eau) installés par le launcher, réglables dans Personnalisation. Nouveaux objets : le grimoire (menu), la plume d'accusation, le bâton du Conteur. Vrais trônes sculptés, rôles visibles par le Conteur, joueurs visibles à travers les murs pendant le conseil, et qui a voté pour qui. Écrans revus sans chevauchement, Atelier à plusieurs avec import de schématiques. Hôtes : mettez à jour le mod du serveur."
   },
