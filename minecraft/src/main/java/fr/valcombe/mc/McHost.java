@@ -343,6 +343,55 @@ public final class McHost implements Host {
 	}
 
 	@Override
+	public void seatBoards(Map<String, String> labels) {
+		if (server == null) {
+			return;
+		}
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_jeton]");
+		for (var e : labels.entrySet()) {
+			SeatPos s = seats.get(e.getKey());
+			if (s == null) {
+				continue;
+			}
+			String[] parts = e.getValue().split("\\|", 2);
+			String text = parts[1].replace("\"", "'").replace("\n", "\\n");
+			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_jeton\"],billboard:\"center\","
+					+ "background:1073741824,transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
+					+ "translation:[0f,0f,0f],scale:[2.5f,2.5f,2.5f]},text:{text:\"%s\",color:\"%s\"}}",
+				s.pos().x, s.pos().y + 2.6, s.pos().z, text, parts[0]));
+		}
+	}
+
+	@Override
+	public void execution(String name) {
+		ServerPlayer p = player(name);
+		if (server == null || p == null) {
+			return;
+		}
+		String at = String.format(java.util.Locale.ROOT, "%.2f %.2f %.2f", p.getX(), p.getY() + 1, p.getZ());
+		WorldSetup.run(server, "particle minecraft:large_smoke " + at + " 0.4 1 0.4 0.02 60 force");
+		WorldSetup.run(server, "particle minecraft:soul_fire_flame " + at + " 0.3 0.8 0.3 0.03 50 force");
+		WorldSetup.run(server, "playsound minecraft:entity.wither.death master @a " + at + " 0.6 0.7");
+	}
+
+	@Override
+	public void celebrate(List<String> players) {
+		if (server == null || village == null) {
+			return;
+		}
+		BlockPos c = village.center();
+		for (int i = 0; i < 6; i++) {
+			int k = i;
+			schedule(10 * i, () -> {
+				String at = String.format(java.util.Locale.ROOT, "%d %d %d", c.getX() + (k % 3 - 1) * 4, c.getY() + 8, c.getZ() + (k / 3) * 4 - 2);
+				WorldSetup.run(server, "particle minecraft:firework " + at + " 1.5 1.5 1.5 0.15 120 force");
+				WorldSetup.run(server, "playsound minecraft:entity.firework_rocket.twinkle master @a " + at + " 2 1");
+			});
+		}
+	}
+
+	@Override
 	public void gather(List<String> players) {
 		for (String name : players) {
 			ServerPlayer p = player(name);

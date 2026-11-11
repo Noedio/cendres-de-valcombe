@@ -1,6 +1,7 @@
 package fr.valcombe.session;
 
 import java.util.List;
+import java.util.Map;
 
 /** Ce que la session attend du serveur de jeu (Minecraft, ou un faux serveur en test). */
 public interface Host {
@@ -26,6 +27,21 @@ public interface Host {
 
 	/** Met à jour l'apparence des morts (fantômes) et de ceux qui ont encore leur vote. */
 	default void deadPlayers(List<String> dead, List<String> withGhostVote) {
+	}
+
+	/**
+	 * Jetons flottants au-dessus des sièges : nom du joueur → « couleur|texte »
+	 * (couleur : white, gray, gold, red, aqua). Liste vide : on retire tout.
+	 */
+	default void seatBoards(Map<String, String> labels) {
+	}
+
+	/** Mise en scène d'une exécution sur ce joueur. */
+	default void execution(String player) {
+	}
+
+	/** Célébration de fin de partie. */
+	default void celebrate(List<String> players) {
 	}
 
 	/** Enregistre la sauvegarde de la partie (chaîne vide : plus de partie à reprendre). */

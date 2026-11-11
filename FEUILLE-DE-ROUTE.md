@@ -39,6 +39,11 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 | Fin de partie | Révélation : tous les jetons se retournent au-dessus des têtes, le camp vainqueur est célébré, historique illustré |
 | Interface | Écrans encore plus travaillés : animations d'ouverture, carte de rôle qui se retourne au début, curseurs et listes aux couleurs de Valcombe (launcher compris) |
 
+### Avancement de la phase 2
+
+- Fait : jetons flottants au-dessus des sièges (nom, mort, vote de fantôme, accusé), effet « Tu te réveilles », exécution mise en scène (fumée, flammes d'âme, glas), révélation des rôles et célébration en fin de partie.
+- Reporté : joueurs réellement assis (conflit avec l'immobilité de nuit), sons et musiques originaux (pack de ressources), écrans animés.
+
 ## Phase 3 — Contenu : cartes et rôles
 
 | Domaine | Ajout |

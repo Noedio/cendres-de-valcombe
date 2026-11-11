@@ -323,11 +323,12 @@ public final class Session {
 		game = g;
 		clearNight();
 		clearVote();
-		host.seatPlayers(realNames(), storyteller != null && host.online(storyteller) ? storyteller : starter);
+		host.seatPlayers(names(), storyteller != null && host.online(storyteller) ? storyteller : starter);
 		for (Game.Seat p : g.players()) {
 			showRole(p.name, p.believed());
 		}
 		save();
+		updateBoards();
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
 			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). Le Conteur fait tomber la première nuit.");
 		return "Partie lancée.";
@@ -337,6 +338,7 @@ public final class Session {
 		if (game != null) {
 			host.endGame(realNames());
 		}
+		host.seatBoards(Map.of());
 		game = null;
 		host.persist("");
 		clearNight();
@@ -796,6 +798,7 @@ public final class Session {
 			host.title(realNames(), "Jour " + g.day(), String.join(", ", deaths.stream().map(s -> g.player(s).name).toList())
 				+ (deaths.size() > 1 ? " sont morts" : " est mort") + " cette nuit");
 		}
+		updateBoards();
 		host.deadPlayers(g.players().stream().filter(p -> !p.alive()).map(p -> p.name).toList(),
 			g.players().stream().filter(p -> !p.alive() && p.ghostVote()).map(p -> p.name).toList());
 		if (deaths.isEmpty()) {
@@ -810,6 +813,7 @@ public final class Session {
 		}
 		nominationsOpen = mode == Mode.AUTO;
 		save();
+		updateBoards();
 		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
 	}
 
@@ -877,6 +881,8 @@ public final class Session {
 		if (nom.pelerine()) {
 			announce(name + " est exécuté sur-le-champ !");
 			host.sound(realNames(), "death");
+			host.execution(name);
+			updateBoards();
 			if (g.winner() != null) {
 				finish();
 			} else {
@@ -885,6 +891,7 @@ public final class Session {
 			return "";
 		}
 		startDefense(nom);
+		updateBoards();
 		return "";
 	}
 
@@ -1001,6 +1008,7 @@ public final class Session {
 		clearVote();
 		Game.VoteResult r = g.vote(nom.index(), voters);
 		save();
+		updateBoards();
 		String nominee = g.player(nom.nominee()).name;
 		announce(r.count() + " voix contre " + nominee + " (seuil " + r.threshold() + ") : "
 			+ (r.onBlock() ? "en passe d'être exécuté." : "pas d'exécution pour l'instant."));
@@ -1040,6 +1048,7 @@ public final class Session {
 		}
 		host.sound(realNames(), "death");
 		announce(g.player(s).name + " meurt.");
+		updateBoards();
 		if (g.winner() != null) {
 			finish();
 		}
@@ -1051,6 +1060,7 @@ public final class Session {
 		int s = seatByName(target);
 		g.revive(s);
 		announce(g.player(s).name + " revient parmi les vivants.");
+		updateBoards();
 		return "";
 	}
 
@@ -1091,6 +1101,11 @@ public final class Session {
 		}
 		Game.DayEnd end = g.endDay();
 		save();
+		if (end.executed() >= 0) {
+			host.execution(g.player(end.executed()).name);
+			host.title(realNames(), g.player(end.executed()).name + " est exécuté", "");
+		}
+		updateBoards();
 		announce(end.executed() >= 0
 			? g.player(end.executed()).name + " est exécuté."
 			: "Personne n'est exécuté aujourd'hui.");
@@ -1111,6 +1126,9 @@ public final class Session {
 			return;
 		}
 		host.endGame(realNames());
+		revealBoards(g);
+		host.celebrate(realNames());
+		host.title(realNames(), g.winner() == Team.GOOD ? "Victoire du bien" : "Victoire du mal", g.winReason());
 		announce("Fin de la partie : victoire du " + (g.winner() == Team.GOOD ? "bien" : "mal") + " ! "
 			+ g.winReason());
 		announce("Rôles : " + g.describeRoles() + ". Historique complet : menu ou /vc historique.");
@@ -1243,6 +1261,36 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
+	// Jetons flottants au-dessus des sièges
+	// ------------------------------------------------------------------
+	private void updateBoards() {
+		Game g = game;
+		if (g == null) {
+			return;
+		}
+		Map<String, String> labels = new LinkedHashMap<>();
+		String accused = voteNom != null ? g.player(voteNom.nominee()).name : null;
+		for (Game.Seat p : g.players()) {
+			String text = (p.alive() ? "" : "† ") + p.name + (!p.alive() && p.ghostVote() ? " ✋" : "");
+			if (p.name.equals(accused)) {
+				text += "\n⚖ accusé";
+			}
+			labels.put(p.name, (p.name.equals(accused) ? "gold" : p.alive() ? "white" : "gray") + "|" + text);
+		}
+		host.seatBoards(labels);
+	}
+
+	/** Fin de partie : chaque jeton révèle le rôle, aux couleurs du camp. */
+	private void revealBoards(Game g) {
+		Map<String, String> labels = new LinkedHashMap<>();
+		for (Game.Seat p : g.players()) {
+			String role = p.role().displayName + (p.believed() != p.role() ? " (croyait être " + p.believed().displayName + ")" : "");
+			labels.put(p.name, (p.team() == Team.EVIL ? "red" : "aqua") + "|" + p.name + "\n" + role);
+		}
+		host.seatBoards(labels);
+	}
+
+	// ------------------------------------------------------------------
 	// Sauvegarde automatique
 	// ------------------------------------------------------------------
 	private static final class SaveData {
@@ -1316,7 +1364,7 @@ public final class Session {
 		}
 		clearNight();
 		clearVote();
-		host.seatPlayers(realNames(), storyteller != null ? storyteller : realNames().isEmpty() ? "" : realNames().get(0));
+		host.seatPlayers(names(), storyteller != null ? storyteller : realNames().isEmpty() ? "" : realNames().get(0));
 		String where = switch (game.phase()) {
 			case NIGHT -> "la nuit " + game.night();
 			case DAY -> "le jour " + game.day();

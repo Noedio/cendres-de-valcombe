@@ -17,6 +17,7 @@ public final class Hud {
 	private static String lastVote = "";
 	private static long voteStart;
 	private static float veil;
+	private static long wakeAt;
 
 	private Hud() {
 	}
@@ -36,6 +37,9 @@ public final class Hud {
 				mc.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.BELL_BLOCK, 1.2f, 0.8f));
 			}
 			lastPhase = phase;
+		}
+		if (promptAppeared && phase.equals("NIGHT")) {
+			wakeAt = System.currentTimeMillis();
 		}
 		if (promptAppeared) {
 			mc.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.AMETHYST_BLOCK_CHIME, 1.0f, 1.0f));
@@ -65,6 +69,22 @@ public final class Hud {
 			g.fillGradient(0, h - 40, w, h, 0, (edge << 24));
 		}
 
+		// Réveil : le voile s'éclaircit et « Tu te réveilles » s'affiche en grand.
+		long since = System.currentTimeMillis() - wakeAt;
+		if (since < 2600) {
+			float t = since / 2600f;
+			int alpha = (int) ((1 - t) * 220);
+			g.fill(0, 0, w, h, (alpha << 24) | 0x05030A);
+			int textAlpha = (int) (255 * Math.min(1f, (1 - t) * 2));
+			if (textAlpha > 8) {
+				String wake = "Tu te réveilles";
+				g.pose().pushMatrix();
+				g.pose().scale(2.5f, 2.5f);
+				g.text(mc.font, wake, (int) (w / 2.5f / 2 - mc.font.width(wake) / 2f), (int) (h / 2.5f / 2 - 8),
+					(textAlpha << 24) | 0xD9B45A, true);
+				g.pose().popMatrix();
+			}
+		}
 		if (phase.equals("LOBBY")) {
 			return;
 		}

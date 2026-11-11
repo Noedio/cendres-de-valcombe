@@ -109,6 +109,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 			world.getServer().runCommand("vc lancer auto");
 			ctx.waitTicks(20);
+			ctx.setScreen(() -> null);
+			ctx.runOnClient(mc -> mc.player.setXRot(10));
+			ctx.waitTicks(30);
+			shot(ctx, "4b-jetons-flottants");
 			ctx.setScreen(MainScreen::new);
 			shot(ctx, "4-partie");
 			ctx.setScreen(() -> null);
@@ -142,6 +146,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 				}
 				ctx.waitTicks(500);
 			}
+			// Fin de partie : le Conteur tue les joueurs fictifs jusqu'à la victoire d'un camp
+			ctx.setScreen(() -> null);
+			for (int b = 1; b <= 6; b++) {
+				world.getServer().runCommand("vc tuer Bot" + b);
+				ctx.waitTicks(5);
+			}
+			ctx.waitTicks(40);
+			shot(ctx, "13-revelation");
 			world.getServer().runCommand("vc arreter");
 			ctx.waitTicks(20);
 
