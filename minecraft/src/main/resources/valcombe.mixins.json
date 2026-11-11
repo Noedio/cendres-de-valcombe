@@ -1,0 +1,9 @@
+{
+	"required": true,
+	"package": "fr.valcombe.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": ["UseItemOnMixin"],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

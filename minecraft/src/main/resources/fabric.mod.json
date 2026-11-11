@@ -13,6 +13,7 @@
 		"voicechat": ["fr.valcombe.mc.ValcombeVoicePlugin"]
 	},
 	"mixins": [
+		"valcombe.mixins.json",
 		{"config": "valcombe.client.mixins.json", "environment": "client"}
 	],
 	"depends": {

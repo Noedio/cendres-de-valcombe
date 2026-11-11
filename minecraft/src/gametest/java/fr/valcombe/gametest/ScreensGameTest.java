@@ -195,6 +195,30 @@ public class ScreensGameTest implements FabricClientGameTest {
 		}
 	}
 
+	/** Texte de la barre d'action (message au-dessus de l'inventaire), lu par réflexion. */
+	private static String overlayText(net.minecraft.client.Minecraft mc) {
+		StringBuilder out = new StringBuilder();
+		for (Object holder : new Object[] {mc.gui, mc.gui.hud}) {
+			for (Class<?> c = holder.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+				for (var f : c.getDeclaredFields()) {
+					if (net.minecraft.network.chat.Component.class.isAssignableFrom(f.getType())
+						&& !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+						try {
+							f.setAccessible(true);
+							Object v = f.get(holder);
+							if (v != null) {
+								out.append(f.getName()).append('=').append(((net.minecraft.network.chat.Component) v).getString()).append(' ');
+							}
+						} catch (ReflectiveOperationException | RuntimeException e) {
+							// champ inaccessible : ignoré
+						}
+					}
+				}
+			}
+		}
+		return out.toString();
+	}
+
 	private static void checkTablet(ClientGameTestContext ctx) {
 		testPort();
 		var tab = fr.valcombe.mc.ValcombeMod.tablet();
@@ -437,6 +461,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(15);
 			ctx.setScreen(() -> null);
 			check(ctx.computeOnClient(mc -> mc.player.isPassenger()), "assis sur le trône d'un clic droit");
+			// Assis : un vrai clic droit (souris), comme un joueur, ne doit afficher aucun message d'erreur.
+			ctx.getInput().pressKey(o -> o.keyUse);
+			ctx.waitTicks(10);
+			String overlay = ctx.computeOnClient(mc -> overlayText(mc));
+			System.out.println("[valcombe-test] assis, clic droit : position " + ctx.computeOnClient(mc -> mc.player.position().toString())
+				+ " ; message « " + overlay + " »");
+			check(!overlay.contains("height") && !overlay.contains("hauteur"), "pas de message de hauteur en cliquant assis : " + overlay);
 			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
 			ctx.waitTicks(10);
 			ctx.runOnClient(mc -> { if (!mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });

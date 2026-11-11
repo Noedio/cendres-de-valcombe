@@ -309,7 +309,7 @@ public partial class MainWindow : Window
             var news = _release.Manifest.News.ToList();
             if (!string.IsNullOrWhiteSpace(_release.Notes))
             {
-                news.Insert(0, new NewsItem { Title = "Version " + _release.Tag, Text = _release.Notes.Trim() });
+                news.Insert(0, new NewsItem { Title = "Version " + _release.Tag, Text = PlainText(_release.Notes) });
             }
             NewsList.ItemsSource = news;
             RefreshServerPicker();
@@ -787,6 +787,24 @@ public partial class MainWindow : Window
             await Task.Delay(1500);
             Close();
         }
+    }
+
+    /// <summary>Notes de version (Markdown de GitHub) en texte simple : titres, gras et puces lisibles.</summary>
+    private static string PlainText(string markdown)
+    {
+        var lines = new List<string>();
+        foreach (string raw in markdown.Replace("\r", "").Split('\n'))
+        {
+            string line = raw.Trim();
+            line = System.Text.RegularExpressions.Regex.Replace(line, @"^#+\s*", "");
+            line = line.Replace("**", "").Replace("`", "");
+            if (line.StartsWith("- "))
+            {
+                line = "• " + line[2..];
+            }
+            lines.Add(line);
+        }
+        return System.Text.RegularExpressions.Regex.Replace(string.Join("\n", lines).Trim(), "\n{3,}", "\n\n");
     }
 
     /// <summary>Vérification à blanc du moteur : ValcombeLauncher.exe --verifier-moteur rapport.txt</summary>

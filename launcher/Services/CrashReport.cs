@@ -24,6 +24,15 @@ public static class CrashReport
         {
             string label = gameDir == Engine.GameDir ? "jeu" : "prism";
             added += Add(archive, Path.Combine(gameDir, "logs", "latest.log"), $"{label}/latest.log");
+            added += Add(archive, Path.Combine(gameDir, "logs", "sortie-jeu.log"), $"{label}/sortie-jeu.log");
+            string logs = Path.Combine(gameDir, "logs");
+            if (Directory.Exists(logs))
+            {
+                foreach (var f in new DirectoryInfo(logs).GetFiles("hs_err_pid*.log").OrderByDescending(f => f.LastWriteTime).Take(2))
+                {
+                    added += Add(archive, f.FullName, $"{label}/{f.Name}");
+                }
+            }
             string crashes = Path.Combine(gameDir, "crash-reports");
             if (Directory.Exists(crashes))
             {

@@ -284,7 +284,9 @@ public sealed class Engine
                 }
             }
         }
-        var result = new List<string> { $"-Xmx{maxMemoryMb}m", "-Xms1024m" };
+        // Plantage de Java ou du pilote graphique : le fichier d'erreur va dans logs/ (repris par le rapport).
+        var result = new List<string> { $"-Xmx{maxMemoryMb}m", "-Xms1024m",
+            "-XX:ErrorFile=" + Path.Combine(GameDir, "logs", "hs_err_pid%p.log"), "-XX:+ExitOnOutOfMemoryError" };
         result.AddRange(Expand(plan.VanillaJvmArgs));
         result.AddRange(Expand(plan.FabricJvmArgs));
         result.Add(plan.MainClass);
@@ -311,11 +313,61 @@ public sealed class Engine
     public static Process Launch(Plan plan, List<string> args)
     {
         Directory.CreateDirectory(GameDir);
-        var psi = new ProcessStartInfo(plan.JavaExe) { WorkingDirectory = GameDir, UseShellExecute = false };
+        var psi = new ProcessStartInfo(plan.JavaExe)
+        {
+            WorkingDirectory = GameDir,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
         foreach (string a in args)
         {
             psi.ArgumentList.Add(a);
         }
-        return Process.Start(psi) ?? throw new InvalidOperationException("Java n'a pas démarré.");
+        var game = Process.Start(psi) ?? throw new InvalidOperationException("Java n'a pas démarré.");
+        // Toute la sortie du jeu, écrite au fil de l'eau : elle reste lisible même après un arrêt brutal
+        // (le journal du jeu, lui, est écrit par paquets et perd ses dernières lignes).
+        Directory.CreateDirectory(Path.Combine(GameDir, "logs"));
+        var output = new StreamWriter(Path.Combine(GameDir, "logs", "sortie-jeu.log"), false) { AutoFlush = true };
+        var gate = new object();
+        void Write(string? line)
+        {
+            if (line == null)
+            {
+                return;
+            }
+            lock (gate)
+            {
+                try
+                {
+                    output.WriteLine(line);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+        game.OutputDataReceived += (_, e) => Write(e.Data);
+        game.ErrorDataReceived += (_, e) => Write(e.Data);
+        game.EnableRaisingEvents = true;
+        game.Exited += (_, _) =>
+        {
+            Thread.Sleep(500);
+            lock (gate)
+            {
+                try
+                {
+                    output.WriteLine($"[launcher] Le jeu s'est arrêté (code {game.ExitCode}).");
+                }
+                catch (Exception)
+                {
+                }
+                output.Dispose();
+            }
+        };
+        game.BeginOutputReadLine();
+        game.BeginErrorReadLine();
+        return game;
     }
 }
