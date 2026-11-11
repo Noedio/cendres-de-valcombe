@@ -308,10 +308,28 @@ public partial class MainWindow : Window
                 news.Insert(0, new NewsItem { Title = "Version " + _release.Tag, Text = _release.Notes.Trim() });
             }
             NewsList.ItemsSource = news;
-            string installed = Instance.InstalledVersion ?? "aucune";
+            RefreshServerPicker();
+            string installed = (Integrated ? Instance.EngineVersion : Instance.InstalledVersion) ?? "aucune";
+            if (installed != _release.Tag && Integrated && _captureDir == null)
+            {
+                // Le launcher rattrape la version publiée tout de suite, en arrière-plan : JOUER sera immédiat.
+                PlayButton.IsEnabled = false;
+                try
+                {
+                    await Instance.SyncEngineAsync(_release, new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)));
+                    installed = _release.Tag;
+                }
+                catch (Exception ex)
+                {
+                    SetStatus($"Mise à jour du jeu reportée au prochain JOUER : {ex.Message}", 0);
+                    PlayButton.IsEnabled = true;
+                    UpdateServerText();
+                    return;
+                }
+                PlayButton.IsEnabled = true;
+            }
             SetStatus(installed == _release.Tag ? $"Version {_release.Tag} installée. Prêt."
                 : $"Version {_release.Tag} disponible (installée : {installed}).", 0);
-            RefreshServerPicker();
         }
         catch (Exception ex)
         {
@@ -736,7 +754,7 @@ public partial class MainWindow : Window
         SetStatus($"Connecté : {account.Name}. Préparation du jeu…", 0);
         var plan = await Engine.PrepareAsync(release.Manifest.Minecraft, release.Manifest.Loader);
         await Engine.DownloadAsync(plan, progress);
-        await Instance.SyncModsAsync(release, Engine.ModsDir, progress, repair: false);
+        await Instance.SyncEngineAsync(release, progress);
         Instance.PrepareOptions(_config.Minecraft, Engine.GameDir);
         SetStatus("Lancement de Minecraft…", 1);
         var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));

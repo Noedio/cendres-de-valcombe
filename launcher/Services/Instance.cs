@@ -13,6 +13,20 @@ public static class Instance
     public static string? InstalledVersion =>
         File.Exists(InstalledVersionFile) ? File.ReadAllText(InstalledVersionFile).Trim() : null;
 
+    /// <summary>Version des mods prêts pour le moteur intégré (sans Prism).</summary>
+    public static string EngineVersionFile => Path.Combine(Engine.Root, "valcombe-version.txt");
+
+    public static string? EngineVersion =>
+        File.Exists(EngineVersionFile) ? File.ReadAllText(EngineVersionFile).Trim() : null;
+
+    /// <summary>Met les mods du moteur intégré à la version publiée et note la version (sans lancer le jeu).</summary>
+    public static async Task SyncEngineAsync(Release release, IProgress<(string, double)> progress, CancellationToken ct = default)
+    {
+        await SyncModsAsync(release, Engine.ModsDir, progress, repair: false, ct);
+        Directory.CreateDirectory(Engine.Root);
+        await File.WriteAllTextAsync(EngineVersionFile, release.Tag, ct);
+    }
+
     /// <summary>Crée ou met à jour l'instance pour la version publiée.</summary>
     public static async Task SyncAsync(Release release, LauncherConfig config, IProgress<(string, double)> progress,
         bool repair, CancellationToken ct = default)

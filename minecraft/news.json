@@ -1,8 +1,8 @@
 [
   {
     "date": "11 nov. 2026",
-    "title": "Launcher 0.5.1",
-    "text": "Le launcher se range tout seul dans le menu Démarrer et pose un raccourci sur le Bureau. Rangez-le dans un dossier fixe (par exemple %LOCALAPPDATA%\\Programs\\Les Cendres de Valcombe) : il se met ensuite à jour tout seul."
+    "title": "Launcher 0.5.2",
+    "text": "Le launcher se range tout seul dans le menu Démarrer et sur le Bureau, et met le jeu à jour dès son démarrage, en arrière-plan : JOUER est immédiat."
   },
   {
     "date": "11 nov. 2026",
