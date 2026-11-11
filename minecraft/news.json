@@ -1,6 +1,11 @@
 [
   {
     "date": "11 nov. 2026",
+    "title": "Version 0.4.0 : l'Atelier",
+    "text": "Créez vos propres rôles (17 modèles de pouvoir, 45 emblèmes), vos scénarios (règles spéciales, texte d'ouverture) et vos cartes (village réglable de 5 à 20 trônes, mode construction), testez-les en simulation puis jouez-les. Partage en fichiers .valcombe. L'hôte ouvre l'Atelier avec /vc atelier."
+  },
+  {
+    "date": "11 nov. 2026",
     "title": "Version 0.3.0",
     "text": "Village agrandi en 3D : trônes où s'asseoir, horloge de vote géante, gibet, jetons qui se retournent, coiffe des morts. Vote simplifié, plume qui vise de loin, annonces de rôle, signes (G), conversations privées. Second script : les Brumes de Valcombe. Côté Conteur : bâton, aparté, tablette. Launcher : guide, préréglages, réglages gardés."
   },
