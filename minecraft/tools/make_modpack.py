@@ -130,6 +130,18 @@ def main():
         }],
         "news": news,
     }
+    # Launcher annoncé (mise à jour automatique) : l'exe publié doit être joint à la version.
+    launcher_exe = ROOT.parent / "launcher" / "publish" / "ValcombeLauncher.exe"
+    csproj = (ROOT.parent / "launcher" / "ValcombeLauncher.csproj").read_text(encoding="utf-8")
+    if launcher_exe.exists():
+        launcher_version = csproj.split("<Version>")[1].split("</Version>")[0]
+        manifest["launcher"] = {
+            "version": launcher_version,
+            "filename": launcher_exe.name,
+            "sha512": hashlib.sha512(launcher_exe.read_bytes()).hexdigest(),
+            "size": launcher_exe.stat().st_size,
+        }
+        print(f"Launcher annoncé : {launcher_version}")
     (DIST / "valcombe-pack.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     shutil.copy2(jar, DIST / jar.name)
     print(f"Manifeste du launcher : {DIST / 'valcombe-pack.json'}")

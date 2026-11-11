@@ -35,6 +35,7 @@ public partial class MainWindow : Window
         _captureDir = i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 
         VersionText.Text = "Launcher " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+        Updater.CleanUp();
         BuildLookChoices();
         LoadControls();
         ApplyLook();
@@ -247,6 +248,16 @@ public partial class MainWindow : Window
         {
             SetStatus("Recherche de la dernière version…", 0);
             _release = await Releases.LatestAsync(_config.Repository);
+            if (Updater.IsNewer(_release.Manifest.Launcher))
+            {
+                PlayButton.IsEnabled = false;
+                if (await Updater.UpdateAsync(_release, new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2))))
+                {
+                    Close(); // la nouvelle version vient de démarrer
+                    return;
+                }
+                PlayButton.IsEnabled = true;
+            }
             var news = _release.Manifest.News.ToList();
             if (!string.IsNullOrWhiteSpace(_release.Notes))
             {

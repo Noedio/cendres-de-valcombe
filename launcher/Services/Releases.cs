@@ -21,6 +21,15 @@ public sealed class NewsItem
     [JsonPropertyName("text")] public string Text { get; set; } = "";
 }
 
+/// <summary>Launcher annoncé par la version publiée (mise à jour automatique).</summary>
+public sealed class LauncherInfo
+{
+    [JsonPropertyName("version")] public string Version { get; set; } = "";
+    [JsonPropertyName("filename")] public string FileName { get; set; } = "ValcombeLauncher.exe";
+    [JsonPropertyName("sha512")] public string Sha512 { get; set; } = "";
+    [JsonPropertyName("size")] public long Size { get; set; }
+}
+
 /// <summary>Manifeste joint à chaque version : versions de jeu, mods, serveur, nouvelles.</summary>
 public sealed class PackManifest
 {
@@ -30,6 +39,7 @@ public sealed class PackManifest
     [JsonPropertyName("server")] public string Server { get; set; } = "";
     [JsonPropertyName("mods")] public List<PackMod> Mods { get; set; } = new();
     [JsonPropertyName("news")] public List<NewsItem> News { get; set; } = new();
+    [JsonPropertyName("launcher")] public LauncherInfo? Launcher { get; set; }
 }
 
 /// <summary>La dernière version publiée sur GitHub et son manifeste.</summary>
