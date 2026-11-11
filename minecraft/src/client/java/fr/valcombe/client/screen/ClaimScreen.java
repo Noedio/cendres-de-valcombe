@@ -24,7 +24,7 @@ public class ClaimScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {300, 210};
+		return new int[] {390, 250};
 	}
 
 	private List<Role> roles() {
@@ -33,7 +33,10 @@ public class ClaimScreen extends BaseScreen {
 		if (sc != null && sc.has("roles")) {
 			for (JsonElement e : sc.getAsJsonArray("roles")) {
 				try {
-					out.add(Role.valueOf(e.getAsString()));
+					Role r = Role.valueOf(e.getAsString());
+					if (r.active) {
+						out.add(r);
+					}
 				} catch (IllegalArgumentException ignored) {
 					// rôle inconnu de cette version du mod
 				}
@@ -47,8 +50,8 @@ public class ClaimScreen extends BaseScreen {
 		List<Role> roles = roles();
 		for (int i = 0; i < roles.size(); i++) {
 			Role r = roles.get(i);
-			int x = px + 26 + (i % 8) * 35;
-			int y = py + 30 + (i / 8) * 36;
+			int x = px + 24 + (i % 12) * 30;
+			int y = py + 30 + (i / 12) * 30;
 			TokenWidget t = new TokenWidget(x, y, 28, "", r.name(), Team.of(r).name(), true, false, () -> {
 				send("vc annoncer " + r.name().toLowerCase());
 				onClose();

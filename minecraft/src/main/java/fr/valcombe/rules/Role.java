@@ -65,15 +65,79 @@ public enum Role {
 		"Chaque nuit, désigne un joueur : s'il reçoit une information cette nuit, elle est fausse."),
 	// Démon
 	GOULE("La Goule", RoleType.DEMON, 0, 4, 1, false,
-		"Chaque nuit sauf la première, désigne un joueur : il meurt. Si tu te désignes, un Sbire devient la Goule.");
+		"Chaque nuit sauf la première, désigne un joueur : il meurt. Si tu te désignes, un Sbire devient la Goule."),
+	// Emplacements des rôles créés dans l'Atelier : remplis au démarrage du serveur (voir defineCustom).
+	PERSO_01,
+	PERSO_02,
+	PERSO_03,
+	PERSO_04,
+	PERSO_05,
+	PERSO_06,
+	PERSO_07,
+	PERSO_08,
+	PERSO_09,
+	PERSO_10,
+	PERSO_11,
+	PERSO_12,
+	PERSO_13,
+	PERSO_14,
+	PERSO_15,
+	PERSO_16,
+	PERSO_17,
+	PERSO_18,
+	PERSO_19,
+	PERSO_20,
+	PERSO_21,
+	PERSO_22,
+	PERSO_23,
+	PERSO_24,
+	PERSO_25,
+	PERSO_26,
+	PERSO_27,
+	PERSO_28,
+	PERSO_29,
+	PERSO_30,
+	PERSO_31,
+	PERSO_32,
+	PERSO_33,
+	PERSO_34,
+	PERSO_35,
+	PERSO_36,
+	PERSO_37,
+	PERSO_38,
+	PERSO_39,
+	PERSO_40;
 
-	public final String displayName;
-	public final RoleType type;
-	public final int firstNight;
-	public final int otherNights;
-	public final int choose;
-	public final boolean notSelf;
-	public final String text;
+	private static List<RoleDef> customDefs = List.of();
+
+	/** Les fiches des rôles créés actuellement chargés. */
+	public static List<RoleDef> customDefs() {
+		return customDefs;
+	}
+
+	/** Nombre d'emplacements pour les rôles créés. */
+	public static final int CUSTOM_SLOTS = 40;
+
+	public String displayName;
+	public RoleType type;
+	public int firstNight;
+	public int otherNights;
+	public int choose;
+	public boolean notSelf;
+	public String text;
+	/** Emblème du rôle (pictogramme du mod : textures/gui/roles/<icon>.png). */
+	public String icon;
+	/** Emplacement de rôle créé (PERSO_xx). */
+	public final boolean slot;
+	/** Faux pour un emplacement vide : le rôle n'existe pas. */
+	public boolean active;
+	/** Identifiant de la création (rôles créés), sinon null. */
+	public String customId;
+	/** Pouvoir d'un rôle créé (modèle de la bibliothèque), sinon null. */
+	public Ability ability;
+	/** Clés de tri du réveil : le rang pour les rôles intégrés, une position intercalée pour les rôles créés. */
+	public double firstKey;
+	public double otherKey;
 
 	Role(String displayName, RoleType type, int firstNight, int otherNights, int choose, boolean notSelf, String text) {
 		this.displayName = displayName;
@@ -83,6 +147,85 @@ public enum Role {
 		this.choose = choose;
 		this.notSelf = notSelf;
 		this.text = text;
+		this.icon = name().toLowerCase(java.util.Locale.ROOT);
+		this.slot = false;
+		this.active = true;
+		this.firstKey = firstNight;
+		this.otherKey = otherNights;
+	}
+
+	/** Emplacement vide, prêt à recevoir un rôle créé. */
+	Role() {
+		this.displayName = "?";
+		this.type = RoleType.CITADIN;
+		this.text = "";
+		this.icon = "e_etoile";
+		this.slot = true;
+		this.active = false;
+	}
+
+	/** Rôle créé dans l'Atelier. */
+	public boolean custom() {
+		return slot;
+	}
+
+	/** Les rôles existants : les rôles intégrés et les rôles créés chargés. */
+	public static List<Role> all() {
+		return Arrays.stream(values()).filter(r -> r.active).toList();
+	}
+
+	/** Identifiant d'échange : le nom de l'emplacement pour tous (PERSO_07, GOULE…). */
+	public String id() {
+		return name();
+	}
+
+	/** Rôle d'après un identifiant : nom intégré (« goule »), emplacement (« PERSO_07 ») ou création (« passeur »). */
+	public static Role parse(String id) {
+		if (id == null) {
+			return null;
+		}
+		String k = id.trim();
+		for (Role r : values()) {
+			if (r.active && (r.name().equalsIgnoreCase(k) || (r.customId != null && r.customId.equalsIgnoreCase(k)))) {
+				return r;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Charge les rôles créés dans leurs emplacements (les emplacements absents redeviennent vides).
+	 * Appelé au démarrage du serveur, à chaque enregistrement dans l'Atelier, et côté client à chaque vue.
+	 */
+	public static synchronized void defineCustom(List<RoleDef> defs) {
+		customDefs = List.copyOf(defs);
+		for (Role r : values()) {
+			if (r.slot) {
+				r.active = false;
+				r.customId = null;
+				r.ability = null;
+			}
+		}
+		for (RoleDef d : defs) {
+			if (d.emplacement < 1 || d.emplacement > CUSTOM_SLOTS) {
+				continue;
+			}
+			Role r = valueOf(String.format("PERSO_%02d", d.emplacement));
+			r.active = true;
+			r.customId = d.id;
+			r.displayName = d.nom == null || d.nom.isBlank() ? d.id : d.nom;
+			r.type = d.type();
+			r.text = d.texte == null ? "" : d.texte;
+			r.icon = d.embleme == null || d.embleme.isBlank() ? "e_etoile" : d.embleme;
+			r.ability = d.pouvoir == null ? new Ability() : d.pouvoir;
+			r.choose = r.ability.choose();
+			r.notSelf = r.ability.notSelf();
+			boolean wakes = r.ability.wakes();
+			r.firstKey = wakes ? d.wakeKey(d.premiereNuit, true) : 0;
+			r.otherKey = wakes ? d.wakeKey(d.autresNuits, false) : 0;
+			r.firstNight = r.firstKey > 0 ? 1 : 0;
+			r.otherNights = r.otherKey > 0 ? 1 : 0;
+		}
 	}
 
 	public boolean evil() {
@@ -94,7 +237,12 @@ public enum Role {
 
 	/** Le script classique : les 22 rôles des Cendres de Valcombe. */
 	public static java.util.EnumSet<Role> classic() {
-		java.util.EnumSet<Role> s = java.util.EnumSet.allOf(Role.class);
+		java.util.EnumSet<Role> s = java.util.EnumSet.noneOf(Role.class);
+		for (Role r : values()) {
+			if (!r.slot) {
+				s.add(r);
+			}
+		}
 		s.removeAll(BRUMES_ONLY);
 		return s;
 	}
@@ -108,27 +256,27 @@ public enum Role {
 	}
 
 	public static List<Role> ofType(RoleType t) {
-		return Arrays.stream(values()).filter(r -> r.type == t).toList();
+		return Arrays.stream(values()).filter(r -> r.active && r.type == t).toList();
 	}
 
 	/** Rôles qui se réveillent la première nuit, dans l'ordre. */
 	public static List<Role> firstNightOrder() {
-		return sortedBy(r -> r.firstNight);
+		return sortedBy(r -> r.firstKey);
 	}
 
 	/** Rôles qui se réveillent les nuits suivantes, dans l'ordre. */
 	public static List<Role> otherNightsOrder() {
-		return sortedBy(r -> r.otherNights);
+		return sortedBy(r -> r.otherKey);
 	}
 
-	private static List<Role> sortedBy(java.util.function.ToIntFunction<Role> f) {
+	private static List<Role> sortedBy(java.util.function.ToDoubleFunction<Role> f) {
 		List<Role> out = new ArrayList<>();
 		for (Role r : values()) {
-			if (f.applyAsInt(r) > 0) {
+			if (r.active && f.applyAsDouble(r) > 0) {
 				out.add(r);
 			}
 		}
-		out.sort(Comparator.comparingInt(f));
+		out.sort(Comparator.comparingDouble(f));
 		return out;
 	}
 }

@@ -306,6 +306,10 @@ def main():
         role = icon.stem
         save(role_face(icon, teams.get(role, "good")), TEX / f"role_{role}.png")
         write_item(f"jeton_{role}", token_model(f"valcombe:item/scene/role_{role}", back))
+        # Rôles créés : n'importe quel emblème, aux couleurs de n'importe quel camp
+        for team, suffix in (("good", "bien"), ("evil", "mal")):
+            save(role_face(icon, team), TEX / f"role_{role}_{suffix}.png")
+            write_item(f"jeton_{role}_{suffix}", token_model(f"valcombe:item/scene/role_{role}_{suffix}", back))
     write_item("trone", throne_model())
     write_item("lutrin", lectern_model())
     write_hats()

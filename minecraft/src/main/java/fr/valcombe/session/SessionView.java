@@ -50,6 +50,8 @@ final class SessionView {
 		sc.put("saved", ses.savedScripts);
 		sc.put("problem", fr.valcombe.rules.Setup.check(ses.script, Math.max(5, ses.lobby.size())));
 		v.put("script", sc);
+		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.
+		v.put("customRoles", Role.customDefs());
 		v.put("feed", ses.feed.subList(Math.max(0, ses.feed.size() - 8), ses.feed.size()));
 		Map<String, Object> st = new LinkedHashMap<>();
 		st.put("nightFreeze", ses.settings.nightFreeze);

@@ -86,7 +86,7 @@ public final class ValcombeCommands {
 		};
 
 		SuggestionProvider<CommandSourceStack> roleNames = (ctx, builder) -> SharedSuggestionProvider.suggest(
-			java.util.Arrays.stream(fr.valcombe.rules.Role.values()).map(r -> r.name().toLowerCase()).toList(), builder);
+			fr.valcombe.rules.Role.all().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase()).toList(), builder);
 
 		LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("vc")
 			.executes(c -> exec(c, x -> {

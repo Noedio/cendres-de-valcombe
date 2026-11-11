@@ -291,6 +291,52 @@ ICONS = {
 }
 
 
+# Bibliothèque d'emblèmes pour les rôles créés dans l'Atelier (32x32, mêmes couleurs)
+EMBLEMS = {
+    "e_etoile": lambda i, c: (i.poly([(16, 3), (19, 12), (29, 12), (21, 18), (24, 28), (16, 22), (8, 28), (11, 18), (3, 12), (13, 12)], GOLD),
+                              i.disc(16, 15, 2, c)),
+    "e_lune": lambda i, c: (i.disc(15, 16, 11, c), i.cut(20, 12, 9.5), i.disc(25, 23, 1.2, GOLD), i.disc(23, 7, 0.9, GOLD)),
+    "e_soleil": lambda i, c: ([i.line(16 + 9 * __import__("math").cos(k * 0.785), 16 + 9 * __import__("math").sin(k * 0.785),
+                                      16 + 14 * __import__("math").cos(k * 0.785), 16 + 14 * __import__("math").sin(k * 0.785), GOLD, 2)
+                               for k in range(8)], i.disc(16, 16, 7, GOLD), i.disc(16, 16, 4.5, c)),
+    "e_cle": lambda i, c: (i.ring(10, 10, 5.5, 2.4, c), i.line(14, 14, 27, 27, c, 2.6), i.line(22, 22, 25, 19, c, 2.2),
+                           i.line(25, 25, 28, 22, c, 2.2)),
+    "e_plume": lambda i, c: (i.poly([(26, 3), (29, 6), (14, 24), (9, 25), (10, 20)], c), i.line(10, 24, 4, 30, c, 1.4),
+                             i.line(25, 6, 12, 22, PARCH, 0.9)),
+    "e_oeil": lambda i, c: (i.poly([(2, 16), (9, 9), (23, 9), (30, 16), (23, 23), (9, 23)], c), i.disc(16, 16, 5.5, PARCH),
+                            i.disc(16, 16, 3, GOOD), i.disc(16, 16, 1.3, c)),
+    "e_coeur": lambda i, c: (i.disc(11, 12, 6, BLOOD), i.disc(21, 12, 6, BLOOD), i.poly([(5.5, 14), (26.5, 14), (16, 28)], BLOOD),
+                             i.disc(9, 10, 1.5, (220, 120, 120))),
+    "e_epee": lambda i, c: (i.poly([(16, 2), (18.5, 6), (18.5, 21), (13.5, 21), (13.5, 6)], (200, 200, 210)),
+                            i.rect(8, 21, 24, 24, c), i.rect(14, 24, 18, 29, c), i.disc(16, 30, 2, GOLD)),
+    "e_bouclier": lambda i, c: (i.poly([(5, 5), (27, 5), (27, 15), (16, 29), (5, 15)], c), i.poly([(8, 8), (24, 8), (24, 15), (16, 25), (8, 15)], GOOD),
+                                i.rect(15, 8, 17, 24, GOLD)),
+    "e_couronne": lambda i, c: (i.poly([(4, 24), (4, 9), (10, 16), (16, 6), (22, 16), (28, 9), (28, 24)], GOLD), i.rect(4, 23, 28, 27, c),
+                                [i.disc(x, 19, 1.4, BLOOD) for x in (10, 16, 22)]),
+    "e_livre": lambda i, c: (i.rect(6, 5, 26, 28, c), i.rect(8, 7, 24, 26, WINE), i.rect(24, 7, 27, 26, PARCH),
+                             i.line(11, 12, 21, 12, GOLD, 1.4), i.line(11, 16, 21, 16, GOLD, 1)),
+    "e_fiole": lambda i, c: (i.rect(13, 3, 19, 6, BRONZE), i.rect(14, 6, 18, 12, c), i.disc(16, 20, 8, c), i.disc(16, 20, 6.5, PARCH),
+                             i.disc(16, 22, 5, (120, 70, 170)), i.disc(14, 19, 1.2, WHITE)),
+    "e_rose": lambda i, c: (i.line(16, 30, 16, 16, (60, 110, 60), 1.8), i.poly([(16, 24), (22, 20), (19, 26)], (60, 110, 60)),
+                            i.disc(16, 11, 7, BLOOD), i.ring(16, 11, 4, 1.2, (100, 15, 20)), i.disc(16, 11, 1.5, (100, 15, 20))),
+    "e_cloche": lambda i, c: (i.poly([(16, 4), (22, 9), (24, 21), (28, 25), (4, 25), (8, 21), (10, 9)], BRONZE), i.rect(15, 2, 17, 5, c),
+                              i.disc(16, 27.5, 2.5, c), i.line(10, 21, 22, 21, BRONZE_DARK, 1)),
+    "e_lanterne": lambda i, c: (i.ring(16, 5, 3, 1.4, c), i.rect(9, 8, 23, 10, c), i.rect(10, 10, 22, 25, c), i.rect(12, 12, 20, 23, GOLD),
+                                i.disc(16, 17, 2.5, WHITE), i.rect(9, 25, 23, 27, c)),
+    "e_masque": lambda i, c: (i.poly([(3, 10), (13, 9), (16, 12), (19, 9), (29, 10), (27, 20), (19, 21), (16, 18), (13, 21), (5, 20)], WINE),
+                              i.disc(10, 14, 2.3, PARCH), i.disc(22, 14, 2.3, PARCH), i.line(29, 10, 31, 4, GOLD, 1.2)),
+    "e_ancre": lambda i, c: (i.ring(16, 16, 11, 2.2, c), i.cut(16, 11, 11), i.ring(16, 6, 3, 1.6, c),
+                             i.line(16, 9, 16, 27, c, 2.2), i.line(10, 13, 22, 13, c, 2),
+                             i.poly([(3, 19), (8, 21), (4, 24)], c), i.poly([(29, 19), (24, 21), (28, 24)], c)),
+    "e_corbeau": lambda i, c: (i.disc(14, 18, 8, c), i.disc(20, 11, 5, c), i.poly([(24, 10), (31, 13), (24, 14)], BRONZE_DARK),
+                               i.disc(21, 10, 1.2, GOLD), i.poly([(6, 22), (2, 29), (12, 25)], c)),
+    "e_serpent": lambda i, c: (i.ring(12, 11, 6, 3, (70, 120, 60)), i.cut(17, 11, 4), i.ring(20, 21, 6, 3, (70, 120, 60)), i.cut(15, 21, 4),
+                               i.disc(24, 26, 2.2, (70, 120, 60)), i.disc(25, 25.5, 0.7, BLOOD)),
+    "e_main": lambda i, c: (i.rect(9, 15, 23, 28, c), [i.rect(9 + 4 * k, 6 + (k % 2) * 2 - (k == 1) * 2, 12 + 4 * k, 16, c) for k in range(3)],
+                            i.poly([(6, 17), (9, 15), (9, 22)], c), i.rect(21, 9, 23, 16, c)),
+}
+
+
 def main():
     parchment()
     panel()
@@ -304,6 +350,8 @@ def main():
     markers()
     emblems()
     for name, draw in ICONS.items():
+        icon(name, draw)
+    for name, draw in EMBLEMS.items():
         icon(name, draw)
     print(f"{len(list(OUT.rglob('*.png')))} textures générées dans {OUT}")
 

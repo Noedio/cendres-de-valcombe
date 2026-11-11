@@ -74,7 +74,10 @@ public final class ScriptStore {
 			List<Role> roles = new ArrayList<>();
 			for (String line : Files.readAllLines(f)) {
 				if (!line.isBlank()) {
-					roles.add(Role.valueOf(line.trim().toUpperCase(Locale.ROOT)));
+					Role r = Role.parse(line.trim());
+					if (r != null) {
+						roles.add(r);
+					}
 				}
 			}
 			return roles;

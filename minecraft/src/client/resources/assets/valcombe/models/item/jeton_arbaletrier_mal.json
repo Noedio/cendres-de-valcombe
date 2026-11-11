@@ -1,0 +1,78 @@
+{
+ "textures": {
+  "front": "valcombe:item/scene/role_arbaletrier_mal",
+  "back": "valcombe:item/scene/dos",
+  "edge": "valcombe:item/scene/tranche",
+  "particle": "valcombe:item/scene/dos"
+ },
+ "elements": [
+  {
+   "from": [
+    0,
+    0,
+    7.5
+   ],
+   "to": [
+    16,
+    16,
+    8.5
+   ],
+   "faces": {
+    "north": {
+     "texture": "#front",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
+    },
+    "south": {
+     "texture": "#back",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
+    },
+    "east": {
+     "texture": "#edge",
+     "uv": [
+      0,
+      0,
+      1,
+      16
+     ]
+    },
+    "west": {
+     "texture": "#edge",
+     "uv": [
+      0,
+      0,
+      1,
+      16
+     ]
+    },
+    "up": {
+     "texture": "#edge",
+     "uv": [
+      0,
+      0,
+      16,
+      1
+     ]
+    },
+    "down": {
+     "texture": "#edge",
+     "uv": [
+      0,
+      0,
+      16,
+      1
+     ]
+    }
+   }
+  }
+ ]
+}

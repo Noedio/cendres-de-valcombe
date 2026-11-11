@@ -26,8 +26,19 @@ public final class ClientState {
 		return version;
 	}
 
+	private static String customKey = "";
+
 	public static void apply(String json) {
 		view = JsonParser.parseString(json).getAsJsonObject();
+		// Rôles créés dans l'Atelier (serveur) : même registre que le serveur, rechargé s'il a changé.
+		JsonElement custom = view.get("customRoles");
+		String ck = custom == null ? "" : custom.toString();
+		if (!ck.equals(customKey)) {
+			customKey = ck;
+			fr.valcombe.rules.RoleDef[] defs = custom == null || !custom.isJsonArray() ? new fr.valcombe.rules.RoleDef[0]
+				: new com.google.gson.Gson().fromJson(custom, fr.valcombe.rules.RoleDef[].class);
+			fr.valcombe.rules.Role.defineCustom(java.util.List.of(defs));
+		}
 		version++;
 		JsonObject prompt = obj(view, "prompt");
 		String key = prompt == null ? "" : prompt.toString();

@@ -27,16 +27,16 @@ public class RolePickerScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {300, 200};
+		return new int[] {390, 250};
 	}
 
 	@Override
 	protected void build() {
-		List<Role> roles = chosen == null ? Arrays.asList(Role.values()) : Role.ofType(RoleType.CITADIN);
+		List<Role> roles = chosen == null ? Role.all() : Role.ofType(RoleType.CITADIN);
 		for (int i = 0; i < roles.size(); i++) {
 			Role r = roles.get(i);
-			int x = px + 26 + (i % 8) * 35;
-			int y = py + 30 + (i / 8) * 36;
+			int x = px + 24 + (i % 12) * 30;
+			int y = py + 30 + (i / 12) * 30;
 			TokenWidget t = new TokenWidget(x, y, 28, "", r.name(), Team.of(r).name(), true, false, () -> pick(r));
 			t.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
 				net.minecraft.network.chat.Component.literal(r.displayName + " — " + r.type.displayName)));

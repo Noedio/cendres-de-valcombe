@@ -75,6 +75,10 @@ public final class Game {
 	// État de la partie
 	private List<Role> bluffs = List.of();
 	private int redHerring = -1;
+	/** Rôles créés : empoisonneur → cible, faussaire → cible, protecteur → cible (nuit en cours). */
+	private Map<Integer, Integer> customPoison;
+	private Map<Integer, Integer> customForged;
+	private Map<Integer, Integer> customProtect;
 	private int poisoned = -1;
 	/** Joueur désigné par la Faussaire : ses informations de la nuit sont fausses. */
 	private int forged = -1;
@@ -250,7 +254,8 @@ public final class Game {
 		}
 		bluffs = bluffList != null ? List.copyOf(bluffList) : Setup.pickBluffs(list, rng, script);
 		redHerring = herring;
-		if (redHerring < 0 && wakerSeat(Role.ASTROLOGUE) >= 0) {
+		boolean customLead = seats.stream().anyMatch(p -> model(p.believed, "detecteur") && p.believed.ability.faussePiste);
+		if (redHerring < 0 && (wakerSeat(Role.ASTROLOGUE) >= 0 || customLead)) {
 			List<Integer> good = allSeats().stream().filter(s -> player(s).team() == Team.GOOD).toList();
 			Integer pick = rng.pick(good);
 			redHerring = pick == null ? -1 : pick;
@@ -316,12 +321,11 @@ public final class Game {
 			return null;
 		}
 		int[] have = new int[4];
-		boolean margrave = false;
+		int bonus = 0;
 		for (Seat p : seats) {
 			have[p.role.type.ordinal()]++;
-			margrave |= p.role == Role.MARGRAVE;
+			bonus += outsiderBonus(p.role);
 		}
-		int bonus = margrave ? 2 : 0;
 		if (have[0] != c.citadin() - bonus || have[1] != c.etranger() + bonus || have[2] != c.sbire() || have[3] != c.demon()) {
 			return "Répartition inhabituelle : " + have[0] + " Citadins, " + have[1] + " Étrangers, " + have[2]
 				+ " Sbires, " + have[3] + " Démon(s).";
@@ -392,12 +396,53 @@ public final class Game {
 	}
 
 	public boolean isPoisoned(int seat) {
-		return poisoned == seat;
+		return poisoned == seat || customPoison().containsValue(seat);
 	}
 
 	/** Ivre ou empoisonné : le pouvoir ne fonctionne pas. */
 	public boolean impaired(int seat) {
-		return isDrunk(seat) || isPoisoned(seat) || (phase == Phase.NIGHT && forged == seat);
+		return isDrunk(seat) || isPoisoned(seat)
+			|| (phase == Phase.NIGHT && (forged == seat || customForged().containsValue(seat)));
+	}
+
+	// Les sauvegardes d'avant la 0.4.0 n'ont pas ces tables : elles sont créées à la demande.
+	private Map<Integer, Integer> customPoison() {
+		if (customPoison == null) {
+			customPoison = new HashMap<>();
+		}
+		return customPoison;
+	}
+
+	private Map<Integer, Integer> customForged() {
+		if (customForged == null) {
+			customForged = new HashMap<>();
+		}
+		return customForged;
+	}
+
+	private Map<Integer, Integer> customProtect() {
+		if (customProtect == null) {
+			customProtect = new HashMap<>();
+		}
+		return customProtect;
+	}
+
+	/** Le rôle est un rôle créé avec ce modèle de pouvoir. */
+	private static boolean model(Role r, String type) {
+		return r != null && r.custom() && r.ability != null && r.ability.type.equals(type);
+	}
+
+	/** Étrangers en plus (ou en moins) imposés par un rôle au tirage. */
+	public static int outsiderBonus(Role r) {
+		if (r == Role.MARGRAVE) {
+			return 2;
+		}
+		return model(r, "etrangers") ? r.ability.etrangers : 0;
+	}
+
+	/** « La Goule » → « la Goule », pour les phrases. */
+	private static String lower(String name) {
+		return name.isEmpty() ? name : Character.toLowerCase(name.charAt(0)) + name.substring(1);
 	}
 
 	public int demonSeat() {
@@ -518,31 +563,33 @@ public final class Game {
 		if (p.role == Role.FAUSSAIRE) {
 			forged = -1;
 		}
+		customPoison().remove(seat);
+		customForged().remove(seat);
 		if (p.role.type == RoleType.DEMON) {
-			onDemonDeath(cause, aliveBefore);
+			onDemonDeath(cause, aliveBefore, p.role);
 		}
 		return true;
 	}
 
-	private void makeDemon(int seat) {
+	private void makeDemon(int seat, Role demon) {
 		Seat p = player(seat);
-		addLog(p.name + " (" + p.role.displayName + ") devient la Goule.");
-		p.role = Role.GOULE;
-		p.believed = Role.GOULE;
+		addLog(p.name + " (" + p.role.displayName + ") devient " + lower(demon.displayName) + ".");
+		p.role = demon;
+		p.believed = demon;
 		newDemon = seat;
 	}
 
-	private void onDemonDeath(String cause, int aliveBefore) {
+	private void onDemonDeath(String cause, int aliveBefore, Role demon) {
 		int h = seatOf(Role.HERITIERE);
 		if (h >= 0 && player(h).alive && !isPoisoned(h) && aliveBefore >= 5) {
-			makeDemon(h);
+			makeDemon(h, demon);
 			return;
 		}
 		if (cause.equals("suicide")) {
 			List<Integer> candidates = minionSeats().stream().filter(s -> player(s).alive).toList();
 			Integer successor = decide.starpassSuccessor(this, candidates);
 			if (successor != null) {
-				makeDemon(successor);
+				makeDemon(successor, demon);
 				return;
 			}
 		}
@@ -584,6 +631,9 @@ public final class Game {
 		poisoned = -1;
 		forged = -1;
 		protectedSeat = -1;
+		customPoison().clear();
+		customForged().clear();
+		customProtect().clear();
 		deathsTonight = new ArrayList<>();
 		fauconnierWakes = -1;
 		List<Slot> q = new ArrayList<>();
@@ -627,7 +677,7 @@ public final class Game {
 		} else if (!player(seat).alive) {
 			return null;
 		}
-		if (role == Role.EMBAUMEUR && executedYesterday < 0) {
+		if ((role == Role.EMBAUMEUR || model(role, "execute")) && executedYesterday < 0) {
 			return null;
 		}
 		return new Step(Step.Kind.ROLE, role, seat, List.of());
@@ -675,7 +725,7 @@ public final class Game {
 			case NEW_DEMON -> {
 				Info i = new Info();
 				i.kind = Info.Kind.NEW_DEMON;
-				i.text = "Tu es désormais la Goule.";
+				i.text = "Tu es désormais " + lower(player(newDemon).role.displayName) + ".";
 				yield i;
 			}
 			case ROLE -> resolveRole(step, targets);
@@ -811,7 +861,7 @@ public final class Game {
 			case GOULE:
 				return goule(seat, targets.get(0));
 			default:
-				return Info.none();
+				return step.role.custom() ? resolveCustom(step, targets) : Info.none();
 		}
 	}
 
@@ -875,7 +925,7 @@ public final class Game {
 
 	private Info roleReveal(int seat, int target, String key) {
 		Role truth = shownRole(target, key);
-		Role shown = impaired(seat) ? rng.pick(List.of(Role.values())) : truth;
+		Role shown = impaired(seat) ? rng.pick(Role.all()) : truth;
 		Info i = new Info();
 		i.kind = Info.Kind.ROLE;
 		i.players = List.of(target);
@@ -917,21 +967,153 @@ public final class Game {
 				Info i = new Info();
 				i.kind = Info.Kind.STARPASS;
 				i.newDemon = newDemon;
-				i.text = "La Goule s'est sacrifiée : tu es désormais la Goule.";
+				String d = player(newDemon).role.displayName;
+				i.text = d + " s'est sacrifié(e) : tu es désormais " + lower(d) + ".";
 				return i;
 			}
 			return Info.none();
 		}
-		demonAttack(target);
+		demonAttack(target, player(seat).role);
 		return Info.none();
 	}
 
 	private boolean safeFromDemon(int t) {
 		Seat p = player(t);
-		return !p.alive || protectedSeat == t || (p.role == Role.TEMPLIER && !isPoisoned(t));
+		return !p.alive || protectedSeat == t || customProtect().containsValue(t)
+			|| ((p.role == Role.TEMPLIER || model(p.role, "immunite")) && !isPoisoned(t));
 	}
 
-	private void demonAttack(int target) {
+	/**
+	 * Pouvoirs des rôles créés : chaque modèle reprend la mécanique d'un rôle intégré
+	 * (ivresse, poison, enregistrements trompeurs compris).
+	 */
+	private Info resolveCustom(Step step, List<Integer> targets) {
+		int seat = step.seat;
+		Role role = step.role;
+		Ability a = role.ability;
+		String key = "perso-" + role.customId;
+		switch (a.type) {
+			case "paire": {
+				RoleType t = a.pairType();
+				Info i = pairAbility(seat, a.regKey(), t, key, true);
+				if (i != null) {
+					return i;
+				}
+				Info none = new Info();
+				none.kind = Info.Kind.NO_OUTSIDER;
+				none.text = "Aucun " + t.displayName + " n'est en jeu.";
+				return none;
+			}
+			case "voisins": {
+				Ctx ctx = new Ctx(key);
+				int count = 0;
+				for (int s : aliveNeighbours(seat)) {
+					if (reg(s, "evil", ctx)) {
+						count++;
+					}
+				}
+				Info i = numberInfo(seat, count, 2);
+				i.text = "Voisins vivants mauvais : " + i.value + ".";
+				return i;
+			}
+			case "compte": {
+				Ctx ctx = new Ctx(key);
+				int count = 0;
+				for (int t : targets) {
+					if (reg(t, "evil", ctx)) {
+						count++;
+					}
+				}
+				Info i = numberInfo(seat, count, targets.size());
+				i.text = "Parmi ces joueurs, mauvais : " + i.value + ".";
+				return i;
+			}
+			case "detecteur": {
+				Ctx ctx = new Ctx(key);
+				boolean yes = false;
+				for (int t : targets) {
+					if ((a.faussePiste && a.cible.equals("demon") && t == redHerring) || reg(t, a.regKey(), ctx)) {
+						yes = true;
+					}
+				}
+				Info i = new Info();
+				i.kind = Info.Kind.YESNO;
+				i.yes = impaired(seat) != yes;
+				i.truthYes = yes;
+				i.text = i.yes ? "Oui" : "Non";
+				if (i.yes != yes) {
+					i.truthText = yes ? "Oui" : "Non";
+				}
+				return i;
+			}
+			case "adjacents": {
+				Ctx ctx = new Ctx(key);
+				int count = 0;
+				for (int s = 0; s < size(); s++) {
+					if (reg(s, "evil", ctx) && reg((s + 1) % size(), "evil", ctx)) {
+						count++;
+					}
+				}
+				Info i = numberInfo(seat, count, size());
+				i.text = "Paires de mauvais côte à côte : " + i.value + ".";
+				return i;
+			}
+			case "distance": {
+				Ctx ctx = new Ctx(key);
+				int best = size();
+				for (int s = 0; s < size(); s++) {
+					if (s != seat && reg(s, "demon", ctx)) {
+						int d = Math.abs(s - seat);
+						best = Math.min(best, Math.min(d, size() - d));
+					}
+				}
+				if (best == size()) {
+					best = 0;
+				}
+				Info i = numberInfo(seat, best, size() / 2);
+				i.text = "Le Démon est à " + i.value + " siège(s) de toi.";
+				return i;
+			}
+			case "execute":
+				return roleReveal(seat, executedYesterday, key);
+			case "decouvrir":
+				return roleReveal(seat, targets.get(0), key);
+			case "protection":
+				if (!impaired(seat)) {
+					customProtect().put(seat, targets.get(0));
+				}
+				return Info.none();
+			case "mise_a_mort":
+				return goule(seat, targets.get(0));
+			case "poison":
+				if (!impaired(seat)) {
+					customPoison().put(seat, targets.get(0));
+				}
+				return Info.none();
+			case "fausse_info":
+				if (!impaired(seat)) {
+					customForged().put(seat, targets.get(0));
+				}
+				return Info.none();
+			case "libre": {
+				Info i = new Info();
+				i.text = "Le Conteur te répond en personne.";
+				StringBuilder t = new StringBuilder("Pouvoir libre : " + a.question);
+				if (!targets.isEmpty()) {
+					t.append(" (désignés : ").append(String.join(", ", targets.stream().map(x -> player(x).name).toList())).append(")");
+				}
+				if (impaired(seat)) {
+					t.append(" — le joueur est ivre ou empoisonné");
+				}
+				i.truthText = t.toString();
+				return i;
+			}
+			default:
+				return Info.none();
+		}
+	}
+
+	private void demonAttack(int target, Role by) {
 		if (safeFromDemon(target)) {
 			return;
 		}
@@ -949,7 +1131,7 @@ public final class Game {
 				target = other;
 			}
 		}
-		kill(target, "tué par la Goule");
+		kill(target, "tué par " + lower(by.displayName));
 	}
 
 	/** Fin de la nuit : renvoie les morts de la nuit. */
@@ -1094,7 +1276,7 @@ public final class Game {
 		executedToday = seat;
 		executedYesterday = seat;
 		addLog(p.name + " est exécuté (" + cause + ").");
-		boolean martyr = p.role == Role.MARTYR && !isPoisoned(seat);
+		boolean martyr = (p.role == Role.MARTYR || model(p.role, "martyr")) && !isPoisoned(seat);
 		kill(seat, "exécution");
 		if (martyr) {
 			setWinner(Team.EVIL, "Le Martyr a été exécuté.");

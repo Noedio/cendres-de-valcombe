@@ -67,21 +67,34 @@ public final class Setup {
 		List<Role> townPool = ofType(script, RoleType.CITADIN);
 		List<Role> outPool = new ArrayList<>(ofType(script, RoleType.ETRANGER));
 		List<Role> minionPool = new ArrayList<>(ofType(script, RoleType.SBIRE));
-		// Le Margrave n'est tiré que si le script a de quoi fournir ses deux Étrangers.
-		if (outPool.size() < c.etranger() + 2 || townPool.size() < c.citadin() - 2) {
-			minionPool.remove(Role.MARGRAVE);
-			if (minionPool.size() < c.sbire()) {
-				return null;
-			}
+		List<Role> demonPool = new ArrayList<>(ofType(script, RoleType.DEMON));
+		// Un rôle qui change le nombre d'Étrangers (le Margrave, ou un rôle créé) n'est tiré
+		// que si le script a de quoi fournir la répartition qu'il impose.
+		for (List<Role> pool : List.of(minionPool, demonPool)) {
+			pool.removeIf(r -> {
+				int b = Game.outsiderBonus(r);
+				return b != 0 && (outPool.size() < c.etranger() + b || townPool.size() < c.citadin() - b
+					|| c.etranger() + b < 0);
+			});
+		}
+		if (minionPool.size() < c.sbire() || demonPool.size() < c.demon()) {
+			return null;
 		}
 		int citadins = c.citadin();
 		int etrangers = c.etranger();
-		List<Role> demons = rng.take(ofType(script, RoleType.DEMON), c.demon());
+		List<Role> demons = rng.take(demonPool, c.demon());
 		List<Role> minions = rng.take(minionPool, c.sbire());
-		if (minions.contains(Role.MARGRAVE)) {
-			etrangers += 2;
-			citadins -= 2;
+		int bonus = 0;
+		for (Role r : demons) {
+			bonus += Game.outsiderBonus(r);
 		}
+		for (Role r : minions) {
+			bonus += Game.outsiderBonus(r);
+		}
+		// Plusieurs effets cumulés : on reste dans ce que le script peut fournir.
+		bonus = Math.max(-etrangers, Math.min(bonus, Math.min(outPool.size() - etrangers, citadins - 1)));
+		etrangers += bonus;
+		citadins -= bonus;
 		// Le Somnambule a besoin d'un Citadin libre à croire incarner.
 		if (townPool.size() <= citadins) {
 			outPool.remove(Role.SOMNAMBULE);

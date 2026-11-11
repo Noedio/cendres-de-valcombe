@@ -23,19 +23,19 @@ public class ScriptScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {400, 240};
+		return new int[] {420, 290};
 	}
 
 	@Override
 	protected void build() {
 		JsonObject script = ClientState.obj(view(), "script");
 		List<String> roles = strings(script, "roles");
-		Role[] all = Role.values();
-		for (int i = 0; i < all.length; i++) {
-			Role r = all[i];
+		List<Role> all = Role.all();
+		for (int i = 0; i < all.size(); i++) {
+			Role r = all.get(i);
 			boolean in = roles.contains(r.name());
-			int x = px + 26 + (i % 8) * 31;
-			int y = py + 52 + (i / 8) * 34;
+			int x = px + 24 + (i % 13) * 29;
+			int y = py + 52 + (i / 13) * 30;
 			TokenWidget t = new TokenWidget(x, y, 26, "", r.name(), in ? Team.of(r).name() : null, in, in,
 				() -> send("vc script basculer " + r.name().toLowerCase()));
 			t.setTooltip(Tooltip.create(Component.literal(r.displayName + (in ? " — dans le script" : " — exclu"))));

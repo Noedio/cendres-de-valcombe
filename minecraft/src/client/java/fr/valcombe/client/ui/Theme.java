@@ -97,7 +97,9 @@ public final class Theme {
 		image(g, tex(disc), x, y, size, size, 32, 32);
 		if (roleId != null) {
 			int is = size * 22 / 32;
-			image(g, tex("roles/" + roleId.toLowerCase()), cx - is / 2, cy - is / 2, is, is, 32, 32);
+			fr.valcombe.rules.Role r = fr.valcombe.rules.Role.parse(roleId);
+			String icon = r != null ? r.icon : roleId.toLowerCase(java.util.Locale.ROOT);
+			image(g, tex("roles/" + icon), cx - is / 2, cy - is / 2, is, is, 32, 32);
 		}
 		if (!alive) {
 			image(g, tex("token_dead"), x, y, size, size, 32, 32);

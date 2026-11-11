@@ -130,7 +130,7 @@ class GameTest {
 
 	@Test
 	void vingtDeuxRolesEtOrdreDeNuit() {
-		assertEquals(25, Role.values().length);
+		assertEquals(25, Role.all().size(), "25 rôles intégrés, aucun rôle créé chargé");
 		assertEquals(22, Role.classic().size());
 		assertEquals(22, Role.brumes().size());
 		var classic = Role.classic();

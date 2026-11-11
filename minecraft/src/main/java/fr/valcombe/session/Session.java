@@ -1645,11 +1645,11 @@ public final class Session {
 	// Outils du Conteur humain
 	// ------------------------------------------------------------------
 	private static Role parseRole(String id) {
-		try {
-			return Role.valueOf(id.toUpperCase(java.util.Locale.ROOT));
-		} catch (IllegalArgumentException e) {
+		Role r = Role.parse(id);
+		if (r == null) {
 			throw new GameException("Rôle inconnu : " + id);
 		}
+		return r;
 	}
 
 	/** Change le rôle d'un joueur avant la première nuit. */
@@ -1817,7 +1817,9 @@ public final class Session {
 		host.seatBoards(labels);
 		Map<String, String> models = new LinkedHashMap<>();
 		for (Game.Seat p : g.players()) {
-			models.put(p.name, "jeton_" + p.role().name().toLowerCase(java.util.Locale.ROOT));
+			Role r = p.role();
+			models.put(p.name, r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
+				: "jeton_" + r.name().toLowerCase(java.util.Locale.ROOT));
 		}
 		host.seatTokens(models, true);
 	}
