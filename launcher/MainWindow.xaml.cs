@@ -435,6 +435,22 @@ public partial class MainWindow : Window
         UpdateServerText();
     }
 
+    private void ImportKeys(object sender, RoutedEventArgs e)
+    {
+        string? usual = Keys.FindUsual();
+        if (usual == null)
+        {
+            KeysHint.Text = "Aucun autre Minecraft trouvé sur ce PC : réglez vos touches en jeu (Options › Commandes), elles seront gardées.";
+            return;
+        }
+        Profile.Sync();
+        var changes = Keys.Import(usual);
+        KeysHint.Text = changes.Count == 0
+            ? $"Vos touches sont déjà celles de votre Minecraft habituel ({usual})."
+            : $"Touches reprises de {usual} :\n" + string.Join("\n", changes.Take(12))
+              + (changes.Count > 12 ? $"\n… et {changes.Count - 12} autres." : "") + "\nAppliqué au prochain lancement.";
+    }
+
     private void MakeCrashReport(object sender, RoutedEventArgs e)
     {
         try

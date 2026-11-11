@@ -201,6 +201,12 @@ public static class Instance
         if (!File.Exists(Path.Combine(gameDir, "options.txt")))
         {
             ApplyOptions(o, gameDir);
+            // Toute première partie : on reprend les touches du Minecraft habituel du joueur.
+            string? usual = Keys.FindUsual();
+            if (usual != null)
+            {
+                Keys.Import(usual);
+            }
             Profile.Sync(gameDir);
         }
     }

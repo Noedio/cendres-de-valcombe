@@ -215,6 +215,11 @@
                 <ComboBoxItem Content="English" Tag="en_us"/>
               </ComboBox>
               <CheckBox x:Name="FullscreenBox" Content="Plein écran" Checked="OptionChanged" Unchecked="OptionChanged"/>
+              <TextBlock Style="{StaticResource Label}" Text="Touches" Margin="0,16,0,0"/>
+              <Button Style="{StaticResource Wax}" Content="Reprendre mes touches de Minecraft" Click="ImportKeys"
+                      HorizontalAlignment="Left" Margin="0,4,0,4"/>
+              <TextBlock x:Name="KeysHint" Style="{StaticResource Hint}" TextWrapping="Wrap"
+                         Text="Copie les touches de votre Minecraft habituel (le plus récent trouvé sur ce PC). Les touches de Valcombe (J, H, G, K) restent."/>
             </StackPanel>
           </ScrollViewer>
 
