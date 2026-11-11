@@ -59,6 +59,17 @@ public final class ValcombeMod implements ModInitializer {
 		}
 	}
 
+	private static CreationStore creations;
+	private static MapStore maps;
+
+	public static CreationStore creations() {
+		return creations;
+	}
+
+	public static MapStore maps() {
+		return maps;
+	}
+
 	public static McHost host() {
 		return HOST;
 	}
@@ -92,6 +103,16 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.setCommunity(community);
 			tablet = new Tablet(SESSION, community);
 			tablet.setServer(server);
+			// Créations de l'Atelier : chargées avant la reprise d'une partie (elles peuvent en contenir les rôles).
+			creations = new CreationStore(server.getServerDirectory().resolve("config"), SESSION);
+			maps = new MapStore(creations.dir(), HOST);
+			maps.setServer(server);
+			creations.setMaps(maps);
+			HOST.setMaps(maps);
+			creations.load();
+			Atelier atelier = new Atelier(SESSION, creations, maps, HOST);
+			atelier.setServer(server);
+			tablet.setAtelier(atelier);
 			HOST.prepareWorld();
 			String saved = HOST.savedGame();
 			if (saved != null) {

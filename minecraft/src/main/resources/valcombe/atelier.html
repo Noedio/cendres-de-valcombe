@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Atelier de Valcombe</title>
+<style>
+	:root {
+		--bg: #140d10;
+		--panel: #22161a;
+		--panel-2: #2c1d22;
+		--line: #4a3238;
+		--ink: #efe3c8;
+		--muted: #b8a68a;
+		--gold: #d9b45a;
+		--wine: #7a2433;
+		--good: #5a8fd6;
+		--evil: #d0484a;
+		--ok: #6fb37a;
+		--radius: 12px;
+	}
+	* { box-sizing: border-box; }
+	html, body { margin: 0; background: var(--bg); color: var(--ink); }
+	body { font: 15px/1.45 Georgia, "Times New Roman", serif; padding: 14px 16px 40px; max-width: 1200px; margin: 0 auto; }
+	header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+	h1 { font-size: 1.35rem; margin: 4px 0; color: var(--gold); }
+	h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 18px 0 8px; font-weight: normal; }
+	h2 { margin: 0 0 10px; color: var(--gold); font-weight: normal; font-size: 1.1rem; }
+	.state { font-size: .85rem; color: var(--muted); }
+	nav { display: flex; gap: 6px; margin: 12px 0 4px; flex-wrap: wrap; }
+	nav button.on { background: var(--wine); border-color: #a3404f; }
+	button {
+		font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
+		border-radius: 10px; padding: 8px 13px; min-height: 40px; cursor: pointer;
+	}
+	button.main { background: var(--wine); border-color: #a3404f; }
+	button.danger { border-color: var(--evil); color: #ffd7d7; }
+	button:disabled { opacity: .45; cursor: default; }
+	input, select, textarea {
+		font: inherit; color: var(--ink); background: #1a1013; border: 1px solid var(--line); border-radius: 8px;
+		padding: 7px 9px; width: 100%;
+	}
+	textarea { min-height: 64px; resize: vertical; }
+	label { display: block; color: var(--muted); font-size: .85rem; margin: 10px 0 4px; }
+	label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: .95rem; margin: 6px 0; }
+	label.check input { width: auto; }
+	.cols { display: grid; grid-template-columns: minmax(230px, 320px) 1fr; gap: 16px; align-items: start; }
+	@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+	.list { display: flex; flex-direction: column; gap: 6px; }
+	.item { display: flex; gap: 10px; align-items: center; text-align: left; width: 100%; }
+	.item.sel { outline: 2px solid var(--gold); }
+	.item .sub { color: var(--muted); font-size: .8rem; }
+	.token { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none;
+		background: #e8d9b5; border: 3px solid var(--good); }
+	.token.EVIL, .token.SBIRE, .token.DEMON { border-color: var(--evil); }
+	.token img { width: 26px; height: 26px; image-rendering: pixelated; }
+	.big { width: 84px; height: 84px; border-width: 5px; }
+	.big img { width: 60px; height: 60px; }
+	.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+	.emblems { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; }
+	.emblems button { padding: 4px; min-height: 0; width: 44px; height: 44px; background: #e8d9b5; }
+	.emblems button.on { outline: 3px solid var(--gold); }
+	.emblems img { width: 32px; height: 32px; image-rendering: pixelated; display: block; }
+	.preview { display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
+	.preview .t { color: var(--muted); }
+	.msg { margin-top: 10px; min-height: 1.4em; white-space: pre-wrap; }
+	.msg.err { color: #ffb0b0; }
+	.msg.ok { color: #a6dfb0; }
+	.bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+	.pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; }
+	.pick label.check { font-size: .9rem; margin: 2px 0; }
+	.pick img { width: 22px; height: 22px; image-rendering: pixelated; background: #e8d9b5; border-radius: 50%; padding: 2px; }
+	.camp { color: var(--gold); margin: 12px 0 4px; }
+	.meter { height: 14px; border-radius: 7px; overflow: hidden; display: flex; background: var(--panel-2); margin: 8px 0; }
+	.meter .g { background: var(--good); }
+	.meter .e { background: var(--evil); }
+	.hint { color: var(--muted); font-size: .85rem; }
+	.hidden { display: none !important; }
+	code { color: var(--gold); }
+</style>
+</head>
+<body>
+<header>
+	<h1>Atelier de Valcombe</h1>
+	<div class="state" id="state">Connexion…</div>
+</header>
+<nav>
+	<button data-tab="roles" class="on">Rôles</button>
+	<button data-tab="scenarios">Scénarios</button>
+	<button data-tab="cartes">Cartes</button>
+	<button data-tab="partage">Partage</button>
+</nav>
+
+<!-- Rôles -->
+<section id="tab-roles">
+	<div class="cols">
+		<div class="card">
+			<h2>Rôles créés</h2>
+			<div class="list" id="roleList"></div>
+			<div class="bar"><button class="main" id="newRole">Nouveau rôle</button></div>
+			<p class="hint">Les 25 rôles intégrés restent disponibles dans les scénarios. Un rôle créé peut reprendre n'importe quel emblème.</p>
+		</div>
+		<div class="card">
+			<h2 id="roleTitle">Nouveau rôle</h2>
+			<div class="row">
+				<div><label>Nom</label><input id="rNom" maxlength="40" placeholder="Le Passeur"></div>
+				<div><label>Identifiant (fichier, partage)</label><input id="rId" maxlength="30" placeholder="passeur"></div>
+				<div><label>Camp</label>
+					<select id="rCamp">
+						<option value="CITADIN">Citadin (bien)</option>
+						<option value="ETRANGER">Étranger (bien)</option>
+						<option value="SBIRE">Sbire (mal)</option>
+						<option value="DEMON">Démon (mal)</option>
+					</select></div>
+			</div>
+			<label>Texte du rôle (ce que lit le joueur)</label>
+			<textarea id="rTexte" maxlength="300" placeholder="Chaque nuit, désigne un joueur : tu apprends s'il est mauvais."></textarea>
+			<label>Emblème</label>
+			<div class="emblems" id="rEmblemes"></div>
+			<label>Pouvoir</label>
+			<select id="rType"></select>
+			<div class="row">
+				<div id="fCible"><label>Ce qu'il cherche</label>
+					<select id="rCible">
+						<option value="demon">le Démon</option>
+						<option value="mauvais">un joueur mauvais</option>
+						<option value="sbire">un Sbire</option>
+						<option value="etranger">un Étranger</option>
+						<option value="citadin">un Citadin</option>
+					</select></div>
+				<div id="fNombre"><label>Joueurs à désigner</label><input id="rNombre" type="number" min="0" max="3" value="1"></div>
+				<div id="fEtrangers"><label>Étrangers en plus (ou en moins)</label><input id="rEtrangers" type="number" min="-2" max="2" value="1"></div>
+			</div>
+			<label class="check" id="fPiste"><input type="checkbox" id="rPiste"> Fausse piste : un joueur du bien passe pour le Démon</label>
+			<label class="check" id="fSoi"><input type="checkbox" id="rSoi"> Peut se désigner lui-même</label>
+			<div id="fQuestion"><label>Pouvoir libre : ce que le Conteur fait ou répond</label>
+				<textarea id="rQuestion" maxlength="300" placeholder="Le Conteur lui dit si ce joueur a menti aujourd'hui."></textarea>
+				<p class="hint">Avec un Conteur humain, il écrit la réponse avant l'envoi. Le Conteur automatique ne sait pas jouer ce pouvoir.</p></div>
+			<div class="row" id="fReveil">
+				<div><label>Réveil, première nuit</label><select id="rPremiere"></select></div>
+				<div><label>Réveil, autres nuits</label><select id="rAutres"></select></div>
+			</div>
+			<div class="preview">
+				<div class="token big" id="pTok"><img id="pImg" src="/atelier/embleme/e_etoile.png" alt=""></div>
+				<div><div id="pNom" style="font-size:1.15rem"></div><div class="t" id="pCamp"></div><div id="pTexte"></div></div>
+			</div>
+			<div class="bar">
+				<button class="main" id="saveRole">Enregistrer</button>
+				<button class="danger" id="delRole">Supprimer</button>
+			</div>
+			<div class="msg" id="roleMsg"></div>
+		</div>
+	</div>
+</section>
+
+<!-- Scénarios -->
+<section id="tab-scenarios" class="hidden">
+	<div class="cols">
+		<div class="card">
+			<h2>Scénarios</h2>
+			<div class="list" id="scList"></div>
+			<div class="bar"><button class="main" id="newSc">Nouveau scénario</button></div>
+		</div>
+		<div class="card">
+			<h2 id="scTitle">Nouveau scénario</h2>
+			<div class="row">
+				<div><label>Nom</label><input id="sNom" maxlength="50" placeholder="La Nuit des Masques"></div>
+				<div><label>Identifiant</label><input id="sId" maxlength="30" placeholder="nuit-des-masques"></div>
+				<div><label>Carte</label><select id="sCarte"></select></div>
+			</div>
+			<label>Résumé (salon)</label>
+			<input id="sDesc" maxlength="160" placeholder="Un bal masqué où personne n'est ce qu'il prétend.">
+			<label>Texte d'ouverture (lu à tous au début)</label>
+			<textarea id="sOuv" maxlength="600" placeholder="Ce soir, Valcombe donne son bal d'hiver…"></textarea>
+			<h3>Rôles</h3>
+			<div class="bar" style="margin-top:0">
+				<button id="fromCendres">Partir des Cendres</button>
+				<button id="fromBrumes">Partir des Brumes</button>
+				<button id="clearRoles">Tout décocher</button>
+				<span class="hint" id="counts"></span>
+			</div>
+			<div id="sRoles"></div>
+			<h3>Réglages</h3>
+			<div class="row">
+				<div><label>Défense de l'accusé (s)</label><input id="sDef" type="number" min="5" max="180" value="20"></div>
+				<div><label>Aiguille (s par siège)</label><input id="sHor" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
+				<div><label>Coiffe des morts</label><select id="sCoiffe"><option value="chapeau">Chapeau</option><option value="crane">Crâne</option><option value="aucun">Aucune</option></select></div>
+				<div><label>Discussion libre chaque jour (min)</label><input id="sDisc" type="number" min="0" max="30" value="0"></div>
+			</div>
+			<div class="row">
+				<label class="check"><input type="checkbox" id="sMaisons" checked> La nuit, chacun chez soi</label>
+				<label class="check"><input type="checkbox" id="sImmo" checked> Immobiles la nuit</label>
+				<label class="check"><input type="checkbox" id="sSombre" checked> Écran noir la nuit</label>
+				<label class="check"><input type="checkbox" id="sMuette" checked> Micros coupés la nuit</label>
+				<label class="check"><input type="checkbox" id="sEffets" checked> Effets complets</label>
+			</div>
+			<h3>Règles spéciales</h3>
+			<div class="row">
+				<label class="check"><input type="checkbox" id="sJ1"> Pas d'accusation le premier jour</label>
+				<label class="check"><input type="checkbox" id="sAnn"> Annonces de rôle interdites</label>
+				<label class="check"><input type="checkbox" id="sApa"> Conversations privées interdites</label>
+			</div>
+			<div class="bar">
+				<button class="main" id="saveSc">Enregistrer</button>
+				<button class="danger" id="delSc">Supprimer</button>
+			</div>
+			<h3>Tester et jouer</h3>
+			<div class="bar" style="margin-top:0">
+				<label style="margin:0">Joueurs</label><input id="tJoueurs" type="number" min="5" max="15" value="8" style="width:80px">
+				<button id="simulate">Simuler 200 parties</button>
+				<button id="trial">Partie d'essai</button>
+				<button class="main" id="useSc">Choisir pour la prochaine partie</button>
+			</div>
+			<div id="simOut" class="hidden">
+				<div class="meter"><div class="g" id="simG"></div><div class="e" id="simE"></div></div>
+				<div id="simText"></div>
+			</div>
+			<p class="hint">La simulation fait jouer des joueurs fictifs (votes au hasard) avec le Conteur automatique : elle montre si un script penche nettement d'un côté ou s'il bloque. Enregistrez avant de choisir ou d'essayer.</p>
+			<div class="msg" id="scMsg"></div>
+		</div>
+	</div>
+</section>
+
+<!-- Cartes -->
+<section id="tab-cartes" class="hidden">
+	<div class="cols">
+		<div class="card">
+			<h2>Bibliothèque de cartes</h2>
+			<div class="list" id="mapList"></div>
+			<p class="hint" id="curMap"></p>
+		</div>
+		<div class="card">
+			<h2>Enregistrer la carte actuelle</h2>
+			<div class="row">
+				<div><label>Nom</label><input id="mNom" maxlength="50" placeholder="Le Port aux Brumes"></div>
+				<div><label>Identifiant</label><input id="mId" maxlength="30" placeholder="port-aux-brumes"></div>
+			</div>
+			<div class="bar"><button class="main" id="saveMap">Enregistrer</button></div>
+			<h2 style="margin-top:20px">Générer un village</h2>
+			<div class="row">
+				<div><label>Trônes</label><input id="gPlaces" type="number" min="5" max="20" value="16"></div>
+				<div><label>Taille</label><select id="gTaille"><option value="0">Petite</option><option value="1" selected>Normale</option><option value="2">Grande</option></select></div>
+				<div><label>Thème</label><select id="gTheme"></select></div>
+			</div>
+			<label class="check"><input type="checkbox" id="gMaisons" checked> Avec des maisons (la nuit, chacun chez soi)</label>
+			<div class="bar"><button id="genMap">Générer à la place de la carte actuelle</button></div>
+			<h2 style="margin-top:20px">Construire à la main</h2>
+			<p class="hint">Dans le jeu : <code>/vc carte construction</code> passe en créatif avec la baguette de carte. Clic droit sur un bloc : un trône ; accroupi : une maison ; <code>/vc carte centre</code> pose le centre de la place. Les repères brillent et une liste de contrôle s'affiche. Ensuite, enregistrez la carte ici.</p>
+			<div class="msg" id="mapMsg"></div>
+		</div>
+	</div>
+</section>
+
+<!-- Partage -->
+<section id="tab-partage" class="hidden">
+	<div class="cols">
+		<div class="card">
+			<h2>Exporter</h2>
+			<p class="hint">Un fichier <code>.valcombe</code> à envoyer à un autre hôte. Un scénario emporte ses rôles créés et sa carte.</p>
+			<div id="expList"></div>
+			<div class="bar"><button class="main" id="export">Télécharger le fichier</button></div>
+		</div>
+		<div class="card">
+			<h2>Importer</h2>
+			<p class="hint">Les créations de même identifiant sont remplacées.</p>
+			<input type="file" id="impFile" accept=".valcombe,.json">
+			<div class="bar"><button class="main" id="import">Importer</button></div>
+			<div class="msg" id="shareMsg"></div>
+		</div>
+	</div>
+</section>
+
+<script>
+"use strict";
+const token = location.hash.slice(1);
+let data = null;
+let editingRole = null;
+let editingSc = null;
+let emblem = "e_etoile";
+const CAMPS = { CITADIN: "Citadin", ETRANGER: "Étranger", SBIRE: "Sbire", DEMON: "Démon" };
+const BRUMES_ONLY = ["sonneur", "cartographe", "faussaire"];
+const $ = id => document.getElementById(id);
+
+async function api(path, body, raw) {
+	const opt = { headers: { "X-Valcombe-Jeton": token } };
+	if (body !== undefined) {
+		opt.method = "POST";
+		opt.body = typeof body === "string" ? body : JSON.stringify(body);
+	}
+	const r = await fetch("/api/atelier/" + path, opt);
+	if (raw) {
+		if (!r.ok) throw new Error(await r.text());
+		return r;
+	}
+	const text = await r.text();
+	if (!r.ok) throw new Error(text);
+	return text;
+}
+
+function msg(id, text, ok) {
+	const el = $(id);
+	el.textContent = text;
+	el.className = "msg " + (ok ? "ok" : "err");
+}
+
+function slug(s) {
+	return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/^(le|la|les|l)[ ']+/, "")
+		.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+}
+
+function evil(camp) { return camp === "SBIRE" || camp === "DEMON"; }
+
+function tokenHtml(icon, camp, big) {
+	const t = document.createElement("div");
+	t.className = "token " + camp + (big ? " big" : "");
+	const img = document.createElement("img");
+	img.src = "/atelier/embleme/" + icon + ".png";
+	img.alt = "";
+	t.appendChild(img);
+	return t;
+}
+
+async function load() {
+	try {
+		data = JSON.parse(await api("donnees"));
+		$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon") +
+			(data.scenarioActuel ? " · scénario : " + data.scenarioActuel : "");
+		renderRoles();
+		renderScenarios();
+		renderMaps();
+		renderShare();
+	} catch (e) {
+		$("state").textContent = e.message;
+	}
+}
+
+// ---------------------------------------------------------------- Rôles
+function allRoles() {
+	return data.integres.map(r => ({ id: r.id, nom: r.nom, camp: r.camp, embleme: r.embleme, builtin: true, premiere: r.premiere, autres: r.autres }))
+		.concat(data.roles.map(r => ({ id: r.id, nom: r.nom, camp: r.camp, embleme: r.embleme, builtin: false })));
+}
+
+function renderRoles() {
+	const list = $("roleList");
+	list.innerHTML = "";
+	if (!data.roles.length) list.innerHTML = '<p class="hint">Aucun rôle créé pour l\'instant.</p>';
+	for (const r of data.roles) {
+		const b = document.createElement("button");
+		b.className = "item" + (editingRole === r.id ? " sel" : "");
+		b.appendChild(tokenHtml(r.embleme, r.camp));
+		const d = document.createElement("div");
+		d.innerHTML = "<div></div><div class='sub'></div>";
+		d.children[0].textContent = r.nom;
+		d.children[1].textContent = CAMPS[r.camp] + " · " + (data.modeles[r.pouvoir.type] || r.pouvoir.type);
+		b.appendChild(d);
+		b.onclick = () => editRole(r);
+		list.appendChild(b);
+	}
+	const types = $("rType");
+	if (!types.options.length) {
+		for (const [k, v] of Object.entries(data.modeles)) types.add(new Option(v, k));
+	}
+	const em = $("rEmblemes");
+	em.innerHTML = "";
+	for (const e of data.emblemes) {
+		const b = document.createElement("button");
+		b.type = "button";
+		b.title = e;
+		b.className = e === emblem ? "on" : "";
+		const img = document.createElement("img");
+		img.src = "/atelier/embleme/" + e + ".png";
+		img.alt = e;
+		b.appendChild(img);
+		b.onclick = () => { emblem = e; renderRoles(); preview(); };
+		em.appendChild(b);
+	}
+	for (const [sel, rank] of [["rPremiere", "premiere"], ["rAutres", "autres"]]) {
+		const s = $(sel);
+		const keep = s.value;
+		s.innerHTML = "";
+		s.add(new Option("Ne se réveille pas", "jamais"));
+		s.add(new Option("Au début de la nuit", "debut"));
+		s.add(new Option("À la fin de la nuit", "fin"));
+		for (const r of data.integres.filter(x => x[rank] > 0).sort((a, b) => a[rank] - b[rank])) {
+			s.add(new Option("Avant : " + r.nom, "avant:" + r.id));
+			s.add(new Option("Après : " + r.nom, "apres:" + r.id));
+		}
+		if (keep) s.value = keep;
+	}
+	updateFields();
+	preview();
+}
+
+function updateFields() {
+	const t = $("rType").value;
+	$("fCible").classList.toggle("hidden", !["paire", "detecteur"].includes(t));
+	$("fNombre").classList.toggle("hidden", !["compte", "detecteur", "libre"].includes(t));
+	$("fEtrangers").classList.toggle("hidden", t !== "etrangers");
+	$("fPiste").classList.toggle("hidden", !(t === "detecteur" && $("rCible").value === "demon"));
+	$("fSoi").classList.toggle("hidden", t !== "protection");
+	$("fQuestion").classList.toggle("hidden", t !== "libre");
+	$("fReveil").classList.toggle("hidden", ["aucun", "immunite", "etrangers", "martyr"].includes(t));
+}
+
+function preview() {
+	const camp = $("rCamp").value;
+	$("pTok").className = "token big " + camp;
+	$("pImg").src = "/atelier/embleme/" + emblem + ".png";
+	$("pNom").textContent = $("rNom").value || "Nom du rôle";
+	$("pCamp").textContent = CAMPS[camp] + (evil(camp) ? " — camp du mal" : " — camp du bien");
+	$("pTexte").textContent = $("rTexte").value;
+}
+
+function editRole(r) {
+	editingRole = r ? r.id : null;
+	$("roleTitle").textContent = r ? "Modifier « " + r.nom + " »" : "Nouveau rôle";
+	$("rNom").value = r ? r.nom : "";
+	$("rId").value = r ? r.id : "";
+	$("rId").disabled = !!r;
+	$("rCamp").value = r ? r.camp : "CITADIN";
+	$("rTexte").value = r ? r.texte : "";
+	emblem = r ? r.embleme : "e_etoile";
+	const p = r ? r.pouvoir : {};
+	$("rType").value = p.type || "aucun";
+	$("rCible").value = p.cible || "demon";
+	$("rNombre").value = p.nombre ?? 1;
+	$("rEtrangers").value = p.etrangers || 1;
+	$("rPiste").checked = !!p.faussePiste;
+	$("rSoi").checked = !!p.soiAutorise;
+	$("rQuestion").value = p.question || "";
+	$("rPremiere").value = r ? r.premiereNuit : "jamais";
+	$("rAutres").value = r ? r.autresNuits : "jamais";
+	$("roleMsg").textContent = "";
+	renderRoles();
+}
+
+function roleForm() {
+	return {
+		id: $("rId").value.trim() || slug($("rNom").value),
+		nom: $("rNom").value.trim(),
+		camp: $("rCamp").value,
+		texte: $("rTexte").value.trim(),
+		embleme: emblem,
+		premiereNuit: $("rPremiere").value,
+		autresNuits: $("rAutres").value,
+		pouvoir: {
+			type: $("rType").value,
+			cible: $("rCible").value,
+			nombre: parseInt($("rNombre").value || "1", 10),
+			faussePiste: $("rPiste").checked,
+			etrangers: parseInt($("rEtrangers").value || "0", 10),
+			question: $("rQuestion").value.trim(),
+			soiAutorise: $("rSoi").checked,
+		},
+	};
+}
+
+$("rNom").oninput = () => { if (!editingRole) $("rId").value = slug($("rNom").value); preview(); };
+$("rTexte").oninput = preview;
+$("rCamp").onchange = preview;
+$("rType").onchange = updateFields;
+$("rCible").onchange = updateFields;
+$("newRole").onclick = () => editRole(null);
+$("saveRole").onclick = async () => {
+	const f = roleForm();
+	try {
+		msg("roleMsg", await api("role", f), true);
+		editingRole = f.id;
+		await load();
+		const r = data.roles.find(x => x.id === f.id);
+		if (r) editRole(r);
+		msg("roleMsg", "Enregistré. Ajoutez-le à un scénario pour y jouer.", true);
+	} catch (e) { msg("roleMsg", e.message); }
+};
+$("delRole").onclick = async () => {
+	if (!editingRole || !confirm("Supprimer ce rôle ?")) return;
+	try {
+		msg("roleMsg", await api("role/supprimer", editingRole), true);
+		editingRole = null;
+		await load();
+		editRole(null);
+	} catch (e) { msg("roleMsg", e.message); }
+};
+
+// ---------------------------------------------------------------- Scénarios
+function renderScenarios() {
+	const list = $("scList");
+	list.innerHTML = "";
+	if (!data.scenarios.length) list.innerHTML = '<p class="hint">Aucun scénario pour l\'instant.</p>';
+	for (const s of data.scenarios) {
+		const b = document.createElement("button");
+		b.className = "item" + (editingSc === s.id ? " sel" : "");
+		const d = document.createElement("div");
+		d.innerHTML = "<div></div><div class='sub'></div>";
+		d.children[0].textContent = s.nom + (data.scenarioActuel === s.id ? "  ★" : "");
+		const j = s.joueurs || [];
+		d.children[1].textContent = (j.length ? j[0] + " à " + j[j.length - 1] + " joueurs" : "injouable")
+			+ " · " + s.roles.length + " rôles" + (s.probleme ? " · ⚠ " + s.probleme : "");
+		b.appendChild(d);
+		b.onclick = () => editSc(s);
+		list.appendChild(b);
+	}
+	const sel = $("sCarte");
+	const keep = sel.value;
+	sel.innerHTML = "";
+	sel.add(new Option("Carte actuelle du serveur", ""));
+	for (const m of data.cartes) sel.add(new Option(m.nom + " (" + m.sieges + " trônes)", m.id));
+	sel.value = keep;
+	renderRolePicker(editingSc ? (data.scenarios.find(x => x.id === editingSc) || {}).roles || [] : currentPicked());
+}
+
+function currentPicked() {
+	return [...document.querySelectorAll("#sRoles input:checked")].map(i => i.value);
+}
+
+function renderRolePicker(picked) {
+	const box = $("sRoles");
+	box.innerHTML = "";
+	for (const camp of Object.keys(CAMPS)) {
+		const h = document.createElement("div");
+		h.className = "camp";
+		h.textContent = CAMPS[camp] + "s";
+		box.appendChild(h);
+		const grid = document.createElement("div");
+		grid.className = "pick";
+		for (const r of allRoles().filter(x => x.camp === camp)) {
+			const l = document.createElement("label");
+			l.className = "check";
+			const c = document.createElement("input");
+			c.type = "checkbox";
+			c.value = r.id;
+			c.checked = picked.includes(r.id);
+			c.onchange = counts;
+			const img = document.createElement("img");
+			img.src = "/atelier/embleme/" + r.embleme + ".png";
+			img.alt = "";
+			l.append(c, img, document.createTextNode(" " + r.nom + (r.builtin ? "" : " ✦")));
+			grid.appendChild(l);
+		}
+		box.appendChild(grid);
+	}
+	counts();
+}
+
+function counts() {
+	const picked = currentPicked();
+	const by = { CITADIN: 0, ETRANGER: 0, SBIRE: 0, DEMON: 0 };
+	for (const r of allRoles()) if (picked.includes(r.id)) by[r.camp]++;
+	$("counts").textContent = by.CITADIN + " Citadins · " + by.ETRANGER + " Étrangers · " + by.SBIRE + " Sbires · " + by.DEMON + " Démon(s)";
+}
+
+function editSc(s) {
+	editingSc = s ? s.id : null;
+	$("scTitle").textContent = s ? "Modifier « " + s.nom + " »" : "Nouveau scénario";
+	$("sNom").value = s ? s.nom : "";
+	$("sId").value = s ? s.id : "";
+	$("sId").disabled = !!s;
+	$("sDesc").value = s ? s.description || "" : "";
+	$("sOuv").value = s ? s.ouverture || "" : "";
+	$("sCarte").value = s ? s.carte || "" : "";
+	const g = s ? s.reglages : {};
+	$("sDef").value = g.defense ?? 20;
+	$("sHor").value = g.horloge ?? 1.5;
+	$("sCoiffe").value = g.coiffe || "chapeau";
+	$("sMaisons").checked = g.nuitMaisons ?? true;
+	$("sImmo").checked = g.nuitImmobile ?? true;
+	$("sSombre").checked = g.nuitSombre ?? true;
+	$("sMuette").checked = g.nuitMuette ?? true;
+	$("sEffets").checked = g.effetsComplets ?? true;
+	const rg = s ? s.regles : {};
+	$("sJ1").checked = !!rg.pasAccusationPremierJour;
+	$("sAnn").checked = !!rg.annoncesInterdites;
+	$("sApa").checked = !!rg.apartesInterdits;
+	$("sDisc").value = rg.discussionMinutes || 0;
+	$("scMsg").textContent = "";
+	$("simOut").classList.add("hidden");
+	renderScenarios();
+	if (!s) renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
+}
+
+function scForm() {
+	return {
+		id: $("sId").value.trim() || slug($("sNom").value),
+		nom: $("sNom").value.trim(),
+		description: $("sDesc").value.trim(),
+		ouverture: $("sOuv").value.trim(),
+		roles: currentPicked(),
+		carte: $("sCarte").value,
+		reglages: {
+			defense: parseInt($("sDef").value, 10), horloge: parseFloat($("sHor").value),
+			nuitMaisons: $("sMaisons").checked, nuitImmobile: $("sImmo").checked, nuitSombre: $("sSombre").checked,
+			nuitMuette: $("sMuette").checked, coiffe: $("sCoiffe").value, effetsComplets: $("sEffets").checked,
+		},
+		regles: {
+			pasAccusationPremierJour: $("sJ1").checked, discussionMinutes: parseInt($("sDisc").value || "0", 10),
+			annoncesInterdites: $("sAnn").checked, apartesInterdits: $("sApa").checked,
+		},
+	};
+}
+
+$("sNom").oninput = () => { if (!editingSc) $("sId").value = slug($("sNom").value); };
+$("newSc").onclick = () => editSc(null);
+$("fromCendres").onclick = () => renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
+$("fromBrumes").onclick = () => renderRolePicker(data.integres
+	.filter(r => !["commere", "aubergiste", "alchimiste"].includes(r.id)).map(r => r.id));
+$("clearRoles").onclick = () => renderRolePicker([]);
+$("saveSc").onclick = async () => {
+	const f = scForm();
+	try {
+		await api("scenario", f);
+		editingSc = f.id;
+		await load();
+		const s = data.scenarios.find(x => x.id === f.id);
+		if (s) editSc(s);
+		msg("scMsg", "Scénario enregistré.", true);
+	} catch (e) { msg("scMsg", e.message); }
+};
+$("delSc").onclick = async () => {
+	if (!editingSc || !confirm("Supprimer ce scénario ?")) return;
+	try {
+		msg("scMsg", await api("scenario/supprimer", editingSc), true);
+		editingSc = null;
+		await load();
+		editSc(null);
+	} catch (e) { msg("scMsg", e.message); }
+};
+$("simulate").onclick = async () => {
+	const b = $("simulate");
+	b.disabled = true;
+	b.textContent = "Simulation…";
+	try {
+		const r = JSON.parse(await api("simuler", { roles: currentPicked(), joueurs: parseInt($("tJoueurs").value, 10), parties: 200 }));
+		$("simOut").classList.remove("hidden");
+		if (r.probleme) {
+			$("simG").style.width = "0"; $("simE").style.width = "0";
+			$("simText").textContent = r.probleme;
+		} else {
+			const done = r.bien + r.mal;
+			$("simG").style.width = (done ? 100 * r.bien / done : 0) + "%";
+			$("simE").style.width = (done ? 100 * r.mal / done : 0) + "%";
+			$("simText").textContent = "Le bien gagne " + r.pourcentBien + " % des parties (" + r.bien + " / " + r.parties + "), le mal "
+				+ (100 - r.pourcentBien) + " %. Durée moyenne : " + r.jours + " jour(s)."
+				+ (r.bloquees ? " ⚠ " + r.bloquees + " partie(s) sans fin." : "")
+				+ " Repère : entre 40 et 60 %, le script est équilibré.";
+		}
+	} catch (e) { msg("scMsg", e.message); }
+	b.disabled = false;
+	b.textContent = "Simuler 200 parties";
+};
+async function play(trial) {
+	if (!editingSc) { msg("scMsg", "Enregistrez d'abord le scénario."); return; }
+	try {
+		msg("scMsg", await api("jouer", { scenario: editingSc, essai: trial, joueurs: parseInt($("tJoueurs").value, 10) }), true);
+		load();
+	} catch (e) { msg("scMsg", e.message); }
+}
+$("useSc").onclick = () => play(false);
+$("trial").onclick = () => play(true);
+
+// ---------------------------------------------------------------- Cartes
+function renderMaps() {
+	const list = $("mapList");
+	list.innerHTML = "";
+	if (!data.cartes.length) list.innerHTML = '<p class="hint">Aucune carte enregistrée.</p>';
+	for (const m of data.cartes) {
+		const c = document.createElement("div");
+		c.className = "card";
+		c.style.padding = "10px";
+		const t = document.createElement("div");
+		t.textContent = m.nom;
+		const s = document.createElement("div");
+		s.className = "sub hint";
+		s.textContent = m.sieges + " trônes · " + m.maisons + " maisons · " + (m.genere ? "générée (" + m.theme + ")" : "construite")
+			+ " · " + Math.max(1, Math.round(m.octets / 1024)) + " Ko";
+		const bar = document.createElement("div");
+		bar.className = "bar";
+		const load_ = document.createElement("button");
+		load_.textContent = "Charger";
+		load_.disabled = data.partieEnCours;
+		load_.onclick = () => mapAction("carte/charger", m.id, "Charger « " + m.nom + " » à la place de la carte actuelle ?");
+		const del = document.createElement("button");
+		del.className = "danger";
+		del.textContent = "Supprimer";
+		del.onclick = () => mapAction("carte/supprimer", m.id, "Supprimer « " + m.nom + " » de la bibliothèque ?");
+		bar.append(load_, del);
+		c.append(t, s, bar);
+		list.appendChild(c);
+	}
+	const cur = data.carteActuelle;
+	$("curMap").textContent = cur ? "Carte actuelle : " + cur.sieges + " trônes, " + cur.maisons + " maisons"
+		+ (cur.genere ? ", village généré (" + cur.theme + ")." : ", construite à la main.") : "Aucune carte sur le serveur.";
+	const th = $("gTheme");
+	if (!th.options.length) for (const t of data.themes) th.add(new Option(t, t));
+}
+
+async function mapAction(path, body, question) {
+	if (question && !confirm(question)) return;
+	msg("mapMsg", "En cours… (une grande carte prend quelques secondes)", true);
+	try {
+		msg("mapMsg", await api(path, body), true);
+		load();
+	} catch (e) { msg("mapMsg", e.message); }
+}
+
+$("mNom").oninput = () => { $("mId").value = slug($("mNom").value); };
+$("saveMap").onclick = () => mapAction("carte/enregistrer", { id: $("mId").value.trim(), nom: $("mNom").value.trim() });
+$("genMap").onclick = () => mapAction("carte/generer", {
+	places: parseInt($("gPlaces").value, 10), taille: parseInt($("gTaille").value, 10),
+	theme: $("gTheme").value, maisons: $("gMaisons").checked,
+}, "Remplacer la carte actuelle par un village généré ? (Enregistrez-la d'abord si vous y tenez.)");
+
+// ---------------------------------------------------------------- Partage
+function renderShare() {
+	const box = $("expList");
+	box.innerHTML = "";
+	const groups = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes]];
+	for (const [key, title, items] of groups) {
+		const h = document.createElement("div");
+		h.className = "camp";
+		h.textContent = title;
+		box.appendChild(h);
+		if (!items.length) {
+			const p = document.createElement("p");
+			p.className = "hint";
+			p.textContent = "Aucun.";
+			box.appendChild(p);
+		}
+		for (const it of items) {
+			const l = document.createElement("label");
+			l.className = "check";
+			const c = document.createElement("input");
+			c.type = "checkbox";
+			c.dataset.kind = key;
+			c.value = it.id;
+			l.append(c, document.createTextNode(" " + it.nom));
+			box.appendChild(l);
+		}
+	}
+}
+
+$("export").onclick = async () => {
+	const pick = k => [...document.querySelectorAll("#expList input:checked")].filter(i => i.dataset.kind === k).map(i => i.value).join(",");
+	const q = "roles=" + encodeURIComponent(pick("roles")) + "&scenarios=" + encodeURIComponent(pick("scenarios"))
+		+ "&cartes=" + encodeURIComponent(pick("cartes"));
+	try {
+		const r = await api("exporter?" + q, undefined, true);
+		const blob = await r.blob();
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = "creations.valcombe";
+		a.click();
+		URL.revokeObjectURL(a.href);
+		msg("shareMsg", "Fichier prêt.", true);
+	} catch (e) { msg("shareMsg", e.message); }
+};
+$("import").onclick = async () => {
+	const f = $("impFile").files[0];
+	if (!f) { msg("shareMsg", "Choisissez un fichier .valcombe."); return; }
+	try {
+		msg("shareMsg", await api("importer", await f.text()), true);
+		load();
+	} catch (e) { msg("shareMsg", e.message); }
+};
+
+// ---------------------------------------------------------------- Onglets
+for (const b of document.querySelectorAll("nav button")) {
+	b.onclick = () => {
+		for (const x of document.querySelectorAll("nav button")) x.classList.toggle("on", x === b);
+		for (const s of document.querySelectorAll("section")) s.classList.toggle("hidden", s.id !== "tab-" + b.dataset.tab);
+	};
+}
+
+if (!token) {
+	$("state").textContent = "Lien incomplet : ouvrez le lien donné par /vc atelier dans le jeu.";
+} else {
+	load().then(() => { editRole(null); editSc(null); });
+}
+</script>
+</body>
+</html>

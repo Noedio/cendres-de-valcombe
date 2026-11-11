@@ -23,7 +23,7 @@ public class ScriptScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {420, 290};
+		return new int[] {420, 330};
 	}
 
 	@Override
@@ -34,8 +34,8 @@ public class ScriptScreen extends BaseScreen {
 		for (int i = 0; i < all.size(); i++) {
 			Role r = all.get(i);
 			boolean in = roles.contains(r.name());
-			int x = px + 24 + (i % 13) * 29;
-			int y = py + 52 + (i / 13) * 30;
+			int x = px + 24 + (i % 9) * 29;
+			int y = py + 52 + (i / 9) * 30;
 			TokenWidget t = new TokenWidget(x, y, 26, "", r.name(), in ? Team.of(r).name() : null, in, in,
 				() -> send("vc script basculer " + r.name().toLowerCase()));
 			t.setTooltip(Tooltip.create(Component.literal(r.displayName + (in ? " — dans le script" : " — exclu"))));
@@ -46,6 +46,7 @@ public class ScriptScreen extends BaseScreen {
 		button(bx, y, 62, "Cendres", () -> send("vc script complet"));
 		button(bx + 66, y, 62, "Brumes", () -> send("vc script brumes"));
 		button(bx, y += 22, 128, "Enregistrer sous…", () -> minecraft.gui.setScreen(new ChatScreen("/vc script sauver ", false)));
+		button(bx, y += 22, 128, "Scénarios…", () -> minecraft.gui.setScreen(new ScenarioScreen()));
 		y += 30;
 		for (String name : strings(script, "saved")) {
 			if (name.startsWith("Les Cendres de Valcombe") || name.startsWith("Les Brumes de Valcombe")) {

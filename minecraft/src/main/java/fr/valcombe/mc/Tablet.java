@@ -47,6 +47,22 @@ public final class Tablet {
 	private String token;
 	private String owner;
 	private int port;
+	private Atelier atelier;
+	/** L'Atelier n'est ouvert que si un opérateur a demandé le lien (/vc atelier). */
+	private volatile boolean atelierAllowed;
+
+	void setAtelier(Atelier atelier) {
+		this.atelier = atelier;
+	}
+
+	/** Lien vers l'Atelier pour cet opérateur (démarre la tablette à son nom si besoin). */
+	public synchronized List<String> openAtelier(String player) throws IOException {
+		if (http == null || !player.equals(owner)) {
+			open(player);
+		}
+		atelierAllowed = true;
+		return links().stream().map(l -> l.replace("/#", "/atelier#")).toList();
+	}
 
 	public Tablet(Session session, Community community) {
 		this.session = session;
@@ -75,6 +91,10 @@ public final class Tablet {
 		h.createContext("/", this::page);
 		h.createContext("/api/vue", this::view);
 		h.createContext("/api/commande", this::command);
+		if (atelier != null) {
+			h.createContext("/atelier", atelier::page);
+			h.createContext("/api/atelier/", ex -> atelier.api(ex, atelierAllowed && authorized(ex), owner));
+		}
 		h.setExecutor(Executors.newFixedThreadPool(2, r -> {
 			Thread t = new Thread(r, "valcombe-tablette");
 			t.setDaemon(true);
@@ -85,6 +105,7 @@ public final class Tablet {
 		RANDOM.nextBytes(b);
 		token = HexFormat.of().formatHex(b);
 		owner = player;
+		atelierAllowed = false;
 		http = h;
 		return links().get(0);
 	}

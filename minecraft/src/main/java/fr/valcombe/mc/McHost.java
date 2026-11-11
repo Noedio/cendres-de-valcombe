@@ -473,6 +473,144 @@ public final class McHost implements Host {
 		return village;
 	}
 
+	// ------------------------------------------------------------------
+	// Bibliothèque de cartes, générateur réglable, mode construction
+	// ------------------------------------------------------------------
+	private MapStore maps;
+
+	public void setMaps(MapStore maps) {
+		this.maps = maps;
+	}
+
+	@Override
+	public String loadMap(String id) {
+		if (maps == null) {
+			throw new fr.valcombe.rules.GameException("Bibliothèque de cartes indisponible.");
+		}
+		return maps.load(id);
+	}
+
+	/** Centre par défaut d'une carte (point d'apparition du monde, au niveau du sol). */
+	public BlockPos defaultCenter() {
+		ServerLevel level = server.overworld();
+		BlockPos spawn = level.getRespawnData().pos();
+		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ()) - 1;
+		return new BlockPos(spawn.getX(), y, spawn.getZ());
+	}
+
+	/** Rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus. */
+	public void clearArea(BlockPos c, int radius, int below, int height) {
+		ServerLevel level = server.overworld();
+		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
+		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
+		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
+		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+		for (int x = -radius; x <= radius; x++) {
+			for (int z = -radius; z <= radius; z++) {
+				for (int y = -below; y < height - below; y++) {
+					m.set(c.getX() + x, c.getY() + y, c.getZ() + z);
+					level.setBlock(m, y < 0 ? stone : y == 0 ? grass : air, net.minecraft.world.level.block.Block.UPDATE_CLIENTS);
+				}
+			}
+		}
+	}
+
+	/** Adopte une carte (chargée ou générée) : enregistrement, salle d'attente, apparition. */
+	public void useVillage(Village v) {
+		stage.clear(server);
+		village = v;
+		lanterns = null;
+		v.save(server);
+		if (v.hasHall()) {
+			buildHall();
+		}
+		applySpawn();
+	}
+
+	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
+	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses) {
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
+		}
+		BlockPos c = village != null ? village.center()
+			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : defaultCenter();
+		Village v = Village.generated(c, theme, seatCount, size, houses);
+		int old = village == null ? 0 : village.extent();
+		if (old > v.extent()) {
+			clearArea(c, old, 4, 28);
+		}
+		v.build(server.overworld());
+		useVillage(v);
+		if (!v.hasHall()) {
+			buildHall();
+		}
+		return "Village généré : " + v.seatTotal() + " trônes, taille " + new String[] {"petite", "normale", "grande"}[v.size()]
+			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.");
+	}
+
+	public String setMapCenter(ServerPlayer p) {
+		Village v = requireVillage();
+		v.setCenter(p.blockPosition().below());
+		v.save(server);
+		applySpawn();
+		return "Centre de la place posé ici.";
+	}
+
+	private final java.util.Set<String> builders = new java.util.HashSet<>();
+	private final Map<String, GameType> builderModes = new HashMap<>();
+
+	/** Mode construction : créatif, baguette de carte, repères lumineux et liste de contrôle. */
+	public String toggleConstruction(ServerPlayer p) {
+		String name = p.getScoreboardName();
+		if (builders.remove(name)) {
+			GameType mode = builderModes.remove(name);
+			p.setGameMode(mode != null ? mode : GameType.ADVENTURE);
+			p.sendSystemMessage(Component.literal("").withStyle(ChatFormatting.GOLD), true);
+			return "Mode construction terminé. Pensez à enregistrer la carte : /vc carte enregistrer <nom>.";
+		}
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("Pas de construction pendant une partie.");
+		}
+		builders.add(name);
+		builderModes.put(name, p.gameMode.getGameModeForPlayer());
+		p.setGameMode(GameType.CREATIVE);
+		p.getInventory().add(ValcombeUi.wandItem());
+		return "Mode construction : construisez librement. Baguette : clic droit sur un bloc = trône, accroupi = maison. "
+			+ "/vc carte centre pose le centre, /vc carte retirer siege|maison annule le dernier. Les repères brillent.";
+	}
+
+	private void showMarkers() {
+		if (builders.isEmpty() || village == null) {
+			return;
+		}
+		for (String name : builders) {
+			ServerPlayer p = player(name);
+			if (p == null) {
+				continue;
+			}
+			ServerLevel level = p.level();
+			BlockPos c = village.center();
+			level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.SOUL_FIRE_FLAME, true, false,
+				c.getX() + 0.5, c.getY() + 1.5, c.getZ() + 0.5, 8, 0.2, 0.6, 0.2, 0);
+			for (int i = 0; i < village.seatCount(); i++) {
+				Vec3 f = village.seatFeet(i);
+				level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.FLAME, true, false, f.x, f.y + 1.2, f.z, 4,
+					0.15, 0.4, 0.15, 0);
+			}
+			for (Vec3 h : village.houseFeet()) {
+				level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER, true, false, h.x, h.y + 1.2, h.z, 6,
+					0.3, 0.5, 0.3, 0);
+			}
+			int seats = village.seatCount();
+			int houses = village.houseCount();
+			String check = "Carte : " + seats + " trône(s) " + (seats >= 5 ? "✔" : "(5 au moins)") + " · " + houses
+				+ " maison(s)" + (houses == 0 || houses >= seats ? "" : " (moins que de trônes)")
+				+ " — baguette : clic droit = trône, accroupi = maison";
+			p.sendSystemMessage(Component.literal(check).withStyle(seats >= 5 ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
+		}
+	}
+
 	/** Construit le village de Valcombe sous les pieds du joueur. */
 	public String buildVillage(ServerPlayer p) {
 		return buildVillage(p, "gothique");
@@ -952,6 +1090,7 @@ public final class McHost implements Host {
 		}
 		if (tick % 20 == 0) {
 			cleanChairs();
+			showMarkers();
 		}
 		if (tick % 4 == 0 && !seats.isEmpty()) {
 			featherHints();
@@ -1073,8 +1212,9 @@ public final class McHost implements Host {
 		if (lanterns == null) {
 			lanterns = new ArrayList<>();
 			BlockPos c = village.center();
-			for (int x = -52; x <= 52; x++) {
-				for (int z = -52; z <= 52; z++) {
+			int r = Math.min(90, village.extent());
+			for (int x = -r; x <= r; x++) {
+				for (int z = -r; z <= r; z++) {
 					for (int y = 1; y <= 12; y++) {
 						BlockPos pos = c.offset(x, y, z);
 						if (level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.LANTERN)) {

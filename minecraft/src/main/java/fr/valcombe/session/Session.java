@@ -171,6 +171,64 @@ public final class Session {
 		return List.of();
 	}
 
+	// ------------------------------------------------------------------
+	// Scénarios (Atelier)
+	// ------------------------------------------------------------------
+	/** Scénario de la prochaine partie (ou en cours), ou null. */
+	ScenarioDef scenario;
+	private List<ScenarioDef> scenarios = List.of();
+
+	/** Scénarios enregistrés (fournis par le serveur). */
+	public void setScenarios(List<ScenarioDef> list) {
+		scenarios = List.copyOf(list);
+		if (scenario != null) {
+			scenario = scenarios.stream().filter(d -> d.id.equals(scenario.id)).findFirst().orElse(scenario);
+		}
+	}
+
+	public List<ScenarioDef> scenarios() {
+		return scenarios;
+	}
+
+	public ScenarioDef scenario() {
+		return scenario;
+	}
+
+	/** Choisit le scénario de la prochaine partie (« aucun » : retour au script libre). */
+	public String useScenario(String id) {
+		if (game != null) {
+			throw new GameException("Le scénario se choisit entre deux parties.");
+		}
+		if (id == null || id.equals("aucun")) {
+			scenario = null;
+			announce("Plus de scénario : script et réglages libres.");
+			return "";
+		}
+		ScenarioDef d = scenarios.stream().filter(x -> x.id.equalsIgnoreCase(id)).findFirst()
+			.orElseThrow(() -> new GameException("Scénario inconnu : " + id));
+		String problem = d.problem();
+		if (problem != null) {
+			throw new GameException("Scénario « " + d.nom + " » injouable : " + problem);
+		}
+		String map = d.carte == null || d.carte.isBlank() ? "" : host.loadMap(d.carte);
+		script = java.util.EnumSet.copyOf(d.script());
+		scriptName = d.nom;
+		ScenarioDef.Reglages r = d.reglages;
+		settings.defenseSeconds = r.defense;
+		settings.clockTicks = (int) Math.round(r.horloge * 20);
+		settings.nightHouses = r.nuitMaisons;
+		settings.nightFreeze = r.nuitImmobile;
+		settings.nightDark = r.nuitSombre;
+		settings.nightMute = r.nuitMuette;
+		settings.deadHat = r.coiffe == null ? "chapeau" : r.coiffe;
+		settings.fullEffects = r.effetsComplets;
+		scenario = d;
+		List<Integer> n = d.playable();
+		announce("Scénario de la prochaine partie : « " + d.nom + " » (" + n.get(0) + " à " + n.get(n.size() - 1)
+			+ " joueurs)." + (d.description == null || d.description.isBlank() ? "" : " " + d.description));
+		return map;
+	}
+
 	/** Joueur pris à part par le Conteur (vocal privé), ou null. */
 	String aside;
 
@@ -269,6 +327,9 @@ public final class Session {
 	/** Le joueur annonce publiquement un rôle (vrai ou bluff) ; « aucun » retire l'annonce. */
 	public String claim(String name, String roleId) {
 		Game g = requireGame();
+		if (scenario != null && scenario.regles.annoncesInterdites) {
+			throw new GameException("Les annonces de rôle sont interdites dans ce scénario.");
+		}
 		requireSeat(name);
 		if (roleId.equalsIgnoreCase("aucun")) {
 			claims.remove(name);
@@ -313,6 +374,9 @@ public final class Session {
 		Game g = requireGame();
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne parle en privé que de jour.");
+		}
+		if (scenario != null && scenario.regles.apartesInterdits) {
+			throw new GameException("Les conversations privées sont interdites dans ce scénario.");
 		}
 		requireSeat(from);
 		String target = g.player(seatByName(to)).name;
@@ -725,6 +789,10 @@ public final class Session {
 		}
 		save();
 		updateBoards();
+		if (scenario != null && scenario.ouverture != null && !scenario.ouverture.isBlank()) {
+			host.title(realNames(), scenario.nom, "");
+			announce("« " + scenario.nom + " » — " + scenario.ouverture);
+		}
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
 			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). Le Conteur fait tomber la première nuit.");
 		return "Partie lancée.";
@@ -1235,6 +1303,9 @@ public final class Session {
 		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
 		tip("jour", "Le jour se lève", "Le jour, on discute. Chuchoter (bouton du menu) est privé, mais tout le monde "
 			+ "voit qui chuchote. Avec la plume d'accusation, vise un joueur et fais un clic droit pour l'accuser.");
+		if (scenario != null && scenario.regles.discussionMinutes > 0) {
+			discussion(scenario.regles.discussionMinutes);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -1325,6 +1396,9 @@ public final class Session {
 		}
 		if (!nominationsOpen) {
 			throw new GameException("Les nominations ne sont pas encore ouvertes.");
+		}
+		if (scenario != null && scenario.regles.pasAccusationPremierJour && g.day() == 1) {
+			throw new GameException("Pas d'accusation le premier jour dans ce scénario.");
 		}
 		if (voteNom != null) {
 			throw new GameException("Attends la fin du vote en cours.");

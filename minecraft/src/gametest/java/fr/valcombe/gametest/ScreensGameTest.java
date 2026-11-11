@@ -77,6 +77,60 @@ public class ScreensGameTest implements FabricClientGameTest {
 	}
 
 	/** Grimoire sur tablette : la page répond, refuse un mauvais jeton, et exécute une commande. */
+	/** L'Atelier, par sa vraie page web : rôle et scénario créés, simulation, scénario choisi. */
+	private static void checkAtelier(ClientGameTestContext ctx) {
+		send(ctx, "vc atelier");
+		ctx.waitTicks(10);
+		String link = fr.valcombe.mc.ValcombeMod.tablet().links().get(0);
+		String token = link.substring(link.indexOf('#') + 1);
+		String base = "http://127.0.0.1:" + fr.valcombe.mc.ValcombeMod.community().tabletPort();
+		var http = java.net.http.HttpClient.newHttpClient();
+		java.util.function.BiFunction<String, String, java.net.http.HttpResponse<String>> post = (path, body) -> fetch(ctx, http,
+			java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/" + path))
+				.header("X-Valcombe-Jeton", token).POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofString());
+		var page = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/atelier")).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofString());
+		check(page.statusCode() == 200 && page.body().contains("Atelier de Valcombe"), "page de l'Atelier");
+		var img = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/atelier/embleme/e_lune.png")).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofString());
+		check(img.statusCode() == 200, "emblème servi");
+		var role = post.apply("role", "{\"id\":\"guetteur\",\"nom\":\"Le Guetteur\",\"camp\":\"CITADIN\","
+			+ "\"texte\":\"Chaque nuit, désigne deux joueurs : tu apprends combien sont mauvais.\",\"embleme\":\"e_oeil\","
+			+ "\"premiereNuit\":\"jamais\",\"autresNuits\":\"apres:veilleuse\",\"pouvoir\":{\"type\":\"compte\",\"nombre\":2}}");
+		check(role.statusCode() == 200, "rôle créé : " + role.body());
+		var bad = post.apply("role", "{\"id\":\"tueur\",\"nom\":\"Le Tueur\",\"camp\":\"CITADIN\",\"texte\":\"x\","
+			+ "\"autresNuits\":\"fin\",\"pouvoir\":{\"type\":\"mise_a_mort\"}}");
+		check(bad.statusCode() == 409, "rôle fautif refusé");
+		StringBuilder roles = new StringBuilder("\"guetteur\"");
+		for (var r : fr.valcombe.rules.Role.classic()) {
+			roles.append(",\"").append(r.name().toLowerCase()).append("\"");
+		}
+		var sc = post.apply("scenario", "{\"id\":\"bal-masque\",\"nom\":\"Le Bal masqué\",\"description\":\"Personne n'est "
+			+ "ce qu'il prétend.\",\"ouverture\":\"Ce soir, Valcombe donne son bal d'hiver.\",\"roles\":[" + roles
+			+ "],\"regles\":{\"pasAccusationPremierJour\":true}}");
+		check(sc.statusCode() == 200, "scénario créé : " + sc.body());
+		var sim = post.apply("simuler", "{\"roles\":[" + roles + "],\"joueurs\":8,\"parties\":50}");
+		check(sim.statusCode() == 200 && sim.body().contains("pourcentBien"), "simulation : " + sim.body());
+		System.out.println("[valcombe-test] simulation : " + sim.body());
+		var data = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/donnees"))
+			.header("X-Valcombe-Jeton", token).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+		check(data.statusCode() == 200 && data.body().contains("guetteur"), "catalogue de l'Atelier");
+		try {
+			java.nio.file.Files.writeString(java.nio.file.Path.of("atelier-donnees.json"), data.body());
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+		var exp = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base
+			+ "/api/atelier/exporter?scenarios=bal-masque")).header("X-Valcombe-Jeton", token).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofString());
+		check(exp.statusCode() == 200 && exp.body().contains("valcombe-creations") && exp.body().contains("guetteur"), "export");
+		var use = post.apply("jouer", "{\"scenario\":\"bal-masque\",\"essai\":false}");
+		check(use.statusCode() == 200, "scénario choisi : " + use.body());
+		check("bal-masque".equals(fr.valcombe.mc.ValcombeMod.session().scenario().id), "scénario de la prochaine partie");
+		System.out.println("[valcombe-test] Atelier OK");
+	}
+
 	private static void checkTablet(ClientGameTestContext ctx) {
 		send(ctx, "vc tablette");
 		ctx.waitTicks(10);
@@ -318,6 +372,27 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "8a-village-vue-aerienne");
 			world.getServer().runCommand("gamemode creative " + me);
 
+			// Bibliothèque de cartes : enregistrer, générer un village de 8 trônes, recharger
+			send(ctx, "vc carte enregistrer village-test Village de test");
+			ctx.waitTicks(40);
+			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test")), "carte enregistrée");
+			send(ctx, "vc carte generer 8 petite monastere oui");
+			ctx.waitTicks(100);
+			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 8, "8 trônes");
+			world.getServer().runCommand("gamemode spectator " + me);
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+				center.getX(), center.getY() + 30, center.getZ() + 38, center.getX(), center.getY(), center.getZ() + 4));
+			ctx.waitTicks(60);
+			shot(ctx, "19-village-8-tronees");
+			send(ctx, "vc carte charger village-test");
+			ctx.waitTicks(100);
+			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 16, "carte rechargée");
+			ctx.waitTicks(40);
+			shot(ctx, "19b-carte-rechargee");
+			world.getServer().runCommand("gamemode creative " + me);
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
+				center.getX(), center.getY() + 1, center.getZ() + 4));
+
 			// Le village de Valcombe
 			ctx.setScreen(() -> null);
 			send(ctx, "vc carte construire port");
@@ -371,6 +446,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 			checkTablet(ctx);
 			send(ctx, "vc stats");
 			world.getServer().runCommand("vc arreter");
+			ctx.waitTicks(20);
+			// L'Atelier, puis le scénario du Bal masqué qu'il a choisi : écran Scénarios et rôle créé dans le script
+			checkAtelier(ctx);
+			ctx.setScreen(fr.valcombe.client.screen.ScenarioScreen::new);
+			shot(ctx, "20-scenarios");
+			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
+			shot(ctx, "20b-script-avec-role-cree");
+			ctx.setScreen(() -> null);
 		}
 	}
 }

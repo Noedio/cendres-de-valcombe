@@ -322,6 +322,13 @@ Dans le salon, le Conteur (ou l'hôte, en partie automatique) choisit un scénar
 | **11 — Atelier des cartes** | Bibliothèque de cartes, générateur réglable, mode construction, partage | On construit sa place, on la partage, on la choisit pour un scénario |
 | **12 — Confort** | Les propositions du tableau « Ce qu'on peut encore améliorer », dans l'ordre des retours de la soirée de test | Launcher simplifié et plus parlant, nuits et fins de partie plus vivantes, joueurs fictifs crédibles |
 
+### Avancement des phases 9 à 11
+
+- **Phase 9 — rôles créés** : 40 emplacements de rôles créés, remplis à partir de fiches ; 17 modèles de pouvoir branchés sur le moteur (ivresse, poison et enregistrements trompeurs compris) ; réveil intercalé avant ou après un rôle existant ; 20 nouveaux emblèmes et leurs jetons 3D dans les deux camps. Les 25 rôles intégrés gardent leurs pouvoirs écrits dans le moteur (plutôt que d'être réécrits dans le nouveau format) : leurs subtilités (Fauconnier, Pèlerine, Châtelain…) ne rentrent pas dans les modèles, et rien ne change pour les joueurs.
+- **Phase 10 — Atelier** : page web `/vc atelier` (rôles, scénarios, simulation de 200 parties, partie d'essai, choix du scénario), fichiers `.valcombe` à partager, écran Scénarios dans le jeu, règles spéciales et texte d'ouverture.
+- **Phase 11 — cartes** : bibliothèque de cartes (structure Minecraft et repères), générateur réglable (5 à 20 trônes, trois tailles, maisons ou non), mode construction avec repères lumineux et liste de contrôle, cartes partagées dans les fichiers `.valcombe`, carte liée à un scénario.
+- Limites : 40 rôles créés au plus par serveur ; le pouvoir libre demande un Conteur humain ; la simulation fait voter les joueurs fictifs au hasard (elle repère un script très déséquilibré ou bloqué, pas les finesses).
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** avec la 0.3.0, avant tout gros chantier : elle dira ce qui gêne vraiment.

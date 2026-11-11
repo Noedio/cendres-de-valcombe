@@ -9,6 +9,11 @@ public interface Host {
 	default void storytellerTools(String name, boolean on) {
 	}
 
+	/** Charge une carte de la bibliothèque (scénario) ; renvoie un message, ou lève GameException. */
+	default String loadMap(String id) {
+		return "";
+	}
+
 	/** Message à tout le serveur. */
 	void announce(String text);
 

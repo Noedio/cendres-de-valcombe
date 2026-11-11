@@ -29,16 +29,68 @@ import net.minecraft.world.phys.Vec3;
  * Enregistré dans config/valcombe-village.json.
  */
 public final class Village {
+	/** Trônes d'un village généré par défaut. */
 	public static final int SEATS = 16;
 	/** Version du plan du village généré : un village plus ancien est reconstruit au démarrage. */
 	public static final int LAYOUT = 2;
-	private static final int SEAT_RADIUS = 11;
-	private static final int PLAZA_RADIUS = 17;
 	private static final int ROAD_WIDTH = 3;
-	private static final int HOUSE_RADIUS = 37;
 	private static final int HOUSE_HALF = 4;
-	private static final int CLEAR_RADIUS = 50;
 	private static final int CLEAR_HEIGHT = 16;
+	/** Écart entre deux trônes selon la taille : petite, normale, grande. */
+	private static final double[] SPACING = {3.6, 4.3, 5.2};
+	/** Ancienne salle d'attente (plan 1), pour l'effacer. */
+	private static final double LEGACY_HALL_ANGLE = angle(0, 16) + Math.PI / 16;
+
+	// Plan du village généré (calculé d'après le nombre de trônes et la taille)
+	private int seatTotal = SEATS;
+	private int size = 1;
+	private boolean withHouses = true;
+	private int seatRadius;
+	private int plazaRadius;
+	private int houseRadius;
+	private int clearRadius;
+	private int hallDistance;
+
+	private void layout() {
+		seatTotal = Math.max(5, Math.min(20, seatTotal));
+		size = Math.max(0, Math.min(2, size));
+		seatRadius = Math.max(6, (int) Math.round(seatTotal * SPACING[size] / (2 * Math.PI)));
+		plazaRadius = seatRadius + 6;
+		houseRadius = plazaRadius + 20;
+		clearRadius = houseRadius + 13;
+		hallDistance = clearRadius + 14;
+	}
+
+	private double hallAngle() {
+		return angle(0, seatTotal) + Math.PI / seatTotal;
+	}
+
+	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer. */
+	public int extent() {
+		if (!generated) {
+			int r = 12;
+			for (BlockPos b : seats) {
+				r = Math.max(r, (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8);
+			}
+			for (BlockPos b : houses) {
+				r = Math.max(r, (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8);
+			}
+			return r;
+		}
+		return hall ? hallDistance + 12 : clearRadius;
+	}
+
+	public int seatTotal() {
+		return seatTotal;
+	}
+
+	public int size() {
+		return size;
+	}
+
+	public boolean withHouses() {
+		return withHouses;
+	}
 	private static final int FLAGS = Block.UPDATE_CLIENTS;
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -47,13 +99,16 @@ public final class Village {
 		int[] center;
 		boolean generated;
 		int layout;
+		int seatTotal;
+		int size = 1;
+		Boolean withHouses;
 		boolean hall;
 		String theme;
 		List<int[]> seats = new ArrayList<>();
 		List<int[]> houses = new ArrayList<>();
 	}
 
-	private final BlockPos center;
+	private BlockPos center;
 	private final boolean generated;
 	private int layout = LAYOUT;
 	private boolean hall;
@@ -64,6 +119,7 @@ public final class Village {
 	private Village(BlockPos center, boolean generated) {
 		this.center = center;
 		this.generated = generated;
+		layout();
 	}
 
 	/** Village de Valcombe généré autour de center (le sol de la place). */
@@ -72,18 +128,70 @@ public final class Village {
 	}
 
 	public static Village generated(BlockPos center, String theme) {
+		return generated(center, theme, SEATS, 1, true);
+	}
+
+	/** Village généré réglable : trônes (5 à 20), taille (0 petite, 1 normale, 2 grande), maisons ou non. */
+	public static Village generated(BlockPos center, String theme, int seatCount, int size, boolean houses) {
 		Village v = new Village(center, true);
 		v.theme = THEMES.contains(theme) ? theme : "gothique";
-		for (int i = 0; i < SEATS; i++) {
-			double a = angle(i, SEATS);
-			v.seats.add(center.offset((int) Math.round(SEAT_RADIUS * Math.cos(a)), 1, (int) Math.round(SEAT_RADIUS * Math.sin(a))));
-			v.houses.add(center.offset((int) Math.round(HOUSE_RADIUS * Math.cos(a)), 1,
-				(int) Math.round(HOUSE_RADIUS * Math.sin(a))));
-		}
+		v.seatTotal = seatCount;
+		v.size = size;
+		v.withHouses = houses;
+		v.layout();
+		v.placeMarkers();
 		return v;
 	}
 
+	private void placeMarkers() {
+		seats.clear();
+		houses.clear();
+		for (int i = 0; i < seatTotal; i++) {
+			double a = angle(i, seatTotal);
+			seats.add(center.offset((int) Math.round(seatRadius * Math.cos(a)), 1, (int) Math.round(seatRadius * Math.sin(a))));
+			if (withHouses) {
+				houses.add(center.offset((int) Math.round(houseRadius * Math.cos(a)), 1,
+					(int) Math.round(houseRadius * Math.sin(a))));
+			}
+		}
+	}
+
 	/** Carte personnalisée vide : sièges et maisons s'ajoutent ensuite. */
+	/**
+	 * Village rechargé depuis la bibliothèque de cartes, au centre donné : repères relatifs
+	 * (dx, dy, dz) et réglages de génération.
+	 */
+	public static Village restored(BlockPos center, boolean generated, String theme, int seatCount, int size,
+			boolean houses, boolean hall, List<int[]> relSeats, List<int[]> relHouses) {
+		Village v = new Village(center, generated);
+		v.theme = THEMES.contains(theme) ? theme : "gothique";
+		v.seatTotal = seatCount;
+		v.size = size;
+		v.withHouses = houses;
+		v.layout();
+		v.hall = hall;
+		relSeats.forEach(a -> v.seats.add(center.offset(a[0], a[1], a[2])));
+		relHouses.forEach(a -> v.houses.add(center.offset(a[0], a[1], a[2])));
+		return v;
+	}
+
+	/** Repères relatifs au centre (pour la bibliothèque de cartes). */
+	public List<int[]> relSeats() {
+		return seats.stream().map(b -> new int[] {b.getX() - center.getX(), b.getY() - center.getY(), b.getZ() - center.getZ()}).toList();
+	}
+
+	public List<int[]> relHouses() {
+		return houses.stream().map(b -> new int[] {b.getX() - center.getX(), b.getY() - center.getY(), b.getZ() - center.getZ()}).toList();
+	}
+
+	/** Carte construite à la main : déplace le centre de la place (les repères restent où ils sont). */
+	public void setCenter(BlockPos c) {
+		if (generated) {
+			throw new fr.valcombe.rules.GameException("Le centre d'un village généré ne se déplace pas : régénérez-le ailleurs.");
+		}
+		center = c;
+	}
+
 	public static Village custom(BlockPos center) {
 		return new Village(center, false);
 	}
@@ -103,7 +211,7 @@ public final class Village {
 
 	/** Le même village (centre et thème), selon le plan actuel. */
 	public Village regenerated() {
-		return generated(center, theme);
+		return generated(center, theme, seatTotal, size, withHouses);
 	}
 
 	public int seatCount() {
@@ -170,6 +278,11 @@ public final class Village {
 		return -1;
 	}
 
+	/** Pieds d'un joueur dans chaque maison. */
+	public List<Vec3> houseFeet() {
+		return houses.stream().map(Village::feet).toList();
+	}
+
 	/** Pieds du joueur assis sur le siège k (numéro dans la carte). */
 	public Vec3 seatFeet(int k) {
 		return feet(seats.get(k));
@@ -202,12 +315,9 @@ public final class Village {
 	// ------------------------------------------------------------------
 	// Salle d'attente
 	// ------------------------------------------------------------------
-	private static final double HALL_ANGLE = angle(0, SEATS) + Math.PI / SEATS;
-	private static final int HALL_DISTANCE = 64;
-
 	/** Centre de la salle, relatif au centre de la place. */
-	private static int[] hallCenter() {
-		return new int[] {(int) Math.round(HALL_DISTANCE * Math.cos(HALL_ANGLE)), (int) Math.round(HALL_DISTANCE * Math.sin(HALL_ANGLE))};
+	private int[] hallCenter() {
+		return new int[] {(int) Math.round(hallDistance * Math.cos(hallAngle())), (int) Math.round(hallDistance * Math.sin(hallAngle()))};
 	}
 
 	/** Dalles de la salle : inscription (or), désinscription (rouge), Conteur (obsidienne). */
@@ -277,9 +387,9 @@ public final class Village {
 		set(level, hx - 6, 0, hz, Blocks.REDSTONE_BLOCK.defaultBlockState());
 		set(level, hx, 0, hz - 5, Blocks.CRYING_OBSIDIAN.defaultBlockState());
 		// Allée vers la place
-		for (int r = PLAZA_RADIUS + ROAD_WIDTH; r < HALL_DISTANCE - 6; r++) {
-			int x = (int) Math.round(r * Math.cos(HALL_ANGLE));
-			int z = (int) Math.round(r * Math.sin(HALL_ANGLE));
+		for (int r = plazaRadius + ROAD_WIDTH; r < hallDistance - 6; r++) {
+			int x = (int) Math.round(r * Math.cos(hallAngle()));
+			int z = (int) Math.round(r * Math.sin(hallAngle()));
 			for (int w = -1; w <= 1; w++) {
 				set(level, x + w, 0, z, Blocks.COBBLESTONE.defaultBlockState());
 				for (int y = 1; y <= 3; y++) {
@@ -295,8 +405,8 @@ public final class Village {
 		if (!hall) {
 			return;
 		}
-		int hx = (int) Math.round(47 * Math.cos(HALL_ANGLE));
-		int hz = (int) Math.round(47 * Math.sin(HALL_ANGLE));
+		int hx = (int) Math.round(47 * Math.cos(LEGACY_HALL_ANGLE));
+		int hz = (int) Math.round(47 * Math.sin(LEGACY_HALL_ANGLE));
 		for (int x = -12; x <= 12; x++) {
 			for (int z = -10; z <= 10; z++) {
 				set(level, hx + x, 0, hz + z, Blocks.GRASS_BLOCK.defaultBlockState());
@@ -384,19 +494,19 @@ public final class Village {
 		java.util.Random rnd = new java.util.Random(center.asLong());
 
 		// Terrain : socle de pierre, sols, et tout l'air au-dessus
-		for (int x = -CLEAR_RADIUS; x <= CLEAR_RADIUS; x++) {
-			for (int z = -CLEAR_RADIUS; z <= CLEAR_RADIUS; z++) {
+		for (int x = -clearRadius; x <= clearRadius; x++) {
+			for (int z = -clearRadius; z <= clearRadius; z++) {
 				double d = Math.hypot(x, z);
-				if (d > CLEAR_RADIUS) {
+				if (d > clearRadius) {
 					continue;
 				}
 				for (int y = -3; y < 0; y++) {
 					set(level, x, y, z, Blocks.STONE.defaultBlockState());
 				}
 				Block floor;
-				if (d <= PLAZA_RADIUS) {
+				if (d <= plazaRadius) {
 					floor = rnd.nextInt(5) == 0 ? p.plazaAlt1() : rnd.nextInt(3) == 0 ? p.plazaAlt2() : p.plaza();
-				} else if (d <= PLAZA_RADIUS + ROAD_WIDTH) {
+				} else if (d <= plazaRadius + ROAD_WIDTH) {
 					floor = rnd.nextInt(4) == 0 ? p.ground2() : p.alley();
 				} else {
 					floor = rnd.nextInt(9) == 0 ? p.ground() : p.grass();
@@ -411,24 +521,24 @@ public final class Village {
 		for (int k = 0; k < 720; k++) {
 			double a = Math.toRadians(k / 2.0);
 			double gap = Double.MAX_VALUE;
-			for (int i = 0; i < SEATS; i++) {
-				double da = Math.atan2(Math.sin(a - angle(i, SEATS)), Math.cos(a - angle(i, SEATS)));
-				gap = Math.min(gap, Math.abs(da) * PLAZA_RADIUS);
+			for (int i = 0; i < seatTotal; i++) {
+				double da = Math.atan2(Math.sin(a - angle(i, seatTotal)), Math.cos(a - angle(i, seatTotal)));
+				gap = Math.min(gap, Math.abs(da) * plazaRadius);
 			}
 			if (gap > 2.2) {
-				set(level, (int) Math.round((PLAZA_RADIUS + 0.5) * Math.cos(a)), 1,
-					(int) Math.round((PLAZA_RADIUS + 0.5) * Math.sin(a)), p.rim().defaultBlockState());
+				set(level, (int) Math.round((plazaRadius + 0.5) * Math.cos(a)), 1,
+					(int) Math.round((plazaRadius + 0.5) * Math.sin(a)), p.rim().defaultBlockState());
 			}
 		}
 		// Trônes : une marche tournée vers le centre, un dossier, deux accoudoirs
-		for (int i = 0; i < SEATS; i++) {
-			double a = angle(i, SEATS);
-			int x = (int) Math.round(SEAT_RADIUS * Math.cos(a));
-			int z = (int) Math.round(SEAT_RADIUS * Math.sin(a));
+		for (int i = 0; i < seatTotal; i++) {
+			double a = angle(i, seatTotal);
+			int x = (int) Math.round(seatRadius * Math.cos(a));
+			int z = (int) Math.round(seatRadius * Math.sin(a));
 			throne(level, x, z, p);
 			if (i % 2 == 0) {
-				int lx = (int) Math.round((SEAT_RADIUS + 3) * Math.cos(a + Math.PI / SEATS));
-				int lz = (int) Math.round((SEAT_RADIUS + 3) * Math.sin(a + Math.PI / SEATS));
+				int lx = (int) Math.round((seatRadius + 3) * Math.cos(a + Math.PI / seatTotal));
+				int lz = (int) Math.round((seatRadius + 3) * Math.sin(a + Math.PI / seatTotal));
 				set(level, lx, 1, lz, p.post().defaultBlockState());
 				set(level, lx, 2, lz, p.post().defaultBlockState());
 				set(level, lx, 3, lz, p.light().defaultBlockState());
@@ -458,27 +568,30 @@ public final class Village {
 		set(level, 0, 7, 0, Blocks.SOUL_LANTERN.defaultBlockState());
 
 		// Allées, maisons, étals, arbres et haies
-		for (int i = 0; i < SEATS; i++) {
-			double a = angle(i, SEATS);
-			for (int r = PLAZA_RADIUS + ROAD_WIDTH; r <= HOUSE_RADIUS - HOUSE_HALF; r++) {
+		for (int i = 0; i < seatTotal; i++) {
+			double a = angle(i, seatTotal);
+			for (int r = plazaRadius + ROAD_WIDTH; withHouses && r <= houseRadius - HOUSE_HALF; r++) {
 				for (int w = -1; w <= 1; w++) {
 					set(level, (int) Math.round(r * Math.cos(a) - w * Math.sin(a)), 0,
 						(int) Math.round(r * Math.sin(a) + w * Math.cos(a)), p.alley().defaultBlockState());
 				}
 			}
-			house(level, (int) Math.round(HOUSE_RADIUS * Math.cos(a)), (int) Math.round(HOUSE_RADIUS * Math.sin(a)), i, p);
+			if (withHouses) {
+				house(level, (int) Math.round(houseRadius * Math.cos(a)), (int) Math.round(houseRadius * Math.sin(a)), i, p);
+			}
 			if (i == 0) {
 				continue; // le chemin de la salle d'attente passe ici
 			}
-			double mid = a + Math.PI / SEATS;
-			int mx = (int) Math.round(27 * Math.cos(mid));
-			int mz = (int) Math.round(27 * Math.sin(mid));
+			double mid = a + Math.PI / seatTotal;
+			int midR = (plazaRadius + houseRadius) / 2;
+			int mx = (int) Math.round(midR * Math.cos(mid));
+			int mz = (int) Math.round(midR * Math.sin(mid));
 			if (i % 2 == 0) {
 				stall(level, mx, mz, i);
 			} else {
 				tree(level, mx, mz, p, hedge);
 			}
-			for (int r = 32; r <= 45; r++) {
+			for (int r = houseRadius - 5; withHouses && r <= houseRadius + 8; r++) {
 				int x = (int) Math.round(r * Math.cos(mid));
 				int z = (int) Math.round(r * Math.sin(mid));
 				set(level, x, 1, z, hedge);
@@ -641,6 +754,9 @@ public final class Village {
 		d.center = arr(center);
 		d.generated = generated;
 		d.layout = layout;
+		d.seatTotal = seatTotal;
+		d.size = size;
+		d.withHouses = withHouses;
 		d.hall = hall;
 		d.theme = theme;
 		seats.forEach(p -> d.seats.add(arr(p)));
@@ -661,6 +777,12 @@ public final class Village {
 				Data d = GSON.fromJson(Files.readString(json), Data.class);
 				Village v = new Village(pos(d.center), d.generated);
 				v.layout = d.layout;
+				if (d.seatTotal > 0) {
+					v.seatTotal = d.seatTotal;
+					v.size = d.size;
+				}
+				v.withHouses = d.withHouses == null || d.withHouses;
+				v.layout();
 				v.hall = d.hall;
 				v.theme = d.theme == null ? "gothique" : d.theme;
 				d.seats.forEach(a -> v.seats.add(pos(a)));

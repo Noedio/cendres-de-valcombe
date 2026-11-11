@@ -183,6 +183,43 @@ public final class ValcombeCommands {
 					.then(Commands.literal("siege").executes(c -> exec(c, x -> ui.host().removeSeat())))
 					.then(Commands.literal("maison").executes(c -> exec(c, x -> ui.host().removeHouse()))))
 				.then(Commands.literal("infos").executes(c -> exec(c, x -> ui.host().mapInfo())))
+				.then(Commands.literal("construction")
+					.executes(c -> exec(c, x -> ui.host().toggleConstruction(x.getSource().getPlayerOrException()))))
+				.then(Commands.literal("centre")
+					.executes(c -> exec(c, x -> ui.host().setMapCenter(x.getSource().getPlayerOrException()))))
+				.then(Commands.literal("liste").executes(c -> exec(c, x -> {
+					var list = ValcombeMod.maps().list();
+					return list.isEmpty() ? "Aucune carte enregistrée : /vc carte enregistrer <id> <nom>."
+						: "Cartes : " + String.join(", ", list.stream().map(d -> d.id + " (« " + d.nom + " », "
+							+ d.sieges.size() + " trônes)").toList());
+				})))
+				.then(Commands.literal("enregistrer")
+					.then(Commands.argument("id", StringArgumentType.word())
+						.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "id"))))
+						.then(Commands.argument("nom", StringArgumentType.greedyString())
+							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "nom")))))))
+				.then(Commands.literal("charger")
+					.then(Commands.argument("id", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
+						.executes(c -> exec(c, x -> ValcombeMod.maps().load(arg(x, "id"))))))
+				.then(Commands.literal("supprimer")
+					.then(Commands.argument("id", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
+						.executes(c -> exec(c, x -> ValcombeMod.maps().delete(arg(x, "id"))))))
+				.then(Commands.literal("generer")
+					.then(Commands.argument("places", IntegerArgumentType.integer(5, 20))
+						.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
+							IntegerArgumentType.getInteger(x, "places"), 1, "gothique", true)))
+						.then(Commands.argument("taille", StringArgumentType.word())
+							.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("petite", "normale", "grande"), b))
+							.then(Commands.argument("theme", StringArgumentType.word())
+								.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
+								.then(Commands.argument("maisons", StringArgumentType.word())
+									.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("oui", "non"), b))
+									.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
+										IntegerArgumentType.getInteger(x, "places"),
+										List.of("petite", "normale", "grande").indexOf(arg(x, "taille")),
+										arg(x, "theme"), !arg(x, "maisons").equals("non")))))))))
 				.then(Commands.literal("salle").executes(c -> exec(c, x -> ui.host().buildHall()))))
 			.then(Commands.literal("bots").requires(leader)
 				.then(Commands.literal("retirer").executes(c -> exec(c, x -> session.removeBots())))
@@ -303,6 +340,26 @@ public final class ValcombeCommands {
 				})))
 				.then(Commands.argument("adresse", StringArgumentType.greedyString())
 					.executes(c -> exec(c, x -> ValcombeMod.community().setWebhook(arg(x, "adresse"))))))
+			.then(Commands.literal("atelier").requires(admin)
+				.executes(c -> exec(c, x -> {
+					ServerPlayer p = x.getSource().getPlayerOrException();
+					List<String> links = ValcombeMod.tablet().openAtelier(p.getScoreboardName());
+					p.sendSystemMessage(Component.literal("Atelier ouvert : créez des rôles et des scénarios, gérez les cartes. "
+						+ "Ouvrez ce lien sur un ordinateur du même réseau — ne le partagez pas :")
+						.withStyle(net.minecraft.ChatFormatting.GOLD));
+					for (String link : links) {
+						p.sendSystemMessage(Component.literal("  " + link).withStyle(st -> st
+							.withColor(net.minecraft.ChatFormatting.AQUA).withUnderlined(true)
+							.withClickEvent(new net.minecraft.network.chat.ClickEvent.OpenUrl(java.net.URI.create(link)))));
+					}
+					return "Fermer : /vc tablette fermer.";
+				})))
+			.then(Commands.literal("scenario").requires(leader)
+				.then(Commands.argument("id", StringArgumentType.word())
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(
+						java.util.stream.Stream.concat(java.util.stream.Stream.of("aucun"),
+							session.scenarios().stream().map(d -> d.id)), b))
+					.executes(c -> exec(c, x -> session.useScenario(arg(x, "id"))))))
 			.then(Commands.literal("tablette").requires(leader)
 				.executes(c -> exec(c, x -> {
 					ServerPlayer p = x.getSource().getPlayerOrException();

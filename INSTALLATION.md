@@ -75,6 +75,13 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 8. Le lutrin au centre de la place ouvre aussi le grimoire. Sur un siège du grimoire, « Rappel » pose un jeton de rappel (« ivre », « a choisi Bot3 »…).
 9. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
 
+10. **Atelier** (opérateur) : `/vc atelier` donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau. On y crée :
+    - des **rôles** : nom, camp, texte, emblème (bibliothèque de 45 pictogrammes), moment du réveil et pouvoir choisi parmi 17 modèles (informations, protection, poison, mise à mort, immunité, martyr, Étrangers en plus, pouvoir libre joué par le Conteur…) ;
+    - des **scénarios** : rôles, carte, réglages, règles spéciales (pas d'accusation le premier jour, annonces ou conversations privées interdites, discussion minutée) et texte d'ouverture. « Simuler » joue 200 parties de joueurs fictifs et donne le taux de victoire de chaque camp ; « Partie d'essai » lance une partie avec des joueurs fictifs ; « Choisir » prépare la prochaine partie ;
+    - la **bibliothèque de cartes** : enregistrer la carte actuelle, en charger une autre, générer un village réglable (5 à 20 trônes, petite, normale ou grande place, avec ou sans maisons) ;
+    - le **partage** : un fichier `.valcombe` (rôles, scénarios et cartes) à envoyer à un autre hôte, qui l'importe sur la même page.
+11. Dans le jeu, écran Script → « Scénarios… » pour choisir un scénario, ouvrir l'Atelier ou passer en **mode construction** (`/vc carte construction` : créatif, baguette de carte, repères lumineux sur chaque trône et maison, liste de contrôle ; `/vc carte centre` pose le centre). Commandes de carte : `/vc carte enregistrer <id> <nom>`, `charger <id>`, `supprimer <id>`, `liste`, `generer <trônes> <petite|normale|grande> <thème> <oui|non>`.
+
 Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
 
 Toutes les actions existent aussi en commandes `/vc` (voir `minecraft/README.md`).

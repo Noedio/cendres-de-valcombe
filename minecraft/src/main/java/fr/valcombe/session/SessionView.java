@@ -52,6 +52,16 @@ final class SessionView {
 		v.put("script", sc);
 		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.
 		v.put("customRoles", Role.customDefs());
+		if (ses.scenario != null) {
+			v.put("scenario", Map.of("id", ses.scenario.id, "nom", ses.scenario.nom,
+				"description", ses.scenario.description == null ? "" : ses.scenario.description));
+		}
+		List<Map<String, Object>> scs = new ArrayList<>();
+		for (ScenarioDef d : ses.scenarios()) {
+			List<Integer> n = d.playable();
+			scs.add(Map.of("id", d.id, "nom", d.nom, "joueurs", n.isEmpty() ? "" : n.get(0) + "–" + n.get(n.size() - 1)));
+		}
+		v.put("scenarios", scs);
 		v.put("feed", ses.feed.subList(Math.max(0, ses.feed.size() - 8), ses.feed.size()));
 		Map<String, Object> st = new LinkedHashMap<>();
 		st.put("nightFreeze", ses.settings.nightFreeze);
