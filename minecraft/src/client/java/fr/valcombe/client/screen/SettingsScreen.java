@@ -15,7 +15,7 @@ public class SettingsScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {300, 200};
+		return new int[] {300, 226};
 	}
 
 	private void toggle(int y, String label, String key, boolean on) {
@@ -31,17 +31,22 @@ public class SettingsScreen extends BaseScreen {
 		toggle(y += 24, "Joueurs immobiles la nuit", "nuit_immobile", ClientState.bool(st, "nightFreeze"));
 		toggle(y += 24, "Écran noir la nuit", "nuit_sombre", ClientState.bool(st, "nightDark"));
 		toggle(y += 24, "Micros coupés la nuit", "nuit_muette", ClientState.bool(st, "nightMute"));
-		int vote = ClientState.num(st, "voteSeconds", 20);
+		int defense = ClientState.num(st, "defenseSeconds", 20);
+		int clock = (int) Math.round(st.get("clockSeconds").getAsDouble() * 10);
 		y += 30;
-		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_vote " + (vote - 5)));
-		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_vote " + (vote + 5)));
+		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_defense " + (defense - 5)));
+		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_defense " + (defense + 5)));
+		y += 22;
+		button(px + pw / 2 - 90, y, 30, "−", () -> send("vc reglage temps_horloge " + (clock - 5)));
+		button(px + pw / 2 + 60, y, 30, "+", () -> send("vc reglage temps_horloge " + (clock + 5)));
 		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
 
 	@Override
 	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
 		JsonObject st = ClientState.obj(view(), "settings");
-		Theme.centered(g, font, "Temps de vote : " + ClientState.num(st, "voteSeconds", 20) + " s",
-			px + pw / 2, py + 16 + 24 * 3 + 30 + 5, Theme.INK);
+		int y = py + 16 + 24 * 3 + 30 + 5;
+		Theme.centered(g, font, "Défense de l'accusé : " + ClientState.num(st, "defenseSeconds", 20) + " s", px + pw / 2, y, Theme.INK);
+		Theme.centered(g, font, "Aiguille : " + st.get("clockSeconds").getAsDouble() + " s par siège", px + pw / 2, y + 22, Theme.INK);
 	}
 }

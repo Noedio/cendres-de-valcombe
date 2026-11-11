@@ -54,7 +54,18 @@ public class StorytellerScreen extends BaseScreen {
 				onClose();
 			}, false));
 			col.add(new Entry("Clore la journée", () -> send("vc finjour"), false));
-			col.add(new Entry("Passer l'étape", () -> send("vc suivant"), false));
+			if (ClientState.phase().equals("NIGHT")) {
+				col.add(new Entry("Passer l'étape", () -> send("vc suivant"), false));
+			} else {
+				boolean open = ClientState.bool(v, "nominationsOpen");
+				col.add(new Entry("Rassembler le village", () -> send("vc rassembler"), false));
+				col.add(new Entry(open ? "Fermer les nominations" : "Ouvrir les nominations",
+					() -> send("vc nominations " + (open ? "fermer" : "ouvrir")), false));
+				JsonObject vote = ClientState.obj(v, "vote");
+				if (vote != null && "DEFENSE".equals(ClientState.str(vote, "stage"))) {
+					col.add(new Entry("Lancer le vote", () -> send("vc voter"), false));
+				}
+			}
 			col.add(new Entry("Arrêter la partie", () -> send("vc arreter"), false));
 			if ("HUMAIN".equals(ClientState.str(v, "mode"))) {
 				String pol = ClientState.str(ClientState.obj(v, "policies"), "misregister");

@@ -14,8 +14,6 @@ import net.minecraft.client.gui.screens.ChatScreen;
 
 /** L'invite en cours : choix de nuit, information, vote, relecture du Conteur, grimoire du Mouchard. */
 public class PromptScreen extends BaseScreen {
-	private static String voteKey = "";
-	private static long voteStart;
 
 	public PromptScreen() {
 		super("Valcombe");
@@ -30,6 +28,11 @@ public class PromptScreen extends BaseScreen {
 		return t == null ? "" : t;
 	}
 
+	/** Rayon du cercle de vote, réduit pour laisser la place au texte et au bouton sur un petit écran. */
+	private int voteRadius() {
+		return Math.max(48, Math.min(82, (ph - 100) / 2));
+	}
+
 	/** Appelé par le routeur quand l'invite change sans changer d'écran. */
 	public void rebuild() {
 		rebuildWidgets();
@@ -38,7 +41,7 @@ public class PromptScreen extends BaseScreen {
 	@Override
 	protected int[] panelSize() {
 		return switch (type()) {
-			case "choose", "grimoire" -> new int[] {300, 250};
+			case "choose", "grimoire", "vote" -> new int[] {300, 250};
 			case "confirm" -> new int[] {300, 180};
 			default -> new int[] {270, 170};
 		};
@@ -98,14 +101,19 @@ public class PromptScreen extends BaseScreen {
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "vote" -> {
-				String nominee = ClientState.str(p, "nominee");
-				if (!nominee.equals(voteKey)) {
-					voteKey = nominee;
-					voteStart = System.currentTimeMillis();
-				}
-				token(new TokenWidget(cx, py + 50, 40, nominee, null, null, true, false, null));
-				button(cx - 118, py + ph - 26, 112, "Je lève la main", () -> send("vc vote oui"));
-				button(cx + 6, py + ph - 26, 112, "Je m'abstiens", () -> send("vc vote non"));
+				// Le cercle : les mains déjà comptées par l'aiguille sont entourées d'or.
+				JsonObject vote = ClientState.obj(view(), "vote");
+				List<JsonObject> seats = objects(view(), "seats");
+				List<String> locked = strings(vote, "locked");
+				int vr = voteRadius();
+				circle(seats.size(), cx, py + 34 + vr, vr, (i, x, y) -> {
+					JsonObject s = seats.get(i);
+					token(new TokenWidget(x, y, 22, ClientState.str(s, "name"), null, null, ClientState.bool(s, "alive"),
+						locked.contains(String.valueOf(i)), null));
+				});
+				boolean up = ClientState.bool(vote, "myHand");
+				button(cx - 70, py + ph - 26, 140, up ? "Baisser la main" : "Lever la main",
+					() -> send(up ? "vc vote non" : "vc vote oui"));
 			}
 			case "confirm" -> {
 				String text = ClientState.str(p, "text");
@@ -142,16 +150,29 @@ public class PromptScreen extends BaseScreen {
 			}
 			case "vote" -> {
 				JsonObject vote = ClientState.obj(view(), "vote");
-				Theme.centered(g, font, "Exécuter " + ClientState.str(p, "nominee") + " ?", px + pw / 2, py + 84, Theme.WINE);
-				if (ClientState.bool(p, "ghost")) {
-					Theme.centered(g, font, "Tu es mort : ce sera ton unique vote.", px + pw / 2, py + 96, Theme.ASH);
+				int cx = px + pw / 2;
+				int vr = voteRadius();
+				int cy = py + 34 + vr;
+				int n = objects(view(), "seats").size();
+				// L'aiguille : une suite de points du centre vers le siège en cours.
+				int seat = ClientState.num(vote, "clockSeat", -1);
+				if (seat >= 0 && n > 0) {
+					double a = -Math.PI / 2 + 2 * Math.PI * seat / n;
+					for (int r = 6; r < vr - 18; r += 3) {
+						int x2 = cx + (int) Math.round(r * Math.cos(a));
+						int y2 = cy + (int) Math.round(r * Math.sin(a));
+						g.fill(x2 - 1, y2 - 1, x2 + 2, y2 + 2, r > vr - 30 ? Theme.GOLD : Theme.WINE);
+					}
 				}
-				int seconds = ClientState.num(vote, "seconds", 20);
-				int left = Math.max(0, seconds - (int) ((System.currentTimeMillis() - voteStart) / 1000));
-				Theme.image(g, Theme.tex("hourglass"), px + pw / 2 - 22, py + 108, 12, 12, 16, 16);
-				Theme.ink(g, font, left + " s", px + pw / 2 - 6, py + 110, Theme.INK);
-				List<String> hands = strings(vote, "hands");
-				Theme.centered(g, font, "Mains levées : " + hands.size(), px + pw / 2, py + 124, Theme.ASH);
+				g.fill(cx - 3, cy - 3, cx + 4, cy + 4, Theme.BRONZE);
+				Theme.centered(g, font, "Exécuter " + ClientState.str(p, "nominee") + " ?", cx, py + 14, Theme.WINE);
+				Theme.centered(g, font, ClientState.num(vote, "count", 0) + " voix / seuil " + ClientState.num(vote, "threshold", 0),
+					cx, cy + 10, Theme.INK);
+				String hint = ClientState.bool(vote, "myHand") ? "Ta main est levée." : "Ta main est baissée.";
+				if (ClientState.bool(p, "ghost")) {
+					hint += " (vote de fantôme)";
+				}
+				Theme.centered(g, font, hint, cx, py + ph - 40, Theme.ASH);
 			}
 			case "confirm" -> {
 				Theme.ink(g, font, "Pour " + ClientState.str(p, "to") + " :", x, py + 16, Theme.WINE);

@@ -22,6 +22,11 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 | Salon | Une salle d'attente à côté du village : panneaux de règles, fiches des rôles, inscription en marchant sur une plaque | On ne commence plus au milieu de la place |
 | Launcher | Adresse du serveur fournie par la version publiée, état du serveur sur l'accueil (en ligne, joueurs connectés) | Plus rien à saisir pour les joueurs |
 
+### Avancement de la phase 1
+
+- Fait : vote à l'horloge, défense de l'accusé, nominations ouvertes par le Conteur, cloche de rassemblement, chuchotements annoncés (texte), aube et accusations mises en scène, fantômes au nom grisé, pouvoirs du Conteur (tuer, ressusciter, empoisonner, changer un rôle).
+- Reste : salles vocales privées dans les maisons, décisions en direct du Conteur, sauvegarde automatique de la partie, salle d'attente, adresse et état du serveur dans le launcher.
+
 ## Phase 2 — Immersion et visuel
 
 | Domaine | Ajout |

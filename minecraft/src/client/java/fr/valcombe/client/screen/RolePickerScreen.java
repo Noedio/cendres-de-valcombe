@@ -50,9 +50,11 @@ public class RolePickerScreen extends BaseScreen {
 			minecraft.gui.setScreen(new RolePickerScreen(name, Role.SOMNAMBULE));
 			return;
 		}
+		// Avant la première nuit : retouche de la distribution ; ensuite : changement en cours de partie.
+		String verb = fr.valcombe.client.ClientState.phase().equals("READY") ? "vc attribuer " : "vc changer ";
 		String cmd = chosen == null
-			? "vc attribuer " + name + " " + r.name().toLowerCase()
-			: "vc attribuer " + name + " somnambule " + r.name().toLowerCase();
+			? verb + name + " " + r.name().toLowerCase()
+			: verb + name + " somnambule " + r.name().toLowerCase();
 		send(cmd);
 		minecraft.gui.setScreen(new SeatScreen(name));
 	}

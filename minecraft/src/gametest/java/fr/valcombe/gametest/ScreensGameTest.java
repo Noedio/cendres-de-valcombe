@@ -124,12 +124,18 @@ public class ScreensGameTest implements FabricClientGameTest {
 					return null;
 				});
 				send(ctx, "vc nominer " + target);
-				ctx.waitTicks(20);
+				ctx.waitTicks(30);
+				shot(ctx, "5b-defense");
+				world.getServer().runCommand("vc voter");
+				ctx.waitTicks(100);
 				JsonObject p = prompt(ctx);
 				if (p != null) {
 					answer(ctx, p);
+					ctx.setScreen(fr.valcombe.client.screen.PromptScreen::new);
+					ctx.waitTicks(20);
+					shot(ctx, "invite-vote-main-levee");
 				}
-				ctx.waitTicks(40);
+				ctx.waitTicks(500);
 			}
 			world.getServer().runCommand("vc arreter");
 			ctx.waitTicks(20);

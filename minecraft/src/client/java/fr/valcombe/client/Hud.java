@@ -84,18 +84,22 @@ public final class Hud {
 
 		JsonObject vote = ClientState.obj(v, "vote");
 		if (vote != null) {
-			int seconds = ClientState.num(vote, "seconds", 20);
-			int left = Math.max(0, seconds - (int) ((System.currentTimeMillis() - voteStart) / 1000));
-			String text = "Vote sur " + ClientState.str(vote, "nominee") + " — " + left + " s — mains : "
-				+ vote.getAsJsonArray("hands").size();
+			boolean defense = "DEFENSE".equals(ClientState.str(vote, "stage"));
+			int count = ClientState.num(vote, "count", 0);
+			int threshold = Math.max(1, ClientState.num(vote, "threshold", 1));
+			String text = defense
+				? ClientState.str(vote, "nominee") + " se défend — " + ClientState.num(vote, "defenseLeft", 0) + " s"
+				: "Vote sur " + ClientState.str(vote, "nominee") + " — " + count + " voix / seuil " + threshold;
 			int vw = mc.font.width(text) + 26;
 			int vx = w / 2 - vw / 2;
 			g.fill(vx, 24, vx + vw, 38, 0xD05A1E2A);
 			g.outline(vx, 24, vw, 14, Theme.GOLD);
 			Theme.image(g, Theme.tex("hourglass"), vx + 4, 25, 12, 12, 16, 16);
 			g.text(mc.font, text, vx + 20, 27, Theme.PARCH, false);
-			float frac = seconds == 0 ? 0 : left / (float) seconds;
-			g.fill(vx + 1, 37, vx + 1 + (int) ((vw - 2) * frac), 38, Theme.GOLD);
+			if (!defense) {
+				float frac = Math.min(1f, count / (float) threshold);
+				g.fill(vx + 1, 37, vx + 1 + (int) ((vw - 2) * frac), 38, count >= threshold ? Theme.EVIL : Theme.GOLD);
+			}
 		}
 		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
 			String hint = "Une action t'attend — touche J";

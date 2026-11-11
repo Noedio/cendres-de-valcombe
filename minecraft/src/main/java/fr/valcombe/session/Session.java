@@ -437,7 +437,7 @@ public final class Session {
 			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "nuit_muette" -> settings.nightMute = yes;
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
-			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 10));
+			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, temps_horloge <dixièmes de seconde par siège>.");
 		}

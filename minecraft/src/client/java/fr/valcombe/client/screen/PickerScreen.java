@@ -29,8 +29,13 @@ public class PickerScreen extends BaseScreen {
 			String name = ClientState.str(s, "name");
 			boolean alive = ClientState.bool(s, "alive");
 			token(new TokenWidget(x, y, 22, name, null, null, alive, false, alive ? () -> {
-				send(commandPrefix + name);
-				onClose();
+				if (commandPrefix.startsWith("vc chuchoter")) {
+					// Le message s'écrit dans le chat, adressé au joueur choisi.
+					minecraft.gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen("/" + commandPrefix + name + " ", false));
+				} else {
+					send(commandPrefix + name);
+					onClose();
+				}
 			} : null));
 		});
 		button(px + pw / 2 - 50, py + ph - 26, 100, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));

@@ -62,6 +62,7 @@ public class MainScreen extends BaseScreen {
 		} else if (role != null && ClientState.phase().equals("DAY") && !ClientState.bool(v, "dayOver")) {
 			actions.add(new Action("Nominer", () -> minecraft.gui.setScreen(new PickerScreen("Nominer qui ?", "vc nominer "))));
 			actions.add(new Action("Tirer", () -> minecraft.gui.setScreen(new PickerScreen("Tirer sur qui ?", "vc tirer "))));
+			actions.add(new Action("Chuchoter", () -> minecraft.gui.setScreen(new PickerScreen("Chuchoter à qui ?", "vc chuchoter "))));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));
 		actions.add(new Action("Historique", () -> {
