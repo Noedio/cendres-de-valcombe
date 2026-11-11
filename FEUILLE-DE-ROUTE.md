@@ -24,8 +24,8 @@ Ce qui manque pour qu'une soirée se déroule sans friction.
 
 ### Avancement de la phase 1
 
-- Fait : vote à l'horloge, défense de l'accusé, nominations ouvertes par le Conteur, cloche de rassemblement, chuchotements annoncés (texte), aube et accusations mises en scène, fantômes au nom grisé, pouvoirs du Conteur (tuer, ressusciter, empoisonner, changer un rôle).
-- Reste : salles vocales privées dans les maisons, décisions en direct du Conteur, sauvegarde automatique de la partie, salle d'attente, adresse et état du serveur dans le launcher.
+- Fait : vote à l'horloge, défense, nominations, cloche de rassemblement, chuchotements annoncés, aube et accusations mises en scène, fantômes, pouvoirs du Conteur, décisions du Conteur en direct, sauvegarde automatique, salle d'attente, état du serveur dans le launcher.
+- Reporté : salons vocaux automatiques dans les maisons (les groupes intégrés à Simple Voice Chat, touche V, permettent déjà de se parler en privé).
 
 ## Phase 2 — Immersion et visuel
 

@@ -41,6 +41,9 @@ public partial class MainWindow : Window
         ApplyLook();
         RefreshAccount();
         _loading = false;
+        var statusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        statusTimer.Tick += async (_, _) => await RefreshServerStatusAsync();
+        statusTimer.Start();
         Loaded += async (_, _) =>
         {
             if (_captureDir != null)
@@ -281,6 +284,26 @@ public partial class MainWindow : Window
     private void UpdateServerText()
     {
         ServerText.Text = string.IsNullOrWhiteSpace(ServerAddress) ? "Non renseigné (Réglages)." : ServerAddress;
+        _ = RefreshServerStatusAsync();
+    }
+
+    /// <summary>Interroge le serveur : en ligne ? combien de joueurs ? (rafraîchi toutes les 30 secondes)</summary>
+    private async Task RefreshServerStatusAsync()
+    {
+        string address = ServerAddress;
+        if (string.IsNullOrWhiteSpace(address) || _captureDir != null)
+        {
+            return;
+        }
+        var st = await ServerStatus.PingAsync(address);
+        if (address != ServerAddress)
+        {
+            return;
+        }
+        ServerText.Text = !st.Online
+            ? $"{address} — hors ligne"
+            : $"{address} — en ligne, {st.Players}/{st.Max} joueur(s)"
+                + (st.Names.Count > 0 ? Environment.NewLine + string.Join(", ", st.Names) : "");
     }
 
     private bool Integrated => !string.IsNullOrWhiteSpace(_config.MicrosoftClientId);
