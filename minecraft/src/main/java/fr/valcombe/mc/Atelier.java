@@ -239,6 +239,7 @@ final class Atelier {
 				case "role/supprimer" -> text(ex, 200, logged(owner, onServer(() -> creations.deleteRole(body.trim()), 5)));
 				case "scenario" -> text(ex, 200, logged(owner, onServer(() -> creations.saveScenario(GSON.fromJson(body, ScenarioDef.class)), 5)));
 				case "scenario/supprimer" -> text(ex, 200, logged(owner, onServer(() -> creations.deleteScenario(body.trim()), 5)));
+				case "groupes" -> text(ex, 200, logged(owner, onServer(() -> creations.saveGroups(body), 5)));
 				case "edition" -> {
 					// Ce que l'opérateur a ouvert dans l'éditeur (« role:x », « scenario:y », ou vide)
 					editing.values().removeIf(v -> v[0].equals(owner));
@@ -421,6 +422,7 @@ final class Atelier {
 		}
 		out.put("integres", builtin);
 		out.put("roles", creations.roles());
+		out.put("groupes", creations.groups());
 		List<Map<String, Object>> sc = new ArrayList<>();
 		for (ScenarioDef d : creations.scenarios()) {
 			Map<String, Object> m = GSON.fromJson(GSON.toJson(d), Map.class);

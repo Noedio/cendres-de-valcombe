@@ -19,6 +19,17 @@ public final class Settings {
 	public boolean absoluteMajority;
 	/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
 	public boolean evilMajorityWins;
+	/**
+	 * Mode manuel (avec un Conteur humain) : aucun minuteur n'enchaîne seul. Le Conteur ouvre et clôt le
+	 * Conseil, lance chaque vote, appelle chaque rôle la nuit et lance le vote après la défense.
+	 */
+	public boolean manual;
+	/** Discussion libre minutée au début de chaque jour, en minutes (0 : aucune). */
+	public int discussionMinutes;
+	/** Sans Conteur humain : secondes entre la fin du Conseil et le coucher du soleil. */
+	public int duskSeconds = 10;
+	/** Le carnet des joueurs ne s'ouvre que la nuit (temps de réflexion). */
+	public boolean notebookNightOnly;
 	/** Noms au-dessus des têtes des joueurs (toujours cachés la nuit). */
 	public boolean nameTags = true;
 	/** Portée d'un chuchotement, en blocs (voix « chuchoter »). */

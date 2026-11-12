@@ -105,6 +105,12 @@ final class SessionView {
 		st.put("fullEffects", ses.settings.fullEffects);
 		st.put("deadHat", ses.settings.deadHat);
 		st.put("roleRoom", ses.settings.roleRoom);
+		st.put("manual", ses.settings.manual);
+		st.put("notebookNightOnly", ses.settings.notebookNightOnly);
+		st.put("discussionMinutes", ses.settings.discussionMinutes);
+		st.put("stepDelaySeconds", ses.settings.stepDelayTicks / 20.0);
+		st.put("duskSeconds", ses.settings.duskSeconds);
+		st.put("speechSeconds", ses.desk.speechSeconds);
 		st.put("council", ses.settings.nominationsFirst);
 		st.put("councilSeconds", ses.settings.councilSeconds);
 		st.put("absoluteMajority", ses.settings.absoluteMajority);
@@ -174,6 +180,17 @@ final class SessionView {
 			v.put("councilVoting", ses.councilVoting);
 			v.put("inCouncil", ses.inCouncil());
 			v.put("voice", ses.voiceLevel(me));
+			if (leader) {
+				v.put("timer", ses.runningTimer());
+				v.put("waitingNextVote", ses.waitingNextVote());
+				v.put("waitingNext", ses.waitingNext);
+				List<Map<String, Object>> plan = new ArrayList<>();
+				for (fr.valcombe.rules.Role r : g.plannedOrder()) {
+					int seat = g.wakerSeat(r);
+					plan.add(Map.of("role", r.name(), "title", r.displayName, "player", seat >= 0 ? g.player(seat).name : ""));
+				}
+				v.put("plan", plan);
+			}
 			st.put("nameTags", ses.settings.nameTags);
 			st.put("whisperRange", ses.settings.whisperRange);
 			st.put("shoutRange", ses.settings.shoutRange);
@@ -197,7 +214,8 @@ final class SessionView {
 				Map<String, Object> ns = new LinkedHashMap<>();
 				ns.put("title", ses.pendingStep.title());
 				ns.put("player", ses.pendingStep.seat >= 0 ? g.player(ses.pendingStep.seat).name : "");
-				ns.put("waiting", ses.pendingDecisionOpen() ? "ta décision (menu J)"
+				ns.put("waiting", ses.waitingNext ? "toi : « Étape suivante »"
+					: ses.pendingDecisionOpen() ? "ta décision (menu J)"
 					: ses.pendingChooser != null ? ses.pendingChooser + " choisit"
 					: ses.waitingAckName() != null ? ses.waitingAckName() + " lit son information" : "");
 				// Carte de l'étape : ce qu'il faut faire et dire, et les mises en garde sur le joueur réveillé.

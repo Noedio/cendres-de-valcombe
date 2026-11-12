@@ -38,6 +38,8 @@ public final class CreationStore {
 	private final Session session;
 	private final List<RoleDef> roles = new ArrayList<>();
 	private final List<ScenarioDef> scenarios = new ArrayList<>();
+	/** Groupes de rôles de l'Atelier : nom → identifiants des rôles (intégrés ou créés), pour les ranger. */
+	private final java.util.Map<String, List<String>> groups = new java.util.LinkedHashMap<>();
 	private MapStore maps;
 
 	public CreationStore(Path configDir, Session session) {
@@ -86,6 +88,14 @@ public final class CreationStore {
 				used.add(d.emplacement);
 			}
 		}
+		groups.clear();
+		Path g = dir.resolve("groupes.json");
+		if (Files.exists(g)) {
+			JsonObject o = read(g, JsonObject.class);
+			if (o != null) {
+				parseGroups(o).forEach(groups::put);
+			}
+		}
 		apply();
 		LOG.info("Atelier : {} rôle(s) et {} scénario(s) créés", roles.size(), scenarios.size());
 	}
@@ -117,6 +127,50 @@ public final class CreationStore {
 		scenarios.sort(Comparator.comparing(d -> d.nom.toLowerCase()));
 		Role.defineCustom(roles);
 		session.setScenarios(scenarios);
+	}
+
+	public synchronized java.util.Map<String, List<String>> groups() {
+		return new java.util.LinkedHashMap<>(groups);
+	}
+
+	/** Remplace tous les groupes de rôles (envoyés en entier par l'Atelier). */
+	public synchronized String saveGroups(String json) {
+		JsonElement e = JsonParser.parseString(json);
+		if (!e.isJsonObject()) {
+			throw new GameException("Groupes illisibles.");
+		}
+		java.util.Map<String, List<String>> next = parseGroups(e.getAsJsonObject());
+		try {
+			Files.createDirectories(dir);
+			Files.writeString(dir.resolve("groupes.json"), GSON.toJson(next), StandardCharsets.UTF_8);
+		} catch (IOException ex) {
+			throw new GameException("Enregistrement impossible : " + ex.getMessage());
+		}
+		groups.clear();
+		groups.putAll(next);
+		return "Groupes enregistrés (" + next.size() + ").";
+	}
+
+	/** Groupes valides : 50 au plus, noms de 1 à 40 caractères, 60 rôles au plus par groupe, sans doublon. */
+	private static java.util.Map<String, List<String>> parseGroups(JsonObject o) {
+		java.util.Map<String, List<String>> out = new java.util.LinkedHashMap<>();
+		for (var entry : o.entrySet()) {
+			String name = entry.getKey().strip();
+			if (name.isEmpty() || name.length() > 40 || out.size() >= 50 || !entry.getValue().isJsonArray()) {
+				continue;
+			}
+			List<String> ids = new ArrayList<>();
+			for (JsonElement id : entry.getValue().getAsJsonArray()) {
+				if (id.isJsonPrimitive() && ids.size() < 60) {
+					String s = id.getAsString().strip().toLowerCase(java.util.Locale.ROOT);
+					if (s.matches("[a-z0-9_-]{1,40}") && !ids.contains(s)) {
+						ids.add(s);
+					}
+				}
+			}
+			out.put(name, ids);
+		}
+		return out;
 	}
 
 	public synchronized List<RoleDef> roles() {

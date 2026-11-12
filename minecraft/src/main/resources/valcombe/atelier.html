@@ -269,6 +269,14 @@
 				<button id="clearRoles">Tout décocher</button>
 				<span class="hint" id="counts"></span>
 			</div>
+			<div class="bar">
+				<button id="grpBy">Ranger par : camp</button>
+				<select id="sGroupe" aria-label="Groupe de rôles"></select>
+				<button id="grpAdd">Cocher le groupe</button>
+				<button id="grpRemove">Décocher le groupe</button>
+				<button id="grpSave">Ranger la sélection dans un groupe…</button>
+				<button id="grpDelete">Supprimer le groupe</button>
+			</div>
 			<div id="sRoles"></div>
 			<h3>Réglages</h3>
 			<div class="row">
@@ -561,6 +569,7 @@ async function load() {
 		renderRoles();
 		// Les rôles cochés dans le scénario ouvert sont gardés, même pas encore enregistrés : seule la liste est refaite.
 		renderScenarios(false);
+		renderGroupSelect();
 		renderRolePicker(currentPicked());
 		renderMaps();
 		renderStructures();
@@ -1008,27 +1017,93 @@ function renderScenarios(full = true) {
 }
 
 function currentPicked() {
-	return [...document.querySelectorAll("#sRoles input:checked")].map(i => i.value);
+	// Un rôle rangé dans plusieurs groupes a plusieurs cases : chaque rôle ne compte qu'une fois.
+	return [...new Set([...document.querySelectorAll("#sRoles input:checked")].map(i => i.value))];
+}
+
+// ---------------------------------------------------------------- Groupes de rôles
+let pickerBy = "camp";
+
+function groups() {
+	return (data && data.groupes) || {};
+}
+
+function renderGroupSelect() {
+	const s = $("sGroupe");
+	const cur = s.value;
+	s.innerHTML = "";
+	const names = Object.keys(groups());
+	if (!names.length) {
+		const o = document.createElement("option");
+		o.value = "";
+		o.textContent = "Aucun groupe";
+		s.appendChild(o);
+	}
+	for (const n of names) {
+		const o = document.createElement("option");
+		o.value = n;
+		o.textContent = n + " (" + groups()[n].length + ")";
+		s.appendChild(o);
+	}
+	if (names.includes(cur)) s.value = cur;
+}
+
+function setChecked(ids, on) {
+	document.querySelectorAll("#sRoles input").forEach(i => {
+		if (ids.includes(i.value)) i.checked = on;
+	});
+	counts();
+}
+
+async function saveGroups(g, okText) {
+	try {
+		await api("groupes", g);
+		data.groupes = g;
+		renderGroupSelect();
+		if (pickerBy === "groupe") renderRolePicker(currentPicked());
+		msg("scMsg", okText, true);
+	} catch (e) {
+		msg("scMsg", e.message, false);
+	}
 }
 
 function renderRolePicker(picked) {
 	const box = $("sRoles");
 	box.innerHTML = "";
-	for (const camp of Object.keys(CAMPS)) {
+	const sections = [];
+	if (pickerBy === "groupe") {
+		const g = groups();
+		const placed = new Set();
+		for (const n of Object.keys(g)) {
+			sections.push([n, allRoles().filter(r => g[n].includes(r.id))]);
+			g[n].forEach(id => placed.add(id));
+		}
+		sections.push(["Sans groupe", allRoles().filter(r => !placed.has(r.id))]);
+	} else {
+		for (const camp of Object.keys(CAMPS)) sections.push([CAMPS[camp] + "s", allRoles().filter(x => x.camp === camp)]);
+	}
+	for (const [title, list] of sections) {
+		if (!list.length) continue;
 		const h = document.createElement("div");
 		h.className = "camp";
-		h.textContent = CAMPS[camp] + "s";
+		h.textContent = title;
 		box.appendChild(h);
 		const grid = document.createElement("div");
 		grid.className = "pick";
-		for (const r of allRoles().filter(x => x.camp === camp)) {
+		for (const r of list) {
 			const l = document.createElement("label");
 			l.className = "check";
 			const c = document.createElement("input");
 			c.type = "checkbox";
 			c.value = r.id;
 			c.checked = picked.includes(r.id);
-			c.onchange = counts;
+			c.onchange = () => {
+				// Les autres cases du même rôle (dans d'autres groupes) suivent.
+				document.querySelectorAll("#sRoles input").forEach(o => {
+					if (o.value === r.id) o.checked = c.checked;
+				});
+				counts();
+			};
 			const img = document.createElement("img");
 			img.src = "/atelier/embleme/" + r.embleme + ".png";
 			img.alt = "";
@@ -1250,6 +1325,38 @@ $("fromCendres").onclick = () => renderRolePicker(data.integres.filter(r => !BRU
 $("fromBrumes").onclick = () => renderRolePicker(data.integres
 	.filter(r => !["commere", "aubergiste", "alchimiste"].includes(r.id)).map(r => r.id));
 $("clearRoles").onclick = () => renderRolePicker([]);
+$("grpBy").onclick = () => {
+	pickerBy = pickerBy === "camp" ? "groupe" : "camp";
+	$("grpBy").textContent = "Ranger par : " + (pickerBy === "camp" ? "camp" : "groupe");
+	renderRolePicker(currentPicked());
+};
+$("grpAdd").onclick = () => {
+	const n = $("sGroupe").value;
+	if (n) setChecked(groups()[n], true);
+};
+$("grpRemove").onclick = () => {
+	const n = $("sGroupe").value;
+	if (n) setChecked(groups()[n], false);
+};
+$("grpSave").onclick = () => {
+	const picked = currentPicked();
+	if (!picked.length) {
+		msg("scMsg", "Cochez d'abord les rôles à ranger dans le groupe.", false);
+		return;
+	}
+	const n = (prompt("Nom du groupe (les " + picked.length + " rôles cochés y seront rangés) :", $("sGroupe").value || "") || "").trim();
+	if (!n) return;
+	const g = { ...groups() };
+	g[n] = picked;
+	saveGroups(g, "Groupe « " + n + " » enregistré.").then(() => { $("sGroupe").value = n; });
+};
+$("grpDelete").onclick = () => {
+	const n = $("sGroupe").value;
+	if (!n || !confirm("Supprimer le groupe « " + n + " » ? Les rôles, eux, restent.")) return;
+	const g = { ...groups() };
+	delete g[n];
+	saveGroups(g, "Groupe « " + n + " » supprimé.");
+};
 $("saveSc").onclick = async () => {
 	const f = scForm();
 	try {

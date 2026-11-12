@@ -15,7 +15,7 @@ public class SettingsScreen extends BaseScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {380, 252};
+		return new int[] {380, 270};
 	}
 
 	/** Interrupteur dans la colonne de gauche (col 0) ou de droite (col 1). */
@@ -44,6 +44,7 @@ public class SettingsScreen extends BaseScreen {
 		button(rx + w - 24, y, 24, "+", () -> send("vc reglage duree_conseil " + (council + 30)));
 		toggle(0, y += 21, "Rôles remis à l'écart", "remise_convocation", ClientState.bool(st, "roleRoom"));
 		toggle(1, y, "Noms au-dessus des têtes", "noms", ClientState.bool(st, "nameTags"));
+		toggle(0, y += 21, "Carnet la nuit seulement", "carnet_nuit", ClientState.bool(st, "notebookNightOnly"));
 		int defense = ClientState.num(st, "defenseSeconds", 20);
 		int clock = (int) Math.round(ClientState.dbl(st, "clockSeconds", 1.5) * 10);
 		y += 25;
@@ -70,7 +71,7 @@ public class SettingsScreen extends BaseScreen {
 		int w = pw / 2 - 15;
 		Theme.centered(g, font, council > 0 ? "Conseil : " + council / 60 + " min " + (council % 60 > 0 ? council % 60 + " s" : "")
 			: "Conseil : à la main", px + 20 + w + w / 2, py + 12 + 21 * 3 + 6, Theme.INK);
-		int y = py + 12 + 21 * 4 + 25 + 5;
+		int y = py + 12 + 21 * 5 + 25 + 5;
 		Theme.centered(g, font, "Défense de l'accusé : " + ClientState.num(st, "defenseSeconds", 20) + " s", px + pw / 2, y, Theme.INK);
 		Theme.centered(g, font, "Aiguille : " + ClientState.dbl(st, "clockSeconds", 1.5) + " s par trône", px + pw / 2, y + 22, Theme.INK);
 	}

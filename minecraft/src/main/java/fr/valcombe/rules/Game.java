@@ -940,6 +940,69 @@ public final class Game {
 		addLog("Le Conteur revient à l'étape précédente.");
 	}
 
+	/**
+	 * Ordre de réveil prévu : la nuit en cours (réveils à venir compris), ou sinon la prochaine nuit.
+	 * Seuls les rôles en jeu y figurent.
+	 */
+	public List<Role> plannedOrder() {
+		boolean first = phase == Phase.NIGHT ? night == 1 : night == 0;
+		List<Role> out = new ArrayList<>();
+		for (Role r : ordered(first ? Role.firstNightOrder() : Role.otherNightsOrder(), first ? firstOrder : otherOrder)) {
+			if (wakerSeat(r) >= 0 && !out.contains(r)) {
+				out.add(r);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Le Conteur avance (delta -1) ou recule (+1) un rôle dans l'ordre de réveil, par rapport au rôle en jeu
+	 * voisin. Vaut pour les nuits suivantes et, la nuit, pour les réveils encore à venir.
+	 */
+	public void moveInNightOrder(Role role, int delta) {
+		List<Role> inPlay = plannedOrder();
+		int i = inPlay.indexOf(role);
+		if (i < 0) {
+			throw new GameException("Ce rôle ne se réveille pas dans cette partie.");
+		}
+		int j = i + Integer.signum(delta);
+		if (j < 0 || j >= inPlay.size()) {
+			throw new GameException(delta < 0 ? "Ce rôle est déjà le premier." : "Ce rôle est déjà le dernier.");
+		}
+		Role other = inPlay.get(j);
+		boolean first = phase == Phase.NIGHT ? night == 1 : night == 0;
+		List<Role> full = new ArrayList<>(ordered(first ? Role.firstNightOrder() : Role.otherNightsOrder(), first ? firstOrder : otherOrder));
+		full.remove(role);
+		int at = full.indexOf(other);
+		full.add(delta < 0 ? at : at + 1, role);
+		List<String> names = full.stream().map(Role::name).toList();
+		if (first) {
+			firstOrder = names;
+		} else {
+			otherOrder = names;
+		}
+		// La nuit, les réveils encore à venir suivent le nouvel ordre.
+		if (phase == Phase.NIGHT) {
+			int a = -1;
+			int b = -1;
+			for (int k = queueIndex; k < queue.size(); k++) {
+				if (queue.get(k).role == role) {
+					a = k;
+				} else if (queue.get(k).role == other) {
+					b = k;
+				}
+			}
+			if (a >= 0 && b >= 0) {
+				List<Slot> q = new ArrayList<>(queue);
+				Slot moved = q.remove(a);
+				int pos = q.indexOf(queue.get(b));
+				q.add(delta < 0 ? pos : pos + 1, moved);
+				queue = q;
+			}
+		}
+		addLog("Le Conteur place " + role.displayName + (delta < 0 ? " avant " : " après ") + other.displayName + " dans l'ordre de réveil.");
+	}
+
 	/** Les réveils de la nuit en cours, dans l'ordre : ceux déjà joués, celui en cours, ceux à venir. */
 	public List<NightEntry> nightOrder() {
 		List<NightEntry> out = new ArrayList<>();

@@ -83,6 +83,10 @@ public final class Session {
 	final List<Integer> lockedHands = new ArrayList<>();
 	boolean defense;
 	int defenseLeft;
+	/** Le Conteur a arrêté le minuteur de la défense : le vote attend qu'il le lance. */
+	boolean defenseHold;
+	/** Mode manuel, la nuit : l'étape suivante attend que le Conteur la lance. */
+	boolean waitingNext;
 	/** Nominations ouvertes par le Conteur (automatiquement en mode automatique). */
 	boolean nominationsOpen;
 	private int voteToken;
@@ -527,6 +531,7 @@ public final class Session {
 		settings.nominationsFirst = r.conseil;
 		settings.councilSeconds = Math.max(0, r.dureeConseil);
 		settings.absoluteMajority = d.regles.majoriteAbsolue;
+		settings.discussionMinutes = Math.max(0, d.regles.discussionMinutes);
 		settings.evilMajorityWins = d.regles.victoireMalMajoritaire;
 		settings.defenseSeconds = r.defense;
 		settings.clockTicks = (int) Math.round(r.horloge * 20);
@@ -1371,6 +1376,20 @@ public final class Session {
 			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "nuit_muette" -> settings.nightMute = yes;
 			case "conseil" -> settings.nominationsFirst = yes;
+			case "carnet_nuit" -> settings.notebookNightOnly = yes;
+			case "manuel" -> {
+				settings.manual = yes;
+				if (yes) {
+					stopCouncilTimer();
+				} else if (waitingNext) {
+					waitingNext = false;
+					nextLater();
+				}
+				updateBoards();
+			}
+			case "discussion_minutes" -> settings.discussionMinutes = Math.max(0, Math.min(30, number(value)));
+			case "pause_etapes" -> settings.stepDelayTicks = Math.max(10, Math.min(200, number(value) * 20));
+			case "coucher" -> settings.duskSeconds = Math.max(3, Math.min(120, number(value)));
 			case "noms" -> {
 				settings.nameTags = yes;
 				refreshNameTags();
@@ -1406,7 +1425,8 @@ public final class Session {
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat, "
-					+ "conseil, noms, majorite_absolue, victoire_majorite (oui|non), portee_chuchoter, portee_crier <blocs>, "
+					+ "conseil, manuel, noms, carnet_nuit, majorite_absolue, victoire_majorite (oui|non), discussion_minutes <min>, "
+					+ "pause_etapes <s>, coucher <s>, portee_chuchoter, portee_crier <blocs>, "
 					+ "duree_conseil <secondes, 0 : à la main>, temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
@@ -1463,6 +1483,11 @@ public final class Session {
 
 	private void nextLater() {
 		int token = nightToken;
+		if (manual()) {
+			waitingNext = true;
+			updateBoards();
+			return;
+		}
 		host.schedule(settings.stepDelayTicks, () -> {
 			if (game != null && game.phase() == Game.Phase.NIGHT && token == nightToken) {
 				if (paused) {
@@ -1476,6 +1501,7 @@ public final class Session {
 
 	private void processNext() {
 		Game g = game;
+		waitingNext = false;
 		pendingStep = g.nextStep();
 		pendingChooser = null;
 		selected.clear();
@@ -1799,6 +1825,12 @@ public final class Session {
 			storytellerSend(storyteller, null);
 		} else if (waitingAck != null) {
 			sleep(waitingAck);
+		} else if (waitingNext) {
+			if (paused) {
+				throw new GameException("La partie est en pause.");
+			}
+			processNext();
+			return "Étape suivante.";
 		} else {
 			nextLater();
 		}
@@ -1830,7 +1862,7 @@ public final class Session {
 			finish();
 			return;
 		}
-		boolean talkFirst = scenario != null && scenario.regles.discussionMinutes > 0;
+		boolean talkFirst = settings.discussionMinutes > 0;
 		// Avec une discussion minutée, le Conseil (les accusations) ne s'ouvre qu'à la fin de la discussion.
 		nominationsOpen = mode == Mode.AUTO && !talkFirst;
 		councilVoting = false;
@@ -1841,7 +1873,7 @@ public final class Session {
 		tip("jour", "Le jour se lève", "Le jour, on discute. Chuchoter (bouton du menu) est privé, mais tout le monde "
 			+ "voit qui chuchote. Avec la plume d'accusation, vise un joueur et fais un clic droit pour l'accuser.");
 		if (talkFirst) {
-			discussion(scenario.regles.discussionMinutes);
+			discussion(settings.discussionMinutes);
 		} else if (nominationsOpen) {
 			councilTimer();
 		}
@@ -1917,7 +1949,7 @@ public final class Session {
 
 	/** Durée du Conseil : celle du réglage ; sans Conteur humain, trois minutes au plus si rien n'est réglé. */
 	private int councilDuration() {
-		if (!settings.nominationsFirst) {
+		if (!settings.nominationsFirst || manual()) {
 			return 0;
 		}
 		return settings.councilSeconds > 0 ? settings.councilSeconds : mode == Mode.AUTO ? 180 : 0;
@@ -2025,11 +2057,33 @@ public final class Session {
 		updateBoards();
 	}
 
-	/** Après un vote du Conseil : le suivant, après un court temps. */
+	/** Après un vote du Conseil : le suivant, après un court temps (en mode manuel, quand le Conteur le lance). */
 	private void afterVote() {
-		if (councilVoting) {
-			host.schedule(Math.max(20, settings.stepDelayTicks * 2), this::nextVote);
+		if (!councilVoting) {
+			return;
 		}
+		if (manual()) {
+			Game g = game;
+			int left = g == null ? 0 : g.pendingNominations().size();
+			if (left > 0 && storyteller != null) {
+				tell(storyteller, "Vote suivant : à toi de le lancer (« Vote suivant »). Accusations restantes : " + left + ".");
+			} else {
+				host.schedule(20, this::nextVote); // plus rien à voter : le bilan du Conseil
+			}
+			updateBoards();
+			return;
+		}
+		host.schedule(Math.max(20, settings.stepDelayTicks * 2), this::nextVote);
+	}
+
+	/** Mode manuel effectif : seulement avec un Conteur humain. */
+	boolean manual() {
+		return settings.manual && mode == Mode.HUMAIN;
+	}
+
+	/** Un vote du Conseil attend que le Conteur le lance (mode manuel). */
+	public boolean waitingNextVote() {
+		return councilVoting && voteNom == null && manual();
 	}
 
 	private void councilDone(Game g) {
@@ -2057,8 +2111,8 @@ public final class Session {
 		if (mode != Mode.AUTO) {
 			return;
 		}
-		announce("Le soleil se couchera dans dix secondes.");
-		host.schedule(200, () -> {
+		announce("Le soleil se couchera dans " + settings.duskSeconds + " secondes.");
+		host.schedule(Math.max(20, settings.duskSeconds * 20), () -> {
 			if (game == g && g.phase() == Game.Phase.DAY && !g.dayOver() && voteNom == null && !councilVoting) {
 				try {
 					endDay();
@@ -2203,6 +2257,7 @@ public final class Session {
 		lockedHands.clear();
 		voteToken++;
 		defense = true;
+		defenseHold = false;
 		defenseLeft = settings.defenseSeconds;
 		announce(game.player(nom.nominee()).name + " a " + defenseLeft
 			+ " secondes pour se défendre. Vous pouvez déjà lever la main (touche H, ou clic droit avec la plume).");
@@ -2217,21 +2272,31 @@ public final class Session {
 			if (voteNom == null || token != voteToken || !defense) {
 				return;
 			}
-			if (paused) {
+			if (paused || defenseHold) {
 				tickDefense(token);
 				return;
 			}
 			defenseLeft--;
-			if (defenseLeft <= 0) {
-				startClock();
-			} else {
+			if (defenseLeft > 0) {
 				tickDefense(token);
+			} else if (manual()) {
+				defenseLeft = 0;
+				if (storyteller != null) {
+					tell(storyteller, "La défense est terminée : lance le vote quand tu veux (« Lancer le vote »).");
+				}
+				updateBoards();
+			} else {
+				startClock();
 			}
 		});
 	}
 
 	/** Le Conteur écourte la défense et lance le vote. */
 	public String startVoteNow() {
+		if (voteNom == null && councilVoting) {
+			nextVote();
+			return "";
+		}
 		if (voteNom == null && settings.nominationsFirst) {
 			return startVotes();
 		}
@@ -2768,6 +2833,126 @@ public final class Session {
 			sandExtraTicks += minutes * 1200;
 		}
 		announce("Le Conteur prolonge la journée de " + minutes + " minute(s).");
+		return "";
+	}
+
+	/**
+	 * Le Conteur pilote le minuteur en cours (défense, Conseil, discussion libre, temps de parole) :
+	 * « passer » l'achève tout de suite, « prolonger » ajoute des secondes, « arreter » le suspend
+	 * (l'étape attend alors le Conteur).
+	 */
+	public String timerControl(String action, int seconds) {
+		Game g = requireGame();
+		String a = action.toLowerCase(java.util.Locale.ROOT).replace("ê", "e");
+		int add = Math.max(5, Math.min(1800, seconds));
+		if (voteNom != null && defense) {
+			switch (a) {
+				case "passer" -> {
+					defenseHold = false;
+					startClock();
+					return "Place au vote.";
+				}
+				case "prolonger" -> {
+					defenseLeft += add;
+					updateBoards();
+					return "Défense prolongée de " + add + " s.";
+				}
+				case "arreter" -> {
+					defenseHold = true;
+					updateBoards();
+					return "Défense sans limite : « Passer » lance le vote.";
+				}
+				default -> throw new GameException("Minuteur : passer, prolonger ou arreter.");
+			}
+		}
+		if (nominationsOpen && councilLeft > 0 && g.phase() == Game.Phase.DAY) {
+			switch (a) {
+				case "passer" -> {
+					return setNominations(false);
+				}
+				case "prolonger" -> {
+					councilLeft = Math.min(1800, councilLeft + add);
+					host.timer(realNames(), "Conseil : les accusations", councilLeft);
+					return "Conseil prolongé de " + add + " s.";
+				}
+				case "arreter" -> {
+					stopCouncilTimer();
+					announce("Le Conseil reste ouvert : le Conteur passera aux votes.");
+					return "";
+				}
+				default -> throw new GameException("Minuteur : passer, prolonger ou arreter.");
+			}
+		}
+		if (discussionLeft > 0) {
+			switch (a) {
+				case "passer" -> {
+					discussionLeft = 1; // la discussion s'achève à la seconde suivante, cloche comprise
+					return "Fin de la discussion.";
+				}
+				case "prolonger" -> {
+					discussionLeft = Math.min(30 * 60, discussionLeft + add);
+					restoreTimer();
+					return "Discussion prolongée de " + add + " s.";
+				}
+				case "arreter" -> {
+					return discussion(0);
+				}
+				default -> throw new GameException("Minuteur : passer, prolonger ou arreter.");
+			}
+		}
+		if (desk.speaker != null) {
+			switch (a) {
+				case "passer" -> {
+					return speechNext();
+				}
+				case "prolonger" -> {
+					desk.speechLeft += add;
+					restoreTimer();
+					return "Temps de parole prolongé de " + add + " s.";
+				}
+				case "arreter" -> {
+					return speechStop();
+				}
+				default -> throw new GameException("Minuteur : passer, prolonger ou arreter.");
+			}
+		}
+		throw new GameException("Aucun minuteur en cours.");
+	}
+
+	/** Le minuteur en cours, pour le panneau du Conteur : {nom, secondes restantes}, ou null. */
+	public Map<String, Object> runningTimer() {
+		if (game == null) {
+			return null;
+		}
+		String kind = voteNom != null && defense ? "Défense" : nominationsOpen && councilLeft > 0 ? "Conseil"
+			: discussionLeft > 0 ? "Discussion" : desk.speaker != null ? "Parole" : null;
+		if (kind == null) {
+			return null;
+		}
+		int left = switch (kind) {
+			case "Défense" -> defenseLeft;
+			case "Conseil" -> councilLeft;
+			case "Discussion" -> discussionLeft;
+			default -> desk.speechLeft;
+		};
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("kind", kind);
+		m.put("left", left);
+		m.put("held", kind.equals("Défense") && (defenseHold || manual() && defenseLeft <= 0));
+		return m;
+	}
+
+	/** Le Conteur avance (« haut ») ou recule (« bas ») un rôle dans l'ordre de réveil. */
+	public String moveInOrder(String roleId, String direction) {
+		Game g = requireGame();
+		Role r = parseRole(roleId);
+		String d = direction.toLowerCase(java.util.Locale.ROOT);
+		if (!d.equals("haut") && !d.equals("bas")) {
+			throw new GameException("Ordre : haut ou bas.");
+		}
+		g.moveInNightOrder(r, d.equals("haut") ? -1 : 1);
+		save();
+		updateBoards();
 		return "";
 	}
 

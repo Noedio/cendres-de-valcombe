@@ -82,6 +82,7 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Lancer (Conteur humain)", () -> send("vc lancer humain"), false));
 			col.add(new Entry("Figures neutres…", () -> minecraft.gui.setScreen(new FiguresScreen()), false));
 			col.add(new Entry("Réglages de la nuit…", () -> minecraft.gui.setScreen(new SettingsScreen()), true));
+			col.add(new Entry("Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()), false));
 			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
 			// Bâtir un village remplace la carte actuelle : un second clic le confirme.
 			String build = "vc carte construire " + THEMES[theme];
@@ -126,6 +127,8 @@ public class StorytellerScreen extends BaseScreen {
 					}, false));
 					col.add(new Entry("Accueillir un voyageur", () -> minecraft.gui.setScreen(new ChatScreen("/vc voyageur ", false)), false));
 					col.add(new Entry("Réglages de la nuit…", () -> minecraft.gui.setScreen(new SettingsScreen()), false));
+					col.add(new Entry("Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()), false));
+					col.add(new Entry("Ordre de réveil…", () -> minecraft.gui.setScreen(new OrderScreen()), false));
 					if ("HUMAIN".equals(ClientState.str(v, "mode"))) {
 						String pol = ClientState.str(ClientState.obj(v, "policies"), "misregister");
 						String next = "HASARD".equals(pol) ? "toujours" : "TOUJOURS".equals(pol) ? "jamais" : "hasard";
@@ -155,7 +158,9 @@ public class StorytellerScreen extends BaseScreen {
 					} else {
 						col.add(new Entry("Nuit pas à pas…", () -> minecraft.gui.setScreen(new NightScreen()), false));
 						col.add(new Entry("Étape précédente", () -> send("vc precedent"), false));
-						col.add(new Entry("Passer l'étape", () -> send("vc suivant"), false));
+						col.add(new Entry(ClientState.bool(v, "waitingNext") ? "Étape suivante" : "Passer l'étape",
+							() -> send("vc suivant"), ClientState.bool(v, "waitingNext")));
+						col.add(new Entry("Ordre de réveil…", () -> minecraft.gui.setScreen(new OrderScreen()), false));
 					}
 					col.add(new Entry(pause, () -> send("vc pause"), true));
 				}
@@ -182,6 +187,15 @@ public class StorytellerScreen extends BaseScreen {
 						}
 						if (vote != null && "DEFENSE".equals(ClientState.str(vote, "stage"))) {
 							col.add(new Entry("Lancer le vote", () -> send("vc voter"), false));
+						}
+						if (ClientState.bool(v, "waitingNextVote")) {
+							col.add(new Entry("Vote suivant", () -> send("vc voter"), true));
+						}
+						JsonObject timer = ClientState.obj(v, "timer");
+						if (timer != null) {
+							col.add(new Entry(ClientState.str(timer, "kind") + " : passer", () -> send("vc minuteur passer"), true));
+							col.add(new Entry(ClientState.str(timer, "kind") + " : +30 s", () -> send("vc minuteur prolonger 30"), false));
+							col.add(new Entry(ClientState.str(timer, "kind") + " : arrêter", () -> send("vc minuteur arreter"), false));
 						}
 						if (vote != null) {
 							col.add(new Entry("Annuler le vote", () -> send("vc vote annuler"), false));
