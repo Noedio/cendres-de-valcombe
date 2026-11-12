@@ -81,6 +81,7 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Lancer (automatique)", () -> send("vc lancer auto"), true));
 			col.add(new Entry("Lancer (Conteur humain)", () -> send("vc lancer humain"), false));
 			col.add(new Entry("Figures neutres…", () -> minecraft.gui.setScreen(new FiguresScreen()), false));
+			col.add(new Entry("Imposer des rôles…", () -> minecraft.gui.setScreen(new DistributionScreen()), false));
 			col.add(new Entry("Réglages de la nuit…", () -> minecraft.gui.setScreen(new SettingsScreen()), true));
 			col.add(new Entry("Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()), false));
 			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
@@ -141,8 +142,9 @@ public class StorytellerScreen extends BaseScreen {
 				}
 				case 1 -> {
 					if (phase.equals("READY") && "HUMAIN".equals(ClientState.str(v, "mode"))) {
+						col.add(new Entry("Distribution des rôles…", () -> minecraft.gui.setScreen(new DistributionScreen()), false));
 						// Remise des rôles : le Conteur reçoit chaque joueur dans la salle de convocation.
-						int left = v.has("unbriefed") ? v.getAsJsonArray("unbriefed").size() : 0;
+						int left =v.has("unbriefed") ? v.getAsJsonArray("unbriefed").size() : 0;
 						String here = ClientState.str(v, "summoned");
 						col.add(new Entry(left > 0 ? "Convoquer le suivant (" + left + " à recevoir)" : "Convoquer le suivant",
 							() -> send("vc convoquer suivant"), false));

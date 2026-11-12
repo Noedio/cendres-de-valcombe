@@ -96,6 +96,23 @@ public final class Village {
 		return r;
 	}
 
+	/** Ce que l'éditeur a bâti sur la carte, au-delà des repères : {x0, y0, z0, x1, y1, z1}, ou null. */
+	private int[] built;
+
+	/** L'éditeur vient de poser des blocs dans cette boîte : la carte la retient, pour tout raser plus tard. */
+	public void include(int x0, int y0, int z0, int x1, int y1, int z1) {
+		if (built == null) {
+			built = new int[] {x0, y0, z0, x1, y1, z1};
+			return;
+		}
+		built = new int[] {Math.min(built[0], x0), Math.min(built[1], y0), Math.min(built[2], z0),
+			Math.max(built[3], x1), Math.max(built[4], y1), Math.max(built[5], z1)};
+	}
+
+	public int[] built() {
+		return built;
+	}
+
 	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer ou le retirer. */
 	public int extent() {
 		if (!generated) {
@@ -139,6 +156,8 @@ public final class Village {
 		/** Carte de la bibliothèque dont celle-ci vient : identifiant et nom (absents : aucune). */
 		String carte;
 		String carteNom;
+		/** Tout ce que l'éditeur a bâti sur cette carte : {x0, y0, z0, x1, y1, z1} absolus (absent : rien hors des repères). */
+		int[] built;
 	}
 
 	/**
@@ -1514,6 +1533,7 @@ public final class Village {
 	void save(Path f, boolean forgotten) {
 		Data d = new Data();
 		d.modified = modified;
+		d.built = built;
 		d.forgotten = forgotten;
 		d.carte = libraryId.isEmpty() ? null : libraryId;
 		d.carteNom = libraryName.isEmpty() ? null : libraryName;
@@ -1597,6 +1617,7 @@ public final class Village {
 				// Fiche d'avant ce suivi : on ne sait pas ce qui a été bâti dessus à la main, la carte est donc à protéger.
 				v.modified = d.modified == null || d.modified;
 				v.setLibrary(d.carte, d.carteNom);
+				v.built = d.built != null && d.built.length == 6 ? d.built : null;
 				return new Loaded(d.forgotten ? Fiche.FORGOTTEN : Fiche.READY, v);
 			}
 			// Ancien format (version 0.1.0) : seulement le centre d'un village généré.

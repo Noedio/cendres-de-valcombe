@@ -43,6 +43,8 @@ public class AtelierScreen extends BaseScreen {
 	private static int size = 1;
 	private static int theme;
 	private static boolean houses = true;
+	/** Rasage de l'ancienne carte : tout ce qu'elle a bâti (false), ou un grand carré fixe (true). */
+	private static boolean razeSquare;
 	private static int shelf;
 	private static String structure;
 	private static int structurePage;
@@ -381,8 +383,14 @@ public class AtelierScreen extends BaseScreen {
 			armed = null;
 			rebuildWidgets();
 		});
-		var gen = confirm(cx - 100, row(4) + 4, 200, "Générer le village",
-			"vc carte generer " + seats + " " + SIZES[size] + " " + themeName + " " + (houses ? "oui" : "non"));
+		button(cx - 100, row(4), 200, razeSquare ? "Raser : un carré de 200 blocs" : "Raser : tout ce que la carte a bâti", () -> {
+			razeSquare = !razeSquare;
+			armed = null;
+			rebuildWidgets();
+		});
+		var gen = confirm(cx - 100, row(5) + 4, 200, "Générer le village",
+			"vc carte generer " + seats + " " + SIZES[size] + " " + themeName + " " + (houses ? "oui" : "non")
+				+ (razeSquare ? " carre" : " bati"));
 		if (ClientState.bool(a, "chantier")) {
 			gen.disabled();
 		}
@@ -391,7 +399,8 @@ public class AtelierScreen extends BaseScreen {
 	private void drawVillage(GuiGraphicsExtractor g) {
 		Theme.centered(g, font, "Trônes : " + seats, px + pw / 2, row(0) + 5, Theme.INK);
 		Theme.paragraph(g, font, "Le village généré remplace la carte actuelle, au même endroit (sans carte : là où vous êtes). "
-			+ "Une carte retouchée à la main est d'abord sauvegardée dans la bibliothèque.", px + 40, row(5) + 6, pw - 80, Theme.ASH, 32);
+			+ "Tout ce que l'ancienne carte a bâti est rasé d'abord. Une carte retouchée à la main est sauvegardée dans la bibliothèque.",
+			px + 40, row(6) + 8, pw - 80, Theme.ASH, 32);
 	}
 
 	// ------------------------------------------------------------------

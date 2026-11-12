@@ -464,6 +464,59 @@ public final class Game {
 			+ (p.believed != role ? " (croit être " + p.believed.displayName + ")" : "") + ".");
 	}
 
+	/**
+	 * Rôles imposés par le Conteur avant le lancement (siège → {rôle, rôle cru ou null}). Le tirage les a déjà
+	 * mis en jeu : on échange simplement les rôles entre joueurs, ce qui garde la répartition. Un rôle que le
+	 * tirage n'a pas pu placer est donné tel quel (le Conteur voit alors l'avertissement de répartition).
+	 */
+	public void applyPresets(Map<Integer, Role[]> presets) {
+		requireReady();
+		Set<Integer> done = new HashSet<>();
+		for (var e : presets.entrySet()) {
+			Seat a = player(e.getKey());
+			Role want = e.getValue()[0];
+			Role believed = e.getValue().length > 1 ? e.getValue()[1] : null;
+			if (a.role != want) {
+				int holder = -1;
+				for (int s = 0; s < size() && holder < 0; s++) {
+					// Un joueur déjà servi garde son rôle ; un joueur imposé plus loin peut encore échanger le sien.
+					if (player(s).role == want && !done.contains(s)) {
+						holder = s;
+					}
+				}
+				if (holder >= 0) {
+					Seat b = player(holder);
+					Role r = a.role;
+					Role bel = a.believed;
+					a.role = b.role;
+					a.believed = b.believed;
+					b.role = r;
+					b.believed = bel;
+				} else {
+					a.role = want;
+					a.believed = want;
+				}
+			}
+			if (want == Role.SOMNAMBULE) {
+				if (believed != null && believed.type == RoleType.CITADIN) {
+					a.believed = believed;
+				} else if (a.believed == null || a.believed.type != RoleType.CITADIN || a.believed == Role.SOMNAMBULE) {
+					List<Role> absent = scriptRoles().stream()
+						.filter(r -> r.type == RoleType.CITADIN && seats.stream().noneMatch(p -> p.role == r)).toList();
+					a.believed = absent.isEmpty() ? Role.COMMERE : rng.pick(absent);
+				}
+			}
+			done.add(e.getKey());
+			addLog("Le Conteur impose à " + a.name + " le rôle " + a.role.displayName
+				+ (a.believed != a.role ? " (croit être " + a.believed.displayName + ")" : "") + ".");
+		}
+		if (redHerring >= 0 && player(redHerring).team() == Team.EVIL) {
+			List<Integer> good = allSeats().stream().filter(s -> player(s).team() == Team.GOOD).toList();
+			Integer pick = rng.pick(good);
+			redHerring = pick == null ? -1 : pick;
+		}
+	}
+
 	/** Désigne le faux présage de l'Astrologue (un joueur du bien). */
 	public void setRedHerring(int seat) {
 		if (player(seat).team() != Team.GOOD) {

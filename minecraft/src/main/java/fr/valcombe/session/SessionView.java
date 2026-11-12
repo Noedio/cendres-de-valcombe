@@ -105,6 +105,10 @@ final class SessionView {
 		st.put("fullEffects", ses.settings.fullEffects);
 		st.put("deadHat", ses.settings.deadHat);
 		st.put("roleRoom", ses.settings.roleRoom);
+		// Réglages lus hors partie aussi (écran des réglages au salon) : jamais dans le bloc de la partie en cours.
+		st.put("nameTags", ses.settings.nameTags);
+		st.put("whisperRange", ses.settings.whisperRange);
+		st.put("shoutRange", ses.settings.shoutRange);
 		st.put("manual", ses.settings.manual);
 		st.put("autoNight", ses.settings.autoNight);
 		st.put("notebookNightOnly", ses.settings.notebookNightOnly);
@@ -117,6 +121,15 @@ final class SessionView {
 		st.put("absoluteMajority", ses.settings.absoluteMajority);
 		st.put("evilMajorityWins", ses.settings.evilMajorityWins);
 		v.put("settings", st);
+		if (leader) {
+			// Rôles imposés au salon (joueur → rôle) et, avant la première nuit, l'avertissement de répartition.
+			Map<String, String> pre = new LinkedHashMap<>();
+			ses.presets.forEach((n, r) -> pre.put(n, r[0].name() + (r[1] != null ? "/" + r[1].name() : "")));
+			v.put("presets", pre);
+			if (ses.game != null && ses.game.phase() == Game.Phase.READY) {
+				v.put("distributionWarning", ses.game.distributionWarning());
+			}
+		}
 		Game g = ses.game;
 		if (g == null) {
 			v.put("phase", "LOBBY");
@@ -192,9 +205,6 @@ final class SessionView {
 				}
 				v.put("plan", plan);
 			}
-			st.put("nameTags", ses.settings.nameTags);
-			st.put("whisperRange", ses.settings.whisperRange);
-			st.put("shoutRange", ses.settings.shoutRange);
 			Map<String, Object> speech = ses.desk.speechView();
 			if (speech != null) {
 				speech.put("mine", ses.desk.queue.contains(me) || me.equals(ses.desk.speaker));

@@ -199,6 +199,7 @@ public final class MapEditor {
 	private void commit(String label, Box zone, Clip before, BuildQueue.Plan plan, Marker marker) {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
 		host.markEdited();
+		host.markBuilt(zone.x0(), zone.y0(), zone.z0(), zone.x1(), zone.y1(), zone.z1());
 		host.startEdit(label, plan, null);
 	}
 

@@ -1083,13 +1083,28 @@ public final class Session {
 		}
 		Game g = new Game(names, rng);
 		int shift = figures.contains("sentinelle") ? rng.next(3) - 1 : 0;
+		// Rôles imposés au salon par le Conteur : le tirage les met en jeu à coup sûr, puis ils vont à leurs joueurs.
+		Set<Role> forced = java.util.EnumSet.noneOf(Role.class);
+		Map<Integer, Role[]> imposed = new LinkedHashMap<>();
+		presets.forEach((n, r) -> {
+			int seat = names.indexOf(n);
+			if (seat >= 0) {
+				forced.add(r[0]);
+				imposed.put(seat, r);
+			}
+		});
 		if (scenario != null) {
 			// Le scénario règle le tirage (rôles imposés, répartition), l'ordre de nuit et quelques règles.
-			g.setupRandom(script, shift, scenario.forced(), scenario.counts(names.size()));
+			forced.addAll(scenario.forced());
+			g.setupRandom(script, shift, forced, scenario.counts(names.size()));
 			g.setNightOrder(scenario.order(true), scenario.order(false));
 			g.setRules(scenario.regles.mortsSansVote, scenario.regles.accusationsMax);
 		} else {
-			g.setupRandom(script, shift);
+			g.setupRandom(script, shift, forced, null);
+		}
+		if (!imposed.isEmpty()) {
+			g.applyPresets(imposed);
+			presets.clear();
 		}
 		g.setHouseRules(settings.absoluteMajority, settings.evilMajorityWins);
 		if (wanted == Mode.HUMAIN) {
@@ -1151,6 +1166,7 @@ public final class Session {
 
 	public String stop() {
 		trainee = null;
+		presets.keySet().retainAll(lobby);
 		paused = false;
 		standIns.clear();
 		if (game != null) {
@@ -3181,6 +3197,41 @@ public final class Session {
 			throw new GameException("Rôle inconnu : " + id);
 		}
 		return r;
+	}
+
+	/** Rôles imposés au salon par le Conteur : joueur → {rôle, rôle cru (Somnambule) ou null}. */
+	final Map<String, Role[]> presets = new LinkedHashMap<>();
+
+	/**
+	 * Au salon, le Conteur impose le rôle d'un joueur (« aucun » : tiré au hasard). Les autres rôles
+	 * sont tirés au lancement, comme d'habitude.
+	 */
+	public String presetRole(String target, String roleId, String believedId) {
+		if (game != null) {
+			throw new GameException("La partie est lancée : utilise l'écran « Distribution » (ou /vc attribuer).");
+		}
+		String name = lobby.stream().filter(n -> n.equalsIgnoreCase(target)).findFirst()
+			.orElseThrow(() -> new GameException(target + " n'est pas inscrit à la prochaine partie."));
+		if (roleId.equalsIgnoreCase("aucun") || roleId.equalsIgnoreCase("hasard")) {
+			presets.remove(name);
+			return name + " : rôle tiré au hasard.";
+		}
+		Role r = parseRole(roleId);
+		if (!script.contains(r)) {
+			throw new GameException(r.displayName + " n'est pas dans le script de la partie.");
+		}
+		for (var e : presets.entrySet()) {
+			if (e.getValue()[0] == r && !e.getKey().equals(name)) {
+				throw new GameException(r.displayName + " est déjà imposé à " + e.getKey() + ".");
+			}
+		}
+		Role believed = believedId == null ? null : parseRole(believedId);
+		if (r == Role.SOMNAMBULE && believed != null && believed.type != fr.valcombe.rules.RoleType.CITADIN) {
+			throw new GameException("Le Somnambule doit croire être un Citadin.");
+		}
+		presets.put(name, new Role[] {r, r == Role.SOMNAMBULE ? believed : null});
+		return name + " aura le rôle " + r.displayName + (r == Role.SOMNAMBULE && believed != null
+			? " (croira être " + believed.displayName + ")" : "") + ". Les autres rôles seront tirés au hasard.";
 	}
 
 	/** Change le rôle d'un joueur avant la première nuit. */

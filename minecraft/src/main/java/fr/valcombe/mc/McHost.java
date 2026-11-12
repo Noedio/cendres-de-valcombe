@@ -752,6 +752,15 @@ public final class McHost implements Host {
 	}
 
 	/** L'éditeur vient de changer des blocs : comme pour un bloc posé à la main, la carte est tenue pour retouchée. */
+	/** L'éditeur a bâti dans cette boîte : la carte la retient (voir Village.include), pour la raser en entier plus tard. */
+	void markBuilt(int x0, int y0, int z0, int x1, int y1, int z1) {
+		Village v = village;
+		if (v != null && server != null) {
+			v.include(x0, y0, z0, x1, y1, z1);
+			v.save(server);
+		}
+	}
+
 	void markEdited() {
 		Village v = village;
 		if (v != null && server != null && !v.modified()) {
@@ -1305,21 +1314,30 @@ public final class McHost implements Host {
 	 * Elle est calculée bloc à bloc : même la plus grande carte ne demande aucune mémoire.
 	 */
 	BuildQueue.Part clearPart(BlockPos c, int radius, int below, int height) {
+		return clearBox(c.getX() - radius, c.getZ() - radius, c.getX() + radius, c.getZ() + radius, c.getY(), below, height);
+	}
+
+	/**
+	 * Rase un rectangle : `below` rangées de pierre sous baseY, de l'herbe à baseY, de l'air au-dessus,
+	 * sur `height` rangées en tout.
+	 */
+	BuildQueue.Part clearBox(int x0, int z0, int x1, int z1, int baseY, int below, int height) {
 		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
 		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
 		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-		int side = 2 * radius + 1;
+		int sx = x1 - x0 + 1;
+		int sz = z1 - z0 + 1;
 		return new BuildQueue.Part() {
 			@Override
 			int size() {
-				return side * side * height;
+				return sx * sz * height;
 			}
 
 			@Override
 			net.minecraft.world.level.block.state.BlockState at(int i, BlockPos.MutableBlockPos pos) {
-				int y = i / (side * side) - below;
-				int inLayer = i % (side * side);
-				pos.set(c.getX() - radius + inLayer / side, c.getY() + y, c.getZ() - radius + inLayer % side);
+				int y = i / (sx * sz) - below;
+				int inLayer = i % (sx * sz);
+				pos.set(x0 + inLayer / sz, baseY + y, z0 + inLayer % sz);
 				return y < 0 ? stone : y == 0 ? grass : air;
 			}
 
@@ -1335,22 +1353,60 @@ public final class McHost implements Host {
 		if (v.isGenerated()) {
 			return 28;
 		}
+		return surfaceHeight(v.center(), v.extent());
+	}
+
+	/** Hauteur à raser (4 rangées de sous-sol comprises) pour tout ce qui dépasse dans le carré de rayon r autour de c. */
+	private int surfaceHeight(BlockPos c, int r) {
 		ServerLevel level = server.overworld();
-		int r = v.extent();
 		int top = level.getMinY();
-		for (int cx = v.center().getX() - r >> 4; cx <= v.center().getX() + r >> 4; cx++) {
-			for (int cz = v.center().getZ() - r >> 4; cz <= v.center().getZ() + r >> 4; cz++) {
+		for (int cx = c.getX() - r >> 4; cx <= c.getX() + r >> 4; cx++) {
+			for (int cz = c.getZ() - r >> 4; cz <= c.getZ() + r >> 4; cz++) {
 				var chunk = level.getChunk(cx, cz);
 				for (int x = 0; x < 16; x++) {
 					for (int z = 0; z < 16; z++) {
-						if (Math.abs((cx << 4) + x - v.center().getX()) <= r && Math.abs((cz << 4) + z - v.center().getZ()) <= r) {
+						if (Math.abs((cx << 4) + x - c.getX()) <= r && Math.abs((cz << 4) + z - c.getZ()) <= r) {
 							top = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z));
 						}
 					}
 				}
 			}
 		}
-		return Math.max(28, Math.min(SchematicImporter.MAX_HEIGHT + 10, top - v.center().getY() + 6));
+		return Math.max(28, Math.min(SchematicImporter.MAX_HEIGHT + 10, top - c.getY() + 6));
+	}
+
+	/** Façons de raser l'ancienne carte avant d'en bâtir une autre. */
+	public enum Raze {
+		/** Tout ce que la carte occupe et tout ce que l'éditeur y a bâti. */
+		BATI,
+		/** Un grand carré fixe autour du centre (Village.MAX_EXTENT blocs de chaque côté), quoi qu'il contienne. */
+		CARRE;
+
+		public static Raze parse(String s) {
+			return s != null && s.toLowerCase(java.util.Locale.ROOT).startsWith("carr") ? CARRE : BATI;
+		}
+	}
+
+	/** Le rasage de l'ancienne carte old : {x0, z0, x1, z1, hauteur} autour de son centre. */
+	private int[] razeBox(Village old, Raze mode) {
+		BlockPos c = old.center();
+		if (mode == Raze.CARRE) {
+			int r = Village.MAX_EXTENT;
+			return new int[] {c.getX() - r, c.getZ() - r, c.getX() + r, c.getZ() + r, surfaceHeight(c, r)};
+		}
+		int r = old.extent();
+		int[] box = {c.getX() - r, c.getZ() - r, c.getX() + r, c.getZ() + r, clearHeight(old)};
+		int[] b = old.built();
+		if (b != null) {
+			// Ce que l'éditeur a bâti, même hors des repères (borné pour ne jamais raser au-delà d'un très grand carré).
+			int cap = 2 * Village.MAX_EXTENT;
+			box[0] = Math.max(c.getX() - cap, Math.min(box[0], b[0]));
+			box[1] = Math.max(c.getZ() - cap, Math.min(box[1], b[2]));
+			box[2] = Math.min(c.getX() + cap, Math.max(box[2], b[3]));
+			box[3] = Math.min(c.getZ() + cap, Math.max(box[3], b[5]));
+			box[4] = Math.max(box[4], Math.min(SchematicImporter.MAX_HEIGHT + 10, b[4] - c.getY() + 1 + 4));
+		}
+		return box;
 	}
 
 	/** L'éditeur de carte du mode construction (sélection, structures, annulation). */
@@ -1428,6 +1484,10 @@ public final class McHost implements Host {
 	 * de l'ancienne, qui restent en place. Renvoie la phrase à ajouter au message (vide le plus souvent).
 	 */
 	String replaceMap(String label, BuildQueue.Plan build, boolean raze, Runnable done) {
+		return replaceMap(label, build, raze, Raze.BATI, done);
+	}
+
+	String replaceMap(String label, BuildQueue.Plan build, boolean raze, Raze mode, Runnable done) {
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
@@ -1448,9 +1508,11 @@ public final class McHost implements Host {
 		}
 		BuildQueue.Plan plan = new BuildQueue.Plan();
 		if (old != null && raze) {
-			plan.first(clearPart(old.center(), old.extent(), 4, clearHeight(old)));
+			int[] box = razeBox(old, mode);
+			plan.first(clearBox(box[0], box[1], box[2], box[3], old.center().getY(), 4, box[4]));
 			holdCenter = old.center();
-			holdRadius = old.extent();
+			holdRadius = Math.max(Math.max(old.center().getX() - box[0], box[2] - old.center().getX()),
+				Math.max(old.center().getZ() - box[1], box[3] - old.center().getZ()));
 			holdChunks();
 		}
 		plan.then(build);
@@ -1662,6 +1724,10 @@ public final class McHost implements Host {
 
 	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
 	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses) {
+		return generateVillage(p, seatCount, size, theme, houses, Raze.BATI);
+	}
+
+	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses, Raze raze) {
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
@@ -1670,7 +1736,7 @@ public final class McHost implements Host {
 			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : mapCenter();
 		Village v = Village.generated(c, theme, seatCount, size, houses);
 		// L'ancienne carte est retirée, puis le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
-		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, () -> {
+		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, raze, () -> {
 			adoptGenerated(v);
 			announceAll("Le village est construit : " + v.seatTotal() + " trônes, thème " + v.theme() + ".");
 		});

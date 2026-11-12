@@ -399,6 +399,7 @@
 				<div><label>Thème</label><select id="gTheme"></select></div>
 			</div>
 			<label class="check"><input type="checkbox" id="gMaisons" checked> Avec des maisons (la nuit, chacun chez soi)</label>
+			<div><label>Avant de bâtir, raser</label><select id="gRaser"><option value="bati" selected>Tout ce que la carte actuelle a bâti</option><option value="carre">Un grand carré de 200 blocs autour du centre</option></select></div>
 			<div class="bar"><button id="genMap">Générer à la place de la carte actuelle</button></div>
 			<h2 style="margin-top:20px">Importer une construction</h2>
 			<p class="hint">Une place faite ailleurs : schématique WorldEdit (<code>.schem</code>), Litematica (<code>.litematic</code>) ou structure Minecraft (<code>.nbt</code>), jusqu'à 320 × 128 × 320 blocs. Elle remplace la carte actuelle ; posez ensuite les trônes et les maisons en mode construction, puis enregistrez-la ici.</p>
@@ -1805,7 +1806,7 @@ $("genMap").onclick = () => {
 	try {
 		mapAction("carte/generer", {
 			places: intField("gPlaces", "Trônes", data.tronesMin, data.tronesMax), taille: parseInt($("gTaille").value, 10),
-			theme: $("gTheme").value, maisons: $("gMaisons").checked,
+			theme: $("gTheme").value, maisons: $("gMaisons").checked, raser: $("gRaser").value,
 		}, "Générer un village ?" + replaceNote());
 	} catch (e) { msg("mapMsg", e.message); }
 };

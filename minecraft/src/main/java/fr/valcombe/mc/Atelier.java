@@ -328,7 +328,8 @@ final class Atelier {
 					int size = Workshop.number(o, "taille", "Taille", 0, 2);
 					text(ex, 200, logged(owner, onServer(() -> host.generateVillage(server.getPlayerList().getPlayerByName(owner),
 						seats, size, o.has("theme") ? o.get("theme").getAsString() : "gothique",
-						!o.has("maisons") || o.get("maisons").getAsBoolean()), 120)));
+						!o.has("maisons") || o.get("maisons").getAsBoolean(),
+						McHost.Raze.parse(o.has("raser") ? o.get("raser").getAsString() : "bati")), 120)));
 				}
 				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure et /vc edit).
 				case "structure/prendre" -> text(ex, 200, onServer(() -> editor.choose(online(owner), body.trim()), 10));

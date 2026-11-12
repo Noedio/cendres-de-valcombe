@@ -296,6 +296,12 @@ public final class ValcombeCommands {
 				ui.openStoryteller(x.getSource().getPlayerOrException());
 				return "";
 			})))
+			.then(Commands.literal("imposer").requires(leader)
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
+						.executes(c -> exec(c, x -> session.presetRole(arg(x, "joueur"), arg(x, "role"), null)))
+						.then(Commands.argument("cru", StringArgumentType.word()).suggests(roleNames)
+							.executes(c -> exec(c, x -> session.presetRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
 			.then(Commands.literal("attribuer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
@@ -429,7 +435,14 @@ public final class ValcombeCommands {
 									.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
 										IntegerArgumentType.getInteger(x, "places"),
 										List.of("petite", "normale", "grande").indexOf(arg(x, "taille")),
-										arg(x, "theme"), !arg(x, "maisons").equals("non")))))))))
+										arg(x, "theme"), !arg(x, "maisons").equals("non"))))
+									// Rasage de l'ancienne carte : « bati » (tout ce qu'elle a bâti) ou « carre » (200 blocs autour du centre).
+									.then(Commands.argument("raser", StringArgumentType.word())
+										.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("bati", "carre"), b))
+										.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
+											IntegerArgumentType.getInteger(x, "places"),
+											List.of("petite", "normale", "grande").indexOf(arg(x, "taille")),
+											arg(x, "theme"), !arg(x, "maisons").equals("non"), McHost.Raze.parse(arg(x, "raser")))))))))))
 				.then(Commands.literal("salle").executes(c -> exec(c, x -> ui.host().buildHall()))))
 			.then(Commands.literal("bots").requires(leader)
 				.then(Commands.literal("retirer").executes(c -> exec(c, x -> session.removeBots())))
