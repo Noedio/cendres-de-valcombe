@@ -1,6 +1,11 @@
 [
   {
     "date": "12 nov. 2026",
+    "title": "Version 0.11.0 : les règles de notre table",
+    "text": "Au Conseil, on accuse d'abord, puis on vote pour chaque accusé, dans l'ordre. Pendant le Conseil, tout le village s'entend et les morts se taisent, sauf si un vivant leur donne la parole ; la touche B fait chuchoter ou crier. Le Conteur peut tout mener à la main, régler chaque durée et changer l'ordre des réveils. Quatre rôles arrivent (la Sorcière, la Fleuriste, le Jongleur, le Bavard) avec le scénario « La Table de Valcombe ». Le carnet note vos soupçons et vos indices, et le village a des recoins pour parler à l'abri."
+  },
+  {
+    "date": "12 nov. 2026",
     "title": "Version 0.10.0 : l'Atelier en jeu, un vrai éditeur de carte, et la carte remise en état après chaque partie",
     "text": "L'Atelier s'ouvre maintenant dans le jeu (menu, bouton « Atelier ») : cartes, village, repères, structures et sélection, sans passer par le navigateur. L'éditeur gagne un catalogue de 23 structures à poser, tourner et retourner, vos propres structures, l'import de schématiques, et des outils de sélection pour remplir, remplacer, copier et coller, avec annulation. Après chaque partie, la carte retrouve son état d'avant ; et bâtir ou charger une carte retire toujours l'ancienne."
   },
