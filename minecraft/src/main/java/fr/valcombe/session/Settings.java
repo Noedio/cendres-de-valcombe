@@ -19,6 +19,12 @@ public final class Settings {
 	public boolean absoluteMajority;
 	/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
 	public boolean evilMajorityWins;
+	/** Noms au-dessus des têtes des joueurs (toujours cachés la nuit). */
+	public boolean nameTags = true;
+	/** Portée d'un chuchotement, en blocs (voix « chuchoter »). */
+	public int whisperRange = 4;
+	/** Portée d'un cri, en blocs (voix « crier ») ; la voix normale porte à la distance réglée dans Simple Voice Chat. */
+	public int shoutRange = 96;
 	/** Temps de parole de l'accusé avant le vote. */
 	public int defenseSeconds = 20;
 	/** Ticks entre deux sièges pour l'aiguille du vote (20 = 1 seconde). */

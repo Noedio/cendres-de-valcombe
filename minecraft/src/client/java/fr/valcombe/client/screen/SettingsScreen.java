@@ -43,6 +43,7 @@ public class SettingsScreen extends BaseScreen {
 		button(rx, y, 24, "−", () -> send("vc reglage duree_conseil " + Math.max(0, council - 30)));
 		button(rx + w - 24, y, 24, "+", () -> send("vc reglage duree_conseil " + (council + 30)));
 		toggle(0, y += 21, "Rôles remis à l'écart", "remise_convocation", ClientState.bool(st, "roleRoom"));
+		toggle(1, y, "Noms au-dessus des têtes", "noms", ClientState.bool(st, "nameTags"));
 		int defense = ClientState.num(st, "defenseSeconds", 20);
 		int clock = (int) Math.round(ClientState.dbl(st, "clockSeconds", 1.5) * 10);
 		y += 25;

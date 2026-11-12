@@ -134,6 +134,7 @@ final class SessionView {
 				s.put("name", p.name);
 				s.put("alive", p.alive());
 				s.put("ghostVote", p.ghostVote());
+				s.put("floor", ses.hasFloor(p.name));
 				s.put("bot", ses.bots.contains(p.name));
 				s.put("standIn", ses.standIns.contains(p.name));
 				s.put("traveller", p.traveller());
@@ -171,6 +172,11 @@ final class SessionView {
 			v.put("nominationsOpen", ses.nominationsOpen);
 			v.put("council", ses.settings.nominationsFirst);
 			v.put("councilVoting", ses.councilVoting);
+			v.put("inCouncil", ses.inCouncil());
+			v.put("voice", ses.voiceLevel(me));
+			st.put("nameTags", ses.settings.nameTags);
+			st.put("whisperRange", ses.settings.whisperRange);
+			st.put("shoutRange", ses.settings.shoutRange);
 			Map<String, Object> speech = ses.desk.speechView();
 			if (speech != null) {
 				speech.put("mine", ses.desk.queue.contains(me) || me.equals(ses.desk.speaker));

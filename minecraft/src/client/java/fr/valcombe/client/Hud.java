@@ -381,6 +381,50 @@ public final class Hud {
 		return lines.size() * lh;
 	}
 
+	/** Voix du joueur, en bas à gauche : niveau choisi (touche B), et règle du Conseil. */
+	private static void drawVoice(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int h) {
+		int me = ClientState.num(v, "mySeat", -1);
+		if (me < 0 || mc.gui.screen() != null || !"DAY".equals(ClientState.phase())) {
+			return;
+		}
+		boolean alive = true;
+		boolean floor = false;
+		var seats = v.getAsJsonArray("seats");
+		if (seats != null) {
+			for (var e : seats) {
+				JsonObject s = e.getAsJsonObject();
+				if (ClientState.num(s, "seat", -2) == me) {
+					alive = ClientState.bool(s, "alive");
+					floor = ClientState.bool(s, "floor");
+				}
+			}
+		}
+		String voice = ClientState.str(v, "voice");
+		JsonObject st = ClientState.obj(v, "settings");
+		String text;
+		int color = Theme.PARCH;
+		if (ClientState.bool(v, "inCouncil")) {
+			if (!alive && !floor) {
+				text = "Conseil : les morts se taisent (un vivant peut te donner la parole)";
+				color = 0xFF9A9090;
+			} else if ("chuchoter".equals(voice)) {
+				text = "Conseil : tu chuchotes à tes deux voisins (B : changer)";
+			} else {
+				text = "Conseil : tout le village t'entend" + (floor ? " (on t'a donné la parole)" : "");
+			}
+		} else if ("chuchoter".equals(voice)) {
+			text = "Tu chuchotes : " + ClientState.num(st, "whisperRange", 4) + " blocs (B : changer)";
+		} else if ("crier".equals(voice)) {
+			text = "Tu cries : " + ClientState.num(st, "shoutRange", 96) + " blocs (B : changer)";
+			color = Theme.GOLD;
+		} else {
+			return;
+		}
+		int tw = mc.font.width(text);
+		g.fill(4, h - 72, 12 + tw, h - 60, 0xC01B1214);
+		g.text(mc.font, text, 8, h - 70, color, false);
+	}
+
 	private static void draw(GuiGraphicsExtractor g) {
 		Minecraft mc = Minecraft.getInstance();
 		String phase = ClientState.phase();
@@ -478,6 +522,7 @@ public final class Hud {
 			}
 		}
 		drawToday(g, mc, v, vote == null ? 28 : 84);
+		drawVoice(g, mc, v, h);
 		drawStorytellerRoles(g, mc, v, w, h);
 		// Conteur : joueurs déconnectés
 		var absents = v.getAsJsonArray("absents");

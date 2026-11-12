@@ -84,6 +84,15 @@ public class MainScreen extends BaseScreen {
 		if (role != null) {
 			actions.add(new Action("Annoncer un rôle", () -> minecraft.gui.setScreen(new ClaimScreen())));
 		}
+		if (inGame && ClientState.num(v, "mySeat", -1) >= 0) {
+			String voice = ClientState.str(v, "voice");
+			String label = "chuchoter".equals(voice) ? "Chuchoter" : "crier".equals(voice) ? "Crier" : "Parler";
+			actions.add(new Action("Voix : " + label + " (B)", () -> send("vc voix suivant")));
+			if (ClientState.bool(v, "inCouncil") && ClientState.phase().equals("DAY")) {
+				actions.add(new Action("Donner la parole…", () -> minecraft.gui.setScreen(
+					new PickerScreen("Donner (ou reprendre) la parole à quel mort ?", "vc donnerparole "))));
+			}
+		}
 		if (ClientState.bool(v, "canTravel") && !ClientState.phase().equals("LOBBY")) {
 			actions.add(new Action("Rejoindre en voyageur", () -> {
 				send("vc voyager");

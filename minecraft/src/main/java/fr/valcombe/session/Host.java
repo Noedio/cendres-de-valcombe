@@ -82,6 +82,10 @@ public interface Host {
 	default void deadPlayers(List<String> dead, List<String> withGhostVote) {
 	}
 
+	/** Montre ou cache les noms au-dessus des têtes des joueurs assis à la table. */
+	default void nameTags(boolean visible) {
+	}
+
 	/**
 	 * Jetons flottants au-dessus des sièges : nom du joueur → « couleur|texte »
 	 * (couleur : white, gray, gold, red, aqua). Liste vide : on retire tout.

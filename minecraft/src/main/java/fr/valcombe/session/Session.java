@@ -144,6 +144,127 @@ public final class Session {
 			&& !name.equals(storyteller) && g.seatOf(name) >= 0;
 	}
 
+	// ------------------------------------------------------------------
+	// Voix : chuchoter, parler, crier ; le Conseil s'entend en entier ; les morts s'y taisent
+	// ------------------------------------------------------------------
+	public static final List<String> VOICE_LEVELS = List.of("chuchoter", "parler", "crier");
+	/** Niveau de voix choisi par chaque joueur (absent : « parler »). */
+	final Map<String, String> voiceLevel = new HashMap<>();
+	/** Morts à qui un vivant a donné la parole pour le Conseil (jusqu'au soir). */
+	final Set<String> floor = new LinkedHashSet<>();
+
+	/**
+	 * Règle de voix d'un joueur. targets non null : seuls ces joueurs l'entendent (à pleine voix) ;
+	 * sinon range > 0 : on l'entend dans ce rayon (en blocs) ; null : vocal de proximité normal.
+	 */
+	public record VoiceRule(List<String> targets, double range) {
+	}
+
+	public String voiceLevel(String name) {
+		return voiceLevel.getOrDefault(name, "parler");
+	}
+
+	/** Change le niveau de voix (« chuchoter », « parler », « crier », ou « suivant » pour passer au suivant). */
+	public String setVoiceLevel(String name, String level) {
+		String l = level.toLowerCase(java.util.Locale.ROOT);
+		if (l.equals("suivant")) {
+			l = VOICE_LEVELS.get((VOICE_LEVELS.indexOf(voiceLevel(name)) + 1) % VOICE_LEVELS.size());
+		}
+		if (!VOICE_LEVELS.contains(l)) {
+			throw new GameException("Voix : chuchoter, parler ou crier.");
+		}
+		if (l.equals("parler")) {
+			voiceLevel.remove(name);
+		} else {
+			voiceLevel.put(name, l);
+		}
+		updateBoards();
+		return switch (l) {
+			case "chuchoter" -> inCouncil() ? "Tu chuchotes : seuls tes deux voisins de trône t'entendent."
+				: "Tu chuchotes : on t'entend à " + settings.whisperRange + " blocs.";
+			case "crier" -> inCouncil() ? "Tu cries (pendant le Conseil, tout le monde t'entend déjà)."
+				: "Tu cries : on t'entend à " + settings.shoutRange + " blocs.";
+			default -> "Tu parles normalement.";
+		};
+	}
+
+	/** Le Conseil est en cours : accusations ouvertes, ou votes. */
+	public boolean inCouncil() {
+		Game g = game;
+		return g != null && g.phase() == Game.Phase.DAY && !g.dayOver() && (nominationsOpen || councilVoting || voteNom != null);
+	}
+
+	/** Un vivant donne (ou reprend) la parole à un mort pour le Conseil. */
+	public String giveFloor(String name, String target) {
+		Game g = requireGame();
+		int a = g.seatOf(name);
+		boolean st = name.equals(storyteller);
+		if (!st && (a < 0 || !g.player(a).alive())) {
+			throw new GameException("Seul un vivant (ou le Conteur) peut donner la parole à un mort.");
+		}
+		int b = seatByName(target);
+		Game.Seat dead = g.player(b);
+		if (dead.alive()) {
+			throw new GameException(dead.name + " est vivant : il a déjà la parole.");
+		}
+		if (floor.remove(dead.name)) {
+			announce(name + " reprend la parole à " + dead.name + ".");
+			tell(dead.name, "Tu n'as plus la parole pendant le Conseil.");
+		} else {
+			floor.add(dead.name);
+			announce(name + " donne la parole à " + dead.name + ".");
+			tell(dead.name, "Tu as la parole pendant le Conseil.");
+		}
+		updateBoards();
+		return "";
+	}
+
+	public boolean hasFloor(String name) {
+		return floor.contains(name);
+	}
+
+	/** Règle de voix complète d'un joueur : moments du jeu, Conseil, puis niveau de voix choisi. */
+	public VoiceRule voiceRule(String name) {
+		List<String> special = voiceTargets(name);
+		if (special != null) {
+			return new VoiceRule(special, 0);
+		}
+		Game g = game;
+		int s = g == null ? -1 : g.seatOf(name);
+		if (s >= 0 && inCouncil()) {
+			// Pendant le Conseil, tout le village s'entend ; un mort se tait tant qu'on ne lui a pas donné la parole.
+			if (!g.player(s).alive() && !floor.contains(name)) {
+				return new VoiceRule(List.of(), 0);
+			}
+			if (voiceLevel(name).equals("chuchoter")) {
+				List<String> near = new ArrayList<>();
+				for (int d : new int[] {-1, 1}) {
+					String n = g.player(Math.floorMod(s + d, g.size())).name;
+					if (!n.equals(name) && !near.contains(n)) {
+						near.add(n);
+					}
+				}
+				return new VoiceRule(near, 0);
+			}
+			List<String> all = new ArrayList<>(realNames());
+			if (storyteller != null && !all.contains(storyteller)) {
+				all.add(storyteller);
+			}
+			spectators.forEach(n -> {
+				if (!all.contains(n)) {
+					all.add(n);
+				}
+			});
+			all.remove(name);
+			return new VoiceRule(all, 0);
+		}
+		return switch (voiceLevel(name)) {
+			case "chuchoter" -> new VoiceRule(null, settings.whisperRange);
+			case "crier" -> new VoiceRule(null, settings.shoutRange);
+			default -> null;
+		};
+	}
+
 	/**
 	 * Vocal piloté par le jeu, la nuit : à qui parle ce joueur ? null : vocal normal ;
 	 * liste vide : personne ne l'entend. Le Conteur parle aux joueurs réveillés, et
@@ -972,6 +1093,7 @@ public final class Session {
 		notes.clear();
 		reminders.clear();
 		standIns.clear();
+		floor.clear();
 		paused = false;
 		social.claims.clear();
 		social.talks.clear();
@@ -1249,6 +1371,12 @@ public final class Session {
 			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "nuit_muette" -> settings.nightMute = yes;
 			case "conseil" -> settings.nominationsFirst = yes;
+			case "noms" -> {
+				settings.nameTags = yes;
+				refreshNameTags();
+			}
+			case "portee_chuchoter" -> settings.whisperRange = Math.max(1, Math.min(16, number(value)));
+			case "portee_crier" -> settings.shoutRange = Math.max(16, Math.min(256, number(value)));
 			case "duree_conseil" -> settings.councilSeconds = Math.max(0, Math.min(1800, number(value)));
 			case "majorite_absolue", "victoire_majorite" -> {
 				if (key.equals("majorite_absolue")) {
@@ -1278,7 +1406,7 @@ public final class Session {
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat, "
-					+ "conseil, majorite_absolue, victoire_majorite (oui|non), "
+					+ "conseil, noms, majorite_absolue, victoire_majorite (oui|non), portee_chuchoter, portee_crier <blocs>, "
 					+ "duree_conseil <secondes, 0 : à la main>, temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
@@ -1303,12 +1431,20 @@ public final class Session {
 		pendingDecision = null;
 	}
 
+	/** Les noms au-dessus des têtes : selon le réglage, et toujours cachés la nuit. */
+	private void refreshNameTags() {
+		Game g = game;
+		host.nameTags(g == null || settings.nameTags && g.phase() != Game.Phase.NIGHT);
+	}
+
 	public String startNight() {
 		Game g = requireGame();
 		if (voteNom != null) {
 			throw new GameException("Un vote est en cours.");
 		}
 		g.startNight();
+		refreshNameTags();
+		floor.clear();
 		closeSummons(g);
 		social.aside = null;
 		social.endAllTalks();
@@ -2331,6 +2467,7 @@ public final class Session {
 		}
 		// Le Conteur peut clore la journée entre deux votes du Conseil : les votes restants n'ont pas lieu.
 		councilVoting = false;
+		floor.clear();
 		stopCouncilTimer();
 		nominationsOpen = false;
 		Game.DayEnd end = g.endDay();
@@ -2820,6 +2957,7 @@ public final class Session {
 		if (g == null) {
 			return;
 		}
+		refreshNameTags();
 		Map<String, String> labels = new LinkedHashMap<>();
 		String accused = voteNom != null ? g.player(voteNom.nominee()).name : null;
 		String block = g.phase() == Game.Phase.DAY && g.onTheBlock() >= 0 ? g.player(g.onTheBlock()).name : null;

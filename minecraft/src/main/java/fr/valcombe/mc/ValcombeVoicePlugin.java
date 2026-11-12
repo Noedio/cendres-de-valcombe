@@ -6,13 +6,13 @@ import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
  * Branchement sur Simple Voice Chat (si le mod est installé) : le vocal suit le jeu.
- * La nuit, seuls le Conteur et le joueur réveillé se parlent ; le jour, une maison est
- * une salle privée. Ailleurs, le vocal de proximité fonctionne normalement.
+ * La nuit, seuls le Conteur et le joueur réveillé se parlent ; pendant le Conseil, tout le
+ * village s'entend ; le jour, une maison est une salle privée ; ailleurs, la voix porte à la
+ * portée choisie (chuchoter, parler, crier).
  */
 public final class ValcombeVoicePlugin implements VoicechatPlugin {
 	@Override
@@ -27,14 +27,29 @@ public final class ValcombeVoicePlugin implements VoicechatPlugin {
 			if (sender == null) {
 				return;
 			}
-			List<UUID> targets = VoiceRouter.targets(sender.getPlayer().getUuid());
-			if (targets == null) {
+			VoiceRouter.Route route = VoiceRouter.route(sender.getPlayer().getUuid());
+			if (route == null) {
 				return;
 			}
 			event.cancel();
 			VoicechatServerApi api = event.getVoicechat();
+			if (route.range() > 0) {
+				// Voix placée dans le monde : elle s'atténue avec la distance, jusqu'à la portée choisie.
+				var at = sender.getPlayer().getPosition();
+				var packet = event.getPacket().locationalSoundPacketBuilder()
+					.position(api.createPosition(at.getX(), at.getY(), at.getZ()))
+					.distance(route.range())
+					.build();
+				for (UUID id : route.targets()) {
+					VoicechatConnection c = api.getConnectionOf(id);
+					if (c != null) {
+						api.sendLocationalSoundPacketTo(c, packet);
+					}
+				}
+				return;
+			}
 			var packet = event.getPacket().toStaticSoundPacket();
-			for (UUID id : targets) {
+			for (UUID id : route.targets()) {
 				VoicechatConnection c = api.getConnectionOf(id);
 				if (c != null) {
 					api.sendStaticSoundPacketTo(c, packet);

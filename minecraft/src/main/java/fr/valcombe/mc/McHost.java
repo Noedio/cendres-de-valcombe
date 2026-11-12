@@ -2273,7 +2273,9 @@ public final class McHost implements Host {
 		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
 		for (String name : seats.keySet()) {
 			PlayerTeam current = board.getPlayersTeam(name);
-			PlayerTeam wanted = !dead.contains(name) ? null : withGhostVote.contains(name) ? voters : ghosts;
+			// Un vivant garde l'équipe « valcombe_vivants » (noms cachés), sinon aucune.
+			PlayerTeam wanted = !dead.contains(name) ? (current != null && current.getName().equals(ALIVE_TEAM) ? current : null)
+				: withGhostVote.contains(name) ? voters : ghosts;
 			if (current != wanted) {
 				if (current != null && current.getName().startsWith("valcombe_")) {
 					board.removePlayerFromTeam(name, current);
@@ -2308,6 +2310,36 @@ public final class McHost implements Host {
 				inv.add(current.copy()); // un casque à soi est rangé, pas perdu
 			}
 			p.setItemSlot(slot, ValcombeUi.deadHat(model));
+		}
+	}
+
+	private static final String ALIVE_TEAM = "valcombe_vivants";
+
+	@Override
+	public void nameTags(boolean visible) {
+		if (server == null) {
+			return;
+		}
+		var board = server.getScoreboard();
+		var mode = visible ? net.minecraft.world.scores.Team.Visibility.ALWAYS : net.minecraft.world.scores.Team.Visibility.NEVER;
+		PlayerTeam alive = board.getPlayerTeam(ALIVE_TEAM);
+		if (alive == null) {
+			alive = board.addPlayerTeam(ALIVE_TEAM);
+		}
+		for (String id : List.of(ALIVE_TEAM, "valcombe_fantomes", "valcombe_fantomes_vote")) {
+			PlayerTeam t = board.getPlayerTeam(id);
+			if (t != null && t.getNameTagVisibility() != mode) {
+				t.setNameTagVisibility(mode);
+			}
+		}
+		// Les vivants n'ont pas d'équipe à eux : on les range dans celle-ci tant que les noms sont cachés.
+		for (String name : seats.keySet()) {
+			PlayerTeam current = board.getPlayersTeam(name);
+			if (!visible && current == null) {
+				board.addPlayerToTeam(name, alive);
+			} else if (visible && current == alive) {
+				board.removePlayerFromTeam(name, alive);
+			}
 		}
 	}
 
@@ -2621,6 +2653,7 @@ public final class McHost implements Host {
 			lights(false);
 		}
 		deadPlayers(List.of(), List.of());
+		nameTags(true);
 		frozen = false;
 		inHouses = false;
 		storytellerBack = null;

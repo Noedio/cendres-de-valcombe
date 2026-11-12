@@ -17,6 +17,7 @@ public final class ValcombeClient implements ClientModInitializer {
 	private static KeyMapping handKey;
 	private static KeyMapping signKey;
 	private static KeyMapping roleKey;
+	private static KeyMapping voiceKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -33,6 +34,7 @@ public final class ValcombeClient implements ClientModInitializer {
 		handKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.hand", InputConstants.KEY_H, category));
 		signKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.sign", InputConstants.KEY_G, category));
 		roleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.role", InputConstants.KEY_K, category));
+		voiceKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.voice", InputConstants.KEY_B, category));
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (handKey.consumeClick()) {
 				// Lever ou baisser la main pendant le vote à l'horloge
@@ -44,6 +46,12 @@ public final class ValcombeClient implements ClientModInitializer {
 			while (signKey.consumeClick()) {
 				if (client.gui.screen() == null) {
 					client.gui.setScreen(new fr.valcombe.client.screen.SignScreen());
+				}
+			}
+			while (voiceKey.consumeClick()) {
+				// Chuchoter → parler → crier
+				if (ClientState.num(ClientState.view(), "mySeat", -1) >= 0) {
+					ClientState.send("vc voix suivant");
 				}
 			}
 			while (roleKey.consumeClick()) {

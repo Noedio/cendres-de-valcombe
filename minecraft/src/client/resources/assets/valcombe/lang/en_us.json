@@ -3,5 +3,6 @@
 	"key.category.valcombe.main": "Les Cendres de Valcombe",
 	"key.valcombe.hand": "Raise / lower hand (vote)",
 	"key.valcombe.sign": "Make a sign (yes, no, question…)",
-	"key.valcombe.role": "Show my role card again"
+	"key.valcombe.role": "Show my role card again",
+	"key.valcombe.voice": "Voice: whisper, talk, shout"
 }
