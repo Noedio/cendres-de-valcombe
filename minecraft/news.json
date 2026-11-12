@@ -1,6 +1,11 @@
 [
   {
     "date": "12 nov. 2026",
+    "title": "Version 0.9.0 : des cartes plus simples à créer, et la salle de convocation",
+    "text": "Créer une carte devient simple : cinq outils en jeu (trône, maison, centre, salle de convocation, gomme) pour poser, déplacer ou retirer chaque repère, une étiquette numérotée sur chacun, et dans l'Atelier un plan vu de dessus où tout se place à la souris. Côté partie, le Conteur reçoit désormais chaque joueur dans une salle à l'écart pour lui remettre son rôle et le lui expliquer, sans que personne d'autre n'entende."
+  },
+  {
+    "date": "12 nov. 2026",
     "title": "Version 0.8.0 : un nouveau launcher, pour héberger et créer",
     "text": "Le launcher fait peau neuve : Valcombe la nuit en fond, une navigation plus claire, des réglages plus lisibles. Deux nouvelles pages. « Héberger une partie » installe et démarre le serveur sur votre PC, vous donne l'adresse à transmettre à vos amis et tient la liste de vos invités. « L'Atelier » s'ouvre d'un clic dans votre navigateur pour créer vos rôles, vos scénarios et vos cartes."
   },
