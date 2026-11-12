@@ -216,4 +216,25 @@ class MapLifeFilesTest {
 		// Raser après avoir bâti détruirait ce qu'on vient de poser : le plan le refuse.
 		assertThrows(IllegalStateException.class, () -> build.then(clear));
 	}
+
+	// ------------------------------------------------------------------
+	// Sauvegardes automatiques
+	// ------------------------------------------------------------------
+	@Test
+	void seulesLesCinqDernieresSauvegardesAutomatiquesSontGardees() {
+		var names = new java.util.HashMap<String, String>();
+		names.put("port-aux-brumes", "Le Port aux Brumes");
+		for (int day = 1; day <= 7; day++) {
+			names.put("sauvegarde-2026110" + day + "-120000", "Sauvegarde du 0" + day + "/11/2026 à 12h00");
+		}
+		// Les deux plus anciennes partent ; une carte ordinaire n'est jamais touchée.
+		assertEquals(java.util.List.of("sauvegarde-20261101-120000", "sauvegarde-20261102-120000"), MapStore.staleBackups(names));
+
+		// Renommée, une sauvegarde devient une carte que l'on garde : elle ne compte plus parmi les cinq.
+		names.put("sauvegarde-20261101-120000", "Ma tour, première version");
+		assertEquals(java.util.List.of("sauvegarde-20261102-120000"), MapStore.staleBackups(names));
+
+		names.keySet().removeIf(id -> id.startsWith("sauvegarde-2026110") && id.compareTo("sauvegarde-20261104") < 0);
+		assertTrue(MapStore.staleBackups(names).isEmpty());
+	}
 }

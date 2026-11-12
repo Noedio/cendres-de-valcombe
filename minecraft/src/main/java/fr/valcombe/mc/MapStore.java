@@ -208,7 +208,37 @@ public final class MapStore {
 			id = base + "-" + n;
 		}
 		String nom = "Sauvegarde du " + now.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy 'à' HH'h'mm"));
-		return write(v, id, nom).nom;
+		String written = write(v, id, nom).nom;
+		java.util.Map<String, String> names = new java.util.HashMap<>();
+		for (MapDef d : list()) {
+			names.put(d.id, d.nom);
+		}
+		for (String old : staleBackups(names)) {
+			try {
+				delete(old);
+			} catch (GameException e) {
+				// Une vieille sauvegarde qui ne part pas n'empêche pas de changer de carte.
+			}
+		}
+		return written;
+	}
+
+	/** Sauvegardes automatiques gardées : au-delà, les plus anciennes laissent la place. */
+	static final int KEPT_BACKUPS = 5;
+
+	/**
+	 * Parmi les cartes (identifiant → nom), les sauvegardes automatiques à supprimer : les plus anciennes au-delà
+	 * de KEPT_BACKUPS. Une sauvegarde que l'on a renommée est une carte que l'on veut garder : elle ne compte pas.
+	 */
+	static List<String> staleBackups(java.util.Map<String, String> names) {
+		List<String> auto = new ArrayList<>();
+		for (var e : names.entrySet()) {
+			if (e.getKey().startsWith("sauvegarde-") && e.getValue() != null && e.getValue().startsWith("Sauvegarde du ")) {
+				auto.add(e.getKey());
+			}
+		}
+		auto.sort(null); // l'identifiant porte la date : l'ordre alphabétique est celui du temps
+		return auto.size() <= KEPT_BACKUPS ? List.of() : new ArrayList<>(auto.subList(0, auto.size() - KEPT_BACKUPS));
 	}
 
 	/** Écrit la carte v (blocs, repères, aperçu) dans la bibliothèque. */
