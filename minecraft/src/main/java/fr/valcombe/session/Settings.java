@@ -19,4 +19,9 @@ public final class Settings {
 	public boolean spectatorGrimoire;
 	/** Coiffe des morts : « chapeau », « crane » ou « aucun ». */
 	public String deadHat = "chapeau";
+	/**
+	 * Avec un Conteur humain, les rôles ne sont pas distribués au lancement : le Conteur convoque chaque
+	 * joueur dans la salle à l'écart pour lui remettre le sien (ceux qui restent le reçoivent à la première nuit).
+	 */
+	public boolean roleRoom = true;
 }

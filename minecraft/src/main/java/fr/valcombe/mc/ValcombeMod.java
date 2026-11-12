@@ -48,7 +48,12 @@ public final class ValcombeMod implements ModInitializer {
 			sp.sendSystemMessage(Gui.plain("Ce bâton est celui du Conteur.", net.minecraft.ChatFormatting.GRAY));
 			return;
 		}
-		if (sp.isShiftKeyDown()) {
+		var game = SESSION.game();
+		if (sp.isShiftKeyDown() && game != null && (game.phase() == fr.valcombe.rules.Game.Phase.READY || SESSION.summoned() != null)) {
+			// Avant la première nuit (ou pendant une convocation) : le bâton convoque dans la salle à l'écart.
+			String cmd = target != null ? "vc convoquer " + target : "vc convoquer fin";
+			sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(), cmd);
+		} else if (sp.isShiftKeyDown()) {
 			String cmd = target != null ? "vc aparte " + target : "vc aparte fin";
 			sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(), cmd);
 		} else if (target != null) {
@@ -277,7 +282,8 @@ public final class ValcombeMod implements ModInitializer {
 			return InteractionResult.SUCCESS;
 		});
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
-			if (!ValcombeUi.isWand(player.getItemInHand(hand))) {
+			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
+			if (tool == null) {
 				// Trône : clic droit pour s'asseoir
 				if (player instanceof ServerPlayer sp && !player.isShiftKeyDown() && !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
 					&& HOST.village() != null && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
@@ -290,9 +296,12 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			if (player instanceof ServerPlayer sp
 				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+				if (hand != net.minecraft.world.InteractionHand.MAIN_HAND) {
+					return InteractionResult.SUCCESS;
+				}
 				var at = hit.getBlockPos().above();
 				try {
-					String msg = sp.isShiftKeyDown() ? HOST.addHouseAt(at) : HOST.addSeatAt(at);
+					String msg = HOST.useTool(sp, tool, hit.getBlockPos(), sp.isShiftKeyDown());
 					sp.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
 					WorldSetup.run(sp.level().getServer(), String.format(java.util.Locale.ROOT,
 						"particle minecraft:happy_villager %d %d %d 0.3 0.3 0.3 0 12", at.getX(), at.getY(), at.getZ()));

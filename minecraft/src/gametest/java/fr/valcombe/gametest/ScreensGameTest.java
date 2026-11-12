@@ -607,11 +607,66 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.waitTicks(20);
 			shot(ctx, "9-village-place");
 
+			// Mode construction : étiquettes des repères, maison bâtie d'un clic, gomme, déplacement, vue de dessus
+			ctx.runOnClient(mc -> mc.player.setXRot(10));
+			send(ctx, "vc carte construction");
+			ctx.waitTicks(40);
+			shot(ctx, "25-construction-etiquettes");
+			var spot = port.offset(5, 0, 25);
+			String built = world.getServer().computeOnServer(server -> {
+				var host = fr.valcombe.mc.ValcombeMod.host();
+				var p = server.getPlayerList().getPlayerByName(me);
+				String msg = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.HOUSE, spot, true);
+				return msg + " | maisons " + host.village().houseCount() + " | toit "
+					+ !server.overworld().getBlockState(spot.above(5)).isAir();
+			});
+			System.out.println("[valcombe-test] maison bâtie : " + built);
+			check(built.contains("maisons 17") && built.endsWith("toit true"), "maison bâtie d'un clic");
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+				port.getX() + 5, port.getY() + 4, port.getZ() + 12, spot.getX(), spot.getY() + 3, spot.getZ()));
+			ctx.waitTicks(40);
+			shot(ctx, "25b-maison-batie");
+			boolean edited = world.getServer().computeOnServer(server -> {
+				var host = fr.valcombe.mc.ValcombeMod.host();
+				var p = server.getPlayerList().getPlayerByName(me);
+				var v = host.village();
+				String erased = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.ERASE, spot, false);
+				boolean gone = server.overworld().getBlockState(spot.above(5)).isAir();
+				var throne = v.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0));
+				String taken = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.below(), false);
+				String moved = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.offset(1, -1, 0), false);
+				boolean there = v.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0)).equals(throne.offset(1, 0, 0));
+				host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.offset(1, -1, 0), false);
+				host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.below(), false);
+				boolean back = v.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0)).equals(throne);
+				String plan = host.editMarker("ajouter", "siege", 0, 3, 3) + " / " + host.editMarker("retirer", "siege", 16, 0, 0);
+				byte[] png = host.topView();
+				try {
+					java.nio.file.Files.write(java.nio.file.Path.of("screenshots", "valcombe-vue-de-dessus.png"), png);
+				} catch (java.io.IOException e) {
+					throw new AssertionError(e);
+				}
+				System.out.println("[valcombe-test] repères : " + erased + " | " + taken + " | " + moved + " | " + plan
+					+ " | vue " + png.length + " octets | salle " + v.convocation());
+				return gone && there && back && v.houseCount() == 16 && v.seatCount() == 16 && png.length > 1000 && v.convocation() != null;
+			});
+			check(edited, "gomme, déplacement d'un trône, plan de l'Atelier et vue de dessus");
+			send(ctx, "vc carte construction");
+			ctx.waitTicks(10);
+
 			// Partie avec Conteur humain : le joueur devient Conteur
 			send(ctx, "vc quitter");
 			send(ctx, "vc conteur");
 			world.getServer().runCommand("vc bots 2");
 			world.getServer().runCommand("vc lancer humain");
+			ctx.waitTicks(20);
+			// Salle de convocation : le Conteur y reçoit un joueur à l'écart (ici, lui-même, faute d'autre joueur réel)
+			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().summon("personne", me)), "salle de convocation");
+			ctx.runOnClient(mc -> mc.player.setXRot(5));
+			ctx.waitTicks(40);
+			shot(ctx, "26-salle-de-convocation");
+			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
+				port.getX(), port.getY() + 1, port.getZ() + 12));
 			ctx.waitTicks(20);
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "6-panneau-grimoire");

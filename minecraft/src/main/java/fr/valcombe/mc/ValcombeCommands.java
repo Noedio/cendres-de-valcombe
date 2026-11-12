@@ -169,8 +169,9 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ui.host().importStructure(x.getSource().getPlayerOrException(),
 							arg(x, "structure"))))))
 				.then(Commands.literal("baguette").executes(c -> exec(c, x -> {
-					x.getSource().getPlayerOrException().getInventory().add(ValcombeUi.wandItem());
-					return "Baguette de carte : clic droit sur un bloc pour y poser un siège, accroupi pour une maison.";
+					ValcombeUi.mapTools(x.getSource().getPlayerOrException(), true);
+					return "Outils de carte : trône, maison, centre, salle de convocation et gomme. Clic droit sur un bloc pour poser, "
+						+ "sur un repère déjà posé pour le déplacer.";
 				})))
 				.then(Commands.literal("oublier").executes(c -> exec(c, x -> ui.host().forgetVillage())))
 				.then(Commands.literal("nouvelle")
@@ -184,6 +185,7 @@ public final class ValcombeCommands {
 					.then(Commands.literal("maison").executes(c -> exec(c, x -> ui.host().removeHouse()))))
 				.then(Commands.literal("infos").executes(c -> exec(c, x -> ui.host().mapInfo())))
 				.then(Commands.literal("annuler").executes(c -> exec(c, x -> ui.host().undoMarker())))
+				.then(Commands.literal("ordonner").executes(c -> exec(c, x -> ui.host().sortMarkers())))
 				.then(Commands.literal("renommer")
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
@@ -310,6 +312,11 @@ public final class ValcombeCommands {
 				.then(Commands.literal("ouvrir").executes(c -> exec(c, x -> session.setNominations(true))))
 				.then(Commands.literal("fermer").executes(c -> exec(c, x -> session.setNominations(false)))))
 			.then(Commands.literal("rassembler").requires(leader).executes(c -> exec(c, x -> session.gather())))
+			.then(Commands.literal("convoquer").requires(leader)
+				.then(Commands.literal("suivant").executes(c -> exec(c, x -> session.summonNext())))
+				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.endSummon())))
+				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
+					.executes(c -> exec(c, x -> session.summon(arg(x, "joueur"))))))
 			.then(Commands.literal("aparte").requires(leader)
 				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.setAside(null))))
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
@@ -473,7 +480,7 @@ public final class ValcombeCommands {
 			.then(Commands.literal("reglage").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
-						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "temps_defense", "temps_horloge",
+						List.of("nuit_immobile", "nuit_sombre", "nuit_maisons", "nuit_muette", "remise_convocation", "temps_defense", "temps_horloge",
 							"effets", "spectateurs_grimoire", "coiffe"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));

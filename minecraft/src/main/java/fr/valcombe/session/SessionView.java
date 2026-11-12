@@ -100,6 +100,7 @@ final class SessionView {
 		st.put("clockSeconds", ses.settings.clockTicks / 20.0);
 		st.put("fullEffects", ses.settings.fullEffects);
 		st.put("deadHat", ses.settings.deadHat);
+		st.put("roleRoom", ses.settings.roleRoom);
 		v.put("settings", st);
 		Game g = ses.game;
 		if (g == null) {
@@ -133,8 +134,13 @@ final class SessionView {
 				seats.add(s);
 			}
 			v.put("seats", seats);
-			if (mySeat >= 0) {
+			if (mySeat >= 0 && ses.roleKnown(me)) {
 				v.put("role", seatRole(g.player(mySeat), g.player(mySeat).believed()));
+			}
+			v.put("roleWaiting", mySeat >= 0 && !ses.roleKnown(me));
+			v.put("summoned", ses.summoned);
+			if (me.equals(ses.storyteller)) {
+				v.put("unbriefed", List.copyOf(ses.unbriefed));
 			}
 			if (ses.voteNom != null) {
 				Map<String, Object> vote = new LinkedHashMap<>();

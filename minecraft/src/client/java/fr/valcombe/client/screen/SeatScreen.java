@@ -79,6 +79,12 @@ public class SeatScreen extends BaseScreen {
 		button(bx + 70, y, 66, "Rappels…", () -> minecraft.gui.setScreen(new TokenScreen(name, false)));
 		y += 22;
 		String phase = ClientState.phase();
+		if (phase.equals("READY") || phase.equals("DAY")) {
+			boolean here = name.equals(ClientState.str(view(), "summoned"));
+			button(bx, y, 136, here ? "Renvoyer au village" : "Convoquer à l'écart",
+				() -> send(here ? "vc convoquer fin" : "vc convoquer " + name));
+			y += 22;
+		}
 		if (phase.equals("DAY") || phase.equals("NIGHT")) {
 			boolean alive = isAlive();
 			button(bx, y, 66, alive ? "Tuer" : "Ressusciter",

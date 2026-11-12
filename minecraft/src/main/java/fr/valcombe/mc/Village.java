@@ -75,9 +75,12 @@ public final class Village {
 			for (BlockPos b : houses) {
 				r = Math.max(r, (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8);
 			}
+			if (convocation != null) {
+				r = Math.max(r, (int) Math.ceil(Math.hypot(convocation.getX() - center.getX(), convocation.getZ() - center.getZ())) + 8);
+			}
 			return r;
 		}
-		return hall ? hallDistance + 12 : clearRadius;
+		return Math.max(hall ? hallDistance + 12 : clearRadius, convocation != null ? clearRadius + ROOM_GAP + 8 : 0);
 	}
 
 	public int seatTotal() {
@@ -107,6 +110,7 @@ public final class Village {
 		String theme;
 		List<int[]> seats = new ArrayList<>();
 		List<int[]> houses = new ArrayList<>();
+		int[] convocation;
 	}
 
 	private BlockPos center;
@@ -118,6 +122,10 @@ public final class Village {
 	private String theme = "gothique";
 	private final List<BlockPos> seats = new ArrayList<>();
 	private final List<BlockPos> houses = new ArrayList<>();
+	/** Salle de convocation : là où se tient le joueur que le Conteur reçoit à l'écart ; null s'il n'y en a pas. */
+	private BlockPos convocation;
+	/** Distance entre le bord du village généré et sa salle de convocation. */
+	private static final int ROOM_GAP = 9;
 
 	private Village(BlockPos center, boolean generated) {
 		this.center = center;
@@ -165,7 +173,7 @@ public final class Village {
 	 * (dx, dy, dz) et réglages de génération.
 	 */
 	public static Village restored(BlockPos center, boolean generated, String theme, int seatCount, int size,
-			boolean houses, boolean hall, List<int[]> relSeats, List<int[]> relHouses) {
+			boolean houses, boolean hall, List<int[]> relSeats, List<int[]> relHouses, int[] relConvocation) {
 		Village v = new Village(center, generated);
 		v.theme = THEMES.contains(theme) ? theme : "gothique";
 		v.seatTotal = seatCount;
@@ -175,7 +183,24 @@ public final class Village {
 		v.hall = hall;
 		relSeats.forEach(a -> v.seats.add(center.offset(a[0], a[1], a[2])));
 		relHouses.forEach(a -> v.houses.add(center.offset(a[0], a[1], a[2])));
+		if (relConvocation != null && relConvocation.length == 3) {
+			v.convocation = center.offset(relConvocation[0], relConvocation[1], relConvocation[2]);
+		}
 		return v;
+	}
+
+	/** Salle de convocation relative au centre, ou null. */
+	public int[] relConvocation() {
+		return convocation == null ? null
+			: new int[] {convocation.getX() - center.getX(), convocation.getY() - center.getY(), convocation.getZ() - center.getZ()};
+	}
+
+	public BlockPos convocation() {
+		return convocation;
+	}
+
+	public void setConvocation(BlockPos p) {
+		convocation = p;
 	}
 
 	/** Repères relatifs au centre (pour la bibliothèque de cartes). */
@@ -292,6 +317,137 @@ public final class Village {
 
 	public boolean removeLastHouse() {
 		return !houses.isEmpty() && houses.remove(houses.size() - 1) != null;
+	}
+
+	// ------------------------------------------------------------------
+	// Repères : les trouver, les déplacer, les retirer, les renuméroter
+	// ------------------------------------------------------------------
+	/** Sorte de repère d'une carte. */
+	public enum Mark {
+		SEAT("Trône"), HOUSE("Maison"), CENTER("Centre de la place"), ROOM("Salle de convocation");
+
+		public final String label;
+
+		Mark(String label) {
+			this.label = label;
+		}
+	}
+
+	/** Un repère précis : sa sorte et, pour un trône ou une maison, son rang (à partir de 0). */
+	public record Hit(Mark type, int index) {
+		/** « Trône 3 », « Maison 3 », « Centre de la place »… comme sur les étiquettes. */
+		public String label() {
+			return type == Mark.SEAT || type == Mark.HOUSE ? type.label + " " + (index + 1) : type.label;
+		}
+	}
+
+	/** Le repère de cette sorte (ou de n'importe laquelle si only est null) posé à `reach` blocs au plus de p, ou null. */
+	public Hit markerAt(BlockPos p, Mark only, int reach) {
+		Hit best = null;
+		double bestD = Double.MAX_VALUE;
+		List<Hit> all = new ArrayList<>();
+		for (int i = 0; i < seats.size(); i++) {
+			all.add(new Hit(Mark.SEAT, i));
+		}
+		for (int i = 0; i < houses.size(); i++) {
+			all.add(new Hit(Mark.HOUSE, i));
+		}
+		if (convocation != null) {
+			all.add(new Hit(Mark.ROOM, 0));
+		}
+		for (Hit h : all) {
+			BlockPos m = markerPos(h);
+			if ((only == null || only == h.type()) && Math.abs(m.getX() - p.getX()) <= reach && Math.abs(m.getZ() - p.getZ()) <= reach
+				&& Math.abs(m.getY() - p.getY()) <= 2) {
+				double d = m.distSqr(p);
+				if (d < bestD) {
+					bestD = d;
+					best = h;
+				}
+			}
+		}
+		return best;
+	}
+
+	/** Position d'un repère (les pieds de celui qui s'y tient). */
+	public BlockPos markerPos(Hit h) {
+		return switch (h.type()) {
+			case SEAT -> seats.get(h.index());
+			case HOUSE -> houses.get(h.index());
+			case ROOM -> convocation;
+			case CENTER -> center.above();
+		};
+	}
+
+	/** Déplace un repère sans changer son numéro. */
+	public void moveMarker(Hit h, BlockPos to) {
+		switch (h.type()) {
+			case SEAT -> seats.set(h.index(), to);
+			case HOUSE -> houses.set(h.index(), to);
+			case ROOM -> convocation = to;
+			case CENTER -> setCenter(to.below());
+		}
+	}
+
+	/** Retire un repère ; les suivants de la même sorte reculent d'un numéro. */
+	public void removeMarker(Hit h) {
+		switch (h.type()) {
+			case SEAT -> seats.remove(h.index());
+			case HOUSE -> houses.remove(h.index());
+			case ROOM -> convocation = null;
+			case CENTER -> throw new fr.valcombe.rules.GameException("Le centre de la place ne se retire pas : déplacez-le.");
+		}
+	}
+
+	/**
+	 * Renumérote les trônes et les maisons dans le sens des aiguilles d'une montre en partant du nord :
+	 * le trône 1 est le plus au nord, et la maison 1 est celle qui lui fait face.
+	 */
+	public void sortClockwise() {
+		java.util.Comparator<BlockPos> turn = java.util.Comparator.comparingDouble(b -> {
+			double a = Math.atan2(b.getX() - center.getX(), -(b.getZ() - center.getZ()));
+			return a < -1e-9 ? a + 2 * Math.PI : a;
+		});
+		seats.sort(turn);
+		houses.sort(turn);
+		placed.clear();
+	}
+
+	/** Un endroit où tenir debout, deux blocs plus loin que p (au nord d'abord), ou p lui-même. */
+	public static BlockPos standNear(ServerLevel level, BlockPos p) {
+		for (int d = 2; d >= 1; d--) {
+			for (Direction dir : new Direction[] {Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
+				BlockPos q = p.relative(dir, d);
+				if (standable(level, q) && (d == 1 || !blocks(level, p.relative(dir, 1)))) {
+					return q;
+				}
+			}
+		}
+		return p;
+	}
+
+	private static boolean standable(ServerLevel level, BlockPos feet) {
+		return !blocks(level, feet) && !blocks(level, feet.above()) && blocks(level, feet.below());
+	}
+
+	/** Ce bloc arrête-t-il un joueur ? (Un tapis ou une plaque ne compte pas.) */
+	private static boolean blocks(ServerLevel level, BlockPos pos) {
+		var shape = level.getBlockState(pos).getCollisionShape(level, pos);
+		return !shape.isEmpty() && shape.max(Direction.Axis.Y) > 0.2;
+	}
+
+	/**
+	 * Le sol à cette colonne : le premier endroit où tenir debout en montant depuis le dessous de la place
+	 * (on trouve ainsi le plancher d'une maison, pas son toit) ; à défaut, le niveau de la place.
+	 */
+	public BlockPos groundAt(ServerLevel level, int x, int z) {
+		for (int y = center.getY() - 3; y <= center.getY() + 22; y++) {
+			BlockPos feet = new BlockPos(x, y, z);
+			if (standable(level, feet)) {
+				return feet;
+			}
+		}
+		return new BlockPos(x, center.getY() + 1, z);
 	}
 
 	// ------------------------------------------------------------------
@@ -509,8 +665,112 @@ public final class Village {
 	/** Quand un plan est ouvert, les blocs y sont rangés au lieu d'être posés tout de suite. */
 	private BuildQueue.Plan plan;
 
+	/** Décalage en hauteur des blocs posés (une maison bâtie ailleurs qu'au niveau de la place). */
+	private int lift;
+
+	/**
+	 * Bâtit tout de suite ce que pose work, à la hauteur voulue, et renvoie les blocs qui s'y trouvaient
+	 * avant : de quoi tout remettre si l'on retire la construction.
+	 */
+	private java.util.Map<BlockPos, BlockState> buildNow(ServerLevel level, int liftY, Runnable work) {
+		BuildQueue.Plan p = new BuildQueue.Plan();
+		plan = p;
+		lift = liftY;
+		try {
+			work.run();
+		} finally {
+			plan = null;
+			lift = 0;
+		}
+		java.util.Map<BlockPos, BlockState> before = new java.util.LinkedHashMap<>();
+		for (int i = 0; i < p.size(); i++) {
+			before.putIfAbsent(p.at.get(i), level.getBlockState(p.at.get(i)));
+			level.setBlock(p.at.get(i), p.states.get(i), FLAGS);
+		}
+		p.after.forEach(Runnable::run);
+		return before;
+	}
+
+	/** Bâtit une maison du thème autour de ces pieds (porte vers la place) ; renvoie les blocs d'avant. */
+	public java.util.Map<BlockPos, BlockState> buildHouseAt(ServerLevel level, BlockPos feet) {
+		int hx = feet.getX() - center.getX();
+		int hz = feet.getZ() - center.getZ();
+		int index = houses.size();
+		return buildNow(level, feet.getY() - 1 - center.getY(), () -> {
+			for (int x = -HOUSE_HALF - 1; x <= HOUSE_HALF + 1; x++) {
+				for (int z = -HOUSE_HALF - 1; z <= HOUSE_HALF + 1; z++) {
+					for (int y = 1; y <= 10; y++) {
+						set(level, hx + x, y, hz + z, Blocks.AIR.defaultBlockState());
+					}
+				}
+			}
+			house(level, hx, hz, index, palette(theme));
+		});
+	}
+
+	/** Bâtit une salle de convocation close autour de ces pieds ; renvoie les blocs d'avant. */
+	public java.util.Map<BlockPos, BlockState> buildRoomAt(ServerLevel level, BlockPos feet) {
+		int rx = feet.getX() - center.getX();
+		int rz = feet.getZ() - center.getZ();
+		return buildNow(level, feet.getY() - 1 - center.getY(), () -> room(level, rx, rz, palette(theme)));
+	}
+
+	/** Village généré : bâtit la salle de convocation à l'écart, à l'opposé de la salle d'attente. */
+	public void buildConvocation(ServerLevel level) {
+		double a = hallAngle() + Math.PI;
+		int rx = (int) Math.round((clearRadius + ROOM_GAP) * Math.cos(a));
+		int rz = (int) Math.round((clearRadius + ROOM_GAP) * Math.sin(a));
+		Palette p = palette(theme);
+		for (int x = -6; x <= 6; x++) {
+			for (int z = -6; z <= 6; z++) {
+				for (int y = -3; y < 0; y++) {
+					set(level, rx + x, y, rz + z, Blocks.STONE.defaultBlockState());
+				}
+				set(level, rx + x, 0, rz + z, p.grass().defaultBlockState());
+				for (int y = 1; y <= 8; y++) {
+					set(level, rx + x, y, rz + z, Blocks.AIR.defaultBlockState());
+				}
+			}
+		}
+		room(level, rx, rz, p);
+		convocation = center.offset(rx, 1, rz);
+	}
+
+	/**
+	 * Salle de convocation : une pièce close de 9 × 9, sans porte ni fenêtre (on y entre et on en sort
+	 * par le Conteur). Le joueur se tient au milieu, le Conteur devant la bibliothèque du fond.
+	 */
+	private void room(ServerLevel level, int rx, int rz, Palette p) {
+		BlockState air = Blocks.AIR.defaultBlockState();
+		for (int x = -4; x <= 4; x++) {
+			for (int z = -4; z <= 4; z++) {
+				boolean edge = Math.abs(x) == 4 || Math.abs(z) == 4;
+				boolean corner = Math.abs(x) == 4 && Math.abs(z) == 4;
+				boolean inlay = Math.abs(x) <= 1 && Math.abs(z) <= 1;
+				set(level, rx + x, 0, rz + z, (inlay ? p.seatFloor() : p.houseFloor()).defaultBlockState());
+				for (int y = 1; y <= 4; y++) {
+					set(level, rx + x, y, rz + z, corner ? p.pillar().defaultBlockState() : edge ? p.wallB().defaultBlockState() : air);
+				}
+				set(level, rx + x, 5, rz + z, p.roof().defaultBlockState());
+			}
+		}
+		for (int x = -3; x <= 3; x++) {
+			set(level, rx + x, 1, rz - 3, Blocks.BOOKSHELF.defaultBlockState());
+			set(level, rx + x, 2, rz - 3, Blocks.BOOKSHELF.defaultBlockState());
+		}
+		set(level, rx - 3, 1, rz + 3, Blocks.BARREL.defaultBlockState());
+		set(level, rx + 3, 1, rz + 3, Blocks.LECTERN.defaultBlockState());
+		BlockState light = p.light().defaultBlockState();
+		if (light.hasProperty(net.minecraft.world.level.block.LanternBlock.HANGING)) {
+			light = light.setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+		}
+		for (int[] l : new int[][] {{-3, -2}, {3, -2}, {-3, 2}, {3, 2}}) {
+			set(level, rx + l[0], 4, rz + l[1], light);
+		}
+	}
+
 	private void set(ServerLevel level, int x, int y, int z, BlockState s) {
-		BlockPos pos = new BlockPos(center.getX() + x, center.getY() + y, center.getZ() + z);
+		BlockPos pos = new BlockPos(center.getX() + x, center.getY() + y + lift, center.getZ() + z);
 		if (plan != null) {
 			plan.set(pos, s);
 		} else {
@@ -977,6 +1237,7 @@ public final class Village {
 		d.theme = theme;
 		seats.forEach(p -> d.seats.add(arr(p)));
 		houses.forEach(p -> d.houses.add(arr(p)));
+		d.convocation = convocation == null ? null : arr(convocation);
 		try {
 			Path f = file(server);
 			Files.createDirectories(f.getParent());
@@ -1004,6 +1265,7 @@ public final class Village {
 				v.theme = d.theme == null ? "gothique" : d.theme;
 				d.seats.forEach(a -> v.seats.add(pos(a)));
 				d.houses.forEach(a -> v.houses.add(pos(a)));
+				v.convocation = d.convocation == null ? null : pos(d.convocation);
 				return v;
 			}
 			// Ancien format (version 0.1.0) : seulement le centre d'un village généré.

@@ -58,6 +58,8 @@ public final class MapStore {
 		public int rayon;
 		public List<int[]> sieges = new ArrayList<>();
 		public List<int[]> logis = new ArrayList<>();
+		/** Salle de convocation (où le Conteur reçoit un joueur à l'écart), ou null. */
+		public int[] convocation;
 	}
 
 	private final Path dir;
@@ -128,7 +130,8 @@ public final class MapStore {
 		if (d.sieges == null || d.logis == null || d.sieges.size() > MAX_MARKERS || d.logis.size() > MAX_MARKERS) {
 			throw new GameException("Carte « " + d.nom + " » : " + MAX_MARKERS + " trônes et " + MAX_MARKERS + " maisons au plus.");
 		}
-		for (List<int[]> marks : List.of(d.sieges, d.logis)) {
+		List<int[]> room = d.convocation == null ? List.of() : java.util.Collections.singletonList(d.convocation);
+		for (List<int[]> marks : List.of(d.sieges, d.logis, room)) {
 			for (int[] a : marks) {
 				if (a == null || a.length != 3 || Math.abs(a[0]) > d.rayon + 8 || Math.abs(a[2]) > d.rayon + 8 || Math.abs(a[1]) > 64) {
 					throw new GameException("Carte « " + d.nom + " » : un repère sort de la carte.");
@@ -173,8 +176,10 @@ public final class MapStore {
 		d.rayon = r;
 		d.sieges = v.relSeats();
 		d.logis = v.relHouses();
+		d.convocation = v.relConvocation();
 		try {
 			Files.createDirectories(dir);
+			Files.write(dir.resolve(id + ".png"), host.topView()); // l'aperçu que l'Atelier met sous le plan
 			NbtIo.writeCompressed(t.save(new CompoundTag()), dir.resolve(id + ".nbt"));
 			Files.writeString(dir.resolve(id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
 		} catch (IOException e) {
@@ -212,7 +217,7 @@ public final class MapStore {
 		// Le terrain est rasé par petits lots (le serveur reste fluide), puis la carte est posée.
 		host.startBuild("Chargement de « " + d.nom + " »", host.clearPlan(c, clear, BELOW, HEIGHT), () -> {
 			t.placeInWorld(level, corner, corner, new StructurePlaceSettings(), level.getRandom(), Block.UPDATE_CLIENTS);
-			host.useVillage(Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis));
+			host.useVillage(Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis, d.convocation));
 			host.announceAll("Carte « " + d.nom + " » chargée.");
 		});
 		return "Chargement de la carte « " + d.nom + " » lancé : suivez la barre en haut de l'écran.";
@@ -223,6 +228,7 @@ public final class MapStore {
 		try {
 			Files.deleteIfExists(dir.resolve(id + ".json"));
 			Files.deleteIfExists(dir.resolve(id + ".nbt"));
+			Files.deleteIfExists(dir.resolve(id + ".png"));
 		} catch (IOException e) {
 			throw new GameException("Suppression impossible : " + e.getMessage());
 		}
@@ -259,6 +265,9 @@ public final class MapStore {
 		}
 		try {
 			Files.copy(dir.resolve(id + ".nbt"), dir.resolve(newId + ".nbt"));
+			if (Files.exists(dir.resolve(id + ".png"))) {
+				Files.copy(dir.resolve(id + ".png"), dir.resolve(newId + ".png"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
 			Files.writeString(dir.resolve(newId + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new GameException("Copie impossible : " + e.getMessage());
@@ -302,6 +311,17 @@ public final class MapStore {
 			throw new GameException("Carte « " + d.nom + " » illisible.");
 		}
 		return d.nom;
+	}
+
+	/** Aperçu vu de dessus enregistré avec la carte (image PNG), ou null pour une carte d'avant cette version. */
+	public byte[] preview(String id) {
+		checkId(id);
+		try {
+			Path f = dir.resolve(id + ".png");
+			return Files.exists(f) ? Files.readAllBytes(f) : null;
+		} catch (IOException e) {
+			return null;
+		}
 	}
 
 	/** Taille du fichier de structure (pour l'Atelier). */

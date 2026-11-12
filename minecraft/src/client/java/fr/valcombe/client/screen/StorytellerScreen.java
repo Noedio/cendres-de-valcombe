@@ -128,6 +128,16 @@ public class StorytellerScreen extends BaseScreen {
 					col.add(new Entry(pause, () -> send("vc pause"), true));
 				}
 				case 1 -> {
+					if (phase.equals("READY") && "HUMAIN".equals(ClientState.str(v, "mode"))) {
+						// Remise des rôles : le Conteur reçoit chaque joueur dans la salle de convocation.
+						int left = v.has("unbriefed") ? v.getAsJsonArray("unbriefed").size() : 0;
+						String here = ClientState.str(v, "summoned");
+						col.add(new Entry(left > 0 ? "Convoquer le suivant (" + left + " à recevoir)" : "Convoquer le suivant",
+							() -> send("vc convoquer suivant"), false));
+						if (here != null && !here.isEmpty()) {
+							col.add(new Entry("Renvoyer " + here + " au village", () -> send("vc convoquer fin"), false));
+						}
+					}
 					if (!phase.equals("NIGHT")) {
 						col.add(new Entry("Faire tomber la nuit", () -> {
 							send("vc nuit");
@@ -146,6 +156,10 @@ public class StorytellerScreen extends BaseScreen {
 						JsonObject vote = ClientState.obj(v, "vote");
 						JsonObject today = ClientState.obj(v, "today");
 						col.add(new Entry("Rassembler le village", () -> send("vc rassembler"), false));
+						String here = ClientState.str(v, "summoned");
+						if (here != null && !here.isEmpty()) {
+							col.add(new Entry("Renvoyer " + here + " au village", () -> send("vc convoquer fin"), false));
+						}
 						col.add(new Entry("Discussion libre (5 min)", () -> send("vc discussion 5"), false));
 						col.add(new Entry("Prolonger d'une minute", () -> send("vc prolonger 1"), false));
 						col.add(new Entry(open ? "Fermer les nominations" : "Ouvrir les nominations",

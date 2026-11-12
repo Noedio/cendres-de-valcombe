@@ -119,15 +119,57 @@ public final class ValcombeUi {
 		return model(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."), "grimoire");
 	}
 
-	public static final String WAND_NAME = "Baguette de carte";
+	/** Outils de carte du mode construction : un objet par sorte de repère, et une gomme. */
+	public enum MapTool {
+		SEAT(Items.GOLD_INGOT, "Carte : trône", "Clic droit sur un bloc : poser un trône.",
+			"Clic droit sur un trône déjà posé : le prendre, puis cliquer là où le reposer."),
+		HOUSE(Items.EMERALD, "Carte : maison", "Clic droit sur un bloc : poser une maison (là où l'on dort).",
+			"Clic droit sur une maison déjà posée : la prendre pour la déplacer.",
+			"Accroupi + clic droit : bâtir une maison ici."),
+		CENTER(Items.COMPASS, "Carte : centre de la place", "Clic droit sur un bloc : le centre de la place est ici."),
+		ROOM(Items.AMETHYST_SHARD, "Carte : salle de convocation", "Clic droit sur un bloc : le joueur convoqué arrivera ici.",
+			"Accroupi + clic droit : bâtir la salle ici."),
+		ERASE(Items.BARRIER, "Carte : gomme", "Clic droit sur le bloc sous une étiquette : retirer ce repère.",
+			"Une maison ou une salle bâtie d'un clic disparaît avec lui.");
 
-	public static ItemStack wandItem() {
-		return model(Gui.icon(Items.BLAZE_ROD, WAND_NAME, "Clic droit sur un bloc : siège.", "Accroupi + clic droit : maison."), "equerre");
+		final net.minecraft.world.item.Item item;
+		final String title;
+		final String[] lore;
+
+		MapTool(net.minecraft.world.item.Item item, String title, String... lore) {
+			this.item = item;
+			this.title = title;
+			this.lore = lore;
+		}
 	}
 
-	public static boolean isWand(ItemStack stack) {
+	/** L'outil de carte que représente cet objet, ou null. */
+	public static MapTool mapTool(ItemStack stack) {
 		Component n = stack.get(DataComponents.CUSTOM_NAME);
-		return stack.is(Items.BLAZE_ROD) && n != null && n.getString().equals(WAND_NAME);
+		if (n == null) {
+			return null;
+		}
+		for (MapTool t : MapTool.values()) {
+			if (stack.is(t.item) && n.getString().equals(t.title)) {
+				return t;
+			}
+		}
+		return null;
+	}
+
+	/** Donne les outils de carte (ou les reprend tous). */
+	public static void mapTools(ServerPlayer p, boolean on) {
+		var inv = p.getInventory();
+		for (int i = 0; i < inv.getContainerSize(); i++) {
+			if (mapTool(inv.getItem(i)) != null) {
+				inv.setItem(i, ItemStack.EMPTY);
+			}
+		}
+		if (on) {
+			for (MapTool t : MapTool.values()) {
+				inv.add(Gui.icon(t.item, t.title, t.lore));
+			}
+		}
 	}
 
 	public static final String STAFF_NAME = "Bâton du Conteur";

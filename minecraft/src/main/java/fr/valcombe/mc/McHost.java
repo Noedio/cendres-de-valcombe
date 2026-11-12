@@ -587,46 +587,57 @@ public final class McHost implements Host {
 			.map(Object::toString).limit(60).toList();
 	}
 
+	/** Plus de repères d'une sorte qu'une carte n'en accepte (voir MapStore). */
+	private static final int MAX_MARKERS = 40;
+
+	/** Les repères ont changé : on enregistre et on rafraîchit les étiquettes du mode construction. */
+	private void markersChanged() {
+		village.save(server);
+		refreshLabels();
+	}
+
+	private void requireRoom(Village v, boolean seat) {
+		if ((seat ? v.seatCount() : v.houseCount()) >= MAX_MARKERS) {
+			throw new fr.valcombe.rules.GameException("Une carte compte " + MAX_MARKERS + (seat ? " trônes" : " maisons") + " au plus.");
+		}
+	}
+
 	public String addSeat(ServerPlayer p) {
-		Village v = requireVillage();
-		v.addSeat(p.blockPosition());
-		v.save(server);
-		return "Siège n°" + v.seatCount() + " enregistré.";
+		return addSeatAt(p.blockPosition());
 	}
 
 	public String addHouse(ServerPlayer p) {
-		Village v = requireVillage();
-		v.addHouse(p.blockPosition());
-		v.save(server);
-		return "Maison n°" + v.houseCount() + " enregistrée.";
+		return addHouseAt(p.blockPosition());
 	}
 
 	public String addSeatAt(BlockPos pos) {
 		Village v = requireVillage();
+		requireRoom(v, true);
 		v.addSeat(pos);
-		v.save(server);
-		return "Siège n°" + v.seatCount() + " posé.";
+		markersChanged();
+		return "Trône " + v.seatCount() + " posé.";
 	}
 
 	public String addHouseAt(BlockPos pos) {
 		Village v = requireVillage();
+		requireRoom(v, false);
 		v.addHouse(pos);
-		v.save(server);
-		return "Maison n°" + v.houseCount() + " posée.";
+		markersChanged();
+		return "Maison " + v.houseCount() + " posée.";
 	}
 
 	public String removeSeat() {
 		Village v = requireVillage();
 		boolean ok = v.removeLastSeat();
-		v.save(server);
-		return ok ? "Dernier siège retiré (" + v.seatCount() + " restants)." : "Aucun siège à retirer.";
+		markersChanged();
+		return ok ? "Dernier trône retiré (" + v.seatCount() + " restants)." : "Aucun trône à retirer.";
 	}
 
 	/** Annule le dernier repère posé à la main (trône ou maison). */
 	public String undoMarker() {
 		Village v = requireVillage();
 		String what = v.undoLast();
-		v.save(server);
+		markersChanged();
 		return what == null ? "Rien à annuler : aucun repère posé depuis le chargement de la carte."
 			: "Dernier repère retiré : " + what + " (" + v.seatCount() + " trônes, " + v.houseCount() + " maisons).";
 	}
@@ -634,8 +645,312 @@ public final class McHost implements Host {
 	public String removeHouse() {
 		Village v = requireVillage();
 		boolean ok = v.removeLastHouse();
-		v.save(server);
+		markersChanged();
 		return ok ? "Dernière maison retirée (" + v.houseCount() + " restantes)." : "Aucune maison à retirer.";
+	}
+
+	/** Renumérote trônes et maisons dans le sens des aiguilles d'une montre, en partant du nord. */
+	public String sortMarkers() {
+		Village v = requireVillage();
+		v.sortClockwise();
+		markersChanged();
+		return "Trônes et maisons renumérotés dans le sens des aiguilles d'une montre, en partant du nord.";
+	}
+
+	// ------------------------------------------------------------------
+	// Outils de carte (mode construction) : un objet par sorte de repère, et une gomme
+	// ------------------------------------------------------------------
+	/** Repère qu'un constructeur a pris en main pour le déplacer. */
+	private final Map<String, Village.Hit> carrying = new HashMap<>();
+	/** Constructions bâties d'un clic (maison, salle) : repère → blocs d'avant, pour tout remettre à la gomme. */
+	private final Map<BlockPos, Map<BlockPos, net.minecraft.world.level.block.state.BlockState>> prefabs = new HashMap<>();
+
+	private static Village.Mark markOf(ValcombeUi.MapTool tool) {
+		return switch (tool) {
+			case SEAT -> Village.Mark.SEAT;
+			case HOUSE -> Village.Mark.HOUSE;
+			case ROOM -> Village.Mark.ROOM;
+			default -> Village.Mark.CENTER;
+		};
+	}
+
+	/** Accord du participe : « Trône 3 déplacé », « Maison 3 déplacée ». */
+	private static String done(Village.Hit h, String participle) {
+		return participle + (h.type() == Village.Mark.HOUSE || h.type() == Village.Mark.ROOM ? "e" : "");
+	}
+
+	/** Un constructeur clique sur un bloc avec un outil de carte ; renvoie ce qui s'est passé. */
+	public String useTool(ServerPlayer p, ValcombeUi.MapTool tool, BlockPos clicked, boolean sneak) {
+		Village v = requireVillage();
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
+		}
+		String who = p.getScoreboardName();
+		BlockPos at = clicked.above();
+		String msg;
+		if (tool == ValcombeUi.MapTool.ERASE) {
+			carrying.remove(who);
+			Village.Hit h = v.markerAt(at, null, 1);
+			if (h == null) {
+				throw new fr.valcombe.rules.GameException("Aucun repère ici : cliquez sur le bloc sous une étiquette.");
+			}
+			BlockPos pos = v.markerPos(h);
+			v.removeMarker(h);
+			var before = prefabs.remove(pos);
+			if (before != null) {
+				before.forEach((b, s) -> p.level().setBlock(b, s, net.minecraft.world.level.block.Block.UPDATE_CLIENTS));
+			}
+			msg = h.label() + done(h, " retiré") + (before != null ? ", et sa construction avec." : ".")
+				+ (h.type() == Village.Mark.SEAT || h.type() == Village.Mark.HOUSE ? " Les suivants reculent d'un numéro." : "");
+		} else if (tool == ValcombeUi.MapTool.CENTER) {
+			v.setCenter(clicked);
+			applySpawn();
+			msg = "Centre de la place posé ici.";
+		} else {
+			Village.Mark type = markOf(tool);
+			Village.Hit held = carrying.get(who);
+			Village.Hit here = v.markerAt(at, type, 0);
+			if (held != null && held.type() == type && (type == Village.Mark.ROOM
+				|| held.index() < (type == Village.Mark.SEAT ? v.seatCount() : v.houseCount()))) {
+				v.moveMarker(held, at);
+				carrying.remove(who);
+				msg = held.label() + done(held, " déplacé") + " ici.";
+			} else if (here != null && !sneak) {
+				carrying.put(who, here);
+				return here.label() + " en main : cliquez là où le reposer. Pour le retirer, prenez la gomme.";
+			} else if (type == Village.Mark.ROOM) {
+				if (sneak) {
+					prefabs.put(at, v.buildRoomAt(p.level(), at));
+				}
+				v.setConvocation(at);
+				msg = sneak ? "Salle de convocation bâtie ici : le Conteur y recevra chaque joueur à l'écart."
+					: "Salle de convocation posée ici : le joueur convoqué arrivera à cet endroit.";
+			} else if (type == Village.Mark.SEAT) {
+				requireRoom(v, true);
+				v.addSeat(at);
+				msg = "Trône " + v.seatCount() + " posé.";
+			} else {
+				requireRoom(v, false);
+				if (sneak) {
+					prefabs.put(at, v.buildHouseAt(p.level(), at));
+				}
+				v.addHouse(at);
+				msg = "Maison " + v.houseCount() + (sneak ? " bâtie." : " posée.");
+			}
+		}
+		markersChanged();
+		return msg;
+	}
+
+	/** Depuis l'Atelier : ajoute, déplace ou retire un repère sur le plan (x, z relatifs au centre). */
+	public String editMarker(String action, String type, int index, int dx, int dz) {
+		Village v = requireVillage();
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
+		}
+		Village.Mark mark = switch (type) {
+			case "siege" -> Village.Mark.SEAT;
+			case "maison" -> Village.Mark.HOUSE;
+			case "salle" -> Village.Mark.ROOM;
+			case "centre" -> Village.Mark.CENTER;
+			default -> throw new fr.valcombe.rules.GameException("Sorte de repère inconnue : " + type + ".");
+		};
+		if (Math.abs(dx) > 220 || Math.abs(dz) > 220) {
+			throw new fr.valcombe.rules.GameException("Ce point est trop loin de la place.");
+		}
+		BlockPos at = v.groundAt(server.overworld(), v.center().getX() + dx, v.center().getZ() + dz);
+		Village.Hit h = new Village.Hit(mark, index);
+		boolean numbered = mark == Village.Mark.SEAT || mark == Village.Mark.HOUSE;
+		if (!action.equals("ajouter") && (numbered ? index < 0 || index >= (mark == Village.Mark.SEAT ? v.seatCount() : v.houseCount())
+			: mark == Village.Mark.ROOM && v.convocation() == null)) {
+			throw new fr.valcombe.rules.GameException("Ce repère n'existe plus : le plan vient d'être rechargé.");
+		}
+		String msg;
+		switch (action) {
+			case "ajouter" -> {
+				if (mark == Village.Mark.SEAT) {
+					return addSeatAt(at);
+				}
+				if (mark == Village.Mark.HOUSE) {
+					return addHouseAt(at);
+				}
+				v.moveMarker(h, at);
+				msg = mark.label + " posé" + (mark == Village.Mark.ROOM ? "e." : ".");
+			}
+			case "deplacer" -> {
+				v.moveMarker(h, at);
+				msg = h.label() + done(h, " déplacé") + ".";
+			}
+			case "retirer" -> {
+				v.removeMarker(h);
+				msg = h.label() + done(h, " retiré") + ".";
+			}
+			default -> throw new fr.valcombe.rules.GameException("Action inconnue : " + action + ".");
+		}
+		if (mark == Village.Mark.CENTER) {
+			applySpawn();
+		}
+		markersChanged();
+		return msg;
+	}
+
+	/** Depuis l'Atelier : amène l'opérateur sur un repère, pour voir dans le jeu ce que montre le plan. */
+	public String visitMarker(ServerPlayer p, String type, int index) {
+		Village v = requireVillage();
+		BlockPos at = switch (type) {
+			case "siege" -> index >= 0 && index < v.seatCount() ? v.markerPos(new Village.Hit(Village.Mark.SEAT, index)) : null;
+			case "maison" -> index >= 0 && index < v.houseCount() ? v.markerPos(new Village.Hit(Village.Mark.HOUSE, index)) : null;
+			case "salle" -> v.convocation();
+			default -> v.center().above();
+		};
+		if (at == null) {
+			throw new fr.valcombe.rules.GameException("Ce repère n'existe plus.");
+		}
+		if (p.isPassenger()) {
+			p.stopRiding();
+		}
+		p.teleportTo(server.overworld(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, Set.of(), p.getYRot(), p.getXRot(), false);
+		return "Vous voilà sur le repère.";
+	}
+
+	private int labelGen;
+
+	/** Étiquettes flottantes des repères, visibles à travers les murs tant que quelqu'un construit. */
+	private void refreshLabels() {
+		if (server == null) {
+			return;
+		}
+		labelGen++;
+		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=vc_repere]");
+		if (builders.isEmpty() || village == null) {
+			return;
+		}
+		Village v = village;
+		label(v.center().above(), "✚ Centre de la place", "aqua");
+		for (int i = 0; i < v.seatCount(); i++) {
+			label(v.markerPos(new Village.Hit(Village.Mark.SEAT, i)), "♛ Trône " + (i + 1), "gold");
+		}
+		for (int i = 0; i < v.houseCount(); i++) {
+			label(v.markerPos(new Village.Hit(Village.Mark.HOUSE, i)), "⌂ Maison " + (i + 1), "green");
+		}
+		if (v.convocation() != null) {
+			label(v.convocation(), "✉ Salle de convocation", "light_purple");
+		}
+	}
+
+	private void label(BlockPos at, String text, String color) {
+		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_repere\",\"vc_rep_%d\"],billboard:\"center\",see_through:1b,"
+				+ "background:-1073741824,shadow:1b,view_range:1.5f,"
+				+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
+				+ "scale:[2.2f,2.2f,2.2f]},text:{text:\"%s\",color:\"%s\"}}",
+			at.getX() + 0.5, at.getY() + 2.4, at.getZ() + 0.5, labelGen, text, color));
+	}
+
+	// ------------------------------------------------------------------
+	// Salle de convocation : le Conteur reçoit un joueur à l'écart
+	// ------------------------------------------------------------------
+	/** Où se tenait le Conteur avant de convoquer : il y revient à la fin. */
+	private SeatPos storytellerBack;
+
+	private static float yawTo(Vec3 from, Vec3 to) {
+		return (float) Math.toDegrees(Math.atan2(-(to.x - from.x), to.z - from.z));
+	}
+
+	@Override
+	public boolean summon(String storyteller, String player) {
+		ServerPlayer pp = player(player);
+		if (server == null || pp == null || village == null) {
+			return false;
+		}
+		ServerLevel level = server.overworld();
+		if (village.convocation() == null && village.isGenerated()) {
+			village.buildConvocation(level); // village bâti avant cette version : on lui ajoute sa salle
+			village.save(server);
+		}
+		BlockPos room = village.convocation();
+		if (room == null) {
+			return false;
+		}
+		BlockPos facing = Village.standNear(level, room);
+		Vec3 a = new Vec3(room.getX() + 0.5, room.getY(), room.getZ() + 0.5);
+		Vec3 b = new Vec3(facing.getX() + 0.5, facing.getY(), facing.getZ() + 0.5);
+		if (pp.isPassenger()) {
+			pp.stopRiding();
+		}
+		teleport(pp, new SeatPos(level, a, yawTo(a, b)));
+		ServerPlayer sp = player(storyteller);
+		if (sp != null && sp != pp) {
+			if (storytellerBack == null) {
+				storytellerBack = new SeatPos(sp.level(), sp.position(), sp.getYRot());
+			}
+			if (sp.isPassenger()) {
+				sp.stopRiding();
+			}
+			teleport(sp, new SeatPos(level, b, yawTo(b, a)));
+		}
+		return true;
+	}
+
+	@Override
+	public void dismiss(String storyteller, String player, boolean storytellerToo) {
+		ServerPlayer pp = player == null ? null : player(player);
+		SeatPos seat = player == null ? null : seats.get(player);
+		if (pp != null && seat != null) {
+			teleport(pp, seat);
+			boolean enforced = sitEnforced;
+			sit(List.of(player), enforced);
+		}
+		if (storytellerToo) {
+			ServerPlayer sp = player(storyteller);
+			if (sp != null && storytellerBack != null) {
+				teleport(sp, storytellerBack);
+			}
+			storytellerBack = null;
+		}
+	}
+
+	/**
+	 * Vue de dessus de la carte actuelle (une image PNG, un point par bloc, le nord en haut) :
+	 * l'Atelier la met sous son plan pour qu'on reconnaisse la place, les toits et les chemins.
+	 */
+	public byte[] topView() {
+		Village v = requireVillage();
+		ServerLevel level = server.overworld();
+		int r = Math.min(200, v.extent());
+		int n = 2 * r + 1;
+		var img = new java.awt.image.BufferedImage(n, n, java.awt.image.BufferedImage.TYPE_INT_RGB);
+		BlockPos c = v.center();
+		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+		int[] north = new int[n];
+		for (int z = 0; z < n; z++) {
+			for (int x = 0; x < n; x++) {
+				int wx = c.getX() + x - r;
+				int wz = c.getZ() + z - r;
+				// La zone est chargée au besoin : sans joueur à proximité, elle ne l'est pas, et la vue sortirait noire.
+				int y = level.getChunk(wx >> 4, wz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, wx & 15, wz & 15);
+				int rgb = 0;
+				for (int k = 0; k < 12 && rgb == 0; k++, y--) {
+					m.set(wx, y, wz);
+					rgb = level.getBlockState(m).getMapColor(level, m).col;
+				}
+				y++;
+				// Relief : plus clair quand la colonne est plus haute que sa voisine du nord, plus sombre sinon.
+				double shade = z == 0 || y == north[x] ? 0.86 : y > north[x] ? 1.0 : 0.72;
+				north[x] = y;
+				int red = (int) ((rgb >> 16 & 255) * shade);
+				int green = (int) ((rgb >> 8 & 255) * shade);
+				int blue = (int) ((rgb & 255) * shade);
+				img.setRGB(x, z, red << 16 | green << 8 | blue);
+			}
+		}
+		try {
+			var out = new java.io.ByteArrayOutputStream();
+			javax.imageio.ImageIO.write(img, "png", out);
+			return out.toByteArray();
+		} catch (java.io.IOException e) {
+			throw new fr.valcombe.rules.GameException("Vue de dessus impossible : " + e.getMessage());
+		}
 	}
 
 	public String mapInfo() {
@@ -792,6 +1107,9 @@ public final class McHost implements Host {
 		}
 		applySpawn();
 		rescuePlayers(v);
+		carrying.clear();
+		prefabs.clear();
+		refreshLabels();
 	}
 
 	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
@@ -808,6 +1126,7 @@ public final class McHost implements Host {
 		BuildQueue.Plan plan = old > v.extent() ? clearPlan(c, old, 4, 28) : new BuildQueue.Plan();
 		plan.then(v.planBuild(server.overworld()));
 		startBuild("Construction du village", plan, () -> {
+			v.buildConvocation(server.overworld());
 			useVillage(v);
 			if (!v.hasHall()) {
 				buildHall();
@@ -848,8 +1167,8 @@ public final class McHost implements Host {
 	public String setMapCenter(ServerPlayer p) {
 		Village v = requireVillage();
 		v.setCenter(p.blockPosition().below());
-		v.save(server);
 		applySpawn();
+		markersChanged();
 		return "Centre de la place posé ici.";
 	}
 
@@ -863,6 +1182,9 @@ public final class McHost implements Host {
 			GameType mode = builderModes.remove(name);
 			p.setGameMode(mode != null ? mode : GameType.ADVENTURE);
 			p.sendSystemMessage(Component.literal("").withStyle(ChatFormatting.GOLD), true);
+			ValcombeUi.mapTools(p, false);
+			carrying.remove(name);
+			refreshLabels();
 			return "Mode construction terminé. Pensez à enregistrer la carte : /vc carte enregistrer <nom>.";
 		}
 		if (ValcombeMod.session().game() != null) {
@@ -871,9 +1193,11 @@ public final class McHost implements Host {
 		builders.add(name);
 		builderModes.put(name, p.gameMode.getGameModeForPlayer());
 		p.setGameMode(GameType.CREATIVE);
-		p.getInventory().add(ValcombeUi.wandItem());
-		return "Mode construction : construisez librement. Baguette : clic droit sur un bloc = trône, accroupi = maison. "
-			+ "/vc carte centre pose le centre, /vc carte retirer siege|maison annule le dernier. Les repères brillent.";
+		ValcombeUi.mapTools(p, true);
+		refreshLabels();
+		return "Mode construction : construisez librement. Vous avez cinq outils : trône, maison, centre, salle de convocation "
+			+ "et gomme. Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre pour le déplacer. "
+			+ "Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup. Chaque repère porte une étiquette.";
 	}
 
 	private void showMarkers() {
@@ -907,9 +1231,31 @@ public final class McHost implements Host {
 			}
 			int seats = village.seatCount();
 			int houses = village.houseCount();
-			String check = "Carte : " + seats + " trône(s) " + (seats >= 5 ? "✔" : "(5 au moins)") + " · " + houses
+			// Près d'un trône ou d'une maison : un trait de lumière le relie à celui qui porte le même numéro.
+			String pair = "";
+			Village.Hit near = village.markerAt(p.blockPosition(), null, 3);
+			Village.Hit held = carrying.get(name);
+			if (held != null) {
+				pair = held.label() + " en main : cliquez là où le reposer · ";
+			} else if (near != null && near.type() != Village.Mark.ROOM) {
+				boolean seat = near.type() == Village.Mark.SEAT;
+				if (near.index() < (seat ? houses : seats)) {
+					Vec3 a = village.seatFeet(near.index());
+					Vec3 b = village.houseFeet().get(near.index());
+					double len = Math.max(0.1, a.distanceTo(b));
+					for (double t = 0; t <= len; t += 0.8) {
+						Vec3 q = a.lerp(b, t / len);
+						level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.ELECTRIC_SPARK, true, true,
+							q.x, q.y + 1.1, q.z, 1, 0, 0, 0, 0);
+					}
+					pair = "Trône " + (near.index() + 1) + " ↔ Maison " + (near.index() + 1) + " · ";
+				} else {
+					pair = near.label() + (seat ? " : pas de maison à ce numéro · " : " : pas de trône à ce numéro · ");
+				}
+			}
+			String check = pair + seats + " trône(s) " + (seats >= 5 ? "✔" : "(5 au moins)") + " · " + houses
 				+ " maison(s)" + (houses == 0 || houses >= seats ? "" : " (moins que de trônes)")
-				+ " — baguette : clic droit = trône, accroupi = maison";
+				+ " · salle de convocation " + (village.convocation() != null ? "✔" : "absente");
 			p.sendSystemMessage(Component.literal(check).withStyle(seats >= 5 ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
 		}
 	}
@@ -928,6 +1274,7 @@ public final class McHost implements Host {
 		Village v = Village.generated(c, theme);
 		startBuild("Construction du village", v.planBuild(server.overworld()), () -> {
 			stage.clear(server);
+			v.buildConvocation(server.overworld());
 			v.save(server);
 			village = v;
 			lanterns = null;
@@ -1426,6 +1773,7 @@ public final class McHost implements Host {
 			}
 			WorldSetup.run(server, "kill @e[tag=vc_presentoir,tag=!vc_pres_" + hallGen + "]");
 			WorldSetup.run(server, "kill @e[tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
+			WorldSetup.run(server, "kill @e[tag=vc_repere,tag=!vc_rep_" + (builders.isEmpty() ? -1 : labelGen) + "]");
 		}
 		if (tick % 4 == 0 && !seats.isEmpty()) {
 			featherHints();
@@ -1653,6 +2001,7 @@ public final class McHost implements Host {
 		deadPlayers(List.of(), List.of());
 		frozen = false;
 		inHouses = false;
+		storytellerBack = null;
 		houses.clear();
 		for (String name : players) {
 			ServerPlayer p = player(name);

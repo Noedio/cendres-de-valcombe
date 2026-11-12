@@ -31,6 +31,7 @@ public class SettingsScreen extends BaseScreen {
 		toggle(y += 24, "Joueurs immobiles la nuit", "nuit_immobile", ClientState.bool(st, "nightFreeze"));
 		toggle(y += 24, "Écran noir la nuit", "nuit_sombre", ClientState.bool(st, "nightDark"));
 		toggle(y += 24, "Micros coupés la nuit", "nuit_muette", ClientState.bool(st, "nightMute"));
+		toggle(y += 24, "Rôles remis à l'écart", "remise_convocation", ClientState.bool(st, "roleRoom"));
 		int defense = ClientState.num(st, "defenseSeconds", 20);
 		int clock = (int) Math.round(ClientState.dbl(st, "clockSeconds", 1.5) * 10);
 		y += 30;
@@ -49,7 +50,7 @@ public class SettingsScreen extends BaseScreen {
 	@Override
 	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
 		JsonObject st = ClientState.obj(view(), "settings");
-		int y = py + 16 + 24 * 3 + 30 + 5;
+		int y = py + 16 + 24 * 4 + 30 + 5;
 		Theme.centered(g, font, "Défense de l'accusé : " + ClientState.num(st, "defenseSeconds", 20) + " s", px + pw / 2, y, Theme.INK);
 		Theme.centered(g, font, "Aiguille : " + ClientState.dbl(st, "clockSeconds", 1.5) + " s par siège", px + pw / 2, y + 22, Theme.INK);
 	}

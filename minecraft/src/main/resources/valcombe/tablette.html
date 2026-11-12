@@ -318,7 +318,14 @@ function renderControls(v) {
 		if (v.lobbyStatus) c.append(el("div", v.lobbyReady ? "state" : "state off", v.lobbyStatus));
 		return;
 	}
-	if (v.phase === "READY") c.append(btn("Faire tomber la nuit", "vc nuit", "main"));
+	if (v.phase === "READY") {
+		if (v.mode === "HUMAIN") {
+			const left = (v.unbriefed || []).length;
+			c.append(btn(left ? "Convoquer le suivant (" + left + ")" : "Convoquer le suivant", "vc convoquer suivant", left ? "main" : ""));
+			if (v.summoned) c.append(btn("Renvoyer " + v.summoned, "vc convoquer fin"));
+		}
+		c.append(btn("Faire tomber la nuit", "vc nuit", v.mode === "HUMAIN" && (v.unbriefed || []).length ? "" : "main"));
+	}
 	if (v.phase === "NIGHT") {
 		c.append(btn("Étape précédente", "vc precedent"));
 		c.append(btn("Étape suivante", "vc suivant", "main"));

@@ -35,6 +35,10 @@ public final class Session {
 	final Set<String> bots = new LinkedHashSet<>();
 	/** Joueurs absents dont un joueur fictif tient la place jusqu'à leur retour. */
 	final Set<String> standIns = new LinkedHashSet<>();
+	/** Joueur que le Conteur reçoit dans la salle de convocation, ou null. */
+	String summoned;
+	/** Joueurs à qui le Conteur n'a pas encore remis leur rôle (remise en salle de convocation). */
+	final Set<String> unbriefed = new LinkedHashSet<>();
 	/** Partie en pause : les minuteurs, la nuit et le vote attendent. */
 	boolean paused;
 	/** Spectateurs : ils regardent la partie sans y jouer. */
@@ -149,6 +153,15 @@ public final class Session {
 		Game g = game;
 		if (silencedByElder(name)) {
 			return List.of();
+		}
+		// Salle de convocation : le Conteur et le joueur reçu ne s'entendent qu'entre eux.
+		if (summoned != null && storyteller != null) {
+			if (name.equals(storyteller)) {
+				return List.of(summoned);
+			}
+			if (name.equals(summoned)) {
+				return List.of(storyteller);
+			}
 		}
 		if (desk.broadcast && g != null && g.phase() == Game.Phase.DAY && name.equals(storyteller) && social.aside == null) {
 			return realNames(); // la voix du Conteur porte à tout le village
@@ -893,6 +906,12 @@ public final class Session {
 		if (wanted == Mode.HUMAIN && storyteller != null) {
 			host.storytellerTools(storyteller, true);
 		}
+		summoned = null;
+		unbriefed.clear();
+		boolean byHand = wanted == Mode.HUMAIN && storyteller != null && settings.roleRoom;
+		if (byHand) {
+			g.players().stream().map(p -> p.name).filter(n -> !bots.contains(n) && !n.equals(storyteller)).forEach(unbriefed::add);
+		}
 		for (Game.Seat p : g.players()) {
 			showRole(p.name, p.believed());
 		}
@@ -907,7 +926,14 @@ public final class Session {
 			announce("« " + scenario.nom + " » — " + scenario.ouverture);
 		}
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
-			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). Le Conteur fait tomber la première nuit.");
+			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). " + (unbriefed.isEmpty()
+				? "Le Conteur fait tomber la première nuit."
+				: "Le Conteur va recevoir chacun à l'écart pour lui remettre son rôle."));
+		if (!unbriefed.isEmpty()) {
+			tell(storyteller, new Msg().colored("[Conteur] Remise des rôles : ", "light_purple")
+				.button("Convoquer le suivant", "/vc convoquer suivant", "Amène le joueur suivant dans la salle de convocation et lui remet son rôle")
+				.text(" Accroupi + clic droit sur un joueur avec le bâton le convoque aussi. Faire tomber la nuit remet d'un coup les rôles restants."));
+		}
 		return "Partie lancée.";
 	}
 
@@ -918,6 +944,8 @@ public final class Session {
 		if (game != null) {
 			host.endGame(realNames());
 		social.aside = null;
+		summoned = null;
+		unbriefed.clear();
 		social.endAllTalks();
 		if (storyteller != null) {
 			host.storytellerTools(storyteller, false);
@@ -938,6 +966,9 @@ public final class Session {
 	// Fiches
 	// ------------------------------------------------------------------
 	private void showRole(String name, Role role) {
+		if (unbriefed.contains(name)) {
+			return; // le Conteur le lui remettra dans la salle de convocation
+		}
 		tell(name, new Msg()
 			.colored("Ton rôle : " + role.displayName, "gold")
 			.text(" — " + role.type.displayName + ", camp : " + Team.of(role).displayName + ". ")
@@ -955,8 +986,118 @@ public final class Session {
 
 	public String role(String name) {
 		Game g = requireGame();
+		if (unbriefed.contains(name)) {
+			throw new GameException("Le Conteur ne t'a pas encore remis ton rôle : il va te convoquer.");
+		}
 		showRole(name, g.player(requireSeat(name)).believed());
 		return "";
+	}
+
+	// ------------------------------------------------------------------
+	// Salle de convocation : le Conteur reçoit un joueur à l'écart
+	// ------------------------------------------------------------------
+	public String summoned() {
+		return summoned;
+	}
+
+	/** Le joueur connaît-il déjà son rôle ? (Non tant que le Conteur ne le lui a pas remis.) */
+	public boolean roleKnown(String name) {
+		return !unbriefed.contains(name);
+	}
+
+	/** Le Conteur convoque un joueur dans la salle à l'écart ; à sa première venue, il y reçoit son rôle. */
+	public String summon(String target) {
+		Game g = requireGame();
+		if (storyteller == null || mode != Mode.HUMAIN) {
+			throw new GameException("La convocation demande un Conteur humain.");
+		}
+		if (g.phase() != Game.Phase.READY && g.phase() != Game.Phase.DAY) {
+			throw new GameException("On convoque avant la première nuit, ou en plein jour.");
+		}
+		if (voteNom != null) {
+			throw new GameException("Un vote est en cours.");
+		}
+		String name = g.player(seatByName(target)).name;
+		if (bots.contains(name)) {
+			throw new GameException(name + " est un joueur fictif.");
+		}
+		if (name.equals(storyteller)) {
+			throw new GameException("Le Conteur ne se convoque pas lui-même.");
+		}
+		if (!host.online(name)) {
+			throw new GameException(name + " n'est pas connecté.");
+		}
+		if (name.equals(summoned)) {
+			return name + " est déjà avec toi.";
+		}
+		if (summoned != null) {
+			host.dismiss(storyteller, summoned, false);
+			host.title(List.of(summoned), "", "Retour au village");
+		}
+		summoned = name;
+		social.aside = null;
+		boolean room = host.summon(storyteller, name);
+		host.sound(List.of(name), "bell");
+		if (unbriefed.remove(name)) {
+			Role r = g.player(g.seatOf(name)).believed();
+			host.title(List.of(name), r.displayName, "Le Conteur te remet ton rôle");
+			showRole(name, r);
+			save();
+		} else {
+			host.title(List.of(name), "Le Conteur te convoque", "Vous êtes seuls : personne ne vous entend");
+		}
+		return (room ? name + " est avec toi dans la salle de convocation"
+			: "Cette carte n'a pas de salle de convocation : " + name + " reste à sa place, mais vous vous entendez seuls à seuls")
+			+ ". " + summonLeft();
+	}
+
+	private String summonLeft() {
+		return unbriefed.isEmpty() ? "Tous les rôles sont remis." : "Encore " + unbriefed.size() + " rôle(s) à remettre.";
+	}
+
+	/** Convoque le prochain joueur qui attend son rôle, dans l'ordre du cercle ; s'il n'en reste pas, tout le monde rentre. */
+	public String summonNext() {
+		Game g = requireGame();
+		for (Game.Seat p : g.players()) {
+			if (unbriefed.contains(p.name) && host.online(p.name)) {
+				return summon(p.name);
+			}
+		}
+		if (summoned != null) {
+			endSummon();
+		}
+		return unbriefed.isEmpty() ? "Tous les joueurs ont reçu leur rôle : tu peux faire tomber la première nuit."
+			: "Les joueurs qui attendent encore leur rôle sont déconnectés : ils le recevront à la première nuit.";
+	}
+
+	/** Fin de la convocation : le joueur retrouve son trône, le Conteur retourne d'où il venait. */
+	public String endSummon() {
+		if (summoned == null) {
+			return "Personne n'est convoqué.";
+		}
+		String was = summoned;
+		summoned = null;
+		host.dismiss(storyteller, was, true);
+		host.title(List.of(was), "", "Retour au village");
+		return was + " retourne au village. " + summonLeft();
+	}
+
+	/** La nuit tombe : plus de convocation, et ceux qui attendaient encore leur rôle le reçoivent. */
+	private void closeSummons(Game g) {
+		if (summoned != null) {
+			host.dismiss(storyteller, summoned, true);
+			summoned = null;
+		}
+		if (!unbriefed.isEmpty()) {
+			List<String> late = List.copyOf(unbriefed);
+			unbriefed.clear();
+			for (String name : late) {
+				int seat = g.seatOf(name);
+				if (seat >= 0) {
+					showRole(name, g.player(seat).believed());
+				}
+			}
+		}
 	}
 
 	public String grimoire(String name) {
@@ -1029,6 +1170,7 @@ public final class Session {
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
+			case "remise_convocation" -> settings.roleRoom = yes;
 			case "coiffe" -> {
 				String v = value.toLowerCase(java.util.Locale.ROOT).replace("â", "a");
 				if (!List.of("chapeau", "crane", "aucun").contains(v)) {
@@ -1040,7 +1182,7 @@ public final class Session {
 			case "effets" -> settings.fullEffects = !value.equalsIgnoreCase("reduits") && !value.equalsIgnoreCase("réduits")
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette (oui|non), temps_defense <secondes>, "
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation (oui|non), temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par siège>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
 		return "Réglage modifié.";
@@ -1070,6 +1212,7 @@ public final class Session {
 			throw new GameException("Un vote est en cours.");
 		}
 		g.startNight();
+		closeSummons(g);
 		social.aside = null;
 		social.endAllTalks();
 		tip("nuit", "La nuit tombe", "La nuit, chacun dort. Quand vient ton tour, tu te réveilles : un écran s'ouvre "
@@ -1912,6 +2055,8 @@ public final class Session {
 		revealBoards(g); // avant endGame, qui oublie la place des sièges
 		host.endGame(realNames());
 		social.aside = null;
+		summoned = null;
+		unbriefed.clear();
 		social.endAllTalks();
 		if (storyteller != null) {
 			host.storytellerTools(storyteller, false);
@@ -1961,6 +2106,9 @@ public final class Session {
 			return;
 		}
 		int seat = g.seatOf(name);
+		if (name.equals(summoned) || (summoned != null && name.equals(storyteller))) {
+			endSummon(); // celui qui reste ne doit pas demeurer enfermé dans la salle
+		}
 		boolean stOnline = storyteller != null && !name.equals(storyteller) && host.online(storyteller);
 		if (seat >= 0 && !bots.contains(name) && stOnline) {
 			tell(storyteller, new Msg().colored("[Conteur] " + name + " s'est déconnecté. ", "light_purple")
@@ -2455,6 +2603,7 @@ public final class Session {
 		String scenario;
 		Map<String, String> claims;
 		List<String> standIns;
+		List<String> unbriefed;
 	}
 
 	private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
@@ -2491,6 +2640,7 @@ public final class Session {
 		d.claims = new LinkedHashMap<>();
 		social.claims.forEach((k, v) -> d.claims.put(k, v.name()));
 		d.standIns = List.copyOf(standIns);
+		d.unbriefed = List.copyOf(unbriefed);
 		d.game = game.toJson();
 		host.persist(GSON.toJson(d));
 	}
@@ -2524,6 +2674,12 @@ public final class Session {
 		settings.clockTicks = d.settings.clockTicks;
 		settings.fullEffects = d.settings.fullEffects;
 		settings.spectatorGrimoire = d.settings.spectatorGrimoire;
+		settings.roleRoom = d.settings.roleRoom;
+		summoned = null;
+		unbriefed.clear();
+		if (d.unbriefed != null) {
+			unbriefed.addAll(d.unbriefed);
+		}
 		if (d.settings.stepDelayTicks > 0) {
 			settings.stepDelayTicks = d.settings.stepDelayTicks;
 		}

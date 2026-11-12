@@ -21,6 +21,18 @@ public interface Host {
 	default void wake(String player, boolean awake, Settings settings) {
 	}
 
+	/**
+	 * Le Conteur convoque un joueur dans la salle à l'écart : tous deux y sont amenés, face à face.
+	 * Renvoie false si la carte n'a pas de salle de convocation (ils restent alors où ils sont).
+	 */
+	default boolean summon(String storyteller, String player) {
+		return false;
+	}
+
+	/** Fin d'une convocation : le joueur retrouve son trône ; le Conteur aussi retourne d'où il venait si storytellerToo. */
+	default void dismiss(String storyteller, String player, boolean storytellerToo) {
+	}
+
 	/** Position du siège d'un joueur dans le monde (x, y, z), ou null. */
 	default double[] seatPosition(String player) {
 		return null;

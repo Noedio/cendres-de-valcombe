@@ -243,6 +243,34 @@ final class Atelier {
 						o.get("nouvelId").getAsString(), o.get("nom").getAsString()), 30)));
 				}
 				case "carte/annuler" -> text(ex, 200, onServer(host::undoMarker, 5));
+				case "carte/ordonner" -> text(ex, 200, logged(owner, onServer(host::sortMarkers, 5)));
+				case "carte/repere" -> {
+					// Un repère ajouté, déplacé ou retiré sur le plan : x et z sont comptés depuis le centre de la place.
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, onServer(() -> host.editMarker(o.get("action").getAsString(), o.get("type").getAsString(),
+						o.has("index") ? o.get("index").getAsInt() : 0, o.has("x") ? o.get("x").getAsInt() : 0,
+						o.has("z") ? o.get("z").getAsInt() : 0), 10));
+				}
+				case "carte/aller" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, onServer(() -> {
+						ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+						if (p == null) {
+							throw new GameException("Connectez-vous au jeu pour aller voir ce repère.");
+						}
+						return host.visitMarker(p, o.get("type").getAsString(), o.has("index") ? o.get("index").getAsInt() : 0);
+					}, 5));
+				}
+				case "carte/vue" -> {
+					// Vue de dessus : la carte actuelle (corps vide) ou l'aperçu enregistré d'une carte de la bibliothèque.
+					String id = body.trim();
+					byte[] png = id.isEmpty() ? onServer(host::topView, 30) : maps.preview(id);
+					if (png == null) {
+						text(ex, 404, "Pas d'aperçu pour cette carte : chargez-la puis enregistrez-la de nouveau.");
+					} else {
+						send(ex, 200, "image/png", png);
+					}
+				}
 				case "construction" -> text(ex, 200, onServer(() -> {
 					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
 					if (p == null) {
@@ -333,14 +361,28 @@ final class Atelier {
 			m.put("octets", maps.bytes(d.id));
 			// Repères pour le plan vu de dessus : [est, hauteur, sud] depuis le centre de la place.
 			m.put("rayon", d.rayon);
-			m.put("plan", Map.of("sieges", d.sieges, "maisons", d.logis));
+			Map<String, Object> plan = new LinkedHashMap<>();
+			plan.put("sieges", d.sieges);
+			plan.put("maisons", d.logis);
+			plan.put("salle", d.convocation);
+			m.put("plan", plan);
 			cartes.add(m);
 		}
 		out.put("cartes", cartes);
 		Village v = host.village();
 		if (v != null) {
+			Map<String, Object> plan = new LinkedHashMap<>();
+			plan.put("sieges", v.relSeats());
+			plan.put("maisons", v.relHouses());
+			plan.put("salle", v.relConvocation());
+			// Les joueurs connectés, pour se repérer : [nom, est, sud] depuis le centre de la place.
+			List<List<Object>> here = new ArrayList<>();
+			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+				here.add(List.of(p.getScoreboardName(), p.getBlockX() - v.center().getX(), p.getBlockZ() - v.center().getZ()));
+			}
+			plan.put("joueurs", here);
 			out.put("carteActuelle", Map.of("genere", v.isGenerated(), "sieges", v.seatCount(), "maisons", v.houseCount(),
-				"theme", v.theme(), "rayon", v.extent(), "plan", Map.of("sieges", v.relSeats(), "maisons", v.relHouses())));
+				"theme", v.theme(), "rayon", Math.min(200, v.extent()), "plan", plan));
 		}
 		out.put("chantier", host.busy());
 		// Ordre habituel des réveils (première nuit, autres nuits), pour le régler dans un scénario.

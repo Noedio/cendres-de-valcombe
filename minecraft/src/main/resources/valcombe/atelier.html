@@ -46,7 +46,8 @@
 	label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: .95rem; margin: 6px 0; }
 	label.check input { width: auto; }
 	.cols { display: grid; grid-template-columns: minmax(230px, 320px) 1fr; gap: 16px; align-items: start; }
-	@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+	.cols.wide { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+	@media (max-width: 760px) { .cols, .cols.wide { grid-template-columns: 1fr; } }
 	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 	.list { display: flex; flex-direction: column; gap: 6px; }
 	.item { display: flex; gap: 10px; align-items: center; text-align: left; width: 100%; }
@@ -88,7 +89,24 @@
 	.repart tr.bad td:first-child { color: #ff8a80; }
 	.weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px 14px; font-size: .88rem; margin-top: 8px; }
 	.weights .hi { color: #ffd27a; }
-	.plan { width: 100%; max-width: 360px; aspect-ratio: 1; background: #1b1418; border: 1px solid var(--line, #4a3238); border-radius: 10px; display: block; margin: 8px 0; }
+	.plan { width: 100%; max-width: 620px; aspect-ratio: 1; background: #1b1418; border: 1px solid var(--line, #4a3238); border-radius: 10px; display: block; margin: 8px 0; touch-action: none; user-select: none; }
+	.plan image { image-rendering: pixelated; }
+	.plan [data-m] { cursor: pointer; }
+	.plan.adding { cursor: crosshair; }
+	.plan text { pointer-events: none; font-family: inherit; font-weight: bold; }
+	.tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+	.tools button { padding: 6px 10px; min-height: 0; display: flex; align-items: center; gap: 6px; }
+	.tools button.on { outline: 2px solid var(--gold); background: var(--panel-2); }
+	.dot { display: inline-block; width: 12px; height: 12px; border: 1px solid #140d10; flex: none; }
+	.dot.seat { background: #d9b45a; border-radius: 50%; }
+	.dot.house { background: #6fb37a; }
+	.dot.center { background: #5cc8e0; border-radius: 50%; }
+	.dot.room { background: #c58be6; transform: rotate(45deg); }
+	.dot.player { background: #fff; border-radius: 50%; width: 8px; height: 8px; }
+	.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .85rem; color: var(--muted); align-items: center; }
+	.legend span { display: flex; align-items: center; gap: 6px; }
+	.sel { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: .92rem; }
+	.sel .bar { margin-top: 6px; }
 	.checks { font-size: .9rem; margin: 6px 0; }
 	.checks .ok { color: #9ad6a3; }
 	.checks .no { color: #ffb37a; }
@@ -318,15 +336,40 @@
 
 <!-- Cartes -->
 <section id="tab-cartes" class="hidden">
-	<div class="cols">
+	<div class="cols wide">
 		<div class="card">
 			<h2>Bibliothèque de cartes</h2>
 			<div class="list" id="mapList"></div>
 			<p class="hint" id="curMap"></p>
 			<h2 style="margin-top:16px" id="planTitle">Plan de la carte actuelle</h2>
+			<div class="tools" id="planTools">
+				<button data-tool="move" class="on">Déplacer</button>
+				<button data-tool="siege"><i class="dot seat"></i>+ Trône</button>
+				<button data-tool="maison"><i class="dot house"></i>+ Maison</button>
+				<button data-tool="centre"><i class="dot center"></i>Centre</button>
+				<button data-tool="salle"><i class="dot room"></i>Salle de convocation</button>
+				<button data-tool="gomme">Gomme</button>
+				<button id="zoomOut" title="Voir toute la carte">Zoom −</button>
+				<button id="zoomIn" title="Voir la place de plus près">Zoom +</button>
+			</div>
+			<p class="hint" id="planHelp"></p>
 			<svg class="plan" id="planView" viewBox="-100 -100 200 200" role="img" aria-label="Plan vu de dessus"></svg>
+			<div class="legend">
+				<span><i class="dot seat"></i>Trône</span>
+				<span><i class="dot house"></i>Maison</span>
+				<span><i class="dot center"></i>Centre de la place</span>
+				<span><i class="dot room"></i>Salle de convocation</span>
+				<span><i class="dot player"></i>Joueur connecté</span>
+				<span>Trait : le trône et la maison du même numéro vont ensemble</span>
+			</div>
+			<div class="sel" id="planSel"></div>
+			<div class="bar" id="planBar">
+				<button id="sortMarks">Renuméroter dans le sens des aiguilles d'une montre</button>
+				<button id="undoMark">Annuler la dernière pose</button>
+			</div>
+			<div class="msg" id="planMsg"></div>
 			<div class="checks" id="planChecks"></div>
-			<p class="hint">Vu de dessus, le nord en haut. Ronds numérotés : les trônes, dans l'ordre du cercle. Carrés : les maisons. Croix : le centre de la place.</p>
+			<p class="hint">Vu de dessus, le nord en haut. Le joueur du trône 1 dort dans la maison 1, celui du trône 2 dans la maison 2, et ainsi de suite : les numéros suivent l'ordre du cercle.</p>
 		</div>
 		<div class="card">
 			<h2>Enregistrer la carte actuelle</h2>
@@ -350,9 +393,8 @@
 			<h2 style="margin-top:20px">Construire à la main</h2>
 			<div class="bar" style="margin-top:0">
 				<button class="main" id="buildMode">Mode construction (pour moi, dans le jeu)</button>
-				<button id="undoMark">Annuler la dernière pose</button>
 			</div>
-			<p class="hint">Dans le jeu : <code>/vc carte construction</code> passe en créatif avec la baguette de carte. Clic droit sur un bloc : un trône ; accroupi : une maison ; <code>/vc carte centre</code> pose le centre de la place. Les repères brillent et une liste de contrôle s'affiche. Ensuite, enregistrez la carte ici.</p>
+			<p class="hint">Dans le jeu, <code>/vc carte construction</code> passe en créatif et donne cinq outils : trône, maison, centre, salle de convocation et gomme. Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre, puis cliquer là où le reposer. Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup (la gomme la retire avec son repère). Chaque repère porte une étiquette à son numéro, et un trait de lumière relie le trône et la maison qui vont ensemble quand on s'en approche. Tout ce que vous posez dans le jeu apparaît sur le plan, et inversement. Ensuite, enregistrez la carte ici.</p>
 			<div class="msg" id="mapMsg"></div>
 		</div>
 	</div>
@@ -1206,7 +1248,7 @@ function renderMaps() {
 		del.onclick = () => mapAction("carte/supprimer", m.id, "Supprimer « " + m.nom + " » de la bibliothèque ?");
 		const see = document.createElement("button");
 		see.textContent = "Voir le plan";
-		see.onclick = () => { shownMap = m.id; renderPlan(); };
+		see.onclick = () => { shownMap = m.id; planSel = null; renderPlan(); };
 		const ren = document.createElement("button");
 		ren.textContent = "Renommer";
 		ren.onclick = () => {
@@ -1235,49 +1277,133 @@ function renderMaps() {
 }
 
 let shownMap = "";
+/** Outil du plan (move, siege, maison, centre, salle, gomme), repère choisi, repère qu'on fait glisser. */
+let planTool = "move";
+let planSel = null;
+let planDrag = null;
+/** Grossissement du plan autour du centre de la place (1 : toute la carte). */
+let planZoom = 1;
+/** Vue de dessus déjà reçue : pour quelle carte, son adresse, et quand. */
+let planView = { key: null, url: null, at: 0 };
+
+const PLAN_HELP = {
+	move: "Cliquez sur un repère pour le choisir ; faites-le glisser pour le déplacer.",
+	siege: "Cliquez sur le plan pour y poser un trône.",
+	maison: "Cliquez sur le plan pour y poser une maison (là où un joueur dort la nuit).",
+	centre: "Cliquez sur le plan : le centre de la place sera là.",
+	salle: "Cliquez sur le plan : la salle de convocation sera là (le Conteur y reçoit un joueur à l'écart).",
+	gomme: "Cliquez sur un repère pour le retirer.",
+};
+const KIND = { siege: "Trône", maison: "Maison", centre: "Centre de la place", salle: "Salle de convocation" };
+
+/** La carte que montre le plan, et si on peut la modifier (seulement la carte actuelle, hors partie et hors chantier). */
+function planMap() {
+	const lib = data.cartes.find(x => x.id === shownMap);
+	return { lib, m: lib || data.carteActuelle, editable: !lib && !!data.carteActuelle && !data.partieEnCours && !data.chantier };
+}
+
+/** Va chercher la vue de dessus (au plus toutes les 20 secondes pour la carte actuelle, qui change quand on bâtit). */
+async function fetchPlanView(force) {
+	const key = shownMap;
+	const fresh = planView.key === key && (key !== "" || Date.now() - planView.at < 20000);
+	if (fresh && !force) return;
+	planView.key = key;
+	planView.at = Date.now();
+	try {
+		const r = await api("carte/vue", key, true);
+		const url = URL.createObjectURL(await r.blob());
+		if (planView.key !== key) { URL.revokeObjectURL(url); return; }
+		if (planView.url) URL.revokeObjectURL(planView.url);
+		planView.url = url;
+	} catch (e) {
+		if (planView.key === key && !fresh) {
+			if (planView.url) URL.revokeObjectURL(planView.url);
+			planView.url = null;
+		}
+	}
+	if (!planDrag) renderPlan(true);
+}
 
 /** Plan vu de dessus de la carte actuelle ou d'une carte de la bibliothèque, avec sa liste de contrôle. */
-function renderPlan() {
-	const lib = data.cartes.find(x => x.id === shownMap);
-	const m = lib || data.carteActuelle;
+function renderPlan(noFetch) {
+	if (planDrag) return; // on ne redessine pas sous la souris pendant un déplacement
+	const { lib, m, editable } = planMap();
 	const svg = $("planView");
 	svg.innerHTML = "";
 	$("planChecks").innerHTML = "";
 	$("planTitle").textContent = lib ? "Plan de « " + lib.nom + " »" : "Plan de la carte actuelle";
+	$("planTools").classList.toggle("hidden", !editable);
+	$("planBar").classList.toggle("hidden", !editable);
+	$("planHelp").textContent = editable ? PLAN_HELP[planTool]
+		: lib ? "Carte de la bibliothèque : chargez-la pour la modifier."
+		: data.partieEnCours ? "Une partie est en cours : la carte ne se modifie pas."
+		: data.chantier ? "Un chantier est en cours dans le jeu." : "";
+	svg.classList.toggle("adding", editable && planTool !== "move" && planTool !== "gomme");
 	if (!m || !m.plan) {
-		$("planChecks").textContent = "Aucune carte à montrer.";
+		$("planSel").classList.add("hidden");
+		$("planChecks").textContent = "Aucune carte à montrer : générez un village ou importez une construction.";
 		return;
 	}
+	if (!noFetch) fetchPlanView(false);
 	const NS = "http://www.w3.org/2000/svg";
-	const add = (tag, attrs, text) => {
+	const add = (tag, attrs, text, parent) => {
 		const e = document.createElementNS(NS, tag);
 		for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
 		if (text !== undefined) e.textContent = text;
-		svg.appendChild(e);
+		(parent || svg).appendChild(e);
 		return e;
 	};
 	const r = Math.max(12, m.rayon || 12);
-	const k = 92 / r; // la carte tient dans le cadre
-	add("rect", { x: -r * k, y: -r * k, width: 2 * r * k, height: 2 * r * k, fill: "none", stroke: "#4a3238", "stroke-dasharray": "3 3" });
-	for (const h of m.plan.maisons) {
-		add("rect", { x: h[0] * k - 4.5 * k, y: h[2] * k - 4.5 * k, width: 9 * k, height: 9 * k, fill: "#3a2a2e", stroke: "#b8a68a" });
+	const k = 184 / (2 * r + 1); // un bloc sur le plan
+	svg.dataset.k = k;
+	if (planView.url && planView.key === shownMap) {
+		add("image", { href: planView.url, x: -92, y: -92, width: 184, height: 184, preserveAspectRatio: "none", opacity: 0.8 });
 	}
-	add("path", { d: "M-4 0H4M0 -4V4", stroke: "#d9b45a", "stroke-width": 1.4 });
-	const size = Math.max(3.2, Math.min(7, 2.2 * k));
-	m.plan.sieges.forEach((s, i) => {
-		add("circle", { cx: s[0] * k, cy: s[2] * k, r: size, fill: "#7a2433", stroke: "#d9b45a" });
-		add("text", { x: s[0] * k, y: s[2] * k + size * 0.38, "text-anchor": "middle", "font-size": size * 1.05, fill: "#efe3c8" }, String(i + 1));
-	});
-	add("text", { x: 0, y: -93, "text-anchor": "middle", "font-size": 7, fill: "#b8a68a" }, "N");
+	add("rect", { x: -92, y: -92, width: 184, height: 184, fill: "none", stroke: "#4a3238", "stroke-dasharray": "3 3" });
+	const seats = m.plan.sieges;
+	const houses = m.plan.maisons;
+	const size = Math.max(3.2, Math.min(5.5, 1.6 * k)) / Math.pow(planZoom, 0.75);
+	const span = 200 / planZoom;
+	svg.setAttribute("viewBox", (-span / 2) + " " + (-span / 2) + " " + span + " " + span);
+	const on = (type, i) => planSel && planSel.type === type && planSel.index === i;
+	// Le trône et la maison du même numéro vont ensemble : un trait les relie.
+	for (let i = 0; i < Math.min(seats.length, houses.length); i++) {
+		const strong = on("siege", i) || on("maison", i);
+		add("line", { x1: seats[i][0] * k, y1: seats[i][2] * k, x2: houses[i][0] * k, y2: houses[i][2] * k,
+			stroke: strong ? "#ffe9a8" : "#d9b45a", "stroke-width": strong ? 1.3 : 0.5, "stroke-opacity": strong ? 1 : 0.55 });
+	}
+	const mark = (type, i, x, z, shape) => {
+		const g = add("g", { "data-m": type + ":" + i, transform: "translate(" + x * k + " " + z * k + ")" });
+		const stroke = on(type, i) ? "#ffffff" : "#140d10";
+		const sw = on(type, i) ? 1.2 : 0.6;
+		if (shape === "circle") add("circle", { r: size, fill: type === "siege" ? "#d9b45a" : "#5cc8e0", stroke, "stroke-width": sw }, undefined, g);
+		else if (shape === "square") add("rect", { x: -size, y: -size, width: 2 * size, height: 2 * size, fill: "#6fb37a", stroke, "stroke-width": sw }, undefined, g);
+		else add("rect", { x: -size, y: -size, width: 2 * size, height: 2 * size, fill: "#c58be6", stroke, "stroke-width": sw, transform: "rotate(45)" }, undefined, g);
+		const label = type === "siege" || type === "maison" ? String(i + 1) : type === "centre" ? "✚" : "✉";
+		add("text", { y: size * 0.4, "text-anchor": "middle", "font-size": size * 1.15, fill: "#140d10" }, label, g);
+		add("title", {}, (KIND[type] + (type === "siege" || type === "maison" ? " " + (i + 1) : "")), g);
+		return g;
+	};
+	houses.forEach((h, i) => mark("maison", i, h[0], h[2], "square"));
+	mark("centre", 0, 0, 0, "circle");
+	if (m.plan.salle) mark("salle", 0, m.plan.salle[0], m.plan.salle[2], "diamond");
+	seats.forEach((s, i) => mark("siege", i, s[0], s[2], "circle"));
+	for (const p of m.plan.joueurs || []) {
+		if (Math.abs(p[1]) > r || Math.abs(p[2]) > r) continue;
+		const c = add("circle", { cx: p[1] * k, cy: p[2] * k, r: 1.6, fill: "#ffffff", stroke: "#140d10", "stroke-width": 0.5, "pointer-events": "none" });
+		add("text", { x: p[1] * k, y: p[2] * k - 2.6, "text-anchor": "middle", "font-size": 3.6 / Math.pow(planZoom, 0.75), fill: "#ffffff", stroke: "#140d10", "stroke-width": 0.25 }, p[0]);
+	}
+	add("text", { x: 0, y: -span / 2 + 6 / planZoom, "text-anchor": "middle", "font-size": 6 / planZoom, fill: "#b8a68a" }, "N");
+	renderPlanSel(m, editable);
 	// Liste de contrôle : ce qu'il faut pour jouer sur cette carte.
-	const seats = m.plan.sieges.length;
-	const houses = m.plan.maisons.length;
-	const far = m.plan.sieges.filter(s => Math.hypot(s[0], s[2]) > r).length;
-	const near = m.plan.sieges.some((a, i) => m.plan.sieges.some((b, j) => j > i && Math.hypot(a[0] - b[0], a[2] - b[2]) < 1.5));
+	const far = seats.filter(s => Math.max(Math.abs(s[0]), Math.abs(s[2])) > r).length;
+	const near = seats.some((a, i) => seats.some((b, j) => j > i && Math.hypot(a[0] - b[0], a[2] - b[2]) < 1.5));
 	const checks = [
-		[seats >= 5, seats + " trône(s)" + (seats >= 5 ? " : on peut y jouer jusqu'à " + Math.min(16, seats) + " sans se partager un trône" : " : il en faut au moins 5")],
-		[houses === 0 || houses >= seats, houses === 0 ? "Aucune maison : la nuit, chacun reste sur son trône"
-			: houses + " maison(s)" + (houses >= seats ? "" : " : moins que de trônes, certains dormiront à plusieurs")],
+		[seats.length >= 5, seats.length + " trône(s)" + (seats.length >= 5 ? " : on peut y jouer jusqu'à " + Math.min(16, seats.length) + " sans se partager un trône" : " : il en faut au moins 5")],
+		[houses.length === 0 || houses.length >= seats.length, houses.length === 0 ? "Aucune maison : la nuit, chacun reste sur son trône"
+			: houses.length + " maison(s)" + (houses.length >= seats.length ? "" : " : moins que de trônes, certains dormiront à plusieurs")],
+		[!!m.plan.salle, m.plan.salle ? "Salle de convocation posée : le Conteur peut y recevoir chaque joueur à l'écart"
+			: "Pas de salle de convocation : le Conteur remettra les rôles sur place, en vocal privé"],
 		[far === 0, far === 0 ? "Tous les trônes sont dans la zone enregistrée" : far + " trône(s) hors de la zone enregistrée"],
 		[!near, near ? "Deux trônes sont posés presque au même endroit" : "Aucun trône en double"],
 	];
@@ -1290,10 +1416,136 @@ function renderPlan() {
 	if (lib) {
 		const back = document.createElement("button");
 		back.textContent = "Revenir à la carte actuelle";
-		back.onclick = () => { shownMap = ""; renderPlan(); };
+		back.onclick = () => { shownMap = ""; planSel = null; renderPlan(); };
 		$("planChecks").appendChild(back);
 	}
 }
+
+/** Sous le plan : ce qu'est le repère choisi, avec quoi il va, et ce qu'on peut en faire. */
+function renderPlanSel(m, editable) {
+	const box = $("planSel");
+	box.innerHTML = "";
+	const s = planSel;
+	const count = s && (s.type === "siege" ? m.plan.sieges.length : s.type === "maison" ? m.plan.maisons.length : s.type === "salle" ? (m.plan.salle ? 1 : 0) : 1);
+	if (!s || s.index >= count) {
+		planSel = null;
+		box.classList.add("hidden");
+		return;
+	}
+	box.classList.remove("hidden");
+	const n = s.index + 1;
+	const t = document.createElement("div");
+	t.textContent = s.type === "siege" ? "Trône " + n + (n <= m.plan.maisons.length ? " — son joueur dort dans la maison " + n + "." : " — pas de maison n° " + n + " : son joueur partagera une maison ou restera sur son trône.")
+		: s.type === "maison" ? "Maison " + n + (n <= m.plan.sieges.length ? " — c'est celle du joueur du trône " + n + "." : " — pas de trône n° " + n + " : elle ne sert à personne.")
+		: s.type === "centre" ? "Centre de la place : les joueurs regardent vers lui, et le plan est mesuré depuis ce point."
+		: "Salle de convocation : le Conteur y reçoit un joueur à l'écart, pour lui remettre et lui expliquer son rôle.";
+	const bar = document.createElement("div");
+	bar.className = "bar";
+	if (!shownMap) {
+		const go = document.createElement("button");
+		go.textContent = "Aller le voir dans le jeu";
+		go.onclick = () => planAction("carte/aller", { type: s.type, index: s.index });
+		bar.appendChild(go);
+	}
+	if (editable && s.type !== "centre") {
+		const del = document.createElement("button");
+		del.className = "danger";
+		del.textContent = "Retirer";
+		del.onclick = () => { planSel = null; planAction("carte/repere", { action: "retirer", type: s.type, index: s.index }); };
+		bar.appendChild(del);
+	}
+	box.append(t, bar);
+}
+
+async function planAction(path, body) {
+	try {
+		msg("planMsg", await api(path, body), true);
+		planView.at = 0;
+		await load();
+	} catch (e) {
+		msg("planMsg", e.message);
+		renderPlan(true);
+	}
+}
+
+/** Le bloc sous la souris : [est, sud] comptés depuis le centre de la place. */
+function planPoint(e) {
+	const svg = $("planView");
+	const pt = svg.createSVGPoint();
+	pt.x = e.clientX;
+	pt.y = e.clientY;
+	const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+	const k = parseFloat(svg.dataset.k) || 1;
+	return [Math.round(p.x / k), Math.round(p.y / k)];
+}
+
+for (const b of document.querySelectorAll("#planTools button[data-tool]")) {
+	b.onclick = () => {
+		planTool = b.dataset.tool;
+		for (const x of document.querySelectorAll("#planTools button[data-tool]")) x.classList.toggle("on", x === b);
+		renderPlan(true);
+	};
+}
+$("zoomIn").onclick = () => { planZoom = Math.min(6, planZoom * 1.5); renderPlan(true); };
+$("zoomOut").onclick = () => { planZoom = Math.max(1, planZoom / 1.5); renderPlan(true); };
+
+$("planView").addEventListener("pointerdown", e => {
+	const { m, editable } = planMap();
+	if (!m || !m.plan) return;
+	const hit = e.target.closest ? e.target.closest("[data-m]") : null;
+	const [x, z] = planPoint(e);
+	if (hit) {
+		const [type, index] = hit.dataset.m.split(":");
+		const picked = { type, index: parseInt(index, 10) };
+		if (editable && planTool === "gomme") {
+			if (type === "centre") { msg("planMsg", "Le centre de la place ne se retire pas : déplacez-le."); return; }
+			planSel = null;
+			planAction("carte/repere", { action: "retirer", type, index: picked.index });
+			return;
+		}
+		planSel = picked;
+		renderPlan(true);
+		if (editable && planTool === "move") {
+			const el = $("planView").querySelector('[data-m="' + type + ":" + index + '"]');
+			planDrag = { ...picked, el, x0: x, z0: z, x, z, ox: 0, oz: 0 };
+			const pos = type === "siege" ? m.plan.sieges[picked.index] : type === "maison" ? m.plan.maisons[picked.index] : type === "salle" ? m.plan.salle : [0, 0, 0];
+			planDrag.ox = pos[0];
+			planDrag.oz = pos[2];
+			$("planView").setPointerCapture(e.pointerId);
+		}
+		return;
+	}
+	if (!editable || planTool === "move" || planTool === "gomme") {
+		if (planSel) { planSel = null; renderPlan(true); }
+		return;
+	}
+	planSel = null;
+	planAction("carte/repere", { action: "ajouter", type: planTool, x, z });
+});
+
+$("planView").addEventListener("pointermove", e => {
+	if (!planDrag) return;
+	const [x, z] = planPoint(e);
+	planDrag.x = x;
+	planDrag.z = z;
+	const k = parseFloat($("planView").dataset.k) || 1;
+	const nx = planDrag.ox + x - planDrag.x0;
+	const nz = planDrag.oz + z - planDrag.z0;
+	planDrag.el.setAttribute("transform", "translate(" + nx * k + " " + nz * k + ")");
+});
+
+function planDrop() {
+	const d = planDrag;
+	if (!d) return;
+	planDrag = null;
+	const dx = d.x - d.x0;
+	const dz = d.z - d.z0;
+	if (dx === 0 && dz === 0) return;
+	planAction("carte/repere", { action: "deplacer", type: d.type, index: d.index, x: d.ox + dx, z: d.oz + dz });
+}
+$("planView").addEventListener("pointerup", planDrop);
+$("planView").addEventListener("pointercancel", () => { planDrag = null; renderPlan(true); });
+$("sortMarks").onclick = () => planAction("carte/ordonner", "");
 
 async function mapAction(path, body, question) {
 	if (question && !confirm(question)) return;
@@ -1315,7 +1567,7 @@ $("importSchem").onclick = async () => {
 	await mapAction("carte/importer", { fichier: f.name, donnees: btoa(bin) });
 };
 $("buildMode").onclick = () => mapAction("construction", "");
-$("undoMark").onclick = () => mapAction("carte/annuler", "");
+$("undoMark").onclick = () => planAction("carte/annuler", "");
 $("saveMap").onclick = () => mapAction("carte/enregistrer", { id: $("mId").value.trim(), nom: $("mNom").value.trim() });
 $("genMap").onclick = () => mapAction("carte/generer", {
 	places: parseInt($("gPlaces").value, 10), taille: parseInt($("gTaille").value, 10),
