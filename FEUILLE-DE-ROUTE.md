@@ -364,6 +364,13 @@ Comparaison avec Beffroi, l'autre projet du même genre : Valcombe était en ava
 - Non repris : publication par intégration continue, tests du launcher, fichiers de langue, bot Discord, hébergement depuis le launcher (trop lourds pour le gain, ou contraires au besoin de publier vite).
 - Limites : 40 rôles créés au plus par serveur ; les effets supplémentaires d'un rôle s'appliquent aux joueurs désignés pour le premier ; « étape précédente » n'annule pas les effets déjà appliqués ; la soirée de test à 8–12 joueurs reste à faire.
 
+## Phase 14 — Le launcher refait (novembre 2026)
+
+- **Nouvelle interface** : thème sombre sur une illustration originale de Valcombe la nuit (dessinée par script), braises animées, navigation à pictogrammes, cartes, boutons, curseurs, listes et interrupteurs sur mesure.
+- **Héberger une partie** depuis le launcher : installation et démarrage du serveur sur le PC de l'hôte, adresses à donner, invités, journal, arrêt propre. Plus besoin d'installer Java ni de récupérer le lanceur Fabric à la main.
+- **L'Atelier** en un clic : le launcher démarre le serveur local et ouvre l'Atelier dans le navigateur, sans commande à taper en jeu.
+- Limites : l'hébergement par Internet demande toujours d'ouvrir deux ports sur la box, ou un réseau privé (Tailscale, playit.gg) ; le launcher reste réservé à Windows.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** à 8–12 joueurs : c'est désormais la seule étape du plan qui reste, et elle dira quoi corriger.

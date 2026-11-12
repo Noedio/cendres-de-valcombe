@@ -47,6 +47,19 @@ public sealed class LauncherConfig
     public bool HdTextures { get; set; } = true;
     /// <summary>Ombres, lumières et eau réalistes (shaders) : demande une carte graphique récente.</summary>
     public bool Shaders { get; set; } = true;
+    // --- Héberger sur ce PC ---
+    /// <summary>L'hôte a lu et accepté le contrat de Minecraft (obligatoire pour démarrer un serveur).</summary>
+    public bool HostEulaAccepted { get; set; }
+    public int HostPort { get; set; } = 25565;
+    public int HostMemoryMb { get; set; } = 3072;
+    /// <summary>Seuls les invités de la liste peuvent entrer.</summary>
+    public bool HostGuestsOnly { get; set; } = true;
+    public List<string> HostGuests { get; set; } = new();
+    /// <summary>Pseudo Minecraft de l'hôte (il devient opérateur du serveur) ; rempli à la connexion.</summary>
+    public string HostName { get; set; } = "";
+
+    /// <summary>Braises animées sur le fond du launcher.</summary>
+    public bool Embers { get; set; } = true;
     public string Accent { get; set; } = "Lie-de-vin";
     public string Background { get; set; } = "Parchemin";
     public MinecraftOptions Minecraft { get; set; } = new();

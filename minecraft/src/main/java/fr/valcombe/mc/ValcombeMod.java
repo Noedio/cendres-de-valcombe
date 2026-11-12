@@ -154,6 +154,7 @@ public final class ValcombeMod implements ModInitializer {
 				}
 			}
 			SESSION.setSavedScripts(ScriptStore.list(server));
+			tablet.openForHost(server.getServerDirectory().resolve("config").resolve("valcombe-hote.json"));
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			try {

@@ -52,6 +52,20 @@ Windows ne le redemande plus ensuite, et les mises à jour automatiques du launc
 
 ## Pour l'hôte (serveur)
 
+Le plus simple : **depuis le launcher**, page « Héberger une partie ».
+
+1. Cochez « J'ai lu et j'accepte le contrat de licence de Minecraft » (le bouton à côté ouvre le contrat).
+2. Cliquez sur **Démarrer le serveur**. La première fois, le launcher télécharge Java, Fabric et les mods du serveur (environ 250 Mo), puis le serveur télécharge Minecraft et crée le monde : comptez une à deux minutes.
+3. Quand la pastille passe au vert, donnez à vos amis l'adresse affichée sous « Inviter vos amis » (même box, même Wi-Fi). Ils l'enregistrent dans leur launcher : Réglages › Serveurs enregistrés.
+4. Ajoutez le pseudo de chaque ami dans « Invités » : par défaut, le serveur leur est réservé.
+5. **Jouer sur mon serveur** lance le jeu et vous connecte chez vous. Avec votre pseudo, vous êtes opérateur : vous pouvez devenir Conteur, lancer les parties et construire.
+
+Le launcher doit rester ouvert pendant la soirée : le fermer arrête le serveur (le monde et la partie en cours sont enregistrés). Tout est rangé dans `ValcombeData/serveur`, à côté du launcher.
+
+Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port **25565 en TCP** (le jeu) et le port **24454 en UDP** (le vocal) vers ce PC, puis donnez-leur votre adresse publique (bouton « Voir mon adresse publique »). Sans accès à la box : un réseau privé entre amis avec Tailscale, ou un tunnel avec playit.gg (un tunnel TCP et un tunnel UDP).
+
+### À la main, sans le launcher
+
 1. Installez **Java 25** (par exemple Temurin : https://adoptium.net).
 2. Sur la machine de développement, fabriquez le modpack et le dossier serveur :
 

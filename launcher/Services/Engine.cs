@@ -184,6 +184,39 @@ public sealed class Engine
         return plan;
     }
 
+    /// <summary>
+    /// Le Java officiel de Mojang pour cette version, seul (serveur local de l'hôte) : le plan ne contient
+    /// que ses fichiers, à télécharger avec DownloadAsync. Il est partagé avec le jeu.
+    /// </summary>
+    public static async Task<Plan> PrepareJavaAsync(string mcVersion, CancellationToken ct = default)
+    {
+        var plan = new Plan { MinecraftVersion = mcVersion };
+        var manifest = await GetJsonAsync(VersionManifest, ct);
+        string? versionUrl = manifest["versions"]!.AsArray()
+            .FirstOrDefault(v => v!["id"]!.GetValue<string>() == mcVersion)?["url"]?.GetValue<string>();
+        if (versionUrl == null)
+        {
+            throw new InvalidOperationException($"Version de Minecraft inconnue : {mcVersion}");
+        }
+        var version = await GetJsonAsync(versionUrl, ct);
+        plan.JavaComponent = version["javaVersion"]?["component"]?.GetValue<string>() ?? "java-runtime-delta";
+        var runtimes = await GetJsonAsync(JavaRuntimes, ct);
+        var entry = runtimes["windows-x64"]?[plan.JavaComponent]?.AsArray().FirstOrDefault()
+            ?? throw new InvalidOperationException($"Java {plan.JavaComponent} indisponible pour Windows.");
+        var javaFiles = (await GetJsonAsync(entry["manifest"]!["url"]!.GetValue<string>(), ct))["files"]!.AsObject();
+        string runtimeDir = Path.Combine(Runtimes, plan.JavaComponent);
+        foreach (var (rel, f) in javaFiles)
+        {
+            if (f!["type"]!.GetValue<string>() == "file")
+            {
+                var raw = f["downloads"]!["raw"]!;
+                plan.Files.Add((raw["url"]!.GetValue<string>(), Path.Combine(runtimeDir, rel), raw["sha1"]!.GetValue<string>()));
+            }
+        }
+        plan.JavaExe = Path.Combine(runtimeDir, "bin", "javaw.exe");
+        return plan;
+    }
+
     // ------------------------------------------------------------------
     // Téléchargement (en parallèle, empreintes vérifiées)
     // ------------------------------------------------------------------

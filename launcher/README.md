@@ -11,7 +11,12 @@ Un seul `ValcombeLauncher.exe`, portable : il range tout dans le dossier `Valcom
 3. Il lit la dernière version publiée sur GitHub (Réglages → dépôt), puis installe ou met à jour l'instance : Minecraft, Fabric et les mods. Chaque fichier est vérifié par son empreinte.
 4. Il applique les options choisies (distance d'affichage, champ de vision, images par seconde, volume, interface, langue, plein écran) et lance le jeu directement sur le serveur.
 
-Pages : Accueil (nouvelles, serveur, compte), Options du jeu, Personnalisation (couleur d'accent, fond, fermeture au lancement), Réglages (dépôt, serveur, mémoire, réparation), Compte.
+5. **Héberger une partie** : il installe et démarre le serveur de Valcombe sur le PC de l'hôte (`ValcombeData/serveur` : Java de Mojang, lanceur du serveur Fabric, mods du serveur), suit son journal, donne les adresses à transmettre, tient la liste des invités et l'arrête proprement. L'hôte accepte lui-même le contrat de Minecraft dans la page.
+6. **L'Atelier** : un bouton démarre ce serveur si besoin et ouvre l'Atelier dans le navigateur. Le launcher dépose pour cela un lien secret (`config/valcombe-hote.json`), que le mod lit puis efface au démarrage ; ce lien ne vaut que tant que le serveur tourne.
+
+Pages : Accueil (nouvelles, serveur), Guide du joueur, Mon carnet, Héberger une partie, L'Atelier, Options du jeu, Apparence (couleur d'accent, ambiance, braises), Réglages (serveurs, mémoire, réparation, avancé), Compte.
+
+Le fond est une illustration originale dessinée par `tools/make_hero.py` (`Assets/hero.png`). Deux vérifications sans fenêtre à manipuler : `ValcombeLauncher.exe --capture <dossier>` (une capture par page) et `--verifier-serveur <rapport.txt>` (installe le serveur local sans le démarrer).
 
 ## Premier lancement
 

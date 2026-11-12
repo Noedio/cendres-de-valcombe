@@ -94,10 +94,24 @@ final class Atelier {
 		});
 	}
 
+	/** Lien de l'hôte : donné par le launcher qui a démarré ce serveur sur le PC de l'hôte. Il vaut tant que le serveur tourne. */
+	private volatile String hostToken;
+	private volatile String hostName;
+
+	void setHostToken(String name, String token) {
+		hostName = name;
+		hostToken = token;
+	}
+
 	private String ownerOf(HttpExchange ex) {
 		String given = ex.getRequestHeaders().getFirst("X-Valcombe-Jeton");
 		if (given == null) {
 			return null;
+		}
+		String host = hostToken;
+		if (host != null && java.security.MessageDigest.isEqual(host.getBytes(StandardCharsets.UTF_8),
+			given.getBytes(StandardCharsets.UTF_8))) {
+			return hostName;
 		}
 		String owner = tokens.get(given);
 		Long born = tokenBorn.get(given);
@@ -111,6 +125,9 @@ final class Atelier {
 
 	/** Un opérateur connecté qui a perdu ses droits perd aussi l'Atelier. */
 	private boolean stillOperator(String owner) {
+		if (hostToken != null && owner.equals(hostName)) {
+			return true; // l'hôte du serveur local reste maître de son Atelier
+		}
 		ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
 		return p == null || isOperator(p);
 	}

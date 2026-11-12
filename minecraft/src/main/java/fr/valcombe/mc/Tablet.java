@@ -67,6 +67,37 @@ public final class Tablet {
 		return links().stream().map(l -> l.substring(0, l.indexOf("/#")) + "/atelier#" + t).toList();
 	}
 
+	/**
+	 * Serveur lancé depuis le launcher, sur le PC de l'hôte : le launcher a déposé un lien d'Atelier
+	 * dans config/valcombe-hote.json. On ouvre l'Atelier avec ce lien, et on efface le fichier.
+	 * Renvoie le port ouvert, ou 0 s'il n'y a rien à ouvrir.
+	 */
+	public synchronized int openForHost(java.nio.file.Path file) {
+		if (atelier == null || !java.nio.file.Files.exists(file)) {
+			return 0;
+		}
+		try {
+			com.google.gson.JsonObject o = com.google.gson.JsonParser.parseString(
+				java.nio.file.Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+			java.nio.file.Files.deleteIfExists(file);
+			String name = o.has("nom") ? o.get("nom").getAsString() : "";
+			String given = o.has("jeton") ? o.get("jeton").getAsString() : "";
+			if (!name.matches("[A-Za-z0-9_]{1,16}") || !given.matches("[0-9a-f]{32,64}")) {
+				ValcombeMod.LOG.warn("Lien d'Atelier de l'hôte illisible : ignoré");
+				return 0;
+			}
+			if (http == null) {
+				open(name);
+			}
+			atelier.setHostToken(name, given);
+			ValcombeMod.LOG.info("[valcombe] Atelier de l'hôte ouvert sur le port {}", port);
+			return port;
+		} catch (IOException | RuntimeException e) {
+			ValcombeMod.LOG.warn("Atelier de l'hôte non ouvert : {}", e.getMessage());
+			return 0;
+		}
+	}
+
 	public Tablet(Session session, Community community) {
 		this.session = session;
 		this.community = community;
@@ -130,6 +161,7 @@ public final class Tablet {
 			owner = null;
 			if (atelier != null) {
 				atelier.revoke(null); // les liens de l'Atelier sont fermés avec la tablette
+				atelier.setHostToken(null, null);
 			}
 		}
 	}

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,13 +17,21 @@ public partial class MainWindow : Window
     private Release? _release;
     private bool _loading = true;
     private readonly string? _captureDir;
+    /// <summary>Le serveur de Valcombe sur ce PC (page Héberger, et l'Atelier).</summary>
+    private readonly LocalServer _server = new();
+    private bool _hostDirty;
+    private bool _openAtelierWhenReady;
+    private bool _playWhenReady;
+    private LocalServer.State? _shownHostState;
+    /// <summary>Adresse imposée pour le prochain JOUER (« Jouer sur mon serveur »).</summary>
+    private string? _playAddress;
 
     private static readonly (string Name, string Accent, string Hot)[] Accents =
     {
-        ("Lie-de-vin", "#5A1E2A", "#8E1B1B"),
-        ("Nuit", "#1F2A44", "#34507A"),
-        ("Forêt", "#24402C", "#3A6B45"),
-        ("Bronze", "#6B4E24", "#9A7136"),
+        ("Lie-de-vin", "#7A2433", "#A3303F"),
+        ("Nuit", "#2A3A62", "#3D5A94"),
+        ("Forêt", "#2C5238", "#3F7A50"),
+        ("Bronze", "#7A5A2A", "#A67C3C"),
     };
 
     private static readonly string[] Backgrounds = { "Parchemin", "Nocturne" };
@@ -41,18 +50,52 @@ public partial class MainWindow : Window
         ApplyLook();
         RefreshAccount();
         _loading = false;
+        // Le serveur local écrit hors du fil de l'interface : on rafraîchit la page au plus quatre fois par seconde.
+        _server.Changed += () => _hostDirty = true;
+        var hostTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        hostTimer.Tick += (_, _) =>
+        {
+            if (_hostDirty)
+            {
+                _hostDirty = false;
+                RefreshHost();
+            }
+        };
+        hostTimer.Start();
+        RefreshHost();
+        Closing += OnClosing;
+        SizeChanged += (_, _) => BuildEmbers();
         var statusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         statusTimer.Tick += async (_, _) => await RefreshServerStatusAsync();
         statusTimer.Start();
         Loaded += async (_, _) =>
         {
+            BuildEmbers();
             if (_captureDir != null)
             {
                 await CaptureAsync(_captureDir);
                 return;
             }
             // Le launcher est portable : il se range lui-même dans le menu Démarrer (et une fois sur le Bureau).
-            Shortcuts.Ensure(_config);
+            // Pas pendant une vérification : un exe d'essai ne doit jamais détourner les raccourcis du joueur.
+            if (!args.Any(a => a is "--verifier-moteur" or "--verifier-serveur" or "--essai-serveur"))
+            {
+                Shortcuts.Ensure(_config);
+            }
+            int trial = Array.IndexOf(args, "--essai-serveur");
+            if (trial >= 0 && trial + 1 < args.Length)
+            {
+                int local = Array.IndexOf(args, "--mod-local");
+                LocalServer.ModOverride = local >= 0 && local + 1 < args.Length ? args[local + 1] : null;
+                await TrialServerAsync(args[trial + 1]);
+                return;
+            }
+            int serverCheck = Array.IndexOf(args, "--verifier-serveur");
+            if (serverCheck >= 0 && serverCheck + 1 < args.Length)
+            {
+                await CheckServerAsync(args[serverCheck + 1]);
+                return;
+            }
             int check = Array.IndexOf(args, "--verifier-moteur");
             if (check >= 0 && check + 1 < args.Length)
             {
@@ -92,22 +135,42 @@ public partial class MainWindow : Window
         {
             return;
         }
-        PageHome.Visibility = page == "Home" ? Visibility.Visible : Visibility.Collapsed;
-        PageGuide.Visibility = page == "Guide" ? Visibility.Visible : Visibility.Collapsed;
-        PageCarnet.Visibility = page == "Carnet" ? Visibility.Visible : Visibility.Collapsed;
+        var pages = new (string Name, FrameworkElement View)[]
+        {
+            ("Home", PageHome), ("Host", PageHost), ("Atelier", PageAtelier), ("Guide", PageGuide), ("Carnet", PageCarnet),
+            ("Game", PageGame), ("Look", PageLook), ("Settings", PageSettings), ("Account", PageAccount),
+        };
+        foreach (var (name, view) in pages)
+        {
+            bool show = name == page;
+            if (show && view.Visibility != Visibility.Visible)
+            {
+                // La page entre en fondu.
+                view.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+            }
+            view.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        }
+        // L'illustration reste vive sur l'accueil ; ailleurs, un voile la fait reculer derrière le texte.
+        Dim.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(page == "Home" ? 0 : 0.5,
+            TimeSpan.FromMilliseconds(250)));
         if (page == "Carnet")
         {
             LoadCarnet();
         }
-        PageGame.Visibility = page == "Game" ? Visibility.Visible : Visibility.Collapsed;
-        PageLook.Visibility = page == "Look" ? Visibility.Visible : Visibility.Collapsed;
-        PageSettings.Visibility = page == "Settings" ? Visibility.Visible : Visibility.Collapsed;
-        PageAccount.Visibility = page == "Account" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "Account")
         {
             RefreshAccount();
         }
+        if (page == "Host" || page == "Atelier")
+        {
+            _shownHostState = null;
+            RefreshHost();
+        }
     }
+
+    private void GoHost(object sender, RoutedEventArgs e) => NavHost.IsChecked = true;
+
+    private void GoAtelier(object sender, RoutedEventArgs e) => NavAtelier.IsChecked = true;
 
     private void SetStatus(string text, double progress)
     {
@@ -145,6 +208,12 @@ public partial class MainWindow : Window
         ShortcutsBox.IsChecked = _config.Shortcuts;
         HdBox.IsChecked = _config.HdTextures;
         ShadersBox.IsChecked = _config.Shaders;
+        EmbersBox.IsChecked = _config.Embers;
+        HostEulaBox.IsChecked = _config.HostEulaAccepted;
+        HostGuestsOnlyBox.IsChecked = _config.HostGuestsOnly;
+        HostNameBox.Text = _config.HostName;
+        HostPortBox.Text = _config.HostPort.ToString();
+        HostMemorySlider.Value = Math.Clamp(_config.HostMemoryMb / 1024, 2, 8);
         UpdateLabels();
     }
 
@@ -155,6 +224,7 @@ public partial class MainWindow : Window
         FpsLabel.Text = FpsSlider.Value >= 260 ? "Images par seconde : illimitées" : $"Images par seconde : {(int)FpsSlider.Value}";
         VolumeLabel.Text = $"Volume général : {(int)VolumeSlider.Value} %";
         MemoryLabel.Text = $"Mémoire allouée au jeu : {(int)MemorySlider.Value} Go";
+        HostMemoryLabel.Text = $"Mémoire du serveur : {(int)HostMemorySlider.Value} Go";
         int total = TotalMemoryGb();
         if (total > 0)
         {
@@ -221,7 +291,8 @@ public partial class MainWindow : Window
         }
         foreach (string b in Backgrounds)
         {
-            var rb = new RadioButton { Content = b, GroupName = "bg", Tag = b, IsChecked = b == _config.Background };
+            // « Parchemin » est le nom enregistré depuis les premières versions : c'est aujourd'hui l'ambiance de braise.
+            var rb = new RadioButton { Content = b == "Parchemin" ? "Braise" : b, GroupName = "bg", Tag = b, IsChecked = b == _config.Background };
             rb.Checked += LookChanged;
             BackgroundPanel.Children.Add(rb);
         }
@@ -244,6 +315,8 @@ public partial class MainWindow : Window
         _config.CloseOnLaunch = CloseOnLaunchBox.IsChecked == true;
         _config.HdTextures = HdBox.IsChecked == true;
         _config.Shaders = ShadersBox.IsChecked == true;
+        _config.Embers = EmbersBox.IsChecked == true;
+        BuildEmbers();
         bool shortcuts = ShortcutsBox.IsChecked == true;
         if (shortcuts != _config.Shortcuts)
         {
@@ -271,11 +344,61 @@ public partial class MainWindow : Window
         }
         Application.Current.Resources["Accent"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(a.Accent));
         Application.Current.Resources["AccentHot"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(a.Hot));
+        // Un voile teinté sur l'illustration : aux couleurs de l'accent (braise), ou bleu nuit.
         Color top = (Color)ColorConverter.ConvertFromString(a.Accent);
         Backdrop.Background = _config.Background == "Nocturne"
-            ? new LinearGradientBrush(Color.FromRgb(10, 8, 18), Color.FromRgb(30, 22, 40), 90)
-            : new LinearGradientBrush(Color.FromArgb(255, (byte)(top.R / 2), (byte)(top.G / 2), (byte)(top.B / 2)),
-                Color.FromRgb(20, 12, 16), 90);
+            ? new LinearGradientBrush(Color.FromArgb(150, 10, 16, 44), Color.FromArgb(235, 8, 8, 20), 90)
+            : new LinearGradientBrush(Color.FromArgb(70, (byte)(top.R / 2), (byte)(top.G / 2), (byte)(top.B / 2)),
+                Color.FromArgb(225, 15, 10, 14), 90);
+    }
+
+    private static readonly Random EmberRandom = new(7);
+
+    /// <summary>Des braises montent lentement devant l'illustration (désactivable dans Apparence).</summary>
+    private void BuildEmbers()
+    {
+        Embers.Children.Clear();
+        if (!_config.Embers || ActualWidth <= 0)
+        {
+            return;
+        }
+        double w = ActualWidth;
+        double h = ActualHeight;
+        for (int i = 0; i < 28; i++)
+        {
+            double size = 2 + EmberRandom.NextDouble() * 3;
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = size,
+                Height = size,
+                Fill = new SolidColorBrush(Color.FromRgb(255, (byte)(130 + EmberRandom.Next(70)), 60)),
+                Opacity = 0,
+                Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 1.5 },
+            };
+            Canvas.SetLeft(dot, 232 + EmberRandom.NextDouble() * Math.Max(1, w - 232));
+            var move = new TranslateTransform();
+            dot.RenderTransform = move;
+            Embers.Children.Add(dot);
+            double seconds = 10 + EmberRandom.NextDouble() * 14;
+            var start = TimeSpan.FromSeconds(-EmberRandom.NextDouble() * seconds);
+            move.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(h + 10, h * 0.15, TimeSpan.FromSeconds(seconds))
+            {
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever, BeginTime = start,
+            });
+            move.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(-18, 18, TimeSpan.FromSeconds(seconds / 3))
+            {
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever, AutoReverse = true, BeginTime = start,
+            });
+            var fade = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+            {
+                Duration = TimeSpan.FromSeconds(seconds), RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever, BeginTime = start,
+            };
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0, System.Windows.Media.Animation.KeyTime.FromPercent(0)));
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0.85, System.Windows.Media.Animation.KeyTime.FromPercent(0.2)));
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0.5, System.Windows.Media.Animation.KeyTime.FromPercent(0.7)));
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0, System.Windows.Media.Animation.KeyTime.FromPercent(1)));
+            dot.BeginAnimation(OpacityProperty, fade);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -344,6 +467,9 @@ public partial class MainWindow : Window
 
     private string ServerAddress =>
         !string.IsNullOrWhiteSpace(_config.Server) ? _config.Server : _release?.Manifest.Server ?? "";
+
+    /// <summary>Tant que le serveur tourne sur ce PC, le launcher reste ouvert : le fermer arrêterait la soirée.</summary>
+    private bool CloseAfterLaunch => _config.CloseOnLaunch && _server.Current == LocalServer.State.Stopped;
 
     private bool _pickerLoading;
 
@@ -634,6 +760,7 @@ public partial class MainWindow : Window
         var saved = await auth.RefreshAsync(CancellationToken.None);
         if (saved != null)
         {
+            RememberHost(saved);
             return saved;
         }
         var account = await auth.SignInAsync(code =>
@@ -645,6 +772,7 @@ public partial class MainWindow : Window
             Process.Start(new ProcessStartInfo(code.VerificationUri) { UseShellExecute = true });
         }, CancellationToken.None);
         CodeBox.Visibility = Visibility.Collapsed;
+        RememberHost(account);
         RefreshAccount();
         return account;
     }
@@ -748,8 +876,8 @@ public partial class MainWindow : Window
                 RefreshAccount();
             }
             SetStatus("Lancement de Minecraft…", 1);
-            Prism.Launch(ServerAddress);
-            if (_config.CloseOnLaunch)
+            Prism.Launch(_playAddress ?? ServerAddress);
+            if (CloseAfterLaunch)
             {
                 await Task.Delay(1500);
                 Close();
@@ -761,6 +889,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _playAddress = null;
             PlayButton.IsEnabled = true;
             RefreshAccount();
         }
@@ -782,8 +911,9 @@ public partial class MainWindow : Window
         Instance.PrepareOptions(_config.Minecraft, Engine.GameDir);
         await Instance.SyncExtrasAsync(release, Engine.GameDir, _config, progress);
         SetStatus("Lancement de Minecraft…", 1);
-        var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb, ServerAddress));
-        if (!_config.CloseOnLaunch)
+        var game = Engine.Launch(plan, Engine.BuildArguments(plan, account, _config.MicrosoftClientId, _config.MaxMemoryMb,
+            _playAddress ?? ServerAddress));
+        if (!CloseAfterLaunch)
         {
             // Le jeu s'arrête brutalement : on propose le rapport de plantage.
             game.EnableRaisingEvents = true;
@@ -798,7 +928,7 @@ public partial class MainWindow : Window
                 }
             });
         }
-        if (_config.CloseOnLaunch)
+        if (CloseAfterLaunch)
         {
             await Task.Delay(1500);
             Close();
@@ -823,6 +953,106 @@ public partial class MainWindow : Window
         return System.Text.RegularExpressions.Regex.Replace(string.Join("\n", lines).Trim(), "\n{3,}", "\n\n");
     }
 
+    /// <summary>
+    /// Vérification de l'installation du serveur local, sans le démarrer : ValcombeLauncher.exe --verifier-serveur rapport.txt
+    /// (Java, lanceur Fabric et mods du serveur sont téléchargés dans ValcombeData/serveur.)
+    /// </summary>
+    private async Task CheckServerAsync(string report)
+    {
+        var lines = new List<string>();
+        try
+        {
+            var release = await Releases.LatestAsync(_config.Repository);
+            string java = await _server.InstallAsync(release, new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)));
+            lines.Add($"Version {release.Tag} — Minecraft {release.Manifest.Minecraft}, Fabric {release.Manifest.Loader}");
+            lines.Add($"Java : {java} ({(File.Exists(java) ? "présent" : "ABSENT")})");
+            string jar = Path.Combine(LocalServer.Dir, "fabric-server-launch.jar");
+            lines.Add($"Lanceur Fabric : {(File.Exists(jar) ? new FileInfo(jar).Length + " octets" : "ABSENT")}");
+            lines.Add("Mods du serveur :");
+            lines.AddRange(Directory.GetFiles(Path.Combine(LocalServer.Dir, "mods"), "*.jar").Select(f => "  " + Path.GetFileName(f)));
+            lines.Add("Adresses locales : " + string.Join(", ", LocalServer.LocalAddresses(_config.HostPort)));
+        }
+        catch (Exception ex)
+        {
+            lines.Add("ERREUR : " + ex);
+        }
+        await File.WriteAllLinesAsync(report, lines);
+        Close();
+    }
+
+    /// <summary>
+    /// Essai complet du serveur local : ValcombeLauncher.exe --essai-serveur rapport.txt [--mod-local mod.jar]
+    /// Il démarre le serveur, attend qu'il soit prêt, interroge l'Atelier avec le lien de l'hôte, puis l'arrête.
+    /// Le contrat de Minecraft doit déjà avoir été accepté dans le launcher.
+    /// </summary>
+    private async Task TrialServerAsync(string report)
+    {
+        var lines = new List<string>();
+        void Note(string text) => lines.Add($"{DateTime.Now:HH:mm:ss} {text}");
+        try
+        {
+            if (!_config.HostEulaAccepted)
+            {
+                throw new InvalidOperationException("Contrat de Minecraft non accepté dans le launcher (page Héberger).");
+            }
+            var release = await Releases.LatestAsync(_config.Repository);
+            Note($"Version {release.Tag}" + (LocalServer.ModOverride != null ? $" avec le mod local {Path.GetFileName(LocalServer.ModOverride)}" : ""));
+            _config.HostGuests = new List<string> { "InviteEssai" };
+            await _server.StartAsync(release, _config, "Hote_Essai", new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)));
+            Note("Processus démarré, état : " + _server.Current);
+            var clock = Stopwatch.StartNew();
+            while (_server.Current is LocalServer.State.Starting or LocalServer.State.Preparing && clock.Elapsed < TimeSpan.FromMinutes(6))
+            {
+                await Task.Delay(500);
+            }
+            Note($"État après {clock.Elapsed.TotalSeconds:0} s : {_server.Current}" + (_server.LastError.Length > 0 ? " — " + _server.LastError : ""));
+            if (_server.Current == LocalServer.State.Running)
+            {
+                for (int i = 0; i < 40 && _server.AtelierPort == 0; i++)
+                {
+                    await Task.Delay(250);
+                }
+                Note("Port de l'Atelier annoncé par le mod : " + _server.AtelierPort);
+                var status = await ServerStatus.PingAsync(_config.HostPort == 25565 ? "localhost" : "localhost:" + _config.HostPort);
+                Note($"Réponse du serveur de jeu : en ligne = {status.Online}, {status.Players}/{status.Max} joueurs, « {status.Motd} »");
+                if (_server.AtelierUrl != null)
+                {
+                    using var ok = new HttpRequestMessage(HttpMethod.Get, $"http://localhost:{_server.AtelierPort}/api/atelier/donnees");
+                    ok.Headers.Add("X-Valcombe-Jeton", _server.AtelierToken);
+                    using var answer = await Http.Client.SendAsync(ok);
+                    string body = await answer.Content.ReadAsStringAsync();
+                    Note($"Atelier avec le lien de l'hôte : {(int)answer.StatusCode}, {body.Length} caractères, commence par {body[..Math.Min(60, body.Length)]}");
+                    using var bad = new HttpRequestMessage(HttpMethod.Get, $"http://localhost:{_server.AtelierPort}/api/atelier/donnees");
+                    bad.Headers.Add("X-Valcombe-Jeton", "0000");
+                    using var refused = await Http.Client.SendAsync(bad);
+                    Note("Atelier avec un mauvais lien : " + (int)refused.StatusCode);
+                    using var page = await Http.Client.GetAsync($"http://localhost:{_server.AtelierPort}/atelier");
+                    Note("Page de l'Atelier : " + (int)page.StatusCode);
+                }
+                _server.Send("whitelist list");
+                _server.Send("list");
+                await Task.Delay(1500);
+                Note("Arrêt demandé");
+                clock.Restart();
+                await _server.StopAsync();
+                Note($"État après l'arrêt ({clock.Elapsed.TotalSeconds:0} s) : {_server.Current}");
+            }
+            lines.Add("--- Fin du journal du serveur ---");
+            lines.AddRange(_server.LogText.Split(Environment.NewLine).TakeLast(28));
+        }
+        catch (Exception ex)
+        {
+            lines.Add("ERREUR : " + ex);
+        }
+        if (_server.Current != LocalServer.State.Stopped)
+        {
+            _server.StopNow();
+        }
+        await File.WriteAllLinesAsync(report, lines);
+        Closing -= OnClosing;
+        Close();
+    }
+
     /// <summary>Vérification à blanc du moteur : ValcombeLauncher.exe --verifier-moteur rapport.txt</summary>
     private async Task CheckEngineAsync(string report)
     {
@@ -845,6 +1075,391 @@ public partial class MainWindow : Window
         }
         await File.WriteAllLinesAsync(report, lines);
         Close();
+    }
+
+    // ------------------------------------------------------------------
+    // Héberger une partie sur ce PC, et ouvrir l'Atelier
+    // ------------------------------------------------------------------
+    /// <summary>Le pseudo de l'hôte est retenu à sa première connexion : il sera opérateur de son serveur.</summary>
+    private void RememberHost(MinecraftAccount account)
+    {
+        if (string.IsNullOrWhiteSpace(_config.HostName) && !string.IsNullOrWhiteSpace(account.Name))
+        {
+            _config.HostName = account.Name;
+            _config.Save();
+            HostNameBox.Text = account.Name;
+        }
+    }
+
+    private void HostSettingsChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+        _config.HostEulaAccepted = HostEulaBox.IsChecked == true;
+        _config.HostGuestsOnly = HostGuestsOnlyBox.IsChecked == true;
+        string name = HostNameBox.Text.Trim();
+        _config.HostName = System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z0-9_]{1,16}$") ? name : "";
+        _config.HostPort = int.TryParse(HostPortBox.Text.Trim(), out int port) && port is >= 1024 and <= 65535 ? port : 25565;
+        HostPortBox.Text = _config.HostPort.ToString();
+        _config.HostMemoryMb = (int)HostMemorySlider.Value * 1024;
+        UpdateLabels();
+        _config.Save();
+        // Appliqué tout de suite si le serveur tourne ; sinon au prochain démarrage.
+        if (sender == HostGuestsOnlyBox && _server.Current == LocalServer.State.Running)
+        {
+            _server.Send(_config.HostGuestsOnly ? "whitelist on" : "whitelist off");
+        }
+        _shownHostState = null;
+        RefreshHost();
+    }
+
+    private void GuestKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            AddGuest(sender, e);
+        }
+    }
+
+    private void AddGuest(object sender, RoutedEventArgs e)
+    {
+        string name = HostGuestBox.Text.Trim();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z0-9_]{3,16}$"))
+        {
+            SetStatus("Un pseudo Minecraft fait 3 à 16 caractères : lettres sans accent, chiffres et « _ ».", 0);
+            return;
+        }
+        if (!_config.HostGuests.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            _config.HostGuests.Add(name);
+            _config.Save();
+            _server.Send("whitelist add " + name);
+        }
+        HostGuestBox.Text = "";
+        BuildGuests();
+    }
+
+    private void BuildGuests()
+    {
+        HostGuestsPanel.Children.Clear();
+        foreach (string guest in _config.HostGuests)
+        {
+            string name = guest;
+            var remove = new Button
+            {
+                Content = name + "   ✕", Style = (Style)FindResource("Ghost"), Margin = new Thickness(0, 0, 8, 8), Padding = new Thickness(12, 5, 12, 5),
+                ToolTip = "Retirer " + name + " des invités",
+            };
+            remove.Click += (_, _) =>
+            {
+                _config.HostGuests.Remove(name);
+                _config.Save();
+                _server.Send("whitelist remove " + name);
+                BuildGuests();
+            };
+            HostGuestsPanel.Children.Add(remove);
+        }
+        if (_config.HostGuests.Count == 0)
+        {
+            HostGuestsPanel.Children.Add(new TextBlock { Text = "Aucun invité pour l'instant.", Style = (Style)FindResource("Hint") });
+        }
+    }
+
+    /// <summary>Adresses à donner aux amis du même réseau, chacune avec son bouton « Copier ».</summary>
+    private void BuildAddresses()
+    {
+        HostAddresses.Children.Clear();
+        var list = _captureDir != null ? new List<string> { "192.168.1.24" } : LocalServer.LocalAddresses(_config.HostPort);
+        if (list.Count == 0)
+        {
+            HostAddresses.Children.Add(new TextBlock { Text = "Ce PC n'est relié à aucun réseau.", Style = (Style)FindResource("Hint") });
+        }
+        foreach (string address in list.Take(3))
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            row.Children.Add(new TextBox { Text = address, IsReadOnly = true, Width = 220, FontFamily = new FontFamily("Consolas"), FontSize = 14 });
+            var copy = new Button { Content = "Copier", Style = (Style)FindResource("Ghost"), Margin = new Thickness(10, 0, 0, 0) };
+            copy.Click += (_, _) =>
+            {
+                Clipboard.SetText(address);
+                SetStatus($"Adresse {address} copiée : envoyez-la à vos amis.", 0);
+            };
+            row.Children.Add(copy);
+            HostAddresses.Children.Add(row);
+        }
+    }
+
+    /// <summary>Met la page Héberger et la page Atelier à jour : état, joueurs, journal, boutons.</summary>
+    private void RefreshHost()
+    {
+        var st = _captureDir != null ? LocalServer.State.Running : _server.Current;
+        var players = _captureDir != null ? new List<string> { "Yoann", "Lea", "Hugo" } : _server.Players.ToList();
+        (string title, Brush dot) = st switch
+        {
+            LocalServer.State.Running => ("Serveur en ligne", (Brush)FindResource("Good")),
+            LocalServer.State.Preparing => ("Installation du serveur…", (Brush)FindResource("Gold")),
+            LocalServer.State.Starting => ("Démarrage du serveur…", (Brush)FindResource("Gold")),
+            LocalServer.State.Stopping => ("Arrêt du serveur…", (Brush)FindResource("Gold")),
+            _ => ("Serveur arrêté", new SolidColorBrush(Color.FromRgb(0x8A, 0x80, 0x80))),
+        };
+        HostStateText.Text = title;
+        HostDot.Fill = dot;
+        NavHostDot.Visibility = st == LocalServer.State.Running ? Visibility.Visible : Visibility.Collapsed;
+        HostDetail.Text = st switch
+        {
+            LocalServer.State.Running => (players.Count == 0 ? "Personne n'est encore connecté. Donnez l'adresse ci-dessous à vos amis."
+                : $"{players.Count} joueur(s) connecté(s) : {string.Join(", ", players)}")
+                + (_server.Notice.Length > 0 ? Environment.NewLine + _server.Notice : ""),
+            LocalServer.State.Preparing => "Téléchargement de Java, de Fabric et des mods du serveur : une seule fois.",
+            LocalServer.State.Starting => "La première fois, le serveur télécharge Minecraft et crée le monde : comptez une à deux minutes.",
+            LocalServer.State.Stopping => "Le monde est enregistré…",
+            _ => _server.LastError.Length > 0 ? _server.LastError
+                : _server.IsInstalled ? "Prêt à démarrer." : "Le serveur sera installé au premier démarrage (environ 250 Mo).",
+        };
+        HostStartButton.Content = st switch
+        {
+            LocalServer.State.Stopped => "Démarrer le serveur",
+            LocalServer.State.Running => "Arrêter le serveur",
+            LocalServer.State.Stopping => "Arrêt…",
+            _ => "Démarrage…",
+        };
+        HostStartButton.IsEnabled = st is LocalServer.State.Stopped or LocalServer.State.Running;
+        string? url = _captureDir != null ? "http://localhost:25570/atelier" : _server.AtelierUrl;
+        AtelierCopyButton.IsEnabled = url != null;
+        AtelierOpenButton.Content = url != null ? "Ouvrir l'Atelier" : st == LocalServer.State.Stopped ? "Démarrer et ouvrir l'Atelier" : "Ouverture…";
+        AtelierOpenButton.IsEnabled = st is LocalServer.State.Stopped or LocalServer.State.Running;
+        AtelierStateText.Text = url != null ? "L'Atelier est ouvert sur ce PC. Le serveur tourne : vos amis peuvent aussi vous rejoindre (page Héberger)."
+            : st == LocalServer.State.Stopped
+                ? (_config.HostEulaAccepted ? "Le serveur de ce PC démarre, puis l'Atelier s'ouvre dans votre navigateur."
+                    : "Avant la première ouverture, acceptez le contrat de Minecraft sur la page « Héberger une partie ».")
+                : "Le serveur démarre : l'Atelier s'ouvrira dès qu'il sera prêt.";
+        if (!string.Equals(HostLog.Text, _server.LogText, StringComparison.Ordinal))
+        {
+            HostLog.Text = _server.LogText;
+            HostLog.ScrollToEnd();
+        }
+        if (_shownHostState != st)
+        {
+            _shownHostState = st;
+            BuildAddresses();
+            BuildGuests();
+        }
+        if (st == LocalServer.State.Stopped)
+        {
+            _openAtelierWhenReady = false;
+            _playWhenReady = false;
+        }
+        if (_openAtelierWhenReady && _server.AtelierUrl != null)
+        {
+            _openAtelierWhenReady = false;
+            OpenInBrowser(_server.AtelierUrl);
+            SetStatus("L'Atelier est ouvert dans votre navigateur.", 0);
+        }
+        if (_playWhenReady && st == LocalServer.State.Running && _captureDir == null)
+        {
+            _playWhenReady = false;
+            PlayOnHost();
+        }
+    }
+
+    private static void OpenInBrowser(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
+    /// <summary>Démarre le serveur de ce PC s'il ne tourne pas. Renvoie false si ce n'est pas possible.</summary>
+    private async Task<bool> StartServerAsync()
+    {
+        if (_server.Current != LocalServer.State.Stopped)
+        {
+            return true;
+        }
+        if (!_config.HostEulaAccepted)
+        {
+            NavHost.IsChecked = true;
+            SetStatus("Avant d'héberger, lisez et acceptez le contrat de Minecraft (case sous le bouton Démarrer).", 0);
+            return false;
+        }
+        if (_release == null)
+        {
+            await RefreshReleaseAsync();
+        }
+        if (_release == null)
+        {
+            SetStatus("Version introuvable : vérifiez votre connexion à Internet.", 0);
+            return false;
+        }
+        // Le pseudo de l'hôte, s'il s'est déjà connecté : pas de fenêtre de connexion pour héberger.
+        if (string.IsNullOrWhiteSpace(_config.HostName) && Integrated && MicrosoftAuth.HasSavedAccount)
+        {
+            try
+            {
+                var account = await new MicrosoftAuth(_config.MicrosoftClientId).RefreshAsync(CancellationToken.None);
+                if (account != null)
+                {
+                    RememberHost(account);
+                }
+            }
+            catch (Exception)
+            {
+                // sans réseau ou compte expiré : l'hôte saisira son pseudo
+            }
+        }
+        try
+        {
+            await _server.StartAsync(_release, _config, _config.HostName, new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Serveur : " + ex.Message, 0);
+            return false;
+        }
+    }
+
+    private async void HostToggle(object sender, RoutedEventArgs e)
+    {
+        if (_server.Current == LocalServer.State.Stopped)
+        {
+            await StartServerAsync();
+            return;
+        }
+        int players = _server.Players.Count;
+        if (players > 0 && MessageBox.Show(this, $"{players} joueur(s) sont connectés. Arrêter le serveur met fin à la soirée (la partie en cours est enregistrée).",
+                "Les Cendres de Valcombe", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+            return;
+        }
+        SetStatus("Arrêt du serveur…", 0);
+        await _server.StopAsync();
+        SetStatus("Serveur arrêté. Le monde et vos créations sont enregistrés.", 0);
+    }
+
+    /// <summary>Jouer sur son propre serveur : il est démarré si besoin, puis le jeu s'y connecte.</summary>
+    private async void HostPlay(object sender, RoutedEventArgs e)
+    {
+        if (_server.Current == LocalServer.State.Running)
+        {
+            PlayOnHost();
+            return;
+        }
+        _playWhenReady = true;
+        if (!await StartServerAsync())
+        {
+            _playWhenReady = false;
+            return;
+        }
+        SetStatus("Le jeu se lancera dès que le serveur sera prêt…", 0);
+    }
+
+    private void PlayOnHost()
+    {
+        if (!PlayButton.IsEnabled)
+        {
+            return; // un lancement est déjà en cours
+        }
+        _playAddress = _config.HostPort == 25565 ? "localhost" : "localhost:" + _config.HostPort;
+        Play(this, new RoutedEventArgs());
+    }
+
+    private async void OpenAtelier(object sender, RoutedEventArgs e)
+    {
+        if (_server.AtelierUrl != null)
+        {
+            OpenInBrowser(_server.AtelierUrl);
+            return;
+        }
+        if (_server.Current == LocalServer.State.Running)
+        {
+            SetStatus("Ce serveur a démarré sans le lien de l'Atelier : arrêtez-le puis redémarrez-le depuis cette page.", 0);
+            return;
+        }
+        _openAtelierWhenReady = true;
+        if (!await StartServerAsync())
+        {
+            _openAtelierWhenReady = false;
+            return;
+        }
+        SetStatus("L'Atelier s'ouvrira dès que le serveur sera prêt…", 0);
+    }
+
+    private void CopyAtelierLink(object sender, RoutedEventArgs e)
+    {
+        if (_server.AtelierUrl != null)
+        {
+            Clipboard.SetText(_server.AtelierUrl);
+            SetStatus("Lien de l'Atelier copié. Ne le partagez pas : il donne tous les droits sur l'Atelier.", 0);
+        }
+    }
+
+    private void OpenEula(object sender, RoutedEventArgs e) => OpenInBrowser("https://aka.ms/MinecraftEULA");
+
+    private void OpenHostFolder(object sender, RoutedEventArgs e)
+    {
+        Directory.CreateDirectory(LocalServer.Dir);
+        Process.Start(new ProcessStartInfo("explorer.exe", LocalServer.Dir));
+    }
+
+    private void CommandKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            SendHostCommand(sender, e);
+        }
+    }
+
+    private void SendHostCommand(object sender, RoutedEventArgs e)
+    {
+        string command = HostCommandBox.Text.Trim().TrimStart('/');
+        if (command.Length == 0)
+        {
+            return;
+        }
+        if (_server.Current != LocalServer.State.Running)
+        {
+            SetStatus("Le serveur ne tourne pas.", 0);
+            return;
+        }
+        _server.Send(command);
+        HostCommandBox.Text = "";
+    }
+
+    /// <summary>L'adresse publique de la box, à donner aux amis une fois les ports ouverts.</summary>
+    private async void ShowPublicAddress(object sender, RoutedEventArgs e)
+    {
+        HostPublicText.Text = "Recherche…";
+        try
+        {
+            string ip = (await Http.Client.GetStringAsync("https://api.ipify.org")).Trim();
+            if (!System.Net.IPAddress.TryParse(ip, out _))
+            {
+                throw new InvalidOperationException("réponse illisible");
+            }
+            Clipboard.SetText(_config.HostPort == 25565 ? ip : $"{ip}:{_config.HostPort}");
+            HostPublicText.Text = $"Votre adresse publique : {ip}" + (_config.HostPort == 25565 ? "" : $":{_config.HostPort}")
+                + " (copiée). Elle ne mène à ce PC qu'une fois les ports ouverts sur la box, et peut changer d'un jour à l'autre.";
+        }
+        catch (Exception ex)
+        {
+            HostPublicText.Text = "Adresse publique introuvable : " + ex.Message;
+        }
+    }
+
+    /// <summary>Fermer le launcher arrête le serveur de ce PC : on le dit, et on laisse le monde s'enregistrer.</summary>
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_server.Current == LocalServer.State.Stopped)
+        {
+            return;
+        }
+        if (MessageBox.Show(this, "Le serveur de Valcombe tourne sur ce PC. Fermer le launcher l'arrête : la soirée s'interrompt pour tous "
+                + "(la partie en cours est enregistrée).", "Les Cendres de Valcombe", MessageBoxButton.OKCancel, MessageBoxImage.Warning)
+            != MessageBoxResult.OK)
+        {
+            e.Cancel = true;
+            return;
+        }
+        SetStatus("Arrêt du serveur…", 0);
+        _server.StopNow();
     }
 
     private static IEnumerable<RadioButton> FindNav(DependencyObject parent)
@@ -892,7 +1507,10 @@ public partial class MainWindow : Window
             + "\"titre\":\"Pilier de Valcombe\",\"roles\":{\"La Veilleuse\":3,\"La Goule\":2,\"Le Greffier\":2,"
             + "\"Le Templier\":1},\"serveur\":\"valcombe.exemple.fr\",\"misAJour\":\"2026-11-11\"}");
         Profile.GameDirsOverride = new[] { demo };
-        foreach (string page in new[] { "Home", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
+        _config.HostGuests = new List<string> { "Lea", "Hugo", "Ines" };
+        _config.HostName = "Yoann";
+        HostNameBox.Text = "Yoann";
+        foreach (string page in new[] { "Home", "Host", "Atelier", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
         {
             foreach (var rb in FindNav(this))
             {
@@ -902,7 +1520,7 @@ public partial class MainWindow : Window
                 }
             }
             ShowPage(page);
-            await Task.Delay(150);
+            await Task.Delay(450);
             UpdateLayout();
             var bmp = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
             bmp.Render(this);

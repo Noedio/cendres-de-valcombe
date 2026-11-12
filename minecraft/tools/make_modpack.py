@@ -157,9 +157,12 @@ def main():
         "loader": p["loader_version"],
         "server": server,
         "mods": [
-            {"name": label, "filename": m["filename"], "url": m["url"], "sha512": m["sha512"], "size": m["size"]}
+            {"name": label, "filename": m["filename"], "url": m["url"], "sha512": m["sha512"], "size": m["size"],
+             # « client » : graphismes, jamais installés sur un serveur (hébergement depuis le launcher).
+             "side": "client" if label in client_mods else "both"}
             for label, m in list(mods.items()) + list(client_mods.items())
         ] + [{
+            "side": "both",
             "name": "Les Cendres de Valcombe",
             "filename": jar.name,
             "url": "asset:" + jar.name,

@@ -57,6 +57,20 @@ Page **Personnalisation › Graphismes du jeu** : décochez les shaders si le je
 
 ### Sur votre PC (pour commencer)
 
+Le plus simple : **depuis le launcher**, page « Héberger une partie ».
+
+1. Cochez « J'ai lu et j'accepte le contrat de licence de Minecraft » (le bouton à côté ouvre le contrat).
+2. Cliquez sur **Démarrer le serveur**. La première fois, le launcher télécharge Java, Fabric et les mods du serveur (environ 250 Mo), puis le serveur télécharge Minecraft et crée le monde : comptez une à deux minutes.
+3. Quand la pastille passe au vert, donnez à vos amis l'adresse affichée sous « Inviter vos amis » (même box, même Wi-Fi). Ils l'enregistrent dans leur launcher : Réglages › Serveurs enregistrés.
+4. Ajoutez le pseudo de chaque ami dans « Invités » : par défaut, le serveur leur est réservé.
+5. **Jouer sur mon serveur** lance le jeu et vous connecte chez vous. Avec votre pseudo, vous êtes opérateur : vous pouvez devenir Conteur, lancer les parties et construire.
+
+Le launcher doit rester ouvert pendant la soirée : le fermer arrête le serveur (le monde et la partie en cours sont enregistrés). Tout est rangé dans `ValcombeData/serveur`, à côté du launcher.
+
+Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port **25565 en TCP** (le jeu) et le port **24454 en UDP** (le vocal) vers ce PC, puis donnez-leur votre adresse publique (bouton « Voir mon adresse publique »). Sans accès à la box : un réseau privé entre amis avec Tailscale, ou un tunnel avec playit.gg (un tunnel TCP et un tunnel UDP).
+
+Pour le faire à la main, sans le launcher :
+
 1. Installez **Java 25** (Temurin : https://adoptium.net).
 2. Récupérez le dossier `serveur-valcombe` (dans le projet : `minecraft/dist/serveur-valcombe/`, produit par `python tools/make_modpack.py`).
 3. Téléchargez le lanceur de serveur Fabric pour Minecraft 26.3 sur https://fabricmc.net/use/server/ et placez-le dans le dossier sous le nom `fabric-server-launch.jar`.
@@ -227,7 +241,7 @@ Les **rôles créés dans l'Atelier** se jouent de la même façon : leur texte 
 
 ## 8. L'Atelier : créer ses rôles, scénarios et cartes
 
-`/vc atelier` (opérateur) donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau (ou par tunnel SSH sur un VPS). Chaque opérateur a son propre lien : on prépare à plusieurs, en même temps.
+Depuis le launcher : page « L'Atelier », bouton **Ouvrir l'Atelier**. Le launcher démarre le serveur de Valcombe sur votre PC et ouvre l'Atelier dans votre navigateur, sans rien d'autre à installer ; vos créations sont gardées dans `ValcombeData/serveur`. Sur un serveur déjà en ligne, `/vc atelier` (opérateur) donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau (ou par tunnel SSH sur un VPS). Chaque opérateur a son propre lien : on prépare à plusieurs, en même temps.
 
 - **Accueil** : le parcours pas à pas (rôles, scénario, carte, test, jeu), qui est présent, les dernières modifications.
 - **Rôles** : partir d'un exemple ou **d'un rôle intégré** (pour en faire une variante), choisir le camp, l'emblème, le pouvoir (23 modèles), le moment du réveil — par rapport à un rôle intégré ou à un autre rôle créé. Un rôle peut porter **jusqu'à trois effets** (par exemple compter les mauvais et protéger), n'agir qu'**une seule fois par partie** (le joueur choisit sa nuit), agir **de jour** (un tir, des représailles quand on l'accuse), et proposer ses propres **jetons de rappel** au Conteur.

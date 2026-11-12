@@ -16,6 +16,8 @@ public sealed class PackMod
     [JsonPropertyName("folder")] public string Folder { get; set; } = "";
     /// <summary>Pour les « extras » : réglage qui les active (« hd » : textures, « shaders » : ombres et lumières).</summary>
     [JsonPropertyName("group")] public string Group { get; set; } = "";
+    /// <summary>« client » : mod graphique des joueurs, jamais installé sur un serveur ; « both » : partout ; vide : non précisé.</summary>
+    [JsonPropertyName("side")] public string Side { get; set; } = "";
 }
 
 public sealed class NewsItem
