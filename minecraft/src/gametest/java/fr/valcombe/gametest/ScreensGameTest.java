@@ -497,6 +497,17 @@ public class ScreensGameTest implements FabricClientGameTest {
 			send(ctx, "vc carte enregistrer village-test Village de test");
 			ctx.waitTicks(40);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test")), "carte enregistrée");
+			// Partage : l'aperçu vu de dessus voyage avec la carte et revient à l'import.
+			check(world.getServer().computeOnServer(server -> {
+				var maps = fr.valcombe.mc.ValcombeMod.maps();
+				var shared = maps.exportMap("village-test");
+				boolean sent = shared != null && shared.has("apercu");
+				shared.addProperty("id", "village-partage");
+				maps.importMap(shared);
+				boolean back = maps.preview("village-partage") != null && maps.exists("village-partage");
+				maps.delete("village-partage");
+				return sent && back && maps.preview("village-partage") == null;
+			}), "aperçu joint à une carte partagée");
 			send(ctx, "vc carte generer 8 petite monastere oui");
 			ctx.setScreen(() -> null);
 			ctx.waitTicks(20);

@@ -285,6 +285,10 @@ public final class MapStore {
 		try {
 			JsonObject o = GSON.toJsonTree(def(id)).getAsJsonObject();
 			o.addProperty("structure", Base64.getEncoder().encodeToString(Files.readAllBytes(dir.resolve(id + ".nbt"))));
+			byte[] png = preview(id);
+			if (png != null) {
+				o.addProperty("apercu", Base64.getEncoder().encodeToString(png)); // la vue de dessus voyage avec la carte
+			}
 			return o;
 		} catch (IOException e) {
 			return null;
@@ -307,10 +311,45 @@ public final class MapStore {
 			Files.createDirectories(dir);
 			Files.write(dir.resolve(d.id + ".nbt"), nbt);
 			Files.writeString(dir.resolve(d.id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
+			Files.deleteIfExists(dir.resolve(d.id + ".png"));
+			byte[] png = checkedPreview(o);
+			if (png != null) {
+				Files.write(dir.resolve(d.id + ".png"), png);
+			}
 		} catch (IOException | RuntimeException e) {
 			throw new GameException("Carte « " + d.nom + " » illisible.");
 		}
 		return d.nom;
+	}
+
+	/** L'aperçu joint à une carte partagée, s'il y en a un et que c'est bien une petite image PNG ; sinon null. */
+	private static byte[] checkedPreview(JsonObject o) {
+		if (!o.has("apercu")) {
+			return null;
+		}
+		try {
+			byte[] png = Base64.getDecoder().decode(o.get("apercu").getAsString());
+			if (png.length > 2 * 1024 * 1024) {
+				return null;
+			}
+			try (var in = javax.imageio.ImageIO.createImageInputStream(new ByteArrayInputStream(png))) {
+				var readers = javax.imageio.ImageIO.getImageReadersByFormatName("png");
+				if (!readers.hasNext()) {
+					return null;
+				}
+				var reader = readers.next();
+				try {
+					// Seulement l'en-tête : on ne décode pas une image dont la taille annoncée serait démesurée.
+					reader.setInput(in);
+					int side = 2 * MAX_RADIUS + 1;
+					return reader.getWidth(0) <= side && reader.getHeight(0) <= side ? png : null;
+				} finally {
+					reader.dispose();
+				}
+			}
+		} catch (IOException | RuntimeException e) {
+			return null;
+		}
 	}
 
 	/** Aperçu vu de dessus enregistré avec la carte (image PNG), ou null pour une carte d'avant cette version. */

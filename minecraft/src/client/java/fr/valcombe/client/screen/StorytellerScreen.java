@@ -43,7 +43,7 @@ public class StorytellerScreen extends BaseScreen {
 			return tab;
 		}
 		return switch (ClientState.phase()) {
-			case "NIGHT" -> 1;
+			case "NIGHT", "READY" -> 1; // avant la première nuit : remise des rôles, puis la nuit à faire tomber
 			case "DAY" -> 2;
 			default -> 0;
 		};
