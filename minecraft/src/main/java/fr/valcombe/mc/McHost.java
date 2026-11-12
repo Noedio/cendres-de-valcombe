@@ -1877,7 +1877,7 @@ public final class McHost implements Host {
 		lanterns = null;
 		carrying.clear();
 		refreshLabels();
-		return "Le village est oublié : les joueurs seront placés autour du Conteur. Ses blocs restent en place ; "
+		return "La carte est oubliée : les joueurs seront placés autour du Conteur. Ses blocs restent en place ; "
 			+ "ils seront retirés du monde dès qu'une autre carte sera bâtie, générée ou chargée.";
 	}
 
@@ -2340,6 +2340,11 @@ public final class McHost implements Host {
 	@Override
 	public void schedule(int ticks, Runnable r) {
 		tasks.add(new Task(tick + Math.max(1, ticks), r));
+	}
+
+	/** Un chantier ou une remise en état de la carte est en cours ou attend son heure. */
+	public boolean hasWork() {
+		return server != null && (builds.busy() || restoring || restoreAt >= 0);
 	}
 
 	/** Appelé à chaque tick serveur. */

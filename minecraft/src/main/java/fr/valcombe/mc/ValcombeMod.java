@@ -24,6 +24,38 @@ public final class ValcombeMod implements ModInitializer {
 	private static final Session SESSION = new Session(HOST);
 	private static final ValcombeUi UI = new ValcombeUi(SESSION, HOST);
 	private static final ViewSync SYNC = new ViewSync(SESSION);
+	/** Moment du dernier tick mené à son terme : un serveur vide, en veille, n'en fait plus. */
+	private static volatile long lastTick = System.nanoTime();
+	private static volatile boolean idleWork;
+	private static java.util.concurrent.ScheduledExecutorService idleClock;
+
+	/**
+	 * Un serveur vide depuis une minute se met en veille et n'appelle plus le mod. Un chantier lancé depuis
+	 * l'Atelier web, sans personne en jeu, resterait en plan : ce minuteur le fait avancer au rythme des ticks.
+	 */
+	private static void startIdleClock(net.minecraft.server.MinecraftServer server) {
+		int[] beat = {0};
+		idleClock = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+			Thread t = new Thread(r, "valcombe-veille");
+			t.setDaemon(true);
+			return t;
+		});
+		idleClock.scheduleAtFixedRate(() -> {
+			if (System.nanoTime() - lastTick < 500_000_000L) {
+				return; // le serveur tourne : il s'en charge
+			}
+			// Sans chantier, un coup d'œil par seconde suffit à voir celui qu'on vient de lancer.
+			if (idleWork || beat[0]++ % 20 == 0) {
+				server.execute(() -> {
+					// Seulement sans joueur : en solo, un jeu mis en pause doit le rester.
+					idleWork = server.getPlayerCount() == 0 && HOST.hasWork();
+					if (idleWork && System.nanoTime() - lastTick >= 500_000_000L) {
+						guarded("le chantier", HOST::onTick);
+					}
+				});
+			}
+		}, 1000, 50, java.util.concurrent.TimeUnit.MILLISECONDS);
+	}
 	private static Community community;
 	private static Tablet tablet;
 
@@ -200,8 +232,13 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.resumeRestore(); // carte laissée en l'état par un arrêt en pleine partie ou en pleine remise en état
 			SESSION.setSavedScripts(ScriptStore.list(server));
 			tablet.openForHost(server.getServerDirectory().resolve("config").resolve("valcombe-hote.json"));
+			startIdleClock(server);
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			if (idleClock != null) {
+				idleClock.shutdownNow();
+				idleClock = null;
+			}
 			try {
 				SESSION.saveNow(); // la partie en cours reprendra au prochain démarrage
 			} catch (RuntimeException e) {
@@ -217,6 +254,7 @@ public final class ValcombeMod implements ModInitializer {
 			}
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			lastTick = System.nanoTime();
 			// Chaque partie du tick est protégée : une erreur d'affichage ne doit pas arrêter le serveur ni la partie.
 			guarded("la partie", HOST::onTick);
 			guarded("la vue des joueurs", () -> SYNC.onTick(server));
