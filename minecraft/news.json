@@ -1,6 +1,11 @@
 [
   {
     "date": "12 nov. 2026",
+    "title": "Version 0.8.0 : un nouveau launcher, pour héberger et créer",
+    "text": "Le launcher fait peau neuve : Valcombe la nuit en fond, une navigation plus claire, des réglages plus lisibles. Deux nouvelles pages. « Héberger une partie » installe et démarre le serveur sur votre PC, vous donne l'adresse à transmettre à vos amis et tient la liste de vos invités. « L'Atelier » s'ouvre d'un clic dans votre navigateur pour créer vos rôles, vos scénarios et vos cartes."
+  },
+  {
+    "date": "12 nov. 2026",
     "title": "Version 0.7.0 : le pupitre du Conteur et l'Atelier",
     "text": "Le Conteur reprend la main : pause, vote annulé, grâce, étape précédente, et un joueur déconnecté peut être relayé puis retrouve sa place. Nuit pas à pas, jetons de rappel propres à chaque rôle, temps de parole, journal de la partie. Dans l'Atelier : des rôles à plusieurs effets, à usage unique ou qui agissent de jour ; des scénarios avec rôles imposés, ordre de nuit et répartition réglables ; des cartes qui se construisent sans figer le serveur, avec un plan vu de dessus."
   },
