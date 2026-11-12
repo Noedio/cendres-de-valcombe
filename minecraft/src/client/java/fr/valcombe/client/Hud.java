@@ -188,7 +188,7 @@ public final class Hud {
 		y += box + 6;
 		if (mine >= 0 && mine >= pos) {
 			int left = mine - Math.max(0, pos);
-			String t = left == 0 ? "L'aiguille est devant toi !" : "L'aiguille arrive à toi dans " + left + " siège" + (left > 1 ? "s" : "");
+			String t = left == 0 ? "L'aiguille est devant toi !" : "L'aiguille arrive à toi dans " + left + " trône" + (left > 1 ? "s" : "");
 			centered(g, mc, t, w, y, Theme.GOLD, false);
 			y += 12;
 		}

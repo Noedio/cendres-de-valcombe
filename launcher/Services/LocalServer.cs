@@ -190,7 +190,7 @@ public sealed class LocalServer
                 continue;
             }
             int index = i;
-            await Http.DownloadAsync(Releases.Resolve(release, mod), target, mod.Sha512,
+            await Http.DownloadTrustedAsync(Releases.Resolve(release, mod), target, mod.Sha512,
                 new Progress<double>(p => progress.Report(($"Serveur : {mod.Name}…", (index + p) / mods.Count))), ct);
         }
         progress.Report(("Serveur installé.", 1));

@@ -48,6 +48,11 @@ public interface Host {
 		return "";
 	}
 
+	/** Identifiant de la carte de la bibliothèque en place, si elle n'a pas été retouchée depuis ; chaîne vide sinon. */
+	default String mapInPlace() {
+		return "";
+	}
+
 	/** Une carte est en cours de construction ou de chargement : la partie ne peut pas commencer. */
 	default boolean busy() {
 		return false;
@@ -155,4 +160,16 @@ public interface Host {
 
 	/** Fin de partie : remettre les joueurs en état normal. */
 	void endGame(List<String> players);
+
+	/** Une partie va commencer : c'est le moment de garder la carte telle qu'elle est, pour la rendre intacte à la fin. */
+	default void gameStarted() {
+	}
+
+	/** La partie est finie : la carte retrouve son état d'avant, dans delayTicks (0 : tout de suite). */
+	default void restoreMap(int delayTicks) {
+	}
+
+	/** La partie est finie et la carte reste comme elle est (remise en état coupée dans les réglages). */
+	default void keepMap() {
+	}
 }

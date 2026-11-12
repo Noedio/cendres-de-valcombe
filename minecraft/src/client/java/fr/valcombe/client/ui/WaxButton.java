@@ -21,6 +21,13 @@ public class WaxButton extends AbstractButton {
 		return this;
 	}
 
+	/** Lance l'action du bouton, comme un clic (le test en jeu s'en sert pour passer par les vrais boutons). */
+	public void press() {
+		if (active) {
+			action.run();
+		}
+	}
+
 	@Override
 	public void onPress(InputWithModifiers input) {
 		action.run();

@@ -83,8 +83,17 @@ public class StorytellerScreen extends BaseScreen {
 			col.add(new Entry("Figures neutres…", () -> minecraft.gui.setScreen(new FiguresScreen()), false));
 			col.add(new Entry("Réglages de la nuit…", () -> minecraft.gui.setScreen(new SettingsScreen()), true));
 			button(px + 14, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
-			button(px + 14, py + ph - 26, 104, "Bâtir le village", () -> {
-				send("vc carte construire " + THEMES[theme]);
+			// Bâtir un village remplace la carte actuelle : un second clic le confirme.
+			String build = "vc carte construire " + THEMES[theme];
+			boolean ready = build.equals(armed);
+			button(px + 14, py + ph - 26, 104, ready ? "Confirmer" : "Bâtir le village", () -> {
+				if (!ready) {
+					armed = build;
+					rebuildWidgets();
+					return;
+				}
+				armed = null;
+				send(build);
 				onClose();
 			});
 			button(px + 122, py + ph - 26, 104, "Thème : " + THEME_NAMES[theme], () -> {

@@ -26,8 +26,8 @@ import java.util.stream.Stream;
 
 /**
  * Les créations de l'Atelier, enregistrées sur le serveur dans config/valcombe/creations :
- * roles/*.json, scenarios/*.json (et cartes/, voir MapStore). Partage : un fichier .valcombe
- * (JSON) qui regroupe rôles, scénarios et cartes.
+ * roles/*.json, scenarios/*.json (et cartes/, voir MapStore ; structures/, voir StructureStore).
+ * Partage : un fichier .valcombe (JSON) qui regroupe rôles, scénarios, cartes et structures.
  */
 public final class CreationStore {
 	public static final String PACK_FORMAT = "valcombe-creations";
@@ -47,6 +47,13 @@ public final class CreationStore {
 
 	public void setMaps(MapStore maps) {
 		this.maps = maps;
+	}
+
+	/** Catalogue de structures : elles voyagent dans les packs comme les cartes. */
+	private StructureStore structures;
+
+	public void setStructures(StructureStore structures) {
+		this.structures = structures;
 	}
 
 	public Path dir() {
@@ -224,10 +231,16 @@ public final class CreationStore {
 	public synchronized String deleteScenario(String id) {
 		ScenarioDef old = scenarios.stream().filter(x -> x.id.equals(id)).findFirst()
 			.orElseThrow(() -> new GameException("Scénario inconnu : " + id));
+		boolean chosen = session.scenario() != null && session.scenario().id.equals(id);
+		if (chosen && session.game() != null) {
+			throw new GameException("Ce scénario est celui de la partie en cours : supprimez-le après la partie.");
+		}
 		remove("scenarios", id);
 		scenarios.remove(old);
 		apply();
-		return "Scénario « " + old.nom + " » supprimé.";
+		// Supprimé alors qu'il était choisi : la prochaine partie ne garde pas un scénario qui n'existe plus.
+		session.scenarioDeleted(id);
+		return "Scénario « " + old.nom + " » supprimé." + (chosen ? " Il était choisi pour la prochaine partie : plus de scénario." : "");
 	}
 
 	// ------------------------------------------------------------------
@@ -235,6 +248,12 @@ public final class CreationStore {
 	// ------------------------------------------------------------------
 	/** Regroupe les créations choisies ; un scénario emporte ses rôles créés et sa carte. */
 	public synchronized String exportPack(List<String> roleIds, List<String> scenarioIds, List<String> mapIds) {
+		return exportPack(roleIds, scenarioIds, mapIds, List.of());
+	}
+
+	/** Comme ci-dessus, avec des structures du catalogue (celles de l'utilisateur : les fournies, chacun les a). */
+	public synchronized String exportPack(List<String> roleIds, List<String> scenarioIds, List<String> mapIds,
+			List<String> structureIds) {
 		Set<String> r = new HashSet<>(roleIds);
 		Set<String> m = new HashSet<>(mapIds);
 		List<ScenarioDef> sc = scenarios.stream().filter(s -> scenarioIds.contains(s.id)).toList();
@@ -259,6 +278,16 @@ public final class CreationStore {
 			}
 		}
 		pack.add("cartes", cartes);
+		JsonArray built = new JsonArray();
+		if (structures != null) {
+			for (String id : new java.util.LinkedHashSet<>(structureIds)) {
+				JsonObject s = structures.exportStructure(id);
+				if (s != null) {
+					built.add(s);
+				}
+			}
+		}
+		pack.add("structures", built);
 		return GSON.toJson(pack);
 	}
 
@@ -281,6 +310,17 @@ public final class CreationStore {
 					done.add("carte « " + maps.importMap(e.getAsJsonObject()) + " »");
 				} catch (GameException ex) {
 					refused.add(ex.getMessage());
+				}
+			}
+		}
+		if (pack.has("structures") && structures != null) {
+			for (JsonElement e : pack.getAsJsonArray("structures")) {
+				try {
+					done.add("structure « " + structures.importStructure(e.getAsJsonObject()) + " »");
+				} catch (GameException ex) {
+					refused.add(ex.getMessage());
+				} catch (RuntimeException ex) {
+					refused.add("une structure illisible");
 				}
 			}
 		}

@@ -45,13 +45,29 @@ final class Atelier {
 	private final CreationStore creations;
 	private final MapStore maps;
 	private final McHost host;
+	private final StructureStore structures;
+	private final MapEditor editor;
+	private final Workshop workshop;
 	private MinecraftServer server;
 
-	Atelier(Session session, CreationStore creations, MapStore maps, McHost host) {
+	Atelier(Session session, CreationStore creations, MapStore maps, McHost host, StructureStore structures, MapEditor editor,
+			Workshop workshop) {
 		this.session = session;
 		this.creations = creations;
 		this.maps = maps;
 		this.host = host;
+		this.structures = structures;
+		this.editor = editor;
+		this.workshop = workshop;
+	}
+
+	/** L'opérateur du lien, s'il est connecté au jeu : l'éditeur agit là où il se trouve. */
+	private ServerPlayer online(String owner) {
+		ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+		if (p == null) {
+			throw new GameException("Connectez-vous au jeu : l'éditeur de carte agit là où vous vous trouvez.");
+		}
+		return p;
 	}
 
 	void setServer(MinecraftServer server) {
@@ -92,6 +108,19 @@ final class Atelier {
 			}
 			return gone;
 		});
+	}
+
+	/** Reste-t-il un lien en service : celui de l'hôte, ou celui d'un opérateur donné depuis moins de douze heures ? */
+	boolean inUse() {
+		long now = System.currentTimeMillis();
+		tokenBorn.entrySet().removeIf(e -> {
+			boolean old = now - e.getValue() > TOKEN_LIFE_MS;
+			if (old) {
+				tokens.remove(e.getKey());
+			}
+			return old;
+		});
+		return hostToken != null || !tokens.isEmpty();
 	}
 
 	/** Lien de l'hôte : donné par le launcher qui a démarré ce serveur sur le PC de l'hôte. Il vaut tant que le serveur tourne. */
@@ -226,10 +255,22 @@ final class Atelier {
 					text(ex, 200, logged(owner, onServer(() -> host.importSchematic(file, data), 180)));
 				}
 				case "simuler" -> json(ex, simulate(body));
-				case "jouer" -> text(ex, 200, onServer(() -> play(JsonParser.parseString(body).getAsJsonObject(), owner), 10));
+				case "jouer" -> text(ex, 200, logged(owner, onServer(() -> play(JsonParser.parseString(body).getAsJsonObject(), owner), 10)));
 				case "carte/enregistrer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
+				}
+				case "carte/nouvelle" -> text(ex, 200, logged(owner, onServer(() -> {
+					// Carte vide à compléter à la main : là où se tient l'opérateur, ou au point d'apparition s'il n'est pas en jeu.
+					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+					return p != null ? host.customMap(p) : host.customMapAt(host.mapCenter());
+				}, 30)));
+				case "carte/oublier" -> text(ex, 200, logged(owner, onServer(host::forgetVillage, 10)));
+				case "carte/salle" -> text(ex, 200, logged(owner, onServer(host::buildHall, 30)));
+				case "carte/batir" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> host.buildAtMarker(o.get("type").getAsString(),
+						o.has("index") ? o.get("index").getAsInt() : 0), 10)));
 				}
 				case "carte/charger" -> text(ex, 200, logged(owner, onServer(() -> maps.load(body.trim()), 120)));
 				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
@@ -239,17 +280,18 @@ final class Atelier {
 				}
 				case "carte/dupliquer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					// Identifiant et nom facultatifs, comme /vc carte copier : sans eux, « <nom> (copie) ».
 					text(ex, 200, logged(owner, onServer(() -> maps.duplicate(o.get("id").getAsString(),
-						o.get("nouvelId").getAsString(), o.get("nom").getAsString()), 30)));
+						o.has("nouvelId") ? o.get("nouvelId").getAsString() : "", o.has("nom") ? o.get("nom").getAsString() : ""), 30)));
 				}
-				case "carte/annuler" -> text(ex, 200, onServer(host::undoMarker, 5));
+				case "carte/annuler" -> text(ex, 200, logged(owner, onServer(host::undoMarker, 5)));
 				case "carte/ordonner" -> text(ex, 200, logged(owner, onServer(host::sortMarkers, 5)));
 				case "carte/repere" -> {
 					// Un repère ajouté, déplacé ou retiré sur le plan : x et z sont comptés depuis le centre de la place.
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, onServer(() -> host.editMarker(o.get("action").getAsString(), o.get("type").getAsString(),
+					text(ex, 200, logged(owner, onServer(() -> host.editMarker(o.get("action").getAsString(), o.get("type").getAsString(),
 						o.has("index") ? o.get("index").getAsInt() : 0, o.has("x") ? o.get("x").getAsInt() : 0,
-						o.has("z") ? o.get("z").getAsInt() : 0), 10));
+						o.has("z") ? o.get("z").getAsInt() : 0), 10)));
 				}
 				case "carte/aller" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
@@ -271,21 +313,59 @@ final class Atelier {
 						send(ex, 200, "image/png", png);
 					}
 				}
-				case "construction" -> text(ex, 200, onServer(() -> {
+				case "construction" -> text(ex, 200, logged(owner, onServer(() -> {
 					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
 					if (p == null) {
 						throw new GameException("Connectez-vous au jeu pour construire.");
 					}
 					return host.toggleConstruction(p);
-				}, 5));
+				}, 5)));
 				case "carte/generer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, onServer(() -> host.generateVillage(server.getPlayerList().getPlayerByName(owner),
-						o.get("places").getAsInt(), o.get("taille").getAsInt(), o.get("theme").getAsString(),
-						o.get("maisons").getAsBoolean()), 120));
+					// Mêmes bornes que /vc carte generer : un champ vide ou hors bornes est refusé en clair, pas ramené en silence.
+					int seats = Workshop.number(o, "places", "Trônes", Village.MIN_SEATS, Village.MAX_SEATS);
+					int size = Workshop.number(o, "taille", "Taille", 0, 2);
+					text(ex, 200, logged(owner, onServer(() -> host.generateVillage(server.getPlayerList().getPlayerByName(owner),
+						seats, size, o.has("theme") ? o.get("theme").getAsString() : "gothique",
+						!o.has("maisons") || o.get("maisons").getAsBoolean()), 120)));
 				}
+				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure et /vc edit).
+				case "structure/prendre" -> text(ex, 200, onServer(() -> editor.choose(online(owner), body.trim()), 10));
+				case "structure/tourner" -> text(ex, 200, onServer(() -> editor.rotate(online(owner)), 5));
+				case "structure/retourner" -> text(ex, 200, onServer(() -> editor.mirror(online(owner)), 5));
+				case "structure/poser" -> text(ex, 200, logged(owner, onServer(() -> editor.placeHere(online(owner)), 10)));
+				case "structure/enregistrer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> editor.saveSelection(online(owner), o.get("id").getAsString(),
+						o.has("nom") ? o.get("nom").getAsString() : "", o.has("repere") ? o.get("repere").getAsString() : ""), 30)));
+				}
+				case "structure/importer" -> {
+					// Un fichier .schem, .litematic ou .nbt ajouté au catalogue : la carte n'est pas touchée.
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					byte[] data = java.util.Base64.getDecoder().decode(o.get("donnees").getAsString());
+					text(ex, 200, logged(owner, onServer(() -> structures.importFile(o.get("fichier").getAsString(), data,
+						o.has("id") ? o.get("id").getAsString() : "", o.has("nom") ? o.get("nom").getAsString() : ""), 60)));
+				}
+				case "structure/renommer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> structures.rename(o.get("id").getAsString(), o.get("nom").getAsString()), 5)));
+				}
+				case "structure/repere" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> structures.setMark(o.get("id").getAsString(),
+						o.get("repere").getAsString()), 5)));
+				}
+				case "structure/supprimer" -> text(ex, 200, logged(owner, onServer(() -> structures.delete(body.trim()), 5)));
+				case "edition/annuler" -> text(ex, 200, logged(owner, onServer(() -> editor.undo(online(owner), 1), 10)));
+				case "edition/retablir" -> text(ex, 200, logged(owner, onServer(() -> editor.redo(online(owner), 1), 10)));
 				case "exporter" -> exportPack(ex);
-				case "importer" -> text(ex, 200, onServer(() -> creations.importPack(body), 120));
+				case "importer" -> text(ex, 200, logged(owner, onServer(() -> creations.importPack(body), 120)));
+				case "fermer" -> {
+					// Ferme le lien de cet opérateur (celui de l'hôte du serveur local reste valable tant que le serveur tourne).
+					// La réponse part d'abord : fermer le dernier lien arrête le serveur web, et la requête avec.
+					text(ex, 200, "Atelier fermé : ce lien ne fonctionne plus.");
+					ValcombeMod.tablet().closeAtelier(owner);
+				}
 				default -> text(ex, 404, "Action inconnue.");
 			}
 		} catch (GameException e) {
@@ -349,42 +429,24 @@ final class Atelier {
 			sc.add(m);
 		}
 		out.put("scenarios", sc);
-		List<Map<String, Object>> cartes = new ArrayList<>();
-		for (MapStore.MapDef d : maps.list()) {
-			Map<String, Object> m = new LinkedHashMap<>();
-			m.put("id", d.id);
-			m.put("nom", d.nom);
-			m.put("genere", d.genere);
-			m.put("theme", d.theme);
-			m.put("sieges", d.sieges.size());
-			m.put("maisons", d.logis.size());
-			m.put("octets", maps.bytes(d.id));
-			// Repères pour le plan vu de dessus : [est, hauteur, sud] depuis le centre de la place.
-			m.put("rayon", d.rayon);
-			Map<String, Object> plan = new LinkedHashMap<>();
-			plan.put("sieges", d.sieges);
-			plan.put("maisons", d.logis);
-			plan.put("salle", d.convocation);
-			m.put("plan", plan);
-			cartes.add(m);
+		// Cartes et carte actuelle : la même description que pour l'écran en jeu (voir Workshop).
+		out.put("cartes", workshop.library(true));
+		Map<String, Object> current = workshop.current(true);
+		if (current != null) {
+			out.put("carteActuelle", current);
 		}
-		out.put("cartes", cartes);
-		Village v = host.village();
-		if (v != null) {
-			Map<String, Object> plan = new LinkedHashMap<>();
-			plan.put("sieges", v.relSeats());
-			plan.put("maisons", v.relHouses());
-			plan.put("salle", v.relConvocation());
-			// Les joueurs connectés, pour se repérer : [nom, est, sud] depuis le centre de la place.
-			List<List<Object>> here = new ArrayList<>();
-			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-				here.add(List.of(p.getScoreboardName(), p.getBlockX() - v.center().getX(), p.getBlockZ() - v.center().getZ()));
-			}
-			plan.put("joueurs", here);
-			out.put("carteActuelle", Map.of("genere", v.isGenerated(), "sieges", v.seatCount(), "maisons", v.houseCount(),
-				"theme", v.theme(), "rayon", Math.min(200, v.extent()), "plan", plan));
-		}
+		out.put("carteResume", Workshop.describe(current));
+		out.put("carteEnPlace", host.mapInPlace());
+		out.put("structures", structures.list());
+		out.put("editeur", editor.state(me));
+		out.put("constructeur", host.isBuilder(me));
+		out.put("enJeu", server.getPlayerList().getPlayerByName(me) != null);
 		out.put("chantier", host.busy());
+		out.put("essaiEnAttente", session.trialPending());
+		out.put("joueursMin", fr.valcombe.rules.Distribution.MIN_PLAYERS);
+		out.put("joueursMax", fr.valcombe.rules.Distribution.MAX_PLAYERS);
+		out.put("tronesMin", Village.MIN_SEATS);
+		out.put("tronesMax", Village.MAX_SEATS);
 		// Ordre habituel des réveils (première nuit, autres nuits), pour le régler dans un scénario.
 		out.put("ordrePremiere", Role.firstNightOrder().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase()).toList());
 		out.put("ordreAutres", Role.otherNightsOrder().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase()).toList());
@@ -403,6 +465,7 @@ final class Atelier {
 		out.put("themes", Village.THEMES);
 		out.put("partieEnCours", session.game() != null);
 		out.put("scenarioActuel", session.scenario() == null ? null : session.scenario().id);
+		out.put("scenarioActuelNom", session.scenario() == null ? null : session.scenario().nom);
 		return GSON.toJson(out);
 	}
 
@@ -411,7 +474,8 @@ final class Atelier {
 		JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 		ScenarioDef d = new ScenarioDef();
 		o.getAsJsonArray("roles").forEach(e -> d.roles.add(e.getAsString()));
-		int players = Math.max(5, Math.min(16, o.get("joueurs").getAsInt()));
+		int players = Workshop.number(o, "joueurs", "Joueurs", fr.valcombe.rules.Distribution.MIN_PLAYERS,
+			fr.valcombe.rules.Distribution.MAX_PLAYERS);
 		int games = Math.max(10, Math.min(500, o.has("parties") ? o.get("parties").getAsInt() : 200));
 		if (!d.missingRoles().isEmpty()) {
 			throw new GameException("Rôles introuvables : " + String.join(", ", d.missingRoles()));
@@ -456,29 +520,20 @@ final class Atelier {
 		if (session.game() != null) {
 			throw new GameException("Une partie est en cours : arrêtez-la d'abord (/vc arreter).");
 		}
+		if (trial) {
+			// Même méthode que /vc atelier essai : mêmes bornes, et la partie attend d'elle-même la fin du chargement de la carte.
+			return session.trial(owner, id, Workshop.number(o, "joueurs", "Joueurs", fr.valcombe.rules.Distribution.MIN_PLAYERS,
+				fr.valcombe.rules.Distribution.MAX_PLAYERS));
+		}
 		String map = session.useScenario(id);
-		if (!trial) {
-			return "Scénario choisi pour la prochaine partie." + (map.isEmpty() ? "" : " " + map);
-		}
-		int players = Math.max(5, Math.min(15, o.has("joueurs") ? o.get("joueurs").getAsInt() : 7));
-		ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
-		session.removeBots();
-		if (p != null && !session.lobby().contains(owner) && !owner.equals(session.storyteller())) {
-			session.join(owner);
-		}
-		int missing = players - session.lobby().size();
-		if (missing > 0) {
-			session.addBots(missing);
-		}
-		session.start(owner, Session.Mode.AUTO);
-		return "Partie d'essai lancée (" + session.game().size() + " joueurs, Conteur automatique)."
-			+ (p == null ? " Connectez-vous au jeu pour y assister." : "");
+		return id.equals("aucun") ? "Plus de scénario : script et réglages libres."
+			: "Scénario « " + session.scenario().nom + " » choisi pour la prochaine partie." + (map.isEmpty() ? "" : " " + map);
 	}
 
 	private void exportPack(HttpExchange ex) throws IOException {
 		Map<String, List<String>> q = query(ex.getRequestURI().getRawQuery());
 		String pack = onServer(() -> creations.exportPack(q.getOrDefault("roles", List.of()),
-			q.getOrDefault("scenarios", List.of()), q.getOrDefault("cartes", List.of())), 60);
+			q.getOrDefault("scenarios", List.of()), q.getOrDefault("cartes", List.of()), q.getOrDefault("structures", List.of())), 60);
 		ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"creations.valcombe\"");
 		send(ex, 200, "application/octet-stream", pack.getBytes(StandardCharsets.UTF_8));
 	}

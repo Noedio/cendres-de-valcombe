@@ -27,6 +27,13 @@ final class Stage {
 	}
 
 	private static final String SCENE = "vc_scene";
+	/**
+	 * Génération de la scène, propre à ce lancement du serveur : une scène d'avant le redémarrage, restée
+	 * dans des chunks non chargés au moment de la retirer, se reconnaît à sa marque et est purgée (voir McHost).
+	 */
+	static final String GEN_TAG = "vc_sc_" + (System.currentTimeMillis() / 1000 & 0x3FFFFFFF);
+	/** Les deux marques de toute entité de la scène, telles qu'elles s'écrivent dans une commande. */
+	private static final String TAGS = SCENE + "\",\"" + GEN_TAG;
 	private static final double TOKEN_Y = 2.9;
 	private static final double LABEL_Y = 3.7;
 	private static final double FLAME_Y = 2.05;
@@ -85,17 +92,17 @@ final class Stage {
 		}
 		// Aiguille de l'horloge, au repos vers le nord
 		handAngle = Math.PI;
-		run("summon minecraft:block_display " + xyz(center.x, handY, center.z) + " {Tags:[\"" + SCENE
+		run("summon minecraft:block_display " + xyz(center.x, handY, center.z) + " {Tags:[\"" + TAGS
 			+ "\",\"vc_hand\"],block_state:\"minecraft:gold_block\",brightness:{sky:15,block:15},view_range:3f,"
 			+ "transformation:" + handTransform(handAngle) + "}");
-		run("summon minecraft:block_display " + xyz(center.x, handY - 0.12, center.z) + " {Tags:[\"" + SCENE
+		run("summon minecraft:block_display " + xyz(center.x, handY - 0.12, center.z) + " {Tags:[\"" + TAGS
 			+ "\"],block_state:\"minecraft:polished_blackstone\",brightness:{sky:15,block:15},"
 			+ "transformation:" + transform("[-0.35f,0f,-0.35f]", quatY(0), "[0.7f,0.12f,0.7f]") + "}");
 		if (lectern) {
 			Vec3 l = new Vec3(center.x, center.y, center.z + 3.6);
-			run("summon minecraft:item_display " + xyz(l.x, l.y + 0.5, l.z) + " {Tags:[\"" + SCENE + "\"],Rotation:[0f,0f],"
+			run("summon minecraft:item_display " + xyz(l.x, l.y + 0.5, l.z) + " {Tags:[\"" + TAGS + "\"],Rotation:[0f,0f],"
 				+ item("lutrin") + "}");
-			run("summon minecraft:interaction " + xyz(l.x, l.y, l.z) + " {Tags:[\"" + SCENE
+			run("summon minecraft:interaction " + xyz(l.x, l.y, l.z) + " {Tags:[\"" + TAGS
 				+ "\",\"vc_lutrin\"],width:1.2f,height:1.6f,response:1b}");
 		}
 	}
@@ -107,17 +114,17 @@ final class Stage {
 		Vec3 p = s.pos();
 		// Trône (dossier du côté opposé au centre) et point d'assise invisible
 		if (thrones) {
-			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + SCENE + "\"],Rotation:["
+			run("summon minecraft:item_display " + xyz(p.x, p.y + 0.5, p.z) + " {Tags:[\"" + TAGS + "\"],Rotation:["
 				+ f(s.yaw()) + "f,0f]," + item("trone") + ",view_range:1.5f}");
 		}
-		run("summon minecraft:item_display " + xyz(p.x, p.y + 0.45, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_seat_" + i
+		run("summon minecraft:item_display " + xyz(p.x, p.y + 0.45, p.z) + " {Tags:[\"" + TAGS + "\",\"vc_seat_" + i
 			+ "\"],Rotation:[" + f(s.yaw()) + "f,0f]}");
 		// Jeton et étiquette
-		run("summon minecraft:item_display " + xyz(p.x, p.y + TOKEN_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_tok_" + i
+		run("summon minecraft:item_display " + xyz(p.x, p.y + TOKEN_Y, p.z) + " {Tags:[\"" + TAGS + "\",\"vc_tok_" + i
 			+ "\"],billboard:\"vertical\"," + item("jeton_vivant") + ",brightness:{sky:15,block:15},"
 			+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.1f,1.1f,1.1f]") + "}");
 		models.put(name, "jeton_vivant");
-		run("summon minecraft:text_display " + xyz(p.x, p.y + LABEL_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_lab_" + i
+		run("summon minecraft:text_display " + xyz(p.x, p.y + LABEL_Y, p.z) + " {Tags:[\"" + TAGS + "\",\"vc_lab_" + i
 			+ "\"],billboard:\"center\",background:1073741824,brightness:{sky:15,block:15},"
 			+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[1.8f,1.8f,1.8f]") + ",text:{text:\""
 			+ esc(name) + "\",color:\"white\"}}");
@@ -274,7 +281,7 @@ final class Stage {
 			return;
 		}
 		if (!had) {
-			run("summon minecraft:text_display " + xyz(center.x, handY + 1.4, center.z) + " {Tags:[\"" + SCENE
+			run("summon minecraft:text_display " + xyz(center.x, handY + 1.4, center.z) + " {Tags:[\"" + TAGS
 				+ "\",\"vc_count\"],billboard:\"center\",background:1610612736,brightness:{sky:15,block:15},"
 				+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[2.6f,2.6f,2.6f]") + ",text:{text:\""
 				+ esc(text) + "\",color:\"gold\"}}");
@@ -304,7 +311,7 @@ final class Stage {
 				continue;
 			}
 			Vec3 p = spots.get(e.getKey()).pos();
-			run("summon minecraft:block_display " + xyz(p.x, p.y + FLAME_Y, p.z) + " {Tags:[\"" + SCENE + "\",\"vc_flame_" + i
+			run("summon minecraft:block_display " + xyz(p.x, p.y + FLAME_Y, p.z) + " {Tags:[\"" + TAGS + "\",\"vc_flame_" + i
 				+ "\"],block_state:\"" + e.getValue() + "\",brightness:{sky:15,block:15},"
 				+ "transformation:" + transform("[-0.225f,0f,-0.225f]", quatY(0), "[0.45f,0.45f,0.45f]") + "}");
 		}
@@ -341,7 +348,7 @@ final class Stage {
 		float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
 		for (int k = 0; k < GIBET.length; k++) {
 			String[] part = GIBET[k];
-			run("summon minecraft:block_display " + xyz(gx, center.y, gz) + " {Tags:[\"" + SCENE + "\",\"vc_gibet\",\"vc_gibet_"
+			run("summon minecraft:block_display " + xyz(gx, center.y, gz) + " {Tags:[\"" + TAGS + "\",\"vc_gibet\",\"vc_gibet_"
 				+ k + "\"],Rotation:[" + f(yaw) + "f,0f],block_state:\"" + part[0] + "\",transformation:"
 				+ transform(lowered(part[1]), quatY(0), part[2]) + "}");
 		}

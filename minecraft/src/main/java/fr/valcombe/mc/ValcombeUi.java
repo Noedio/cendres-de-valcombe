@@ -119,7 +119,7 @@ public final class ValcombeUi {
 		return model(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."), "grimoire");
 	}
 
-	/** Outils de carte du mode construction : un objet par sorte de repère, et une gomme. */
+	/** Outils de carte du mode construction : un objet par sorte de repère, une gomme, et les deux outils de l'éditeur. */
 	public enum MapTool {
 		SEAT(Items.GOLD_INGOT, "Carte : trône", "Clic droit sur un bloc : poser un trône.",
 			"Clic droit sur un trône déjà posé : le prendre, puis cliquer là où le reposer."),
@@ -130,7 +130,14 @@ public final class ValcombeUi {
 		ROOM(Items.AMETHYST_SHARD, "Carte : salle de convocation", "Clic droit sur un bloc : le joueur convoqué arrivera ici.",
 			"Accroupi + clic droit : bâtir la salle ici."),
 		ERASE(Items.BARRIER, "Carte : gomme", "Clic droit sur le bloc sous une étiquette : retirer ce repère.",
-			"Une maison ou une salle bâtie d'un clic disparaît avec lui.");
+			"Une maison ou une salle bâtie d'un clic disparaît avec lui."),
+		SELECT(Items.WOODEN_AXE, "Carte : sélection", "Clic gauche sur un bloc : premier coin de la sélection.",
+			"Clic droit sur un bloc : second coin.",
+			"Puis /vc edit remplir, remplacer, vider, murs, copier, couper, coller, déplacer, empiler.",
+			"/vc edit annuler et /vc edit retablir reviennent sur chaque opération."),
+		STRUCTURE(Items.BRICK, "Carte : structure", "Choisir une structure du catalogue : /vc structure poser <id>.",
+			"Clic droit sur un bloc : la poser là où le contour la montre.",
+			"Accroupi + clic droit : la tourner d'un quart de tour. Clic gauche : la retourner.");
 
 		final net.minecraft.world.item.Item item;
 		final String title;
@@ -169,6 +176,29 @@ public final class ValcombeUi {
 			for (MapTool t : MapTool.values()) {
 				inv.add(Gui.icon(t.item, t.title, t.lore));
 			}
+		}
+	}
+
+	/** Met cet outil de carte dans la main du joueur (il le reçoit s'il ne l'avait pas). */
+	public static void holdMapTool(ServerPlayer p, MapTool tool) {
+		var inv = p.getInventory();
+		int slot = -1;
+		for (int i = 0; i < inv.getContainerSize() && slot < 0; i++) {
+			if (mapTool(inv.getItem(i)) == tool) {
+				slot = i;
+			}
+		}
+		if (slot < 0) {
+			inv.add(Gui.icon(tool.item, tool.title, tool.lore));
+			for (int i = 0; i < inv.getContainerSize() && slot < 0; i++) {
+				if (mapTool(inv.getItem(i)) == tool) {
+					slot = i;
+				}
+			}
+		}
+		if (slot >= 0 && slot < 9) {
+			inv.setSelectedSlot(slot);
+			p.connection.send(new net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket(slot));
 		}
 	}
 

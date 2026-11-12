@@ -113,6 +113,10 @@ public class MainScreen extends BaseScreen {
 		if (ClientState.bool(v, "leader")) {
 			actions.add(new Action("Panneau du Conteur", () -> minecraft.gui.setScreen(new StorytellerScreen())));
 		}
+		if (ClientState.obj(v, "atelier") != null) {
+			// Opérateur : cartes, village, structures et créations, sans passer par le navigateur.
+			actions.add(new Action("Atelier", () -> minecraft.gui.setScreen(new AtelierScreen())));
+		}
 		int bw = (pw - 36) / 3;
 		int rows = (actions.size() + 2) / 3;
 		buttonsTop = py + ph - 28 - (rows - 1) * 22;
@@ -190,7 +194,13 @@ public class MainScreen extends BaseScreen {
 				Theme.ink(g, font, "• " + lobby.get(i), x + 4 + (i / 6) * 86, y + 12 + (i % 6) * 10, Theme.WINE);
 			}
 			String st = ClientState.str(v, "storyteller");
-			Theme.ink(g, font, "Conteur : " + (st == null ? "automatique" : st), x, y + 76, Theme.ASH);
+			String teller = "Conteur : " + (st == null ? "automatique" : st);
+			if (phase.equals("LOBBY")) {
+				// Au salon, sur la ligne du haut : le journal, qui remonte quand les boutons prennent quatre rangées, ne le recouvre pas.
+				Theme.ink(g, font, teller, px + pw - 14 - font.width(teller), py + 14, Theme.ASH);
+			} else {
+				Theme.ink(g, font, teller, x, y + 76, Theme.ASH);
+			}
 		}
 
 		// Journal des dernières annonces

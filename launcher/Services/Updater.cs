@@ -52,7 +52,7 @@ public static class Updater
             return false;
         }
         string next = Path.ChangeExtension(ExePath, ".update.exe");
-        await Http.DownloadAsync(url, next, info.Sha512,
+        await Http.DownloadTrustedAsync(url, next, info.Sha512,
             new Progress<double>(p => progress.Report(($"Mise à jour du launcher vers la version {info.Version}…", p))), ct);
         CleanUp();
         File.Move(ExePath, OldPath, overwrite: true);

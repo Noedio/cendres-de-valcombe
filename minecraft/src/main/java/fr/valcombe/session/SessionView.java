@@ -87,15 +87,19 @@ final class SessionView {
 		List<Map<String, Object>> scs = new ArrayList<>();
 		for (ScenarioDef d : ses.scenarios()) {
 			List<Integer> n = d.playable();
-			scs.add(Map.of("id", d.id, "nom", d.nom, "joueurs", n.isEmpty() ? "" : n.get(0) + "–" + n.get(n.size() - 1)));
+			scs.add(Map.of("id", d.id, "nom", d.nom, "joueurs", n.isEmpty() ? "" : n.get(0) + "–" + n.get(n.size() - 1),
+				"carte", d.carte == null ? "" : d.carte));
 		}
 		v.put("scenarios", scs);
+		// Pour prévenir avant de choisir un scénario qui chargerait une autre carte que celle en place.
+		v.put("mapInPlace", ses.hostMapInPlace());
 		v.put("feed", ses.feed.subList(Math.max(0, ses.feed.size() - 8), ses.feed.size()));
 		Map<String, Object> st = new LinkedHashMap<>();
 		st.put("nightFreeze", ses.settings.nightFreeze);
 		st.put("nightDark", ses.settings.nightDark);
 		st.put("nightHouses", ses.settings.nightHouses);
 		st.put("nightMute", ses.settings.nightMute);
+		st.put("restoreMap", ses.settings.restoreMap);
 		st.put("defenseSeconds", ses.settings.defenseSeconds);
 		st.put("clockSeconds", ses.settings.clockTicks / 20.0);
 		st.put("fullEffects", ses.settings.fullEffects);

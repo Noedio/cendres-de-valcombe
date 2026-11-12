@@ -46,7 +46,13 @@ public final class ViewSync {
 				continue;
 			}
 			String name = p.getScoreboardName();
-			String json = GSON.toJson(session.view(name, isLeader(p)));
+			Map<String, Object> view = session.view(name, isLeader(p));
+			Workshop workshop = ValcombeMod.workshop();
+			if (workshop != null && Atelier.isOperator(p)) {
+				// Un opérateur reçoit en plus de quoi afficher l'Atelier en jeu : cartes, structures, éditeur.
+				view.put("atelier", workshop.gameView(p));
+			}
+			String json = GSON.toJson(view);
 			if (!json.equals(lastSent.get(name))) {
 				lastSent.put(name, json);
 				ServerPlayNetworking.send(p, new ValcombeNet.ViewPayload(json));

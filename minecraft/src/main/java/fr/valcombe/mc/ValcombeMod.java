@@ -75,6 +75,38 @@ public final class ValcombeMod implements ModInitializer {
 		return maps;
 	}
 
+	private static StructureStore structures;
+	private static MapEditor editor;
+
+	/** Catalogue de structures plaçables (disponible une fois le serveur démarré). */
+	public static StructureStore structures() {
+		return structures;
+	}
+
+	/** Éditeur de carte du mode construction (disponible une fois le serveur démarré). */
+	public static MapEditor editor() {
+		return editor;
+	}
+
+	private static Workshop workshop;
+
+	/** Ce que l'Atelier montre des cartes et des structures, pour la page web et l'écran en jeu ; null avant le démarrage du serveur. */
+	public static Workshop workshop() {
+		return workshop;
+	}
+
+	/** Un outil de l'éditeur (sélection ou structure) vient de servir : le résultat est dit au joueur. */
+	private static void editorClick(ServerPlayer sp, java.util.function.Supplier<String> action) {
+		try {
+			String msg = action.get();
+			if (msg != null && !msg.isEmpty()) {
+				sp.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
+			}
+		} catch (fr.valcombe.rules.GameException e) {
+			sp.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
+		}
+	}
+
 	private static String baseMotd;
 
 	/**
@@ -141,12 +173,19 @@ public final class ValcombeMod implements ModInitializer {
 			maps.setServer(server);
 			creations.setMaps(maps);
 			HOST.setMaps(maps);
+			structures = new StructureStore(creations.dir());
+			structures.setServer(server);
+			creations.setStructures(structures);
+			editor = new MapEditor(HOST, structures);
+			editor.setServer(server);
+			HOST.setEditor(editor);
 			creations.load();
 			SESSION.carnetSource = community::carnet;
 			SESSION.modVersion = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
 				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
 			baseMotd = server.getMotd();
-			Atelier atelier = new Atelier(SESSION, creations, maps, HOST);
+			workshop = new Workshop(server, SESSION, creations, maps, HOST, structures, editor);
+			Atelier atelier = new Atelier(SESSION, creations, maps, HOST, structures, editor, workshop);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
 			HOST.prepareWorld();
@@ -158,6 +197,7 @@ public final class ValcombeMod implements ModInitializer {
 					LOG.error("Sauvegarde de partie illisible : ignorée", e);
 				}
 			}
+			HOST.resumeRestore(); // carte laissée en l'état par un arrêt en pleine partie ou en pleine remise en état
 			SESSION.setSavedScripts(ScriptStore.list(server));
 			tablet.openForHost(server.getServerDirectory().resolve("config").resolve("valcombe-hote.json"));
 		});
@@ -168,6 +208,10 @@ public final class ValcombeMod implements ModInitializer {
 				LOG.error("Sauvegarde de la partie impossible à l'arrêt", e);
 			}
 			HOST.setServer(null);
+			workshop = null;
+			if (editor != null) {
+				editor.setServer(null);
+			}
 			if (tablet != null) {
 				tablet.close();
 			}
@@ -201,6 +245,9 @@ public final class ValcombeMod implements ModInitializer {
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			String name = handler.getPlayer().getScoreboardName();
 			SYNC.forget(name);
+			if (workshop != null) {
+				workshop.forget(name);
+			}
 			SESSION.onDisconnect(name);
 		});
 		// Actions des écrans du mod client : ce sont des commandes /vc, vérifiées comme si elles étaient tapées.
@@ -208,7 +255,41 @@ public final class ValcombeMod implements ModInitializer {
 			String cmd = payload.command();
 			if (cmd.equals("vc") || cmd.startsWith("vc ")) {
 				ServerPlayer p = context.player();
-				p.level().getServer().getCommands().performPrefixedCommand(p.createCommandSourceStack(), cmd);
+				Workshop w = workshop;
+				if (w == null || !Workshop.shows(cmd) || !Atelier.isOperator(p)) {
+					p.level().getServer().getCommands().performPrefixedCommand(p.createCommandSourceStack(), cmd);
+					return;
+				}
+				// Commande de l'Atelier en jeu : la réponse va dans le chat comme d'habitude, et l'écran, qui le cache, la reçoit aussi.
+				StringBuilder out = new StringBuilder();
+				boolean[] failed = new boolean[1];
+				net.minecraft.commands.CommandSource capture = new net.minecraft.commands.CommandSource() {
+					@Override
+					public void sendSystemMessage(net.minecraft.network.chat.Component message) {
+						out.append(out.length() == 0 ? "" : " ").append(message.getString());
+						var color = message.getStyle().getColor();
+						failed[0] |= color != null && color.equals(net.minecraft.network.chat.TextColor.fromLegacyFormat(
+							net.minecraft.ChatFormatting.RED));
+						p.sendSystemMessage(message);
+					}
+
+					@Override
+					public boolean acceptsSuccess() {
+						return true;
+					}
+
+					@Override
+					public boolean acceptsFailure() {
+						return true;
+					}
+
+					@Override
+					public boolean shouldInformAdmins() {
+						return false;
+					}
+				};
+				p.level().getServer().getCommands().performPrefixedCommand(p.createCommandSourceStack().withSource(capture), cmd);
+				w.reply(p.getScoreboardName(), out.toString(), failed[0]);
 			}
 		});
 		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
@@ -284,6 +365,11 @@ public final class ValcombeMod implements ModInitializer {
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == null) {
+				// Un bloc posé à la main sur la carte : elle ne sera plus remplacée sans sauvegarde.
+				if (player instanceof ServerPlayer builder
+					&& player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem) {
+					HOST.noteEdit(builder, hit.getBlockPos());
+				}
 				// Trône : clic droit pour s'asseoir
 				if (player instanceof ServerPlayer sp && !player.isShiftKeyDown() && !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
 					&& HOST.village() != null && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
@@ -299,6 +385,15 @@ public final class ValcombeMod implements ModInitializer {
 				if (hand != net.minecraft.world.InteractionHand.MAIN_HAND) {
 					return InteractionResult.SUCCESS;
 				}
+				// Outils de l'éditeur : second coin de la sélection ; poser la structure en main, ou la tourner (accroupi).
+				if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
+					var clicked = hit.getBlockPos();
+					if (editor != null) {
+						editorClick(sp, () -> tool == ValcombeUi.MapTool.SELECT ? editor.setCorner(sp, 2, clicked)
+							: sp.isShiftKeyDown() ? editor.rotate(sp) : editor.place(sp, clicked));
+					}
+					return InteractionResult.SUCCESS;
+				}
 				var at = hit.getBlockPos().above();
 				try {
 					String msg = HOST.useTool(sp, tool, hit.getBlockPos(), sp.isShiftKeyDown());
@@ -311,8 +406,32 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			return InteractionResult.SUCCESS;
 		});
+		// Clic gauche avec un outil de l'éditeur : premier coin de la sélection, ou miroir de la structure en main.
+		// Le bloc visé n'est pas cassé (des deux côtés : le client n'a pas à le voir disparaître puis revenir).
+		net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
+			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
+			if (tool != ValcombeUi.MapTool.SELECT && tool != ValcombeUi.MapTool.STRUCTURE) {
+				return InteractionResult.PASS;
+			}
+			if (player instanceof ServerPlayer sp && editor != null && hand == net.minecraft.world.InteractionHand.MAIN_HAND
+				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+				var clicked = pos.immutable();
+				if (tool == ValcombeUi.MapTool.STRUCTURE) {
+					editorClick(sp, () -> editor.mirror(sp));
+				} else if (!editor.isCorner(sp, 1, clicked)) { // un clic maintenu redemande le même coin : une seule réponse
+					editorClick(sp, () -> editor.setCorner(sp, 1, clicked));
+				}
+			}
+			return InteractionResult.SUCCESS;
+		});
+		// Un bloc cassé à la main sur la carte, hors partie : même suivi que pour un bloc posé.
+		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
+			if (player instanceof ServerPlayer sp) {
+				HOST.noteEdit(sp, pos);
+			}
+		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
-			ValcombeCommands.register(dispatcher, SESSION, UI));
+			ValcombeCommands.register(dispatcher, registry, SESSION, UI));
 		LOG.info("Les Cendres de Valcombe : prêt.");
 	}
 

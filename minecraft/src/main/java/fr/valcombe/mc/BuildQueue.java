@@ -25,8 +25,29 @@ final class BuildQueue {
 	private static final long BUDGET_NANOS = 12_000_000L;
 	private static final int MAX_CHANGES = 8000;
 
+	/**
+	 * Une suite de blocs calculée au fur et à mesure, sans rien garder en mémoire : raser un terrain,
+	 * remettre un instantané. (Une liste de plusieurs millions de positions saturerait la mémoire.)
+	 */
+	abstract static class Part {
+		abstract int size();
+
+		/**
+		 * Le bloc de rang i (demandés dans l'ordre) : écrit sa position dans pos et renvoie son état,
+		 * ou null s'il n'y a rien à poser à ce rang (case vide d'une structure).
+		 */
+		abstract BlockState at(int i, BlockPos.MutableBlockPos pos);
+
+		/** Façon de poser les blocs (voir Block.UPDATE_*). */
+		int flags() {
+			return Block.UPDATE_CLIENTS;
+		}
+	}
+
 	/** Les blocs à poser, dans l'ordre, puis ce qu'il reste à faire une fois qu'ils sont en place. */
 	static final class Plan {
+		/** Suites calculées, posées avant les blocs de la liste. */
+		final List<Part> first = new ArrayList<>();
 		final List<BlockPos> at = new ArrayList<>();
 		final List<BlockState> states = new ArrayList<>();
 		/** Poses qui demandent des blocs déjà en place (entités de décor, par exemple). */
@@ -37,16 +58,36 @@ final class BuildQueue {
 			states.add(state);
 		}
 
+		/** Ajoute une suite calculée, posée avant les blocs de la liste. */
+		Plan first(Part part) {
+			first.add(part);
+			return this;
+		}
+
 		/** Ajoute un autre plan à la suite de celui-ci. */
 		Plan then(Plan next) {
+			if (!next.first.isEmpty() && !at.isEmpty()) {
+				throw new IllegalStateException("Les suites calculées se posent avant les blocs de la liste.");
+			}
+			first.addAll(next.first);
 			at.addAll(next.at);
 			states.addAll(next.states);
 			after.addAll(next.after);
 			return this;
 		}
 
+		/** Blocs de la liste (sans les suites calculées). */
 		int size() {
 			return at.size();
+		}
+
+		/** Tous les blocs du plan. */
+		long total() {
+			long n = at.size();
+			for (Part p : first) {
+				n += p.size();
+			}
+			return n;
 		}
 	}
 
@@ -55,12 +96,18 @@ final class BuildQueue {
 		final Plan plan;
 		final Runnable done;
 		final ServerBossEvent bar;
-		int cursor;
+		final long total;
+		final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		long cursor;
+		/** Suite calculée en cours, et rang dans cette suite (ou dans la liste, une fois les suites posées). */
+		int part;
+		int inPart;
 
 		Job(String label, Plan plan, Runnable done) {
 			this.label = label;
 			this.plan = plan;
 			this.done = done;
+			this.total = plan.total();
 			this.bar = new ServerBossEvent(java.util.UUID.randomUUID(), Component.literal(label), BossEvent.BossBarColor.GREEN,
 				BossEvent.BossBarOverlay.PROGRESS);
 		}
@@ -95,21 +142,37 @@ final class BuildQueue {
 		ServerLevel level = server.overworld();
 		long start = System.nanoTime();
 		int changed = 0;
-		int total = job.plan.size();
+		long total = job.total;
+		List<Part> parts = job.plan.first;
 		while (job.cursor < total && changed < MAX_CHANGES) {
-			BlockPos pos = job.plan.at.get(job.cursor);
-			BlockState state = job.plan.states.get(job.cursor);
+			BlockPos pos;
+			BlockState state;
+			int flags = Block.UPDATE_CLIENTS;
+			if (job.part < parts.size()) {
+				Part part = parts.get(job.part);
+				if (job.inPart >= part.size()) {
+					job.part++;
+					job.inPart = 0;
+					continue;
+				}
+				state = part.at(job.inPart++, job.pos);
+				pos = job.pos;
+				flags = part.flags();
+			} else {
+				pos = job.plan.at.get(job.inPart);
+				state = job.plan.states.get(job.inPart++);
+			}
 			job.cursor++;
 			// Un bloc déjà en place n'est pas reposé : reconstruire au même endroit va beaucoup plus vite.
-			if (level.getBlockState(pos) != state) {
-				level.setBlock(pos, state, Block.UPDATE_CLIENTS);
+			if (state != null && level.getBlockState(pos) != state) {
+				level.setBlock(pos, state, flags);
 				changed++;
 			}
 			if ((job.cursor & 255) == 0 && System.nanoTime() - start > BUDGET_NANOS) {
 				break;
 			}
 		}
-		job.bar.setProgress(total == 0 ? 1f : Math.min(1f, (float) job.cursor / total));
+		job.bar.setProgress(total == 0 ? 1f : Math.min(1f, (float) ((double) job.cursor / total)));
 		if (server.getTickCount() % 20 == 0 || job.cursor >= total) {
 			job.bar.setName(Component.literal(job.label + " — " + (total == 0 ? 100 : 100L * job.cursor / total) + " %"));
 			for (ServerPlayer p : server.getPlayerList().getPlayers()) {

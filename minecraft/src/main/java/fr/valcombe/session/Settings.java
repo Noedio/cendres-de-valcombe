@@ -24,4 +24,6 @@ public final class Settings {
 	 * joueur dans la salle à l'écart pour lui remettre le sien (ceux qui restent le reçoivent à la première nuit).
 	 */
 	public boolean roleRoom = true;
+	/** À la fin de la partie, la carte retrouve son état d'avant (blocs cassés ou posés, objets au sol). */
+	public boolean restoreMap = true;
 }

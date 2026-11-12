@@ -13,6 +13,9 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
  * réglages et règles d'un coup), ou ouvrir l'Atelier pour en créer.
  */
 public class ScenarioScreen extends BaseScreen {
+	/** Scénario dont le choix attend un second clic : il chargerait une autre carte que celle en place. */
+	private static String armed;
+
 	public ScenarioScreen() {
 		super("Scénarios");
 	}
@@ -34,7 +37,17 @@ public class ScenarioScreen extends BaseScreen {
 				JsonObject sc = e.getAsJsonObject();
 				String id = ClientState.str(sc, "id");
 				String label = ClientState.str(sc, "nom") + "  (" + ClientState.str(sc, "joueurs") + " joueurs)";
-				button(px + 14, y, pw - 28, label, () -> {
+				String map = ClientState.str(sc, "carte");
+				// Le scénario charge sa carte à la place de celle du serveur : on le dit avant de le faire.
+				boolean replaces = map != null && !map.isEmpty() && !map.equals(ClientState.str(view(), "mapInPlace"));
+				boolean ready = id.equals(armed);
+				button(px + 14, y, pw - 28, ready ? "Confirmer : la carte « " + map + " » remplace l'actuelle" : label, () -> {
+					if (replaces && !ready) {
+						armed = id;
+						rebuildWidgets();
+						return;
+					}
+					armed = null;
 					send("vc scenario " + id);
 					minecraft.gui.setScreen(new ScriptScreen());
 				});
@@ -45,15 +58,25 @@ public class ScenarioScreen extends BaseScreen {
 			send("vc scenario aucun");
 			minecraft.gui.setScreen(new ScriptScreen());
 		});
-		button(px + pw - 154, py + ph - 50, 140, "Ouvrir l'Atelier", () -> {
-			send("vc atelier");
-			onClose();
+		boolean operator = ClientState.obj(view(), "atelier") != null;
+		button(px + pw - 154, py + ph - 50, 140, operator ? "Atelier" : "Lien de l'Atelier web", () -> {
+			armed = null;
+			if (operator) {
+				minecraft.gui.setScreen(new AtelierScreen());
+			} else {
+				send("vc atelier");
+				onClose();
+			}
 		});
-		button(px + 14, py + ph - 26, 140, "Construire une carte", () -> {
+		button(px + 14, py + ph - 26, 140, "Mode construction", () -> {
+			armed = null;
 			send("vc carte construction");
 			onClose();
 		});
-		button(px + pw - 154, py + ph - 26, 140, "Retour", () -> minecraft.gui.setScreen(new ScriptScreen()));
+		button(px + pw - 154, py + ph - 26, 140, "Retour", () -> {
+			armed = null;
+			minecraft.gui.setScreen(new ScriptScreen());
+		});
 	}
 
 	@Override
@@ -63,8 +86,8 @@ public class ScenarioScreen extends BaseScreen {
 			: "Prochaine partie : « " + ClientState.str(current, "nom") + " »", px + 14, py + 14, Theme.WINE);
 		var list = view().getAsJsonArray("scenarios");
 		if (list == null || list.isEmpty()) {
-			Theme.paragraph(g, font, "Aucun scénario créé. L'Atelier (page web) permet de créer des rôles, des scénarios "
-				+ "et de gérer les cartes.", px + 14, py + 40, pw - 28, Theme.ASH);
+			Theme.paragraph(g, font, "Aucun scénario créé. La page web de l'Atelier (/vc atelier) permet de créer des rôles "
+				+ "et des scénarios ; l'Atelier en jeu gère les cartes.", px + 14, py + 40, pw - 28, Theme.ASH);
 		} else {
 			Theme.ink(g, font, "Choisir pour la prochaine partie :", px + 14, py + 26, Theme.ASH);
 		}

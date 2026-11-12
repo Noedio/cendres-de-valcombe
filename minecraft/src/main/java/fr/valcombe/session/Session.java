@@ -397,7 +397,9 @@ public final class Session {
 		if (problem != null) {
 			throw new GameException("Scénario « " + d.nom + " » injouable : " + problem);
 		}
-		String map = d.carte == null || d.carte.isBlank() ? "" : host.loadMap(d.carte);
+		// La carte du scénario n'est rechargée que si ce n'est pas déjà elle, intacte, qui est en place :
+		// choisir deux fois le même scénario ne rase pas le village une seconde fois.
+		String map = d.carte == null || d.carte.isBlank() || d.carte.equals(host.mapInPlace()) ? "" : host.loadMap(d.carte);
 		script = java.util.EnumSet.copyOf(d.script());
 		scriptName = d.nom;
 		ScenarioDef.Reglages r = d.reglages;
@@ -418,6 +420,78 @@ public final class Session {
 		announce("Scénario de la prochaine partie : « " + d.nom + " » (" + n.get(0) + " à " + n.get(n.size() - 1)
 			+ " joueurs)." + (d.description == null || d.description.isBlank() ? "" : " " + d.description));
 		return map;
+	}
+
+	String hostMapInPlace() {
+		return host.mapInPlace();
+	}
+
+	/** Le scénario choisi vient d'être supprimé de l'Atelier : la prochaine partie redevient libre. */
+	public void scenarioDeleted(String id) {
+		if (scenario != null && scenario.id.equals(id) && game == null) {
+			scenario = null;
+			announce("Le scénario choisi vient d'être supprimé : script et réglages libres.");
+		}
+	}
+
+	/** Celui qui a demandé une partie d'essai, tant qu'elle attend la fin du chargement de la carte ; null sinon. */
+	private String pendingTrial;
+
+	/**
+	 * Partie d'essai d'un scénario : des joueurs fictifs complètent le salon et le Conteur est automatique.
+	 * Si le scénario charge sa carte, la partie démarre d'elle-même dès que le chantier est fini.
+	 */
+	public String trial(String owner, String id, int players) {
+		if (game != null) {
+			throw new GameException("Une partie est en cours : arrêtez-la d'abord (/vc arreter).");
+		}
+		if (players < Distribution.MIN_PLAYERS || players > Distribution.MAX_PLAYERS) {
+			throw new GameException("Partie d'essai : de " + Distribution.MIN_PLAYERS + " à " + Distribution.MAX_PLAYERS + " joueurs.");
+		}
+		String map = useScenario(id);
+		removeBots();
+		if (host.online(owner) && !lobby.contains(owner) && !owner.equals(storyteller)) {
+			join(owner);
+		}
+		int missing = players - lobby.size();
+		if (missing > 0) {
+			addBots(missing);
+		}
+		if (host.busy()) {
+			pendingTrial = owner;
+			awaitTrial();
+			return "Carte en cours de chargement : la partie d'essai démarrera d'elle-même à la fin du chantier."
+				+ (map.isEmpty() ? "" : " " + map);
+		}
+		pendingTrial = null;
+		start(owner, Mode.AUTO);
+		return "Partie d'essai lancée (" + game.size() + " joueurs, Conteur automatique)."
+			+ (host.online(owner) ? "" : " Connectez-vous au jeu pour y assister.");
+	}
+
+	/** Une partie d'essai attend-elle la fin d'un chantier ? */
+	public boolean trialPending() {
+		return pendingTrial != null;
+	}
+
+	private void awaitTrial() {
+		host.schedule(20, () -> {
+			String owner = pendingTrial;
+			if (owner == null || game != null) {
+				pendingTrial = null; // une partie a été lancée entre-temps
+				return;
+			}
+			if (host.busy()) {
+				awaitTrial();
+				return;
+			}
+			pendingTrial = null;
+			try {
+				start(owner, Mode.AUTO);
+			} catch (GameException e) {
+				tell(owner, "Partie d'essai non lancée : " + e.getMessage());
+			}
+		});
 	}
 
 	boolean pendingDecisionOpen() {
@@ -862,7 +936,7 @@ public final class Session {
 			throw new GameException("Une partie est déjà en cours.");
 		}
 		if (host.busy()) {
-			throw new GameException("La carte est en cours de construction : patientez quelques secondes.");
+			throw new GameException("La carte est en chantier ou en cours de remise en état : patientez quelques secondes.");
 		}
 		List<String> names = lobby.stream().filter(this::online).toList();
 		if (scenario != null && !scenario.playable().contains(names.size())) {
@@ -902,6 +976,7 @@ public final class Session {
 		desk.reset();
 		clearNight();
 		clearVote();
+		host.gameStarted(); // avant d'installer qui que ce soit : la carte est gardée telle qu'elle est
 		host.seatPlayers(names(), storyteller != null && host.online(storyteller) ? storyteller : starter);
 		if (wanted == Mode.HUMAIN && storyteller != null) {
 			host.storytellerTools(storyteller, true);
@@ -958,6 +1033,7 @@ public final class Session {
 		clearNight();
 		clearVote();
 		clearPrompts(null);
+		restoreMap(0); // sans attendre : plus rien à regarder sur la place
 		announce("La partie est interrompue.");
 		return "Partie interrompue.";
 	}
@@ -1171,6 +1247,7 @@ public final class Session {
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
 			case "remise_convocation" -> settings.roleRoom = yes;
+			case "remise_en_etat" -> settings.restoreMap = yes;
 			case "coiffe" -> {
 				String v = value.toLowerCase(java.util.Locale.ROOT).replace("â", "a");
 				if (!List.of("chapeau", "crane", "aucun").contains(v)) {
@@ -1182,8 +1259,9 @@ public final class Session {
 			case "effets" -> settings.fullEffects = !value.equalsIgnoreCase("reduits") && !value.equalsIgnoreCase("réduits")
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation (oui|non), temps_defense <secondes>, "
-					+ "temps_horloge <dixièmes de seconde par siège>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat (oui|non), "
+					+ "temps_defense <secondes>, "
+					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
 		return "Réglage modifié.";
 	}
@@ -2079,6 +2157,29 @@ public final class Session {
 		clearNight();
 		clearVote();
 		clearPrompts(null);
+		restoreMap(restoreDelay(g.players().size()));
+	}
+
+	/** Temps laissé au moins pour regarder les rôles révélés sur la place avant que la carte soit remise en état (30 secondes). */
+	static final int RESTORE_DELAY = 600;
+
+	/** Durée de la veillée (chaque joueur révélé à tour de rôle), en ticks. */
+	static int vigilTicks(int players) {
+		return 110 + 34 * players;
+	}
+
+	/** La remise en état attend la fin de la veillée, plus dix secondes : à seize, elle dure plus de trente secondes. */
+	static int restoreDelay(int players) {
+		return Math.max(RESTORE_DELAY, vigilTicks(players) + 200);
+	}
+
+	/** Après une partie : la carte retrouve son état d'avant, sauf si le réglage l'a coupé. */
+	private void restoreMap(int delayTicks) {
+		if (settings.restoreMap) {
+			host.restoreMap(delayTicks);
+		} else {
+			host.keepMap();
+		}
 	}
 
 	private GameReport report(Game g) {
@@ -2572,7 +2673,7 @@ public final class Session {
 				}
 			});
 		}
-		host.schedule(110 + 34 * seats.size(), () -> {
+		host.schedule(vigilTicks(seats.size()), () -> {
 			if (token == vigilToken && game == null) {
 				announce("Fin de la veillée. La chronique de la partie se relit dans le menu (touche J → Chronique).");
 			}
@@ -2675,6 +2776,7 @@ public final class Session {
 		settings.fullEffects = d.settings.fullEffects;
 		settings.spectatorGrimoire = d.settings.spectatorGrimoire;
 		settings.roleRoom = d.settings.roleRoom;
+		settings.restoreMap = d.settings.restoreMap;
 		summoned = null;
 		unbriefed.clear();
 		if (d.unbriefed != null) {

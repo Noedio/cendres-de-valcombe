@@ -8,7 +8,7 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - **Modrinth App** : https://modrinth.com/app
    - ou **Prism Launcher** : https://prismlauncher.org
 2. Connectez votre compte Microsoft dans le launcher.
-3. Importez le fichier `Valcombe-0.5.0.mrpack` envoyé par l'hôte :
+3. Importez le fichier `Valcombe-<version>.mrpack` envoyé par l'hôte :
    - Modrinth App : bouton « + » puis « Importer » ;
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
@@ -31,7 +31,7 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - menu → « Parler en privé » : invitez un joueur ; une fois accepté, vous ne vous entendez plus qu'à deux, jusqu'à la cloche, la nuit ou un vote ;
    - **G** : faire un signe au-dessus de sa tête (oui, non, question, attention, réflexion, d'accord) ;
    - **K** : revoir sa carte de rôle ;
-   - menu → « Daltonien » : un triangle (mal) ou un rond (bien) s'ajoute aux couleurs des jetons, une flèche aux mains levées ;
+   - menu → « Préférences… » → « Mode daltonien » : un triangle (mal) ou un rond (bien) s'ajoute aux couleurs des jetons, une flèche aux mains levées ;
    - une fois mort, vous portez une coiffe (chapeau de deuil ou crâne, au choix du Conteur), avec un cierge tant qu'il vous reste votre vote de fantôme.
 
 Le **launcher Valcombe** a aussi une page « Guide » (règles et touches), des préréglages de performance (petite machine, équilibré, haute qualité), un conseil de mémoire selon votre ordinateur, un voyant d'état du serveur avec la **prochaine soirée** annoncée par l'hôte, une page **« Mon carnet »** (parties, victoires, camps, rôles joués, titre ; elle se remplit à chaque passage au salon) et l'affichage de la vitesse et du temps restant des téléchargements (un téléchargement coupé reprend où il s'était arrêté). Vos touches et réglages (graphismes, son, micro du vocal, serveurs) sont gardés en double dans `%APPDATA%\Valcombe\profil` : ils survivent à une réinstallation ou à un launcher déplacé dans un autre dossier, et ce que vous réglez en jeu n'est plus écrasé au lancement suivant.
@@ -75,7 +75,7 @@ Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port
    python tools/make_modpack.py
    ```
 
-   Vous obtenez `dist/Valcombe-0.5.0.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
+   Vous obtenez `dist/Valcombe-<version>.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
 3. Téléchargez le lanceur de serveur Fabric pour Minecraft 26.3 (Loader 0.20.1) sur https://fabricmc.net/use/server/ et placez-le dans `serveur-valcombe/` sous le nom `fabric-server-launch.jar`.
 4. Lancez `demarrer.bat` une première fois. Le serveur s'arrête et crée `eula.txt` : lisez le contrat https://aka.ms/MinecraftEULA, puis mettez `eula=true` si vous l'acceptez.
 5. Relancez `demarrer.bat`. Dans la console du serveur, tapez :
@@ -97,7 +97,7 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 ## Pour le Conteur
 
 1. En jeu, ouvrez le menu (**J**), puis « Panneau du Conteur ».
-2. Une fois pour toutes, placez-vous sur un terrain dégagé et cliquez sur « Construire le village ici ». Les parties se joueront ensuite sur la place de Valcombe.
+2. Le village de Valcombe est bâti tout seul au premier démarrage du serveur : rien à faire. Pour le rebâtir ailleurs, placez-vous sur un terrain dégagé et cliquez sur « Bâtir le village », puis « Confirmer » : il remplace la carte actuelle, qui est retirée du monde.
 3. Les joueurs s'inscrivent depuis leur menu. Pour tester seul, ajoutez des joueurs fictifs.
 4. « Lancer (automatique) » : le jeu mène tout seul. « Lancer (Conteur humain) » : vous relisez chaque information, et vous pouvez retoucher la distribution avant la première nuit en cliquant sur les jetons du grimoire.
 5. « Faire tomber la nuit », puis « Clore la journée » après les votes.
@@ -108,11 +108,11 @@ Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu D
 9. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
 
 10. **Atelier** (opérateur) : `/vc atelier` donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau. On y crée :
-    - des **rôles** : nom, camp, texte, emblème (bibliothèque de 45 pictogrammes), moment du réveil et pouvoir choisi parmi 17 modèles (informations, protection, poison, mise à mort, immunité, martyr, Étrangers en plus, pouvoir libre joué par le Conteur…) ;
+    - des **rôles** : nom, camp, texte, emblème (bibliothèque de 45 pictogrammes), moment du réveil et pouvoir choisi parmi 23 modèles (informations, protection, poison, mise à mort, immunité, martyr, Étrangers en plus, pouvoir libre joué par le Conteur…) ;
     - des **scénarios** : rôles, carte, réglages, règles spéciales (pas d'accusation le premier jour, annonces ou conversations privées interdites, discussion minutée) et texte d'ouverture. « Simuler » joue 200 parties de joueurs fictifs et donne le taux de victoire de chaque camp ; « Partie d'essai » lance une partie avec des joueurs fictifs ; « Choisir » prépare la prochaine partie ;
     - la **bibliothèque de cartes** : enregistrer la carte actuelle, en charger une autre, générer un village réglable (5 à 20 trônes, petite, normale ou grande place, avec ou sans maisons) ;
     - le **partage** : un fichier `.valcombe` (rôles, scénarios et cartes) à envoyer à un autre hôte, qui l'importe sur la même page.
-11. Dans le jeu, écran Script → « Scénarios… » pour choisir un scénario, ouvrir l'Atelier ou passer en **mode construction** (`/vc carte construction` : créatif, cinq outils — trône, maison, centre, salle de convocation, gomme —, une étiquette sur chaque repère, liste de contrôle ; `/vc carte ordonner` renumérote trônes et maisons dans le sens des aiguilles d'une montre). Commandes de carte : `/vc carte enregistrer <id> <nom>`, `charger <id>`, `supprimer <id>`, `liste`, `generer <trônes> <petite|normale|grande> <thème> <oui|non>`.
+11. **L'Atelier dans le jeu** (opérateur) : menu J › « Atelier », ou `/vc atelier jeu`. Cartes (aperçu vu de dessus, charger, enregistrer, renommer, dupliquer, supprimer), générateur de village, repères, catalogue de structures, outils de sélection, scénarios et partie d'essai, sans passer par le navigateur. Dans le jeu aussi, écran Script → « Scénarios… » pour choisir un scénario, ouvrir l'Atelier ou passer en **mode construction** (`/vc carte construction` : créatif, sept outils — trône, maison, centre, salle de convocation, gomme, sélection, structure —, une étiquette sur chaque repère, liste de contrôle ; `/vc carte ordonner` renumérote trônes et maisons dans le sens des aiguilles d'une montre). L'éditeur du mode construction est intégré au mod : `/vc edit` (sélection à deux coins, `remplir`, `remplacer`, `vider`, `murs`, `copier`, `couper`, `coller`, `deplacer`, `empiler`, `annuler`, `retablir`) et `/vc structure` (catalogue de structures à poser, tourner et retourner ; `enregistrer` la sélection, `importer` un `.schem`, `.litematic` ou `.nbt` déposé dans `config/valcombe/creations/import`). Commandes de carte : `/vc carte enregistrer <id> <nom>`, `charger <id>`, `supprimer <id>`, `liste`, `generer <trônes> <petite|normale|grande> <thème> <oui|non>`. Il n'y a qu'une carte à la fois dans le monde : en poser une autre retire l'ancienne (sauvegardée d'office dans la bibliothèque si elle a été retouchée à la main), et après chaque partie la carte est remise dans son état d'avant (`/vc reglage remise_en_etat non` pour s'en passer).
 
 12. **Prochaine soirée** : `/vc soiree vendredi 21 h` l'annonce dans la liste des serveurs de Minecraft et sur l'accueil du launcher, avec le nombre d'inscrits (`/vc soiree effacer` pour la retirer).
 13. La salle d'attente montre en 3D les rôles du script choisi et un panneau de la prochaine partie (scénario, inscrits, Conteur). En fin de partie, chaque joueur est révélé à tour de rôle (la veillée). Les joueurs fictifs annoncent un rôle (le mal bluffe), accusent et votent d'eux-mêmes : l'entraînement ressemble davantage à une vraie partie.

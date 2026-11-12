@@ -43,7 +43,11 @@ public class SettingsScreen extends BaseScreen {
 		String hat = ClientState.str(st, "deadHat");
 		String next = "chapeau".equals(hat) ? "crane" : "crane".equals(hat) ? "aucun" : "chapeau";
 		String label = "chapeau".equals(hat) ? "chapeau" : "crane".equals(hat) ? "crâne" : "aucune";
-		button(px + pw / 2 - 90, y + 23, 180, "Coiffe des morts : " + label, () -> send("vc reglage coiffe " + next));
+		// Dernière rangée, à deux : la coiffe des morts, et la carte remise en état après la partie.
+		button(px + pw / 2 - 137, y + 23, 104, "Coiffe : " + label, () -> send("vc reglage coiffe " + next));
+		boolean restore = ClientState.bool(st, "restoreMap");
+		button(px + pw / 2 - 31, y + 23, 168, "Carte remise en état : " + (restore ? "oui" : "non"),
+			() -> send("vc reglage remise_en_etat " + (restore ? "non" : "oui")));
 		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
 
@@ -52,6 +56,6 @@ public class SettingsScreen extends BaseScreen {
 		JsonObject st = ClientState.obj(view(), "settings");
 		int y = py + 12 + 21 * 4 + 25 + 5;
 		Theme.centered(g, font, "Défense de l'accusé : " + ClientState.num(st, "defenseSeconds", 20) + " s", px + pw / 2, y, Theme.INK);
-		Theme.centered(g, font, "Aiguille : " + ClientState.dbl(st, "clockSeconds", 1.5) + " s par siège", px + pw / 2, y + 22, Theme.INK);
+		Theme.centered(g, font, "Aiguille : " + ClientState.dbl(st, "clockSeconds", 1.5) + " s par trône", px + pw / 2, y + 22, Theme.INK);
 	}
 }

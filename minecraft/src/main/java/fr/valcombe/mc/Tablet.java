@@ -48,8 +48,6 @@ public final class Tablet {
 	private volatile String owner;
 	private int port;
 	private Atelier atelier;
-	/** L'Atelier n'est ouvert que si un opérateur a demandé le lien (/vc atelier). */
-	private volatile boolean atelierAllowed;
 
 	void setAtelier(Atelier atelier) {
 		this.atelier = atelier;
@@ -60,11 +58,40 @@ public final class Tablet {
 	 * personnes travaillent ensemble dans l'Atelier, sans toucher à la tablette du Conteur.
 	 */
 	public synchronized List<String> openAtelier(String player) throws IOException {
-		if (http == null) {
-			open(player);
-		}
+		start();
 		String t = atelier.tokenFor(player);
-		return links().stream().map(l -> l.substring(0, l.indexOf("/#")) + "/atelier#" + t).toList();
+		return bases().stream().map(b -> b + "/atelier#" + t).toList();
+	}
+
+	/**
+	 * Ferme l'Atelier de cet opérateur : son lien ne fonctionne plus. Les autres opérateurs, l'hôte du
+	 * serveur local et la tablette du Conteur ne sont pas touchés.
+	 */
+	public synchronized void closeAtelier(String player) {
+		if (atelier != null) {
+			atelier.revoke(player);
+		}
+		stopIfUnused();
+	}
+
+	/** Ferme la tablette du Conteur : son lien ne fonctionne plus. L'Atelier reste ouvert tant qu'un de ses liens sert. */
+	public synchronized void closeTablet() {
+		token = null;
+		owner = null;
+		stopIfUnused();
+	}
+
+	/** L'Atelier a-t-il encore un lien en service (un opérateur, ou l'hôte du serveur local) ? */
+	public boolean atelierOpen() {
+		return http != null && atelier != null && atelier.inUse();
+	}
+
+	/** Le serveur web ne tourne que tant qu'un lien sert : celui de la tablette, ou un lien d'Atelier. */
+	private void stopIfUnused() {
+		if (http != null && token == null && (atelier == null || !atelier.inUse())) {
+			http.stop(0);
+			http = null;
+		}
 	}
 
 	/**
@@ -86,9 +113,7 @@ public final class Tablet {
 				ValcombeMod.LOG.warn("Lien d'Atelier de l'hôte illisible : ignoré");
 				return 0;
 			}
-			if (http == null) {
-				open(name);
-			}
+			start();
 			atelier.setHostToken(name, given);
 			ValcombeMod.LOG.info("[valcombe] Atelier de l'hôte ouvert sur le port {}", port);
 			return port;
@@ -113,15 +138,23 @@ public final class Tablet {
 
 	/** Démarre (ou redémarre avec un nouveau jeton) la tablette pour ce joueur. Retourne le lien. */
 	public synchronized String open(String player) throws IOException {
+		start();
+		byte[] b = new byte[18];
+		RANDOM.nextBytes(b);
+		token = HexFormat.of().formatHex(b);
+		owner = player;
+		return links().get(0);
+	}
+
+	/** Démarre le serveur web s'il ne tourne pas (ou le déplace si le port a changé), sans toucher aux liens déjà donnés. */
+	private void start() throws IOException {
 		if (http != null && port == community.tabletPort()) {
-			// Serveur déjà ouvert (Atelier ou tablette) : nouveau jeton seulement, sans couper l'Atelier.
-			byte[] b = new byte[18];
-			RANDOM.nextBytes(b);
-			token = HexFormat.of().formatHex(b);
-			owner = player;
-			return links().get(0);
+			return;
 		}
-		close();
+		if (http != null) {
+			http.stop(0);
+			http = null;
+		}
 		port = community.tabletPort();
 		HttpServer h;
 		try {
@@ -144,30 +177,30 @@ public final class Tablet {
 			return t;
 		}));
 		h.start();
-		byte[] b = new byte[18];
-		RANDOM.nextBytes(b);
-		token = HexFormat.of().formatHex(b);
-		owner = player;
-		atelierAllowed = false;
 		http = h;
-		return links().get(0);
 	}
 
+	/** Arrêt du serveur Minecraft : la tablette et tous les liens de l'Atelier sont fermés, celui de l'hôte compris. */
 	public synchronized void close() {
 		if (http != null) {
 			http.stop(0);
 			http = null;
-			token = null;
-			owner = null;
-			if (atelier != null) {
-				atelier.revoke(null); // les liens de l'Atelier sont fermés avec la tablette
-				atelier.setHostToken(null, null);
-			}
+		}
+		token = null;
+		owner = null;
+		if (atelier != null) {
+			atelier.revoke(null);
+			atelier.setHostToken(null, null);
 		}
 	}
 
-	/** Liens possibles vers la page (adresse déclarée du serveur, puis adresses du réseau local). */
+	/** Liens possibles vers la tablette (adresse déclarée du serveur, puis adresses du réseau local). */
 	public List<String> links() {
+		return bases().stream().map(b -> b + "/#" + token).toList();
+	}
+
+	/** Adresses possibles du serveur web : « http://hôte:port ». */
+	private List<String> bases() {
 		List<String> hosts = new ArrayList<>();
 		String declared = server == null ? "" : server.getLocalIp();
 		if (declared != null && !declared.isBlank()) {
@@ -192,7 +225,7 @@ public final class Tablet {
 		}
 		List<String> out = new ArrayList<>();
 		for (String host : hosts) {
-			out.add("http://" + host + ":" + port + "/#" + token);
+			out.add("http://" + host + ":" + port);
 		}
 		return out;
 	}

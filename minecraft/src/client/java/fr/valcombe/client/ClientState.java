@@ -71,6 +71,35 @@ public final class ClientState {
 		}
 	}
 
+	private static JsonObject preview;
+	private static int[] previewColors = new int[0];
+
+	/** Aperçu vu de dessus d'une carte, demandé par l'écran de l'Atelier (« vc carte apercu ») ; null tant qu'aucun n'est arrivé. */
+	public static JsonObject preview() {
+		return preview;
+	}
+
+	/** Les couleurs de l'aperçu, une par case, ligne par ligne (vide si la carte n'a pas d'image). */
+	public static int[] previewColors() {
+		return previewColors;
+	}
+
+	public static void applyPreview(String json) {
+		JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+		int[] colors = new int[0];
+		String pixels = str(o, "pixels");
+		if (pixels != null) {
+			byte[] raw = java.util.Base64.getDecoder().decode(pixels);
+			colors = new int[raw.length / 3];
+			for (int i = 0; i < colors.length; i++) {
+				colors[i] = 0xFF000000 | (raw[3 * i] & 255) << 16 | (raw[3 * i + 1] & 255) << 8 | raw[3 * i + 2] & 255;
+			}
+		}
+		preview = o;
+		previewColors = colors;
+		version++; // l'écran ouvert se redessine avec l'aperçu
+	}
+
 	public static void send(String command) {
 		ClientPlayNetworking.send(new ValcombeNet.ActionPayload(command));
 	}

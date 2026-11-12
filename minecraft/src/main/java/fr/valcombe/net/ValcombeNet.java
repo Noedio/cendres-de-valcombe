@@ -47,12 +47,25 @@ public final class ValcombeNet {
 		}
 	}
 
+	/** Serveur → client : l'aperçu vu de dessus d'une carte (couleurs et repères, en JSON), pour l'écran de l'Atelier. */
+	public record PreviewPayload(String json) implements CustomPacketPayload {
+		public static final Type<PreviewPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("valcombe", "apercu"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, PreviewPayload> CODEC =
+			StreamCodec.composite(ByteBufCodecs.stringUtf8(1 << 16), PreviewPayload::json, PreviewPayload::new);
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
 	private ValcombeNet() {
 	}
 
 	public static void registerPayloads() {
 		PayloadTypeRegistry.clientboundPlay().registerLarge(ViewPayload.TYPE, ViewPayload.CODEC, MAX * 4);
 		PayloadTypeRegistry.clientboundPlay().register(OpenPayload.TYPE, OpenPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(PreviewPayload.TYPE, PreviewPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(ActionPayload.TYPE, ActionPayload.CODEC);
 	}
 }

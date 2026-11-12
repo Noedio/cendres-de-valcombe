@@ -69,6 +69,31 @@ public static class Http
         return Convert.ToHexString(SHA512.HashData(s)).ToLowerInvariant();
     }
 
+    /// <summary>Une empreinte SHA-512 complète : 128 chiffres hexadécimaux.</summary>
+    public static bool IsSha512(string? s) => s != null && s.Length == 128 && s.All(Uri.IsHexDigit);
+
+    /// <summary>D'où viennent le launcher et les mods : les versions publiées sur GitHub, et Modrinth.</summary>
+    private static readonly string[] TrustedHosts = { "github.com", "objects.githubusercontent.com", "cdn.modrinth.com" };
+
+    /// <summary>
+    /// Télécharge un fichier qui sera exécuté (le launcher, un mod) : adresse https d'un hôte connu et empreinte
+    /// SHA-512 obligatoire. Un manifeste dont l'empreinte est vide ou tronquée ne fait plus rien installer.
+    /// </summary>
+    public static Task DownloadTrustedAsync(string url, string target, string sha512, IProgress<double>? progress,
+        CancellationToken ct = default)
+    {
+        if (!IsSha512(sha512))
+        {
+            throw new InvalidDataException($"Empreinte absente ou invalide dans le manifeste : {Path.GetFileName(target)}");
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps
+            || !TrustedHosts.Contains(u.Host, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Adresse de téléchargement refusée : {Path.GetFileName(target)}");
+        }
+        return DownloadAsync(url, target, sha512, progress, ct);
+    }
+
     /// <summary>Télécharge vers un fichier temporaire, vérifie l'empreinte, puis remplace la cible.</summary>
     public static async Task DownloadAsync(string url, string target, string? sha512, IProgress<double>? progress,
         CancellationToken ct = default)

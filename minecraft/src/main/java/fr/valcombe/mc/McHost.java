@@ -80,19 +80,61 @@ public final class McHost implements Host {
 		}
 	}
 
+	/**
+	 * Carte oubliée (/vc carte oublier) : on ne joue plus dessus, mais ses blocs sont encore dans le
+	 * monde. Elle est gardée pour que la prochaine carte bâtie la retire, où qu'elle soit posée.
+	 */
+	private Village abandoned;
+	/** Avertissement du démarrage (fiche du village illisible…), redit à chaque opérateur qui se connecte. */
+	private String startupWarning;
+
 	public void setServer(MinecraftServer server) {
 		if (server == null) {
+			if (this.server != null) {
+				stage.clear(this.server); // la scène ne reste pas dans le monde enregistré : elle est remontée à la reprise
+			}
 			builds.clear();
+			// L'instantané reste sur le disque : une remise en état coupée par l'arrêt reprend au démarrage.
+			restoreAt = -1;
+			restoring = false;
+			holdCenter = null;
 		}
 		this.server = server;
-		this.village = server == null ? null : Village.load(server);
+		village = null;
+		abandoned = null;
+		startupWarning = null;
+		firstStart = false;
+		if (server != null) {
+			Village.Loaded fiche = Village.load(server);
+			switch (fiche.state()) {
+				case READY -> village = fiche.village();
+				case FORGOTTEN -> abandoned = fiche.village();
+				case ABSENT -> firstStart = true;
+				case UNREADABLE -> startupWarning = "La fiche du village (config/valcombe-village.json) est illisible : aucune carte "
+					+ "n'est en service et rien n'a été rebâti. Rechargez une carte (/vc carte charger <id>) ou bâtissez-en une "
+					+ "(/vc carte construire) à l'endroit voulu.";
+			}
+			try {
+				java.nio.file.Path mark = buildMarker();
+				if (java.nio.file.Files.exists(mark)) {
+					String cut = "Le chantier « " + java.nio.file.Files.readString(mark).trim() + " » a été interrompu par l'arrêt du "
+						+ "serveur : la carte est peut-être incomplète. Relancez-le, ou chargez une carte de la bibliothèque.";
+					startupWarning = startupWarning == null ? cut : startupWarning + " " + cut;
+				}
+			} catch (java.io.IOException e) {
+				ValcombeMod.LOG.warn("Marque de chantier illisible", e);
+			}
+		}
 	}
 
-	/** Au démarrage : règles du monde, et village construit au point d'apparition s'il n'existe pas encore. */
+	/** Aucune fiche de village n'a jamais existé : c'est le seul cas où un village est bâti d'office. */
+	private boolean firstStart;
+
+	/** Au démarrage : règles du monde, et village construit au point d'apparition au tout premier lancement. */
 	public void prepareWorld() {
 		WorldSetup.apply(server);
 		ServerLevel level = server.overworld();
-		if (village == null) {
+		if (village == null && firstStart) {
 			BlockPos spawn = level.getRespawnData().pos();
 			int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ()) - 1;
 			Village v = Village.generated(new BlockPos(spawn.getX(), y, spawn.getZ()));
@@ -100,6 +142,13 @@ public final class McHost implements Host {
 			v.save(server);
 			village = v;
 			ValcombeMod.LOG.info("Village de Valcombe construit en {}", v.center());
+		}
+		if (village == null) {
+			// Carte oubliée ou fiche illisible : surtout ne pas bâtir un second village par-dessus le premier.
+			if (startupWarning != null) {
+				ValcombeMod.LOG.error(startupWarning);
+			}
+			return;
 		}
 		if (village.outdated()) {
 			// Plan plus ancien (place plus petite) : le village est reconstruit au même endroit.
@@ -483,6 +532,8 @@ public final class McHost implements Host {
 		boolean op = p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
 		if (!op) {
 			p.setGameMode(GameType.ADVENTURE);
+		} else if (startupWarning != null) {
+			p.sendSystemMessage(Component.literal("[Valcombe] " + startupWarning).withStyle(ChatFormatting.RED));
 		}
 		if (!inGame) {
 			// Parti avant la fin de la partie : il ne garde ni la nuit, ni l'apparence de fantôme, ni la plume.
@@ -540,65 +591,181 @@ public final class McHost implements Host {
 	// Carte personnalisée : /vc carte nouvelle, siege, maison, retirer, infos
 	// ------------------------------------------------------------------
 	public String customMap(ServerPlayer p) {
-		village = Village.custom(p.blockPosition().below());
-		lanterns = null;
-		village.save(server);
-		applySpawn();
-		return "Nouvelle carte : la place est ici. Placez-vous sur chaque siège puis faites /vc carte siege, "
-			+ "et dans chaque maison /vc carte maison.";
+		return customMapAt(p.blockPosition().below());
+	}
+
+	/** Carte vide à compléter à la main, dont la place est en c (depuis l'Atelier web sans être en jeu : le point d'apparition). */
+	public String customMapAt(BlockPos c) {
+		Village old = village != null ? village : abandoned;
+		// Déclarée sur l'ancienne carte, la nouvelle garde ses blocs (c'est peut-être ce qu'on vient d'y bâtir à la
+		// main) et ne change que les repères ; déclarée ailleurs, elle la remplace : l'ancienne est retirée du monde.
+		boolean inPlace = old != null && Math.abs(c.getX() - old.center().getX()) <= old.extent() + 16
+			&& Math.abs(c.getZ() - old.center().getZ()) <= old.extent() + 16;
+		String saved = replaceMap("Nouvelle carte", new BuildQueue.Plan(), !inPlace, () -> {
+			useVillage(Village.custom(c));
+			announceAll("Nouvelle carte : la place est en " + c.toShortString() + ". Posez les trônes et les maisons, puis enregistrez-la.");
+		});
+		return "Nouvelle carte vide : la place est en " + c.toShortString() + (inPlace ? "." : ", et l'ancienne carte est retirée du monde.")
+			+ " Posez les trônes et les maisons (mode construction, plan de l'Atelier ou /vc carte trone et /vc carte maison), "
+			+ "puis enregistrez-la." + saved;
 	}
 
 	private Village requireVillage() {
 		if (village == null) {
-			throw new fr.valcombe.rules.GameException("Aucune carte : /vc carte construire ou /vc carte nouvelle.");
+			throw new fr.valcombe.rules.GameException("Aucune carte : générez un village (/vc carte generer) ou partez d'une carte "
+				+ "vide (/vc carte nouvelle).");
 		}
 		return village;
 	}
 
-	/**
-	 * Importe une construction (fichier de structure .nbt, par exemple enregistré avec un bloc
-	 * de structure, ou copié dans world/generated/minecraft/structures/) sous les pieds du joueur,
-	 * puis en fait la carte : il reste à poser les sièges et les maisons avec la baguette.
-	 */
-	public String importStructure(ServerPlayer p, String name) {
-		var id = net.minecraft.resources.Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
-		if (id == null) {
-			throw new fr.valcombe.rules.GameException("Nom de structure invalide : " + name);
+	/** Les repères ne se modifient que sur une carte en place, hors partie et hors chantier : même règle pour le jeu et l'Atelier. */
+	Village requireEditable() {
+		Village v = requireVillage();
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
 		}
-		var template = server.getStructureTemplateManager().get(id)
-			.orElseThrow(() -> new fr.valcombe.rules.GameException("Structure introuvable : " + id
-				+ ". Placez le fichier dans world/generated/" + id.getNamespace() + "/structures/" + id.getPath() + ".nbt."));
-		var size = template.getSize();
-		BlockPos corner = p.blockPosition().offset(-size.getX() / 2, -1, -size.getZ() / 2);
-		template.placeInWorld(p.level(), corner, corner,
-			new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings(),
-			p.level().getRandom(), 2);
-		village = Village.custom(p.blockPosition().below());
-		village.save(server);
-		lanterns = null;
-		applySpawn();
-		return "Construction « " + id + " » importée (" + size.getX() + " × " + size.getY() + " × " + size.getZ()
-			+ "). Posez maintenant les sièges et les maisons avec /vc carte baguette.";
+		requireFree();
+		return v;
 	}
 
+	/**
+	 * Importe une construction à la place de la carte actuelle : un fichier déposé dans le dossier d'import
+	 * (.schem, .litematic, .nbt), ou une structure du monde (enregistrée avec un bloc de structure). Même
+	 * chemin que l'import de l'Atelier web : mêmes contrôles, même pose par petits lots.
+	 */
+	public String importStructure(ServerPlayer p, String name) {
+		// Sans carte à remplacer, la construction arrive là où se tient l'opérateur.
+		BlockPos where = village == null && abandoned == null && p != null ? p.blockPosition().below() : null;
+		if (ValcombeMod.structures().importable().contains(name)) {
+			return importSchematic(name, ValcombeMod.structures().inboxFile(name), where);
+		}
+		var id = net.minecraft.resources.Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
+		if (id == null) {
+			throw new fr.valcombe.rules.GameException("Nom de fichier ou de structure invalide : " + name);
+		}
+		var template = server.getStructureTemplateManager().get(id)
+			.orElseThrow(() -> new fr.valcombe.rules.GameException("Construction introuvable : " + name
+				+ ". Déposez un fichier .schem, .litematic ou .nbt dans " + ValcombeMod.structures().inboxPath()
+				+ ", ou enregistrez-la dans le monde avec un bloc de structure."));
+		byte[] data;
+		try {
+			// La structure du monde suit le même chemin qu'un fichier : relue case par case, sans entités ni données à risque.
+			data = MapStore.compress(template.save(new net.minecraft.nbt.CompoundTag()));
+		} catch (java.io.IOException e) {
+			throw new fr.valcombe.rules.GameException("Structure illisible : " + e.getMessage());
+		}
+		String file = id.getPath().substring(id.getPath().lastIndexOf('/') + 1) + ".nbt";
+		return importSchematic(file, data, where);
+	}
+
+	/** Ce qu'on peut importer depuis le jeu : les fichiers du dossier d'import, puis les structures du monde. */
 	public List<String> structures() {
-		return server.getStructureTemplateManager().listTemplates()
+		List<String> out = new ArrayList<>(ValcombeMod.structures().importable());
+		server.getStructureTemplateManager().listTemplates()
 			.filter(i -> !i.getNamespace().equals("minecraft") || !i.getPath().contains("/"))
-			.map(Object::toString).limit(60).toList();
+			.map(Object::toString).limit(60).forEach(out::add);
+		return out;
 	}
 
 	/** Plus de repères d'une sorte qu'une carte n'en accepte (voir MapStore). */
-	private static final int MAX_MARKERS = 40;
+	static final int MAX_MARKERS = 40;
 
 	/** Les repères ont changé : on enregistre et on rafraîchit les étiquettes du mode construction. */
-	private void markersChanged() {
+	void markersChanged() {
+		village.setModified(true);
 		village.save(server);
 		refreshLabels();
 	}
 
-	private void requireRoom(Village v, boolean seat) {
+	/** Repères d'avant chaque modification faite à la main (outils, commandes, plan de l'Atelier), pour l'annuler. */
+	private final java.util.ArrayDeque<Village.Marks> markerUndo = new java.util.ArrayDeque<>();
+	private static final int MARKER_UNDO = 40;
+
+	/** Une modification des repères est faite : on garde l'état d'avant, puis on enregistre. */
+	private void markersChanged(Village.Marks before) {
+		markerUndo.push(before);
+		while (markerUndo.size() > MARKER_UNDO) {
+			markerUndo.removeLast();
+		}
+		markersChanged();
+	}
+
+	/** L'éditeur a posé ou retiré un repère avec une structure : il a sa propre annulation, celle des repères repart de zéro. */
+	void editorMarkersChanged() {
+		markerUndo.clear();
+		markersChanged();
+	}
+
+	void requireRoom(Village v, boolean seat) {
 		if ((seat ? v.seatCount() : v.houseCount()) >= MAX_MARKERS) {
 			throw new fr.valcombe.rules.GameException("Une carte compte " + MAX_MARKERS + (seat ? " trônes" : " maisons") + " au plus.");
+		}
+	}
+
+	/** Un repère trop loin de la place donnerait une carte démesurée, impossible à enregistrer ou à remplacer. */
+	static void requireNear(Village v, BlockPos at) {
+		if (!v.reachable(at)) {
+			throw new fr.valcombe.rules.GameException("Ce point est trop loin de la place (" + (Village.MAX_EXTENT - 8)
+				+ " blocs au plus).");
+		}
+	}
+
+	/** Déplace un repère du plan ; le centre passe par moveCenter, qui vérifie que tout reste à portée. */
+	private void moveMarker(Village v, Village.Hit h, BlockPos to) {
+		if (h.type() == Village.Mark.CENTER) {
+			moveCenter(v, to.below());
+		} else {
+			// La maison ou la salle bâtie d'un clic suit son repère : la gomme la retirera encore.
+			var built = prefabs.remove(v.markerPos(h));
+			v.moveMarker(h, to);
+			if (built != null) {
+				prefabs.put(to, built);
+			}
+		}
+	}
+
+	/** Déplace le centre d'une carte faite à la main ; refusé si un repère se retrouvait hors de portée. */
+	private void moveCenter(Village v, BlockPos to) {
+		BlockPos before = v.center();
+		v.setCenter(to);
+		if (v.farthest() > Village.MAX_EXTENT) {
+			v.setCenter(before);
+			throw new fr.valcombe.rules.GameException("Ce centre laisserait un repère à plus de " + (Village.MAX_EXTENT - 8)
+				+ " blocs de la place : déplacez d'abord les repères.");
+		}
+	}
+
+	/**
+	 * Un opérateur casse ou pose un bloc à la main sur la carte, hors partie : elle devient « retouchée »
+	 * et ne sera plus remplacée sans être sauvegardée. (En partie, la remise en état défait les changements.)
+	 */
+	public void noteEdit(ServerPlayer p, BlockPos pos) {
+		Village v = village;
+		if (v == null || server == null || v.modified() || ValcombeMod.session().game() != null || p.level() != server.overworld()
+			|| p.gameMode.getGameModeForPlayer() == GameType.ADVENTURE || p.gameMode.getGameModeForPlayer() == GameType.SPECTATOR) {
+			return;
+		}
+		int reach = v.extent() + 8;
+		if (Math.abs(pos.getX() - v.center().getX()) <= reach && Math.abs(pos.getZ() - v.center().getZ()) <= reach) {
+			v.setModified(true);
+			v.save(server);
+		}
+	}
+
+	/** L'éditeur vient de changer des blocs : comme pour un bloc posé à la main, la carte est tenue pour retouchée. */
+	void markEdited() {
+		Village v = village;
+		if (v != null && server != null && !v.modified()) {
+			v.setModified(true);
+			v.save(server);
+		}
+	}
+
+	/** La carte v vient d'être enregistrée dans la bibliothèque : elle n'a plus rien à perdre. */
+	void mapSaved(Village v) {
+		v.setModified(false);
+		if (v == village) {
+			v.save(server);
 		}
 	}
 
@@ -611,49 +778,78 @@ public final class McHost implements Host {
 	}
 
 	public String addSeatAt(BlockPos pos) {
-		Village v = requireVillage();
+		Village v = requireEditable();
 		requireRoom(v, true);
+		requireNear(v, pos);
+		Village.Marks before = v.marks();
 		v.addSeat(pos);
-		markersChanged();
+		markersChanged(before);
 		return "Trône " + v.seatCount() + " posé.";
 	}
 
 	public String addHouseAt(BlockPos pos) {
-		Village v = requireVillage();
+		Village v = requireEditable();
 		requireRoom(v, false);
+		requireNear(v, pos);
+		Village.Marks before = v.marks();
 		v.addHouse(pos);
-		markersChanged();
+		markersChanged(before);
 		return "Maison " + v.houseCount() + " posée.";
 	}
 
 	public String removeSeat() {
-		Village v = requireVillage();
-		boolean ok = v.removeLastSeat();
-		markersChanged();
-		return ok ? "Dernier trône retiré (" + v.seatCount() + " restants)." : "Aucun trône à retirer.";
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
+		if (!v.removeLastSeat()) {
+			return "Aucun trône à retirer.";
+		}
+		markersChanged(before);
+		return "Dernier trône retiré (" + v.seatCount() + " restants).";
 	}
 
-	/** Annule le dernier repère posé à la main (trône ou maison). */
+	/**
+	 * Annule la dernière modification des repères, quelle qu'elle soit (pose, déplacement, retrait, renumérotation,
+	 * centre), qu'elle vienne d'un outil, d'une commande ou du plan de l'Atelier.
+	 */
 	public String undoMarker() {
-		Village v = requireVillage();
-		String what = v.undoLast();
+		Village v = requireEditable();
+		if (markerUndo.isEmpty()) {
+			return "Rien à annuler : aucun repère modifié depuis que cette carte est en place.";
+		}
+		v.restore(markerUndo.pop());
+		// Une maison ou une salle bâtie d'un clic part avec le repère dont on annule la pose.
+		Village.Marks now = v.marks();
+		ServerLevel level = server.overworld();
+		prefabs.entrySet().removeIf(e -> {
+			BlockPos at = e.getKey();
+			if (now.seats().contains(at) || now.houses().contains(at) || at.equals(now.convocation())) {
+				return false;
+			}
+			e.getValue().forEach((b, s) -> level.setBlock(b, s, Clip.EXACT));
+			return true;
+		});
+		carrying.clear();
+		applySpawn();
 		markersChanged();
-		return what == null ? "Rien à annuler : aucun repère posé depuis le chargement de la carte."
-			: "Dernier repère retiré : " + what + " (" + v.seatCount() + " trônes, " + v.houseCount() + " maisons).";
+		return "Dernière modification des repères annulée (" + v.seatCount() + " trônes, " + v.houseCount() + " maisons).";
 	}
 
 	public String removeHouse() {
-		Village v = requireVillage();
-		boolean ok = v.removeLastHouse();
-		markersChanged();
-		return ok ? "Dernière maison retirée (" + v.houseCount() + " restantes)." : "Aucune maison à retirer.";
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
+		if (!v.removeLastHouse()) {
+			return "Aucune maison à retirer.";
+		}
+		markersChanged(before);
+		return "Dernière maison retirée (" + v.houseCount() + " restantes).";
 	}
 
 	/** Renumérote trônes et maisons dans le sens des aiguilles d'une montre, en partant du nord. */
 	public String sortMarkers() {
-		Village v = requireVillage();
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
 		v.sortClockwise();
-		markersChanged();
+		markersChanged(before);
 		return "Trônes et maisons renumérotés dans le sens des aiguilles d'une montre, en partant du nord.";
 	}
 
@@ -681,10 +877,11 @@ public final class McHost implements Host {
 
 	/** Un constructeur clique sur un bloc avec un outil de carte ; renvoie ce qui s'est passé. */
 	public String useTool(ServerPlayer p, ValcombeUi.MapTool tool, BlockPos clicked, boolean sneak) {
-		Village v = requireVillage();
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
+		if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
+			throw new IllegalArgumentException("Outil de l'éditeur : voir MapEditor.");
 		}
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
 		String who = p.getScoreboardName();
 		BlockPos at = clicked.above();
 		String msg;
@@ -696,23 +893,28 @@ public final class McHost implements Host {
 			}
 			BlockPos pos = v.markerPos(h);
 			v.removeMarker(h);
-			var before = prefabs.remove(pos);
-			if (before != null) {
-				before.forEach((b, s) -> p.level().setBlock(b, s, net.minecraft.world.level.block.Block.UPDATE_CLIENTS));
+			var built = prefabs.remove(pos);
+			if (built != null) {
+				// Pose exacte : la lanterne dont le poteau disparaît avant elle ne tombe pas au sol.
+				built.forEach((b, s) -> p.level().setBlock(b, s, Clip.EXACT));
 			}
-			msg = h.label() + done(h, " retiré") + (before != null ? ", et sa construction avec." : ".")
+			msg = h.label() + done(h, " retiré") + (built != null ? ", et sa construction avec." : ".")
 				+ (h.type() == Village.Mark.SEAT || h.type() == Village.Mark.HOUSE ? " Les suivants reculent d'un numéro." : "");
 		} else if (tool == ValcombeUi.MapTool.CENTER) {
-			v.setCenter(clicked);
+			moveCenter(v, clicked);
 			applySpawn();
 			msg = "Centre de la place posé ici.";
 		} else {
 			Village.Mark type = markOf(tool);
 			Village.Hit held = carrying.get(who);
 			Village.Hit here = v.markerAt(at, type, 0);
-			if (held != null && held.type() == type && (type == Village.Mark.ROOM
-				|| held.index() < (type == Village.Mark.SEAT ? v.seatCount() : v.houseCount()))) {
-				v.moveMarker(held, at);
+			boolean moving = held != null && held.type() == type && (type == Village.Mark.ROOM
+				|| held.index() < (type == Village.Mark.SEAT ? v.seatCount() : v.houseCount()));
+			if (moving || here == null || sneak) {
+				requireNear(v, at); // on pose ou on déplace un repère ici (prendre en main un repère lointain reste permis)
+			}
+			if (moving) {
+				moveMarker(v, held, at);
 				carrying.remove(who);
 				msg = held.label() + done(held, " déplacé") + " ici.";
 			} else if (here != null && !sneak) {
@@ -738,27 +940,29 @@ public final class McHost implements Host {
 				msg = "Maison " + v.houseCount() + (sneak ? " bâtie." : " posée.");
 			}
 		}
-		markersChanged();
+		markersChanged(before);
 		return msg;
 	}
 
 	/** Depuis l'Atelier : ajoute, déplace ou retire un repère sur le plan (x, z relatifs au centre). */
 	public String editMarker(String action, String type, int index, int dx, int dz) {
-		Village v = requireVillage();
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
-		}
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
 		Village.Mark mark = switch (type) {
-			case "siege" -> Village.Mark.SEAT;
+			case "trone", "siege" -> Village.Mark.SEAT;
 			case "maison" -> Village.Mark.HOUSE;
 			case "salle" -> Village.Mark.ROOM;
 			case "centre" -> Village.Mark.CENTER;
 			default -> throw new fr.valcombe.rules.GameException("Sorte de repère inconnue : " + type + ".");
 		};
-		if (Math.abs(dx) > 220 || Math.abs(dz) > 220) {
-			throw new fr.valcombe.rules.GameException("Ce point est trop loin de la place.");
+		if (Math.abs(dx) > Village.MAX_EXTENT || Math.abs(dz) > Village.MAX_EXTENT) {
+			throw new fr.valcombe.rules.GameException("Ce point est trop loin de la place (" + (Village.MAX_EXTENT - 8)
+				+ " blocs au plus).");
 		}
 		BlockPos at = v.groundAt(server.overworld(), v.center().getX() + dx, v.center().getZ() + dz);
+		if (!action.equals("retirer") && mark != Village.Mark.CENTER) {
+			requireNear(v, at);
+		}
 		Village.Hit h = new Village.Hit(mark, index);
 		boolean numbered = mark == Village.Mark.SEAT || mark == Village.Mark.HOUSE;
 		if (!action.equals("ajouter") && (numbered ? index < 0 || index >= (mark == Village.Mark.SEAT ? v.seatCount() : v.houseCount())
@@ -774,31 +978,60 @@ public final class McHost implements Host {
 				if (mark == Village.Mark.HOUSE) {
 					return addHouseAt(at);
 				}
-				v.moveMarker(h, at);
+				moveMarker(v, h, at);
 				msg = mark.label + " posé" + (mark == Village.Mark.ROOM ? "e." : ".");
 			}
 			case "deplacer" -> {
-				v.moveMarker(h, at);
+				moveMarker(v, h, at);
 				msg = h.label() + done(h, " déplacé") + ".";
 			}
 			case "retirer" -> {
+				// Comme la gomme en jeu : la maison ou la salle bâtie d'un clic part avec son repère.
+				var built = mark == Village.Mark.CENTER ? null : prefabs.remove(v.markerPos(h));
 				v.removeMarker(h);
-				msg = h.label() + done(h, " retiré") + ".";
+				if (built != null) {
+					built.forEach((b, s) -> server.overworld().setBlock(b, s, Clip.EXACT));
+				}
+				msg = h.label() + done(h, " retiré") + (built != null ? ", et sa construction avec." : ".");
 			}
 			default -> throw new fr.valcombe.rules.GameException("Action inconnue : " + action + ".");
 		}
 		if (mark == Village.Mark.CENTER) {
 			applySpawn();
 		}
-		markersChanged();
+		markersChanged(before);
 		return msg;
+	}
+
+	/** Depuis l'Atelier : bâtit d'un coup la maison ou la salle de convocation du repère choisi, comme l'outil tenu accroupi. */
+	public String buildAtMarker(String type, int index) {
+		Village v = requireEditable();
+		boolean room = type.equals("salle");
+		if (!room && !type.equals("maison")) {
+			throw new fr.valcombe.rules.GameException("Seules une maison et la salle de convocation se bâtissent d'un coup.");
+		}
+		if (room ? v.convocation() == null : index < 0 || index >= v.houseCount()) {
+			throw new fr.valcombe.rules.GameException("Ce repère n'existe plus : le plan vient d'être rechargé.");
+		}
+		Village.Hit h = new Village.Hit(room ? Village.Mark.ROOM : Village.Mark.HOUSE, room ? 0 : index);
+		BlockPos at = v.markerPos(h);
+		if (prefabs.containsKey(at)) {
+			throw new fr.valcombe.rules.GameException(h.label() + " est déjà bâtie : la gomme la retire avec son repère.");
+		}
+		prefabs.put(at, room ? v.buildRoomAt(server.overworld(), at) : v.buildHouseAt(server.overworld(), at));
+		markEdited();
+		return h.label() + " bâtie. La gomme la retirera avec son repère.";
 	}
 
 	/** Depuis l'Atelier : amène l'opérateur sur un repère, pour voir dans le jeu ce que montre le plan. */
 	public String visitMarker(ServerPlayer p, String type, int index) {
 		Village v = requireVillage();
+		var game = ValcombeMod.session().game();
+		if (game != null && game.seatOf(p.getScoreboardName()) >= 0) {
+			throw new fr.valcombe.rules.GameException("Vous jouez cette partie : on ne se déplace pas sur la carte en pleine partie.");
+		}
 		BlockPos at = switch (type) {
-			case "siege" -> index >= 0 && index < v.seatCount() ? v.markerPos(new Village.Hit(Village.Mark.SEAT, index)) : null;
+			case "trone", "siege" -> index >= 0 && index < v.seatCount() ? v.markerPos(new Village.Hit(Village.Mark.SEAT, index)) : null;
 			case "maison" -> index >= 0 && index < v.houseCount() ? v.markerPos(new Village.Hit(Village.Mark.HOUSE, index)) : null;
 			case "salle" -> v.convocation();
 			default -> v.center().above();
@@ -915,7 +1148,10 @@ public final class McHost implements Host {
 	 * l'Atelier la met sous son plan pour qu'on reconnaisse la place, les toits et les chemins.
 	 */
 	public byte[] topView() {
-		Village v = requireVillage();
+		return topView(requireVillage());
+	}
+
+	byte[] topView(Village v) {
 		ServerLevel level = server.overworld();
 		int r = Math.min(200, v.extent());
 		int n = 2 * r + 1;
@@ -955,8 +1191,10 @@ public final class McHost implements Host {
 
 	public String mapInfo() {
 		Village v = requireVillage();
-		return (v.isGenerated() ? "Village généré" : "Carte personnalisée") + " — place en " + v.center().toShortString()
-			+ ", " + v.seatCount() + " siège(s), " + v.houseCount() + " maison(s).";
+		return (v.libraryName().isEmpty() ? "" : "« " + v.libraryName() + " »" + (v.modified() ? " (retouchée depuis)" : "") + " — ")
+			+ (v.isGenerated() ? "village généré" : "carte faite à la main") + ", place en " + v.center().toShortString()
+			+ ", " + v.seatCount() + " trône(s), " + v.houseCount() + " maison(s), salle de convocation "
+			+ (v.convocation() != null ? "posée." : "absente.");
 	}
 
 	private java.nio.file.Path saveFile() {
@@ -1020,6 +1258,12 @@ public final class McHost implements Host {
 		return maps.load(id);
 	}
 
+	@Override
+	public String mapInPlace() {
+		// Pendant un chantier ou une remise en état, aucune carte n'est « en place » : elle est en train de changer.
+		return village != null && !village.modified() && !busy() ? village.libraryId() : "";
+	}
+
 	/** Centre par défaut d'une carte (point d'apparition du monde, au niveau du sol). */
 	public BlockPos defaultCenter() {
 		ServerLevel level = server.overworld();
@@ -1028,34 +1272,103 @@ public final class McHost implements Host {
 		return new BlockPos(spawn.getX(), y, spawn.getZ());
 	}
 
+	/** Où poser une carte chargée ou importée : à la place de l'actuelle (ou de celle qu'on a oubliée), sinon au point d'apparition. */
+	BlockPos mapCenter() {
+		return village != null ? village.center() : abandoned != null ? abandoned.center() : defaultCenter();
+	}
+
 	/** Chantiers en cours : les blocs sont posés par petits lots à chaque tick. */
 	private final BuildQueue builds = new BuildQueue();
 
 	@Override
 	public boolean busy() {
-		return builds.busy();
+		return builds.busy() || restoreAt >= 0;
 	}
 
-	private void requireFree() {
+	/** Rien ne touche à la carte pendant un chantier, ni tant que la remise en état d'après partie n'est pas faite. */
+	void requireFree() {
 		if (builds.busy()) {
 			throw new fr.valcombe.rules.GameException("Une construction est déjà en cours : attendez la fin de la barre de progression.");
 		}
+		if (restoreAt >= 0) {
+			throw new fr.valcombe.rules.GameException("La carte va être remise en état après la partie : patientez quelques secondes "
+				+ "(/vc arreter la lance tout de suite).");
+		}
 	}
 
-	/** Le plan qui rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus. */
-	BuildQueue.Plan clearPlan(BlockPos c, int radius, int below, int height) {
+	/** Raser sans rien faire tomber : ni le contenu d'un coffre, ni la torche dont le support disparaît. */
+	private static final int CLEAR_FLAGS = net.minecraft.world.level.block.Block.UPDATE_CLIENTS
+		| net.minecraft.world.level.block.Block.UPDATE_SUPPRESS_DROPS
+		| net.minecraft.world.level.block.Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
+
+	/**
+	 * La suite de blocs qui rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus.
+	 * Elle est calculée bloc à bloc : même la plus grande carte ne demande aucune mémoire.
+	 */
+	BuildQueue.Part clearPart(BlockPos c, int radius, int below, int height) {
 		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
 		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
 		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-		BuildQueue.Plan plan = new BuildQueue.Plan();
-		for (int y = -below; y < height - below; y++) {
-			for (int x = -radius; x <= radius; x++) {
-				for (int z = -radius; z <= radius; z++) {
-					plan.set(new BlockPos(c.getX() + x, c.getY() + y, c.getZ() + z), y < 0 ? stone : y == 0 ? grass : air);
+		int side = 2 * radius + 1;
+		return new BuildQueue.Part() {
+			@Override
+			int size() {
+				return side * side * height;
+			}
+
+			@Override
+			net.minecraft.world.level.block.state.BlockState at(int i, BlockPos.MutableBlockPos pos) {
+				int y = i / (side * side) - below;
+				int inLayer = i % (side * side);
+				pos.set(c.getX() - radius + inLayer / side, c.getY() + y, c.getZ() - radius + inLayer % side);
+				return y < 0 ? stone : y == 0 ? grass : air;
+			}
+
+			@Override
+			int flags() {
+				return CLEAR_FLAGS;
+			}
+		};
+	}
+
+	/** Hauteur à raser pour retirer la carte v : 28 blocs comme une carte enregistrée, davantage si une construction importée dépasse. */
+	int clearHeight(Village v) {
+		if (v.isGenerated()) {
+			return 28;
+		}
+		ServerLevel level = server.overworld();
+		int r = v.extent();
+		int top = level.getMinY();
+		for (int cx = v.center().getX() - r >> 4; cx <= v.center().getX() + r >> 4; cx++) {
+			for (int cz = v.center().getZ() - r >> 4; cz <= v.center().getZ() + r >> 4; cz++) {
+				var chunk = level.getChunk(cx, cz);
+				for (int x = 0; x < 16; x++) {
+					for (int z = 0; z < 16; z++) {
+						if (Math.abs((cx << 4) + x - v.center().getX()) <= r && Math.abs((cz << 4) + z - v.center().getZ()) <= r) {
+							top = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z));
+						}
+					}
 				}
 			}
 		}
-		return plan;
+		return Math.max(28, Math.min(SchematicImporter.MAX_HEIGHT + 10, top - v.center().getY() + 6));
+	}
+
+	/** L'éditeur de carte du mode construction (sélection, structures, annulation). */
+	private MapEditor editor;
+
+	public void setEditor(MapEditor editor) {
+		this.editor = editor;
+	}
+
+	/** Ce joueur est-il en mode construction ? */
+	boolean isBuilder(String name) {
+		return builders.contains(name);
+	}
+
+	/** Une opération de l'éditeur : posée par petits lots comme un chantier, sans toucher aux panneaux de la salle. */
+	void startEdit(String label, BuildQueue.Plan plan, Runnable done) {
+		builds.add(label, plan, done);
 	}
 
 	/** Lance un chantier ; done est appelé sur le fil du serveur quand tout est posé. */
@@ -1064,42 +1377,271 @@ public final class McHost implements Host {
 		builds.add(label, plan, done);
 	}
 
-	/** Après un changement de carte : ceux qui se trouvaient sur le chantier sont ramenés au point d'apparition. */
+	/** Changement de carte en cours (son nom), noté sur le disque : un arrêt du serveur en plein chantier se voit au redémarrage. */
+	private java.nio.file.Path buildMarker() {
+		return server.getServerDirectory().resolve("config").resolve("valcombe-chantier.txt");
+	}
+
+	private void markBuild(String label) {
+		try {
+			java.nio.file.Path f = buildMarker();
+			if (label == null) {
+				java.nio.file.Files.deleteIfExists(f);
+			} else {
+				java.nio.file.Files.createDirectories(f.getParent());
+				java.nio.file.Files.writeString(f, label);
+			}
+		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Marque de chantier non écrite", e);
+		}
+	}
+
+	/** Zone dont les chunks sont tenus chargés pendant qu'on retire une ancienne carte (ses entités doivent être là pour partir). */
+	private BlockPos holdCenter;
+	private int holdRadius;
+
+	private void holdChunks() {
+		server.overworld().getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
+			net.minecraft.world.level.ChunkPos.containing(holdCenter), holdRadius / 16 + 2);
+	}
+
+	/** Retire du monde tous les décors en entités d'une carte : scène, trônes sculptés, panneaux, présentoir, étiquettes, sièges libres. */
+	private void removeDecor() {
+		stage.clear(server);
+		List<net.minecraft.world.entity.Entity> gone = new ArrayList<>();
+		for (var e : server.overworld().getAllEntities()) {
+			var tags = e.entityTags();
+			if (tags.contains("vc_trone") || tags.contains("vc_scene") || tags.contains("valcombe_salle")
+				|| tags.contains("vc_presentoir") || tags.contains("vc_repere") || tags.contains("vc_chair")) {
+				gone.add(e);
+			}
+		}
+		gone.forEach(net.minecraft.world.entity.Entity::discard);
+		hallKey = ""; // le présentoir sera reposé dans la nouvelle salle
+	}
+
+	/**
+	 * Le seul chemin pour changer de carte, afin qu'il n'y en ait jamais deux dans le monde : l'ancienne
+	 * (en service ou oubliée) est d'abord retirée — toute son emprise, où qu'elle soit, avec ses trônes
+	 * sculptés, ses panneaux et ses étiquettes —, puis build est posé et done adopte la nouvelle.
+	 * Une ancienne carte retouchée à la main est d'abord sauvegardée dans la bibliothèque ; si cette
+	 * sauvegarde échoue, on ne touche à rien. raze = false : la nouvelle carte se déclare sur les blocs
+	 * de l'ancienne, qui restent en place. Renvoie la phrase à ajouter au message (vide le plus souvent).
+	 */
+	String replaceMap(String label, BuildQueue.Plan build, boolean raze, Runnable done) {
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
+		}
+		requireFree();
+		Village old = village != null ? village : abandoned;
+		String saved = "";
+		if (old != null && old.modified()) {
+			try {
+				if (maps == null) {
+					throw new fr.valcombe.rules.GameException("bibliothèque de cartes indisponible");
+				}
+				saved = " L'ancienne carte, retouchée à la main, est sauvegardée dans la bibliothèque : « " + maps.backup(old) + " ».";
+				mapSaved(old);
+			} catch (fr.valcombe.rules.GameException e) {
+				throw new fr.valcombe.rules.GameException("Carte non remplacée : l'actuelle a été retouchée à la main et sa sauvegarde "
+					+ "automatique a échoué (" + e.getMessage() + "). Enregistrez-la d'abord : /vc carte enregistrer <id> <nom>.");
+			}
+		}
+		BuildQueue.Plan plan = new BuildQueue.Plan();
+		if (old != null && raze) {
+			plan.first(clearPart(old.center(), old.extent(), 4, clearHeight(old)));
+			holdCenter = old.center();
+			holdRadius = old.extent();
+			holdChunks();
+		}
+		plan.then(build);
+		// Les décors de l'ancienne carte partent avant que ceux de la nouvelle n'arrivent.
+		plan.after.add(0, this::removeDecor);
+		dropSnapshot();
+		if (editor != null) {
+			editor.forgetHistory(); // on n'annule pas une opération faite sur une carte qui n'est plus là
+		}
+		markBuild(label);
+		startBuild(label, plan, () -> {
+			abandoned = null;
+			done.run();
+			markBuild(null);
+			if (old != null && raze && village != null && village != old) {
+				rescuePlayers(old); // personne ne reste sur le terrain nu de l'ancienne carte
+			}
+		});
+		return saved;
+	}
+
+	/** Ceux qui se trouvent dans l'emprise de la carte v (un chantier, une remise en état) sont ramenés au point d'apparition. */
 	private void rescuePlayers(Village v) {
-		BlockPos spot = v.spawn();
+		BlockPos spot = (village != null ? village : v).spawn();
 		int reach = v.extent() + 6;
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 			if (builders.contains(p.getScoreboardName())) {
 				continue; // un constructeur reste où il travaille
 			}
 			if (Math.abs(p.getX() - v.center().getX()) <= reach && Math.abs(p.getZ() - v.center().getZ()) <= reach) {
+				if (p.isPassenger()) {
+					p.stopRiding();
+				}
 				p.teleportTo(server.overworld(), spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, Set.of(), 180, 0, false);
 			}
 		}
 	}
 
-	/** Rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus. */
-	public void clearArea(BlockPos c, int radius, int below, int height) {
+	// ------------------------------------------------------------------
+	// Remise en état de la carte après une partie
+	// ------------------------------------------------------------------
+	/** Tick où la remise en état doit commencer ; -1 : rien en attente. */
+	private long restoreAt = -1;
+	/** La remise en état est en train de poser ses blocs. */
+	private boolean restoring;
+
+	/** L'instantané de la carte pris au lancement de la partie : il reste sur le disque tant que la carte n'est pas remise en état. */
+	private java.nio.file.Path snapshotFile() {
+		return server.getServerDirectory().resolve("config").resolve("valcombe-instantane.nbt");
+	}
+
+	private void dropSnapshot() {
+		restoreAt = -1;
+		try {
+			java.nio.file.Files.deleteIfExists(snapshotFile());
+		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Instantané de la carte non supprimé", e);
+		}
+	}
+
+	/** Une partie commence : on garde la carte telle qu'elle est, pour la rendre intacte à la fin. */
+	@Override
+	public void gameStarted() {
+		if (server == null) {
+			return;
+		}
+		dropSnapshot();
+		if (editor != null) {
+			editor.forgetHistory(); // après la partie, la carte est remise en état : plus rien à annuler
+		}
+		if (village == null) {
+			return;
+		}
+		try {
+			if (village.isGenerated() && village.convocation() == null) {
+				// Village d'avant les salles de convocation : bâtie maintenant, elle fait partie de ce qu'on garde.
+				village.buildConvocation(server.overworld());
+				village.save(server);
+			}
+			long start = System.nanoTime();
+			MapSnapshot.capture(server.overworld(), village.center(), village.extent()).write(snapshotFile());
+			ValcombeMod.LOG.info("Instantané de la carte pris en {} ms ({} Ko)", (System.nanoTime() - start) / 1_000_000,
+				java.nio.file.Files.size(snapshotFile()) / 1024);
+		} catch (java.io.IOException | RuntimeException e) {
+			ValcombeMod.LOG.warn("Instantané de la carte impossible : elle ne sera pas remise en état à la fin de la partie", e);
+		}
+	}
+
+	/** La partie est finie : la carte retrouvera son état d'avant dans delayTicks (le temps de voir les rôles révélés). */
+	@Override
+	public void restoreMap(int delayTicks) {
+		if (server == null || restoring || !java.nio.file.Files.exists(snapshotFile())) {
+			return;
+		}
+		long at = tick + Math.max(1, delayTicks);
+		if (restoreAt >= 0 && restoreAt <= at) {
+			return;
+		}
+		boolean first = restoreAt < 0;
+		restoreAt = at;
+		if (first && delayTicks >= 100) {
+			announceAll("La carte sera remise en état dans " + delayTicks / 20 + " secondes : chacun sera alors ramené "
+				+ (village != null && village.hasHall() ? "à la salle d'attente." : "sur la place."));
+		}
+	}
+
+	/** Remise en état coupée par le réglage : la carte reste comme la partie l'a laissée. */
+	@Override
+	public void keepMap() {
+		if (server != null && !restoring) {
+			dropSnapshot();
+		}
+	}
+
+	/**
+	 * Au démarrage : si le serveur s'est arrêté pendant une remise en état, ou avec une partie qui n'a pas
+	 * pu reprendre, la carte n'est pas laissée à moitié refaite : la remise en état repart.
+	 */
+	public void resumeRestore() {
+		if (server != null && ValcombeMod.session().game() == null && java.nio.file.Files.exists(snapshotFile())) {
+			ValcombeMod.LOG.info("Carte laissée en l'état par l'arrêt du serveur : sa remise en état reprend");
+			restoreAt = tick + 100;
+		}
+	}
+
+	private void startRestore() {
 		ServerLevel level = server.overworld();
-		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
-		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
-		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
-		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-		for (int x = -radius; x <= radius; x++) {
-			for (int z = -radius; z <= radius; z++) {
-				for (int y = -below; y < height - below; y++) {
-					m.set(c.getX() + x, c.getY() + y, c.getZ() + z);
-					level.setBlock(m, y < 0 ? stone : y == 0 ? grass : air, net.minecraft.world.level.block.Block.UPDATE_CLIENTS);
+		java.nio.file.Path f = snapshotFile();
+		MapSnapshot snap;
+		try {
+			snap = MapSnapshot.read(f, level);
+		} catch (java.io.IOException | RuntimeException e) {
+			ValcombeMod.LOG.error("Instantané de la carte illisible : remise en état abandonnée", e);
+			announceAll("La carte n'a pas pu être remise en état : l'instantané pris au début de la partie est illisible "
+				+ "(ou vient d'un autre monde).");
+			try {
+				java.nio.file.Files.move(f, f.resolveSibling(f.getFileName() + ".illisible"),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			} catch (java.io.IOException e2) {
+				ValcombeMod.LOG.warn("Instantané illisible non écarté", e2);
+			}
+			return;
+		}
+		Village v = village;
+		if (v == null || !v.center().equals(snap.center())) {
+			dropSnapshot(); // la carte a changé depuis : il n'y a plus rien à remettre
+			return;
+		}
+		// Ce que la partie a laissé derrière elle : scène, sièges libres, signes et bulles, objets au sol.
+		stage.clear(server);
+		List<net.minecraft.world.entity.Entity> gone = new ArrayList<>();
+		for (var e : level.getAllEntities()) {
+			for (String tag : e.entityTags()) {
+				if (tag.equals("vc_chair") || tag.startsWith("vc_signe_") || tag.startsWith("vc_bulle_")) {
+					gone.add(e);
+					break;
 				}
 			}
 		}
+		gone.forEach(net.minecraft.world.entity.Entity::discard);
+		snap.removeLoose(level);
+		announceAll("Remise en état de la carte : chacun est ramené " + (v.hasHall() ? "à la salle d'attente" : "sur la place")
+			+ " le temps que le village retrouve son état d'avant la partie.");
+		rescuePlayers(v);
+		restoring = true;
+		BuildQueue.Plan plan = snap.restorePlan(level);
+		// D'abord : même si la suite échouait, la remise en état ne doit pas rester « en cours » pour toujours.
+		plan.after.add(0, () -> {
+			restoring = false;
+			dropSnapshot();
+			lanterns = null;
+		});
+		startBuild("Remise en état de la carte", plan, () -> {
+			// Un bloc a pu revenir là où quelqu'un se tenait.
+			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+				if (p.level() == level && !p.isSpectator() && !level.noCollision(p)) {
+					BlockPos s = v.spawn();
+					p.teleportTo(level, s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
+				}
+			}
+			announceAll("La carte est remise en état.");
+		});
 	}
 
 	/** Adopte une carte (chargée ou générée) : enregistrement, salle d'attente, apparition. */
 	public void useVillage(Village v) {
 		stage.clear(server);
 		village = v;
+		abandoned = null;
+		startupWarning = null;
 		lanterns = null;
 		v.save(server);
 		if (v.hasHall()) {
@@ -1109,32 +1651,41 @@ public final class McHost implements Host {
 		rescuePlayers(v);
 		carrying.clear();
 		prefabs.clear();
+		markerUndo.clear();
+		if (editor != null) {
+			editor.forgetHistory();
+		}
 		refreshLabels();
 	}
+
+	/** Fin des messages qui lancent un chantier : valable dans le jeu comme sur la page de l'Atelier. */
+	static final String PROGRESS = " Dans le jeu, une barre en haut de l'écran suit le chantier.";
 
 	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
 	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses) {
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
-		BlockPos c = village != null ? village.center()
-			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : defaultCenter();
 		requireFree();
+		BlockPos c = village != null ? village.center()
+			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : mapCenter();
 		Village v = Village.generated(c, theme, seatCount, size, houses);
-		int old = village == null ? 0 : village.extent();
-		// Le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
-		BuildQueue.Plan plan = old > v.extent() ? clearPlan(c, old, 4, 28) : new BuildQueue.Plan();
-		plan.then(v.planBuild(server.overworld()));
-		startBuild("Construction du village", plan, () -> {
-			v.buildConvocation(server.overworld());
-			useVillage(v);
-			if (!v.hasHall()) {
-				buildHall();
-			}
+		// L'ancienne carte est retirée, puis le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
+		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, () -> {
+			adoptGenerated(v);
 			announceAll("Le village est construit : " + v.seatTotal() + " trônes, thème " + v.theme() + ".");
 		});
 		return "Construction lancée : " + v.seatTotal() + " trônes, taille " + new String[] {"petite", "normale", "grande"}[v.size()]
-			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.") + " Suivez la barre en haut de l'écran.";
+			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.") + PROGRESS + saved;
+	}
+
+	/** Le village généré v vient d'être bâti : sa salle de convocation, sa salle d'attente, et il devient la carte. */
+	private void adoptGenerated(Village v) {
+		v.buildConvocation(server.overworld());
+		useVillage(v);
+		if (!v.hasHall()) {
+			buildHall();
+		}
 	}
 
 	/**
@@ -1142,33 +1693,38 @@ public final class McHost implements Host {
 	 * sur la place ; elle devient une carte à compléter en mode construction (trônes, maisons, centre).
 	 */
 	public String importSchematic(String fileName, byte[] data) {
+		return importSchematic(fileName, data, null);
+	}
+
+	/** where : le centre voulu quand il n'y a aucune carte à remplacer (null : le point d'apparition). */
+	public String importSchematic(String fileName, byte[] data, BlockPos where) {
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
 		ServerLevel level = server.overworld();
-		int[] size = SchematicImporter.size(fileName, data, server.registryAccess().lookupOrThrow(
+		Clip clip = SchematicImporter.read(fileName, data, server.registryAccess().lookupOrThrow(
 			net.minecraft.core.registries.Registries.BLOCK));
-		BlockPos c = village != null ? village.center() : defaultCenter();
+		BlockPos c = village == null && abandoned == null && where != null ? where : mapCenter();
 		requireFree();
-		int half = Math.max(size[0], size[2]) / 2 + 2;
-		int clear = Math.max(half, village == null ? 0 : village.extent());
-		BlockPos corner = c.offset(-size[0] / 2, 0, -size[2] / 2);
-		// Le terrain est d'abord rasé par petits lots ; la construction importée est posée ensuite.
-		startBuild("Préparation du terrain", clearPlan(c, clear, 4, Math.max(28, size[1] + 6)), () -> {
-			String dims = SchematicImporter.place(level, corner, fileName, data);
+		int half = Math.max(clip.width, clip.length) / 2 + 2;
+		BlockPos corner = c.offset(-clip.width / 2, 0, -clip.length / 2);
+		// L'ancienne carte est retirée et le terrain rasé, puis la construction est posée : le tout par petits lots.
+		BuildQueue.Plan build = new BuildQueue.Plan().first(clearPart(c, half, 4, Math.max(28, clip.height + 6)))
+			.then(clip.plan(level, corner, false, false));
+		String saved = replaceMap("Import de « " + fileName + " »", build, true, () -> {
 			useVillage(Village.custom(c));
-			announceAll("Construction « " + fileName + " » importée (" + dims + "). Passez en mode construction pour poser "
+			announceAll("Construction « " + fileName + " » importée (" + clip.dims() + "). Passez en mode construction pour poser "
 				+ "les trônes, les maisons et le centre, puis enregistrez la carte.");
 		});
-		return "Import de « " + fileName + " » lancé (" + size[0] + " × " + size[1] + " × " + size[2]
-			+ " blocs) : suivez la barre en haut de l'écran.";
+		return "Import de « " + fileName + " » lancé (" + clip.dims() + " blocs)." + PROGRESS + saved;
 	}
 
 	public String setMapCenter(ServerPlayer p) {
-		Village v = requireVillage();
-		v.setCenter(p.blockPosition().below());
+		Village v = requireEditable();
+		Village.Marks before = v.marks();
+		moveCenter(v, p.blockPosition().below());
 		applySpawn();
-		markersChanged();
+		markersChanged(before);
 		return "Centre de la place posé ici.";
 	}
 
@@ -1184,23 +1740,44 @@ public final class McHost implements Host {
 			p.sendSystemMessage(Component.literal("").withStyle(ChatFormatting.GOLD), true);
 			ValcombeUi.mapTools(p, false);
 			carrying.remove(name);
+			if (editor != null) {
+				editor.forget(name);
+			}
 			refreshLabels();
-			return "Mode construction terminé. Pensez à enregistrer la carte : /vc carte enregistrer <nom>.";
+			return "Mode construction terminé. Pensez à enregistrer la carte : bouton « Enregistrer » de l'Atelier, "
+				+ "ou /vc carte enregistrer <identifiant> <nom>.";
 		}
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("Pas de construction pendant une partie.");
 		}
 		builders.add(name);
+		if (village != null && !village.modified()) {
+			// On entre ici pour bâtir : la carte est désormais tenue pour retouchée, elle ne sera pas remplacée sans sauvegarde.
+			village.setModified(true);
+			village.save(server);
+		}
 		builderModes.put(name, p.gameMode.getGameModeForPlayer());
 		p.setGameMode(GameType.CREATIVE);
 		ValcombeUi.mapTools(p, true);
 		refreshLabels();
-		return "Mode construction : construisez librement. Vous avez cinq outils : trône, maison, centre, salle de convocation "
-			+ "et gomme. Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre pour le déplacer. "
-			+ "Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup. Chaque repère porte une étiquette.";
+		return "Mode construction : construisez librement. Cinq outils de repères (trône, maison, centre, salle de convocation, "
+			+ "gomme) : clic droit pour poser, ou pour prendre un repère et le déplacer ; accroupi, maison et salle sont bâties "
+			+ "d'un coup. Outil de sélection : clic gauche et clic droit posent deux coins. Outil de structure : il pose la "
+			+ "structure choisie dans le catalogue. L'Atelier en jeu (/vc atelier jeu) réunit le catalogue, les opérations "
+			+ "sur la sélection et l'annulation.";
 	}
 
 	private void showMarkers() {
+		if (editor != null) {
+			// L'éditeur sert aussi sans carte : sa ligne d'état (sélection, structure en main) passe d'abord.
+			for (String name : builders) {
+				ServerPlayer p = player(name);
+				String status = p == null ? null : editor.status(p);
+				if (status != null) {
+					p.sendSystemMessage(Component.literal(status).withStyle(ChatFormatting.AQUA), true);
+				}
+			}
+		}
 		if (builders.isEmpty() || village == null) {
 			return;
 		}
@@ -1256,6 +1833,9 @@ public final class McHost implements Host {
 			String check = pair + seats + " trône(s) " + (seats >= 5 ? "✔" : "(5 au moins)") + " · " + houses
 				+ " maison(s)" + (houses == 0 || houses >= seats ? "" : " (moins que de trônes)")
 				+ " · salle de convocation " + (village.convocation() != null ? "✔" : "absente");
+			if (editor != null && editor.status(p) != null) {
+				continue; // un outil de l'éditeur en main : sa ligne d'état remplace la liste de contrôle
+			}
 			p.sendSystemMessage(Component.literal(check).withStyle(seats >= 5 ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
 		}
 	}
@@ -1272,24 +1852,33 @@ public final class McHost implements Host {
 		requireFree();
 		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
 		Village v = Village.generated(c, theme);
-		startBuild("Construction du village", v.planBuild(server.overworld()), () -> {
-			stage.clear(server);
-			v.buildConvocation(server.overworld());
-			v.save(server);
-			village = v;
-			lanterns = null;
-			applySpawn();
-			buildHall();
-			rescuePlayers(v);
+		// Bâti ailleurs que l'ancienne carte, le village la remplace tout de même : elle est d'abord retirée du monde.
+		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, () -> {
+			adoptGenerated(v);
 			announceAll("Le village de Valcombe (" + v.theme() + ") est construit, avec sa salle d'attente.");
 		});
-		return "Construction du village lancée : suivez la barre en haut de l'écran.";
+		return "Construction du village lancée." + PROGRESS + saved;
 	}
 
+	/**
+	 * Oublie la carte : on jouera autour du Conteur. Ses blocs ne sont pas détruits (c'est peut-être un travail
+	 * fait à la main) ; la fiche retient son emprise, et la prochaine carte bâtie la retirera du monde.
+	 */
 	public String forgetVillage() {
-		Village.forget(server);
+		if (ValcombeMod.session().game() != null) {
+			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
+		}
+		requireFree();
+		Village v = requireVillage();
+		v.saveForgotten(server);
+		stage.clear(server);
+		abandoned = v;
 		village = null;
-		return "Le village est oublié : les joueurs seront placés autour du Conteur.";
+		lanterns = null;
+		carrying.clear();
+		refreshLabels();
+		return "Le village est oublié : les joueurs seront placés autour du Conteur. Ses blocs restent en place ; "
+			+ "ils seront retirés du monde dès qu'une autre carte sera bâtie, générée ou chargée.";
 	}
 
 	/** Message à tous les joueurs connectés. */
@@ -1756,7 +2345,21 @@ public final class McHost implements Host {
 	/** Appelé à chaque tick serveur. */
 	public void onTick() {
 		tick++;
+		if (restoreAt >= 0 && tick >= restoreAt && server != null && !builds.busy() && ValcombeMod.session().game() == null) {
+			restoreAt = -1;
+			startRestore();
+		}
+		if (holdCenter != null && server != null) {
+			if (!builds.busy()) {
+				holdCenter = null;
+			} else if (tick % 20 == 0) {
+				holdChunks();
+			}
+		}
 		builds.tick(server);
+		if (editor != null) {
+			editor.tick();
+		}
 		if (tick % 10 == 0) {
 			checkPads();
 		}
@@ -1771,6 +2374,8 @@ public final class McHost implements Host {
 			if (village != null) {
 				WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + "]");
 			}
+			// Scène d'avant un redémarrage, restée dans des chunks qui n'étaient pas chargés quand on l'a retirée.
+			WorldSetup.run(server, "kill @e[tag=vc_scene,tag=!" + Stage.GEN_TAG + "]");
 			WorldSetup.run(server, "kill @e[tag=vc_presentoir,tag=!vc_pres_" + hallGen + "]");
 			WorldSetup.run(server, "kill @e[tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
 			WorldSetup.run(server, "kill @e[tag=vc_repere,tag=!vc_rep_" + (builders.isEmpty() ? -1 : labelGen) + "]");
@@ -1831,7 +2436,7 @@ public final class McHost implements Host {
 			ServerLevel level = server.overworld();
 			int n = players.size();
 			if (village.seatCount() < n) {
-				announce("Attention : la carte n'a que " + village.seatCount() + " siège(s) pour " + n + " joueurs.");
+				announce("Attention : la carte n'a que " + village.seatCount() + " trône(s) pour " + n + " joueurs.");
 			}
 			seats.clear();
 			for (int i = 0; i < n; i++) {
@@ -1921,6 +2526,9 @@ public final class McHost implements Host {
 		}
 	}
 
+	/** Il fait nuit sur la carte (lanternes à la flamme d'âme). */
+	private boolean night;
+
 	private void setupStage(Vec3 center, double handY, List<String> players, boolean lectern) {
 		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_jeton]"); // anciennes versions
 		Map<String, Stage.Spot> spots = new java.util.LinkedHashMap<>();
@@ -1936,6 +2544,7 @@ public final class McHost implements Host {
 
 	@Override
 	public void nightEffects(List<String> players, boolean night, Settings settings) {
+		this.night = night;
 		frozen = night && settings.nightFreeze;
 		if (server != null) {
 			if (night) {
@@ -1992,11 +2601,19 @@ public final class McHost implements Host {
 		nightFog(players, false, false);
 		timer(players, "", 0);
 		ghostNames.clear();
+		glowing = false;
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p != null) {
 				p.removeEffect(MobEffects.INVISIBILITY);
+				p.removeEffect(MobEffects.GLOWING);
 			}
+		}
+		if (night && server != null) {
+			// Partie arrêtée en pleine nuit : le jour et les lanternes reviennent.
+			night = false;
+			WorldSetup.day(server);
+			lights(false);
 		}
 		deadPlayers(List.of(), List.of());
 		frozen = false;

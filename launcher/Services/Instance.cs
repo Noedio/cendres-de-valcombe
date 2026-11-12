@@ -88,7 +88,7 @@ public static class Instance
                 continue;
             }
             int index = i;
-            await Http.DownloadAsync(Releases.Resolve(release, mod), target, mod.Sha512,
+            await Http.DownloadTrustedAsync(Releases.Resolve(release, mod), target, mod.Sha512,
                 new Progress<double>(p =>
                 {
                     string speed = Http.SpeedText();
@@ -120,7 +120,7 @@ public static class Instance
                 continue;
             }
             int index = i;
-            await Http.DownloadAsync(Releases.Resolve(release, e), target, e.Sha512,
+            await Http.DownloadTrustedAsync(Releases.Resolve(release, e), target, e.Sha512,
                 new Progress<double>(p =>
                 {
                     string extra = string.Join(", ", new[] { Http.SpeedText(), Http.RemainingText((long)(e.Size * (1 - p))) }

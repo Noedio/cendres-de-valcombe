@@ -134,6 +134,7 @@
 	<button data-tab="roles">Rôles</button>
 	<button data-tab="scenarios">Scénarios</button>
 	<button data-tab="cartes">Cartes</button>
+	<button data-tab="structures">Structures</button>
 	<button data-tab="partage">Partage</button>
 </nav>
 
@@ -272,7 +273,7 @@
 			<h3>Réglages</h3>
 			<div class="row">
 				<div><label>Défense de l'accusé (s)</label><input id="sDef" type="number" min="5" max="180" value="20"></div>
-				<div><label>Aiguille (s par siège)</label><input id="sHor" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
+				<div><label>Aiguille (s par trône)</label><input id="sHor" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
 				<div><label>Coiffe des morts</label><select id="sCoiffe"><option value="chapeau">Chapeau</option><option value="crane">Crâne</option><option value="aucun">Aucune</option></select></div>
 				<div><label>Discussion libre chaque jour (min)</label><input id="sDisc" type="number" min="0" max="30" value="0"></div>
 			</div>
@@ -318,7 +319,7 @@
 			</div>
 			<h3>Tester et jouer</h3>
 			<div class="bar" style="margin-top:0">
-				<label style="margin:0">Joueurs</label><input id="tJoueurs" type="number" min="5" max="16" value="8" style="width:80px">
+				<label style="margin:0">Joueurs (5 à 16)</label><input id="tJoueurs" type="number" min="5" max="16" value="8" style="width:80px">
 				<button id="simulate">Simuler 200 parties</button>
 				<button id="trial">Partie d'essai</button>
 				<button class="main" id="useSc">Choisir pour la prochaine partie</button>
@@ -365,7 +366,7 @@
 			<div class="sel" id="planSel"></div>
 			<div class="bar" id="planBar">
 				<button id="sortMarks">Renuméroter dans le sens des aiguilles d'une montre</button>
-				<button id="undoMark">Annuler la dernière pose</button>
+				<button id="undoMark">Annuler la dernière modification des repères</button>
 			</div>
 			<div class="msg" id="planMsg"></div>
 			<div class="checks" id="planChecks"></div>
@@ -380,7 +381,7 @@
 			<div class="bar"><button class="main" id="saveMap">Enregistrer</button></div>
 			<h2 style="margin-top:20px">Générer un village</h2>
 			<div class="row">
-				<div><label>Trônes</label><input id="gPlaces" type="number" min="5" max="20" value="16"></div>
+				<div><label>Trônes (5 à 20)</label><input id="gPlaces" type="number" min="5" max="20" value="16"></div>
 				<div><label>Taille</label><select id="gTaille"><option value="0">Petite</option><option value="1" selected>Normale</option><option value="2">Grande</option></select></div>
 				<div><label>Thème</label><select id="gTheme"></select></div>
 			</div>
@@ -392,10 +393,55 @@
 			<div class="bar"><button id="importSchem">Importer à la place de la carte actuelle</button></div>
 			<h2 style="margin-top:20px">Construire à la main</h2>
 			<div class="bar" style="margin-top:0">
-				<button class="main" id="buildMode">Mode construction (pour moi, dans le jeu)</button>
+				<button class="main" id="buildMode">Entrer en mode construction (pour moi, dans le jeu)</button>
+				<button id="blankMap">Nouvelle carte vide</button>
 			</div>
-			<p class="hint">Dans le jeu, <code>/vc carte construction</code> passe en créatif et donne cinq outils : trône, maison, centre, salle de convocation et gomme. Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre, puis cliquer là où le reposer. Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup (la gomme la retire avec son repère). Chaque repère porte une étiquette à son numéro, et un trait de lumière relie le trône et la maison qui vont ensemble quand on s'en approche. Tout ce que vous posez dans le jeu apparaît sur le plan, et inversement. Ensuite, enregistrez la carte ici.</p>
+			<p class="hint">Le mode construction (dans le jeu : <code>/vc carte construction</code>) passe en créatif et donne sept outils : trône, maison, centre, salle de convocation et gomme pour les repères, sélection et structure pour bâtir (onglet Structures). Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre, puis cliquer là où le reposer. Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup (la gomme la retire avec son repère). Chaque repère porte une étiquette à son numéro, et un trait de lumière relie le trône et la maison qui vont ensemble quand on s'en approche. Tout ce que vous posez dans le jeu apparaît sur le plan, et inversement. Ensuite, enregistrez la carte ici.</p>
+			<p class="hint">« Nouvelle carte vide » déclare une carte sans repères là où vous vous tenez dans le jeu (au point d'apparition si vous n'y êtes pas) : sur la carte actuelle, ses blocs sont gardés ; ailleurs, l'ancienne carte est retirée du monde.</p>
+			<h2 style="margin-top:20px">Autres actions</h2>
+			<div class="bar" style="margin-top:0">
+				<button id="hallMap">Rebâtir la salle d'attente</button>
+				<button class="danger" id="forgetMap">Oublier la carte (jouer sans carte)</button>
+			</div>
 			<div class="msg" id="mapMsg"></div>
+		</div>
+	</div>
+</section>
+
+<!-- Structures -->
+<section id="tab-structures" class="hidden">
+	<div class="cols wide">
+		<div class="card">
+			<h2>Catalogue de structures</h2>
+			<p class="hint">Des maisons, des monuments et du décor à poser sur la carte, en mode construction. « Prendre en main » met la structure dans votre main, dans le jeu : un contour montre où elle ira, clic droit la pose, accroupi + clic droit la tourne, clic gauche la retourne.</p>
+			<div id="stList"></div>
+		</div>
+		<div class="card">
+			<h2>Dans le jeu</h2>
+			<p class="hint" id="stState"></p>
+			<div class="bar" style="margin-top:0">
+				<button id="stTurn">Tourner d'un quart de tour</button>
+				<button id="stFlip">Retourner</button>
+				<button class="main" id="stPlace">Poser à mes pieds</button>
+			</div>
+			<div class="bar">
+				<button id="edUndo">Annuler la dernière opération</button>
+				<button id="edRedo">Rétablir</button>
+			</div>
+			<h2 style="margin-top:20px">Enregistrer la sélection</h2>
+			<p class="hint">Dans le jeu, l'outil « Carte : sélection » pose deux coins (clic gauche, clic droit). Tenez-vous dans la sélection à l'endroit qui devra se trouver sur le bloc visé à la pose, puis enregistrez-la ici.</p>
+			<div class="row">
+				<div><label>Nom</label><input id="stNom" maxlength="50" placeholder="La Tour du guet"></div>
+				<div><label>Identifiant</label><input id="stId" maxlength="30" placeholder="tour-du-guet"></div>
+				<div><label>Repère posé avec elle</label>
+					<select id="stMark"><option value="">Aucun</option><option value="maison">Maison (là où l'on dort)</option><option value="salle">Salle de convocation</option></select></div>
+			</div>
+			<div class="bar"><button class="main" id="stSave">Enregistrer la sélection dans le catalogue</button></div>
+			<h2 style="margin-top:20px">Importer une construction</h2>
+			<p class="hint">Un fichier <code>.schem</code>, <code>.litematic</code> ou <code>.nbt</code> (128 × 128 × 128 blocs au plus) rejoint le catalogue ; la carte n'est pas touchée.</p>
+			<input type="file" id="stFile" accept=".schem,.schematic,.litematic,.nbt">
+			<div class="bar"><button id="stImport">Ajouter au catalogue</button></div>
+			<div class="msg" id="stMsg"></div>
 		</div>
 	</div>
 </section>
@@ -405,7 +451,7 @@
 	<div class="cols">
 		<div class="card">
 			<h2>Exporter</h2>
-			<p class="hint">Un fichier <code>.valcombe</code> à envoyer à un autre hôte. Un scénario emporte ses rôles créés et sa carte.</p>
+			<p class="hint">Un fichier <code>.valcombe</code> à envoyer à un autre hôte. Un scénario emporte ses rôles créés et sa carte ; vos structures voyagent aussi.</p>
 			<div id="expList"></div>
 			<div class="bar"><button class="main" id="export">Télécharger le fichier</button></div>
 		</div>
@@ -469,14 +515,51 @@ function tokenHtml(icon, camp, big) {
 	return t;
 }
 
+/** Nombre entier d'un champ ; vide ou hors bornes, on le dit avant d'envoyer quoi que ce soit au serveur. */
+function intField(id, label, min, max) {
+	const n = parseInt($(id).value, 10);
+	if (isNaN(n) || n < min || n > max) throw new Error(label + " : de " + min + " à " + max + ".");
+	return n;
+}
+
+/** Le contenu d'un fichier, en base 64 (pour l'envoyer dans une requête). */
+async function fileB64(f) {
+	const bytes = new Uint8Array(await f.arrayBuffer());
+	let bin = "";
+	for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+	return btoa(bin);
+}
+
+/** Un chantier était en cours au dernier rafraîchissement : sa fin est annoncée, et la vue de dessus refaite. */
+let wasBusy = false;
+/** Une simulation a réussi pendant cette visite (étape « Tester » de l'accueil). */
+let simulated = false;
+
+function received(text) {
+	data = JSON.parse(text);
+	$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon")
+		+ (data.scenarioActuel ? " · scénario : « " + (data.scenarioActuelNom || data.scenarioActuel) + " »" : "");
+	for (const [id, lo, hi] of [["tJoueurs", data.joueursMin, data.joueursMax], ["gPlaces", data.tronesMin, data.tronesMax]]) {
+		$(id).min = lo;
+		$(id).max = hi;
+	}
+	if (wasBusy && !data.chantier) {
+		planView.at = 0;
+		fetchPlanView(true);
+		msg("mapMsg", "Chantier terminé : la carte est à jour.", true);
+	}
+	wasBusy = !!data.chantier;
+}
+
 async function load() {
 	try {
-		data = JSON.parse(await api("donnees"));
-		$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon") +
-			(data.scenarioActuel ? " · scénario : " + data.scenarioActuel : "");
+		received(await api("donnees"));
 		renderRoles();
-		renderScenarios();
+		// Les rôles cochés dans le scénario ouvert sont gardés, même pas encore enregistrés : seule la liste est refaite.
+		renderScenarios(false);
+		renderRolePicker(currentPicked());
 		renderMaps();
+		renderStructures();
 		renderShare();
 		renderHome();
 	} catch (e) {
@@ -534,14 +617,14 @@ function renderHome() {
 				: "Choisissez les rôles de la soirée (partez des Cendres ou des Brumes), puis les réglages et un texte d'ouverture.",
 			buttons: [["Composer un scénario", () => { go("scenarios"); editSc(null); }]] },
 		{ done: !!cur && cur.sieges >= 5, title: "3. Choisir la carte",
-			text: cur ? "Carte actuelle : " + cur.sieges + " trônes, " + cur.maisons + " maisons. " + data.cartes.length + " carte(s) dans la bibliothèque."
-				: "Aucune carte sur le serveur : générez un village ou importez une construction.",
+			text: cur ? data.carteResume + " " + data.cartes.length + " carte(s) dans la bibliothèque."
+				: "Aucune carte sur le serveur : générez un village, importez une construction ou partez d'une carte vide.",
 			buttons: [["Gérer les cartes", () => go("cartes")]] },
-		{ done: false, title: "4. Tester",
+		{ done: simulated, title: "4. Tester",
 			text: "Simulez 200 parties pour vérifier l'équilibre, ou lancez une partie d'essai avec des joueurs fictifs.",
 			buttons: [["Tester un scénario", () => go("scenarios")]] },
 		{ done: !!data.scenarioActuel, title: "5. Jouer",
-			text: data.scenarioActuel ? "Prochaine partie : « " + (data.scenarios.find(x => x.id === data.scenarioActuel) || {}).nom + " ». Lancez-la depuis le jeu."
+			text: data.scenarioActuel ? "Prochaine partie : « " + (data.scenarioActuelNom || data.scenarioActuel) + " ». Lancez-la depuis le jeu."
 				: "Choisissez le scénario de la prochaine partie (onglet Scénarios), puis lancez la partie dans le jeu.",
 			buttons: [] },
 	];
@@ -612,13 +695,12 @@ function announceEditing() {
 /** Actualisation régulière : listes, présence, journal ; les formulaires en cours ne sont pas touchés. */
 async function refresh() {
 	try {
-		data = JSON.parse(await api("donnees"));
-		$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon")
-			+ (data.scenarioActuel ? " · scénario : " + data.scenarioActuel : "");
+		received(await api("donnees"));
 		renderHome();
 		renderRoles();
 		renderScenarios(false);
 		renderMaps();
+		renderStructures();
 		renderLocks();
 	} catch (e) {
 		$("state").textContent = e.message;
@@ -1183,9 +1265,10 @@ $("simulate").onclick = async () => {
 	b.disabled = true;
 	b.textContent = "Simulation…";
 	try {
-		const r = JSON.parse(await api("simuler", { roles: currentPicked(), joueurs: parseInt($("tJoueurs").value, 10), parties: 200,
-			scenario: scForm() }));
+		const r = JSON.parse(await api("simuler", { roles: currentPicked(),
+			joueurs: intField("tJoueurs", "Joueurs", data.joueursMin, data.joueursMax), parties: 200, scenario: scForm() }));
 		$("simOut").classList.remove("hidden");
+		if (!r.probleme) { simulated = true; renderHome(); }
 		$("simRoles").innerHTML = "";
 		if (r.probleme) {
 			$("simG").style.width = "0"; $("simE").style.width = "0";
@@ -1214,7 +1297,16 @@ $("simulate").onclick = async () => {
 async function play(trial) {
 	if (!editingSc) { msg("scMsg", "Enregistrez d'abord le scénario."); return; }
 	try {
-		msg("scMsg", await api("jouer", { scenario: editingSc, essai: trial, joueurs: parseInt($("tJoueurs").value, 10) }), true);
+		const joueurs = trial ? intField("tJoueurs", "Joueurs", data.joueursMin, data.joueursMax) : 0;
+		// Un scénario lié à une autre carte que celle en place la charge à sa place : on le dit avant de le faire.
+		const sc = data.scenarios.find(x => x.id === editingSc);
+		if (sc && sc.carte && sc.carte !== data.carteEnPlace) {
+			const lib = data.cartes.find(x => x.id === sc.carte);
+			if (!confirm("Ce scénario charge la carte « " + (lib ? lib.nom : sc.carte) + " » à la place de la carte actuelle"
+				+ (data.carteActuelle && data.carteActuelle.modifiee ? " (retouchée à la main : elle sera d'abord sauvegardée dans la bibliothèque)" : "")
+				+ ". Continuer ?")) return;
+		}
+		msg("scMsg", await api("jouer", { scenario: editingSc, essai: trial, joueurs }), true);
 		load();
 	} catch (e) { msg("scMsg", e.message); }
 }
@@ -1234,7 +1326,8 @@ function renderMaps() {
 		t.textContent = m.nom;
 		const s = document.createElement("div");
 		s.className = "sub hint";
-		s.textContent = m.sieges + " trônes · " + m.maisons + " maisons · " + (m.genere ? "générée (" + m.theme + ")" : "construite")
+		s.textContent = m.sieges + " trônes · " + m.maisons + " maisons · " + (m.genere ? "village généré (" + m.theme + ")" : "faite à la main")
+			+ (data.carteActuelle && data.carteActuelle.id === m.id ? " · en place" + (data.carteActuelle.modifiee ? ", retouchée depuis" : "") : "")
 			+ " · " + Math.max(1, Math.round(m.octets / 1024)) + " Ko";
 		const bar = document.createElement("div");
 		bar.className = "bar";
@@ -1258,8 +1351,9 @@ function renderMaps() {
 		const dup = document.createElement("button");
 		dup.textContent = "Dupliquer";
 		dup.onclick = () => {
+			// Le serveur trouve un identifiant libre (« port-copie », « port-copie-2 »…), comme /vc carte copier.
 			const nom = prompt("Nom de la copie :", m.nom + " (copie)");
-			if (nom && nom.trim()) mapAction("carte/dupliquer", { id: m.id, nouvelId: slug(nom), nom: nom.trim() });
+			if (nom && nom.trim()) mapAction("carte/dupliquer", { id: m.id, nom: nom.trim() });
 		};
 		load_.disabled = data.partieEnCours || data.chantier;
 		bar.append(see, load_, ren, dup, del);
@@ -1268,10 +1362,22 @@ function renderMaps() {
 	}
 	renderPlan();
 	const cur = data.carteActuelle;
-	$("curMap").textContent = (cur ? "Carte actuelle : " + cur.sieges + " trônes, " + cur.maisons + " maisons"
-		+ (cur.genere ? ", village généré (" + cur.theme + ")." : ", construite à la main.") : "Aucune carte sur le serveur.")
-		+ (data.chantier ? " Un chantier est en cours dans le jeu : la carte change dès qu'il est fini." : "");
-	for (const id of ["genMap", "importSchem"]) $(id).disabled = !!data.chantier;
+	$("curMap").textContent = data.carteResume
+		+ (data.chantier ? " Un chantier est en cours : la carte change dès qu'il est fini." : "");
+	// Pendant un chantier ou une partie, rien de ce qui change la carte n'est proposé.
+	const locked = !!data.chantier || !!data.partieEnCours;
+	for (const id of ["genMap", "importSchem", "saveMap", "blankMap", "hallMap", "forgetMap"]) $(id).disabled = locked;
+	$("saveMap").disabled = locked || !cur;
+	$("hallMap").disabled = locked || !cur;
+	$("forgetMap").disabled = locked || !cur;
+	$("buildMode").textContent = data.constructeur ? "Quitter le mode construction" : "Entrer en mode construction (pour moi, dans le jeu)";
+	$("buildMode").disabled = !data.enJeu || (!!data.partieEnCours && !data.constructeur);
+	$("buildMode").title = data.enJeu ? "" : "Connectez-vous au jeu : le mode construction se passe là-bas.";
+	// La carte actuelle vient de la bibliothèque : son nom et son identifiant sont proposés pour l'enregistrer de nouveau.
+	if (cur && cur.id && !$("mNom").value && !$("mId").value) {
+		$("mNom").value = cur.nom;
+		$("mId").value = cur.id;
+	}
 	const th = $("gTheme");
 	if (!th.options.length) for (const t of data.themes) th.add(new Option(t, t));
 }
@@ -1396,21 +1502,11 @@ function renderPlan(noFetch) {
 	add("text", { x: 0, y: -span / 2 + 6 / planZoom, "text-anchor": "middle", "font-size": 6 / planZoom, fill: "#b8a68a" }, "N");
 	renderPlanSel(m, editable);
 	// Liste de contrôle : ce qu'il faut pour jouer sur cette carte.
-	const far = seats.filter(s => Math.max(Math.abs(s[0]), Math.abs(s[2])) > r).length;
-	const near = seats.some((a, i) => seats.some((b, j) => j > i && Math.hypot(a[0] - b[0], a[2] - b[2]) < 1.5));
-	const checks = [
-		[seats.length >= 5, seats.length + " trône(s)" + (seats.length >= 5 ? " : on peut y jouer jusqu'à " + Math.min(16, seats.length) + " sans se partager un trône" : " : il en faut au moins 5")],
-		[houses.length === 0 || houses.length >= seats.length, houses.length === 0 ? "Aucune maison : la nuit, chacun reste sur son trône"
-			: houses.length + " maison(s)" + (houses.length >= seats.length ? "" : " : moins que de trônes, certains dormiront à plusieurs")],
-		[!!m.plan.salle, m.plan.salle ? "Salle de convocation posée : le Conteur peut y recevoir chaque joueur à l'écart"
-			: "Pas de salle de convocation : le Conteur remettra les rôles sur place, en vocal privé"],
-		[far === 0, far === 0 ? "Tous les trônes sont dans la zone enregistrée" : far + " trône(s) hors de la zone enregistrée"],
-		[!near, near ? "Deux trônes sont posés presque au même endroit" : "Aucun trône en double"],
-	];
-	for (const [ok, text] of checks) {
+	// La liste est faite par le serveur : la même que dans l'écran de l'Atelier en jeu.
+	for (const c of m.controle || []) {
 		const d = document.createElement("div");
-		d.className = ok ? "ok" : "no";
-		d.textContent = (ok ? "✔ " : "⚠ ") + text;
+		d.className = c.ok ? "ok" : "no";
+		d.textContent = (c.ok ? "✔ " : "⚠ ") + c.texte;
 		$("planChecks").appendChild(d);
 	}
 	if (lib) {
@@ -1441,11 +1537,18 @@ function renderPlanSel(m, editable) {
 		: "Salle de convocation : le Conteur y reçoit un joueur à l'écart, pour lui remettre et lui expliquer son rôle.";
 	const bar = document.createElement("div");
 	bar.className = "bar";
-	if (!shownMap) {
+	if (!shownMap && !data.partieEnCours && data.enJeu) {
 		const go = document.createElement("button");
 		go.textContent = "Aller le voir dans le jeu";
 		go.onclick = () => planAction("carte/aller", { type: s.type, index: s.index });
 		bar.appendChild(go);
+	}
+	if (editable && (s.type === "maison" || s.type === "salle")) {
+		// Comme l'outil tenu accroupi dans le jeu : la maison ou la salle est bâtie d'un coup sur son repère.
+		const build = document.createElement("button");
+		build.textContent = s.type === "maison" ? "Bâtir une maison ici" : "Bâtir la salle ici";
+		build.onclick = () => planAction("carte/batir", { type: s.type, index: s.index });
+		bar.appendChild(build);
 	}
 	if (editable && s.type !== "centre") {
 		const del = document.createElement("button");
@@ -1557,28 +1660,159 @@ async function mapAction(path, body, question) {
 }
 
 $("mNom").oninput = () => { $("mId").value = slug($("mNom").value); };
+/** Ce qu'il advient de la carte actuelle quand une autre la remplace. */
+function replaceNote() {
+	const cur = data.carteActuelle;
+	return !cur ? "" : cur.modifiee ? " La carte actuelle, retouchée à la main, sera d'abord sauvegardée dans la bibliothèque."
+		: " La carte actuelle sera retirée du monde.";
+}
 $("importSchem").onclick = async () => {
 	const f = $("impSchem").files[0];
 	if (!f) { msg("mapMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
-	if (!confirm("Remplacer la carte actuelle par « " + f.name + " » ? (Enregistrez-la d'abord si vous y tenez.)")) return;
-	const bytes = new Uint8Array(await f.arrayBuffer());
-	let bin = "";
-	for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-	await mapAction("carte/importer", { fichier: f.name, donnees: btoa(bin) });
+	if (!confirm("Importer « " + f.name + " » comme nouvelle carte ?" + replaceNote())) return;
+	await mapAction("carte/importer", { fichier: f.name, donnees: await fileB64(f) });
 };
 $("buildMode").onclick = () => mapAction("construction", "");
 $("undoMark").onclick = () => planAction("carte/annuler", "");
-$("saveMap").onclick = () => mapAction("carte/enregistrer", { id: $("mId").value.trim(), nom: $("mNom").value.trim() });
-$("genMap").onclick = () => mapAction("carte/generer", {
-	places: parseInt($("gPlaces").value, 10), taille: parseInt($("gTaille").value, 10),
-	theme: $("gTheme").value, maisons: $("gMaisons").checked,
-}, "Remplacer la carte actuelle par un village généré ? (Enregistrez-la d'abord si vous y tenez.)");
+$("saveMap").onclick = () => {
+	const id = $("mId").value.trim();
+	const known = data.cartes.find(x => x.id === id);
+	mapAction("carte/enregistrer", { id, nom: $("mNom").value.trim() },
+		known ? "Une carte est déjà rangée sous l'identifiant « " + id + " » (« " + known.nom + " ») : la remplacer ?" : undefined);
+};
+$("genMap").onclick = () => {
+	try {
+		mapAction("carte/generer", {
+			places: intField("gPlaces", "Trônes", data.tronesMin, data.tronesMax), taille: parseInt($("gTaille").value, 10),
+			theme: $("gTheme").value, maisons: $("gMaisons").checked,
+		}, "Générer un village ?" + replaceNote());
+	} catch (e) { msg("mapMsg", e.message); }
+};
+$("blankMap").onclick = () => mapAction("carte/nouvelle", "", "Déclarer une carte vide là où vous vous tenez dans le jeu "
+	+ "(au point d'apparition si vous n'y êtes pas) ? Sur la carte actuelle, ses blocs sont gardés et seuls les repères repartent de zéro."
+	+ (data.carteActuelle && data.carteActuelle.modifiee ? " Elle sera d'abord sauvegardée dans la bibliothèque." : ""));
+$("hallMap").onclick = () => mapAction("carte/salle", "");
+$("forgetMap").onclick = () => mapAction("carte/oublier", "", "Oublier la carte ? On jouera autour du Conteur. Ses blocs restent en place "
+	+ "jusqu'à ce qu'une autre carte soit posée.");
+
+// ---------------------------------------------------------------- Structures
+const SHELVES = [["maisons", "Maisons et salles"], ["place", "Pour la place"], ["decor", "Décor"], ["perso", "Vos structures"]];
+let structuresShown = "";
+
+function renderStructures() {
+	const ed = data.editeur || {};
+	const sel = ed.selection ? "sélection de " + ed.selection.join(" × ") : "aucune sélection";
+	const held = ed.structure ? (data.structures.find(x => x.id === ed.structure) || { nom: ed.structure }).nom : null;
+	$("stState").textContent = !data.enJeu ? "Connectez-vous au jeu : l'éditeur agit là où vous vous trouvez."
+		: !ed.construction ? "Vous n'êtes pas en mode construction : « Prendre en main » vous y fera entrer."
+		: "Mode construction — " + sel + (ed.pressePapiers ? ", une copie en mémoire" : "") + ". "
+			+ (held ? "En main : « " + held + " »" + (ed.orientation ? " (" + ed.orientation + ")" : "") + "." : "Aucune structure en main.");
+	for (const id of ["stTurn", "stFlip", "stPlace"]) $(id).disabled = !held;
+	$("edUndo").textContent = "Annuler la dernière opération" + (ed.annulables ? " (" + ed.annulables + ")" : "");
+	$("edUndo").disabled = !ed.annulables;
+	$("edRedo").disabled = !ed.retablissables;
+	$("stSave").disabled = !ed.selection;
+	// La liste n'est refaite que si le catalogue a changé : un rafraîchissement ne défait pas un clic en cours.
+	const key = JSON.stringify(data.structures) + "|" + ed.structure;
+	if (key === structuresShown) return;
+	structuresShown = key;
+	const box = $("stList");
+	box.innerHTML = "";
+	for (const [shelf, title] of SHELVES) {
+		const items = data.structures.filter(x => x.categorie === shelf);
+		const h = document.createElement("div");
+		h.className = "camp";
+		h.textContent = title;
+		box.appendChild(h);
+		if (!items.length) {
+			const p = document.createElement("p");
+			p.className = "hint";
+			p.textContent = "Aucune pour l'instant : enregistrez une sélection ou importez un fichier.";
+			box.appendChild(p);
+		}
+		const list = document.createElement("div");
+		list.className = "list";
+		for (const s of items) {
+			const c = document.createElement("div");
+			c.className = "card";
+			c.style.padding = "8px 10px";
+			const t = document.createElement("div");
+			t.textContent = s.nom + (ed.structure === s.id ? "  ★ en main" : "");
+			const sub = document.createElement("div");
+			sub.className = "sub hint";
+			sub.textContent = s.taille.join(" × ") + " · " + s.blocs + " blocs"
+				+ (s.repere === "maison" ? " · pose un repère de maison" : s.repere === "salle" ? " · pose la salle de convocation" : "")
+				+ (s.fournie ? "" : " · " + s.id);
+			const bar = document.createElement("div");
+			bar.className = "bar";
+			const take = document.createElement("button");
+			take.textContent = "Prendre en main";
+			take.onclick = async () => {
+				// La pose se fait en mode construction : on y entre au besoin.
+				try {
+					if (!data.constructeur) await api("construction", "");
+					msg("stMsg", await api("structure/prendre", s.id), true);
+				} catch (e) { msg("stMsg", e.message); }
+				load();
+			};
+			bar.appendChild(take);
+			if (!s.fournie) {
+				const ren = document.createElement("button");
+				ren.textContent = "Renommer";
+				ren.onclick = () => {
+					const nom = prompt("Nouveau nom de la structure :", s.nom);
+					if (nom && nom.trim()) structAction("structure/renommer", { id: s.id, nom: nom.trim() });
+				};
+				const mark = document.createElement("button");
+				mark.textContent = "Repère : " + (s.repere || "aucun");
+				mark.title = "Le repère posé avec la structure : aucun, maison, salle de convocation";
+				mark.onclick = () => structAction("structure/repere",
+					{ id: s.id, repere: s.repere === "" ? "maison" : s.repere === "maison" ? "salle" : "aucun" });
+				const del = document.createElement("button");
+				del.className = "danger";
+				del.textContent = "Supprimer";
+				del.onclick = () => structAction("structure/supprimer", s.id, "Supprimer « " + s.nom + " » du catalogue ?");
+				bar.append(ren, mark, del);
+			}
+			c.append(t, sub, bar);
+			list.appendChild(c);
+		}
+		box.appendChild(list);
+	}
+}
+
+async function structAction(path, body, question) {
+	if (question && !confirm(question)) return;
+	try {
+		msg("stMsg", await api(path, body), true);
+	} catch (e) { msg("stMsg", e.message); }
+	load();
+}
+
+$("stTurn").onclick = () => structAction("structure/tourner", "");
+$("stFlip").onclick = () => structAction("structure/retourner", "");
+$("stPlace").onclick = () => structAction("structure/poser", "");
+$("edUndo").onclick = () => structAction("edition/annuler", "");
+$("edRedo").onclick = () => structAction("edition/retablir", "");
+$("stNom").oninput = () => { $("stId").value = slug($("stNom").value); };
+$("stSave").onclick = () => {
+	const id = $("stId").value.trim();
+	const known = data.structures.find(x => x.id === id);
+	structAction("structure/enregistrer", { id, nom: $("stNom").value.trim() || id, repere: $("stMark").value },
+		known ? "Une structure porte déjà l'identifiant « " + id + " » (« " + known.nom + " ») : la remplacer ?" : undefined);
+};
+$("stImport").onclick = async () => {
+	const f = $("stFile").files[0];
+	if (!f) { msg("stMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
+	structAction("structure/importer", { fichier: f.name, donnees: await fileB64(f) });
+};
 
 // ---------------------------------------------------------------- Partage
 function renderShare() {
 	const box = $("expList");
 	box.innerHTML = "";
-	const groups = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes]];
+	const groups = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes],
+		["structures", "Structures", data.structures.filter(x => !x.fournie)]];
 	for (const [key, title, items] of groups) {
 		const h = document.createElement("div");
 		h.className = "camp";
@@ -1606,7 +1840,7 @@ function renderShare() {
 $("export").onclick = async () => {
 	const pick = k => [...document.querySelectorAll("#expList input:checked")].filter(i => i.dataset.kind === k).map(i => i.value).join(",");
 	const q = "roles=" + encodeURIComponent(pick("roles")) + "&scenarios=" + encodeURIComponent(pick("scenarios"))
-		+ "&cartes=" + encodeURIComponent(pick("cartes"));
+		+ "&cartes=" + encodeURIComponent(pick("cartes")) + "&structures=" + encodeURIComponent(pick("structures"));
 	try {
 		const r = await api("exporter?" + q, undefined, true);
 		const blob = await r.blob();

@@ -182,7 +182,7 @@ public final class ScenarioDef {
 			return "Accusations par jour : de 0 (sans limite) à 20.";
 		}
 		if (reglages.defense < 5 || reglages.defense > 180 || reglages.horloge < 0.5 || reglages.horloge > 5) {
-			return "Réglages hors limites : défense de 5 à 180 s, aiguille de 0,5 à 5 s par siège.";
+			return "Réglages hors limites : défense de 5 à 180 s, aiguille de 0,5 à 5 s par trône.";
 		}
 		if (regles.discussionMinutes < 0 || regles.discussionMinutes > 30) {
 			return "Discussion libre : de 0 à 30 minutes.";

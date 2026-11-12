@@ -31,6 +31,9 @@ import net.minecraft.world.phys.Vec3;
 public final class Village {
 	/** Trônes d'un village généré par défaut. */
 	public static final int SEATS = 16;
+	/** Nombre de trônes d'un village généré : les mêmes bornes pour la commande, l'écran en jeu et la page web. */
+	public static final int MIN_SEATS = 5;
+	public static final int MAX_SEATS = 20;
 	/** Version du plan du village généré : un village plus ancien est reconstruit au démarrage. */
 	public static final int LAYOUT = 3;
 	private static final int ROAD_WIDTH = 3;
@@ -65,20 +68,38 @@ public final class Village {
 		return angle(0, seatTotal) + Math.PI / seatTotal;
 	}
 
-	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer. */
+	/** Plus grande étendue d'une carte (voir MapStore) : au-delà, on ne saurait ni l'enregistrer ni la raser sans figer le serveur. */
+	public static final int MAX_EXTENT = 200;
+
+	/** Rayon qu'il faut à la carte pour contenir ce repère (8 blocs de marge autour). */
+	private int reach(BlockPos b) {
+		return (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8;
+	}
+
+	/** Ce point est-il assez près de la place pour porter un repère ? */
+	public boolean reachable(BlockPos b) {
+		return reach(b) <= MAX_EXTENT;
+	}
+
+	/** Rayon que demandent les repères d'une carte faite à la main, sans plafond. */
+	public int farthest() {
+		int r = 12;
+		for (BlockPos b : seats) {
+			r = Math.max(r, reach(b));
+		}
+		for (BlockPos b : houses) {
+			r = Math.max(r, reach(b));
+		}
+		if (convocation != null) {
+			r = Math.max(r, reach(convocation));
+		}
+		return r;
+	}
+
+	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer ou le retirer. */
 	public int extent() {
 		if (!generated) {
-			int r = 12;
-			for (BlockPos b : seats) {
-				r = Math.max(r, (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8);
-			}
-			for (BlockPos b : houses) {
-				r = Math.max(r, (int) Math.ceil(Math.hypot(b.getX() - center.getX(), b.getZ() - center.getZ())) + 8);
-			}
-			if (convocation != null) {
-				r = Math.max(r, (int) Math.ceil(Math.hypot(convocation.getX() - center.getX(), convocation.getZ() - center.getZ())) + 8);
-			}
-			return r;
+			return Math.min(MAX_EXTENT, farthest());
 		}
 		return Math.max(hall ? hallDistance + 12 : clearRadius, convocation != null ? clearRadius + ROOM_GAP + 8 : 0);
 	}
@@ -111,13 +132,31 @@ public final class Village {
 		List<int[]> seats = new ArrayList<>();
 		List<int[]> houses = new ArrayList<>();
 		int[] convocation;
+		/** Retouchée à la main depuis son dernier enregistrement dans la bibliothèque (absent : fiche d'avant ce suivi). */
+		Boolean modified;
+		/** Carte oubliée (/vc carte oublier) : ses blocs sont encore dans le monde, mais on ne joue plus dessus. */
+		boolean forgotten;
+		/** Carte de la bibliothèque dont celle-ci vient : identifiant et nom (absents : aucune). */
+		String carte;
+		String carteNom;
 	}
+
+	/**
+	 * Numéro de la prochaine génération de décors : jamais deux villages avec la même, même après un
+	 * redémarrage, sinon les trônes sculptés d'un ancien village échapperaient à la purge.
+	 */
+	private static final java.util.concurrent.atomic.AtomicInteger NEXT_GEN =
+		new java.util.concurrent.atomic.AtomicInteger((int) (System.currentTimeMillis() / 1000 & 0x3FFFFFFF));
 
 	private BlockPos center;
 	private final boolean generated;
 	private int layout = LAYOUT;
 	/** Génération des décors en entités (trônes 3D) : les anciennes générations sont retirées. */
-	private int decorGen = 1;
+	private int decorGen = NEXT_GEN.addAndGet(4);
+	/** La carte a été retouchée à la main et pas enregistrée depuis : on ne la remplace pas sans la sauvegarder. */
+	private boolean modified;
+	private String libraryId = "";
+	private String libraryName = "";
 	private boolean hall;
 	private String theme = "gothique";
 	private final List<BlockPos> seats = new ArrayList<>();
@@ -221,7 +260,54 @@ public final class Village {
 	}
 
 	public static Village custom(BlockPos center) {
-		return new Village(center, false);
+		Village v = new Village(center, false);
+		v.modified = true; // une carte faite à la main n'existe nulle part ailleurs tant qu'elle n'est pas enregistrée
+		return v;
+	}
+
+	public boolean modified() {
+		return modified;
+	}
+
+	/** La carte vient d'être retouchée à la main (true) ou enregistrée dans la bibliothèque (false). */
+	public void setModified(boolean modified) {
+		this.modified = modified;
+	}
+
+	/** Identifiant de la carte de la bibliothèque dont celle-ci vient (chargée ou enregistrée), ou chaîne vide. */
+	public String libraryId() {
+		return libraryId;
+	}
+
+	/** Nom de cette carte dans la bibliothèque, ou chaîne vide. */
+	public String libraryName() {
+		return libraryName;
+	}
+
+	/** La carte vient d'être chargée de la bibliothèque, ou d'y être enregistrée, sous cet identifiant. */
+	public void setLibrary(String id, String name) {
+		libraryId = id == null ? "" : id;
+		libraryName = name == null ? "" : name;
+	}
+
+	/** Les repères d'une carte à un instant donné, pour revenir sur la dernière modification. */
+	public record Marks(BlockPos center, List<BlockPos> seats, List<BlockPos> houses, BlockPos convocation) {
+	}
+
+	public Marks marks() {
+		return new Marks(center, List.copyOf(seats), List.copyOf(houses), convocation);
+	}
+
+	/** Remet les repères tels qu'ils étaient (le centre d'un village généré, lui, ne bouge jamais). */
+	public void restore(Marks m) {
+		if (!generated) {
+			center = m.center();
+		}
+		seats.clear();
+		seats.addAll(m.seats());
+		houses.clear();
+		houses.addAll(m.houses());
+		convocation = m.convocation();
 	}
 
 	public BlockPos center() {
@@ -284,31 +370,12 @@ public final class Village {
 		return houses.size();
 	}
 
-	/** Ordre des repères posés à la main (S : trône, M : maison), pour annuler le dernier. */
-	private final List<Character> placed = new ArrayList<>();
-
 	public void addSeat(BlockPos p) {
 		seats.add(p);
-		placed.add('S');
 	}
 
 	public void addHouse(BlockPos p) {
 		houses.add(p);
-		placed.add('M');
-	}
-
-	/** Annule le dernier repère posé ; renvoie ce qui a été retiré (« trône », « maison »), ou null. */
-	public String undoLast() {
-		while (!placed.isEmpty()) {
-			char last = placed.remove(placed.size() - 1);
-			if (last == 'S' && removeLastSeat()) {
-				return "trône";
-			}
-			if (last == 'M' && removeLastHouse()) {
-				return "maison";
-			}
-		}
-		return null;
 	}
 
 	public boolean removeLastSeat() {
@@ -410,7 +477,6 @@ public final class Village {
 		});
 		seats.sort(turn);
 		houses.sort(turn);
-		placed.clear();
 	}
 
 	/** Un endroit où tenir debout, deux blocs plus loin que p (au nord d'abord), ou p lui-même. */
@@ -555,8 +621,24 @@ public final class Village {
 	/** Pavillon de 19 x 15 relié à la place par une allée pavée. */
 	public void buildHall(ServerLevel level) {
 		int[] h = hallCenter();
-		int hx = h[0];
-		int hz = h[1];
+		pavilion(level, h[0], h[1]);
+		BlockState air = Blocks.AIR.defaultBlockState();
+		// Allée vers la place
+		for (int r = plazaRadius + ROAD_WIDTH; r < hallDistance - 6; r++) {
+			int x = (int) Math.round(r * Math.cos(hallAngle()));
+			int z = (int) Math.round(r * Math.sin(hallAngle()));
+			for (int w = -1; w <= 1; w++) {
+				set(level, x + w, 0, z, Blocks.COBBLESTONE.defaultBlockState());
+				for (int y = 1; y <= 3; y++) {
+					set(level, x + w, y, z, air);
+				}
+			}
+		}
+		hall = true;
+	}
+
+	/** Le pavillon de la salle d'attente, centré en (hx, hz) : murs, toit, lanternes et dalles. */
+	private void pavilion(ServerLevel level, int hx, int hz) {
 		BlockState air = Blocks.AIR.defaultBlockState();
 		for (int x = -11; x <= 11; x++) {
 			for (int z = -9; z <= 9; z++) {
@@ -598,18 +680,6 @@ public final class Village {
 		}
 		set(level, hx - 6, 0, hz, Blocks.REDSTONE_BLOCK.defaultBlockState());
 		set(level, hx, 0, hz - 5, Blocks.CRYING_OBSIDIAN.defaultBlockState());
-		// Allée vers la place
-		for (int r = plazaRadius + ROAD_WIDTH; r < hallDistance - 6; r++) {
-			int x = (int) Math.round(r * Math.cos(hallAngle()));
-			int z = (int) Math.round(r * Math.sin(hallAngle()));
-			for (int w = -1; w <= 1; w++) {
-				set(level, x + w, 0, z, Blocks.COBBLESTONE.defaultBlockState());
-				for (int y = 1; y <= 3; y++) {
-					set(level, x + w, y, z, air);
-				}
-			}
-		}
-		hall = true;
 	}
 
 	/** Efface la salle d'attente de l'ancien plan (plus proche de la place), avant reconstruction. */
@@ -697,15 +767,131 @@ public final class Village {
 		int hz = feet.getZ() - center.getZ();
 		int index = houses.size();
 		return buildNow(level, feet.getY() - 1 - center.getY(), () -> {
-			for (int x = -HOUSE_HALF - 1; x <= HOUSE_HALF + 1; x++) {
-				for (int z = -HOUSE_HALF - 1; z <= HOUSE_HALF + 1; z++) {
-					for (int y = 1; y <= 10; y++) {
-						set(level, hx + x, y, hz + z, Blocks.AIR.defaultBlockState());
-					}
-				}
-			}
+			houseAir(level, hx, hz);
 			house(level, hx, hz, index, palette(theme));
 		});
+	}
+
+	/** Dégage le volume d'une maison (toit qui déborde compris) avant de la bâtir. */
+	private void houseAir(ServerLevel level, int hx, int hz) {
+		for (int x = -HOUSE_HALF - 1; x <= HOUSE_HALF + 1; x++) {
+			for (int z = -HOUSE_HALF - 1; z <= HOUSE_HALF + 1; z++) {
+				for (int y = 1; y <= 10; y++) {
+					set(level, hx + x, y, hz + z, Blocks.AIR.defaultBlockState());
+				}
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Constructions du catalogue (voir StructureStore)
+	// ------------------------------------------------------------------
+	/**
+	 * Une construction du catalogue, faite des morceaux du village généré : ses blocs sont rangés dans un
+	 * plan autour de l'origine (le bloc visé est en y = 0, les pieds en y = 1). Rien n'est posé ici.
+	 */
+	static BuildQueue.Plan prefab(String kind, String theme, int variant) {
+		Village v = new Village(BlockPos.ZERO, false);
+		v.theme = theme;
+		Palette p = palette(theme);
+		BuildQueue.Plan plan = new BuildQueue.Plan();
+		v.plan = plan;
+		switch (kind) {
+			case "maison" -> {
+				v.houseAir(null, 0, 0);
+				v.house(null, 0, 0, variant, p);
+			}
+			case "salle" -> v.room(null, 0, 0, p);
+			case "pavillon" -> v.pavilion(null, 0, 0);
+			case "monument" -> v.centerpiece(null, p);
+			case "etal" -> v.stall(null, 0, 0, variant);
+			case "arbre" -> v.tree(null, 0, 0, p, p.hedge().defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
+			case "simples" -> v.herbBed(null, 0, 0);
+			case "tonneaux" -> v.cargo(null, 0, 0, p);
+			case "lampadaire" -> v.lamp(p);
+			case "estrade" -> v.dais(p);
+			case "fontaine" -> v.fountain(p);
+			case "banc" -> v.bench();
+			case "arche" -> v.arch(p);
+			default -> throw new IllegalArgumentException("Construction inconnue : " + kind);
+		}
+		return plan;
+	}
+
+	/** Lampadaire : une lanterne sur son poteau. */
+	private void lamp(Palette p) {
+		set(null, 0, 1, 0, p.post().defaultBlockState());
+		set(null, 0, 2, 0, p.post().defaultBlockState());
+		set(null, 0, 3, 0, p.light().defaultBlockState());
+	}
+
+	/** Estrade : un plancher surélevé de 7 × 4, trois marches devant, un pupitre, deux lanternes au fond. */
+	private void dais(Palette p) {
+		Block steps = switch (theme) {
+			case "monastere" -> Blocks.TUFF_BRICK_STAIRS;
+			case "port" -> Blocks.PRISMARINE_BRICK_STAIRS;
+			default -> Blocks.STONE_BRICK_STAIRS;
+		};
+		for (int x = -3; x <= 3; x++) {
+			for (int z = -2; z <= 1; z++) {
+				set(null, x, 1, z, p.seatFloor().defaultBlockState());
+				for (int y = 2; y <= 5; y++) {
+					set(null, x, y, z, Blocks.AIR.defaultBlockState());
+				}
+			}
+		}
+		for (int x = -1; x <= 1; x++) {
+			set(null, x, 1, 2, steps.defaultBlockState().setValue(StairBlock.FACING, Direction.NORTH));
+		}
+		set(null, 0, 2, -1, Blocks.LECTERN.defaultBlockState().setValue(net.minecraft.world.level.block.LecternBlock.FACING, Direction.SOUTH));
+		for (int x : new int[] {-3, 3}) {
+			set(null, x, 2, -2, p.post().defaultBlockState());
+			set(null, x, 3, -2, p.post().defaultBlockState());
+			set(null, x, 4, -2, p.light().defaultBlockState());
+		}
+	}
+
+	/** Fontaine : un bassin de 5 × 5 et, au milieu, une lanterne sur sa colonne. */
+	private void fountain(Palette p) {
+		for (int x = -2; x <= 2; x++) {
+			for (int z = -2; z <= 2; z++) {
+				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
+				set(null, x, 0, z, p.well().defaultBlockState());
+				set(null, x, 1, z, rim ? p.well().defaultBlockState() : Blocks.WATER.defaultBlockState());
+			}
+		}
+		set(null, 0, 1, 0, p.well().defaultBlockState());
+		set(null, 0, 2, 0, p.rim().defaultBlockState());
+		set(null, 0, 3, 0, p.light().defaultBlockState());
+	}
+
+	/** Banc : trois marches de bois côte à côte. */
+	private void bench() {
+		for (int x = -1; x <= 1; x++) {
+			set(null, x, 1, 0, Blocks.SPRUCE_STAIRS.defaultBlockState().setValue(StairBlock.FACING, Direction.NORTH));
+		}
+	}
+
+	/** Arche : deux piliers, un linteau, une lanterne suspendue. */
+	private void arch(Palette p) {
+		for (int x : new int[] {-2, 2}) {
+			for (int y = 1; y <= 4; y++) {
+				set(null, x, y, 0, p.pillar().defaultBlockState());
+			}
+		}
+		for (int x = -2; x <= 2; x++) {
+			set(null, x, 5, 0, p.roof().defaultBlockState());
+		}
+		for (int x = -1; x <= 1; x++) {
+			for (int y = 1; y <= 4; y++) {
+				set(null, x, y, 0, Blocks.AIR.defaultBlockState());
+			}
+		}
+		BlockState light = p.light().defaultBlockState();
+		if (light.hasProperty(net.minecraft.world.level.block.LanternBlock.HANGING)) {
+			light = light.setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true);
+		}
+		set(null, 0, 4, 0, light);
 	}
 
 	/** Bâtit une salle de convocation close autour de ces pieds ; renvoie les blocs d'avant. */
@@ -1084,18 +1270,36 @@ public final class Village {
 		if (level.getServer() == null) {
 			return;
 		}
-		Vec3 f = new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5);
-		String summon = String.format(java.util.Locale.ROOT,
-			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_trone\",\"vc_tr_%d\"],Rotation:[%.1ff,0f],"
-				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:trone\"}},"
-				+ "view_range:2f,transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],"
-				+ "right_rotation:[0f,0f,0f,1f],scale:[1.15f,1.15f,1.15f]}}",
-			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f));
+		String summon = throneDisplay(new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5));
 		MinecraftServer server = level.getServer();
 		if (plan != null) {
 			plan.after.add(() -> WorldSetup.run(server, summon)); // le trône sculpté attend que son estrade soit posée
 		} else {
 			WorldSetup.run(server, summon);
+		}
+	}
+
+	/** La commande qui pose un trône sculpté de la génération en cours, les pieds du joueur en f. */
+	private String throneDisplay(Vec3 f) {
+		return String.format(java.util.Locale.ROOT,
+			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_trone\",\"vc_tr_%d\"],Rotation:[%.1ff,0f],"
+				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:trone\"}},"
+				+ "view_range:2f,transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],"
+				+ "right_rotation:[0f,0f,0f,1f],scale:[1.15f,1.15f,1.15f]}}",
+			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f));
+	}
+
+	/**
+	 * Village généré rechargé de la bibliothèque : la structure enregistrée ne contient que des blocs,
+	 * les trônes sculptés (des entités) sont donc reposés sur chaque estrade.
+	 */
+	public void placeThrones(MinecraftServer server) {
+		if (!generated) {
+			return;
+		}
+		decorGen++;
+		for (BlockPos s : seats) {
+			WorldSetup.run(server, throneDisplay(feet(s)));
 		}
 	}
 
@@ -1225,7 +1429,20 @@ public final class Village {
 	}
 
 	public void save(MinecraftServer server) {
+		save(file(server), false);
+	}
+
+	/** Carte oubliée : la fiche garde son emprise, pour que la prochaine carte bâtie la retire du monde. */
+	public void saveForgotten(MinecraftServer server) {
+		save(file(server), true);
+	}
+
+	void save(Path f, boolean forgotten) {
 		Data d = new Data();
+		d.modified = modified;
+		d.forgotten = forgotten;
+		d.carte = libraryId.isEmpty() ? null : libraryId;
+		d.carteNom = libraryName.isEmpty() ? null : libraryName;
 		d.center = arr(center);
 		d.generated = generated;
 		d.layout = layout;
@@ -1239,19 +1456,56 @@ public final class Village {
 		houses.forEach(p -> d.houses.add(arr(p)));
 		d.convocation = convocation == null ? null : arr(convocation);
 		try {
-			Path f = file(server);
-			Files.createDirectories(f.getParent());
-			Files.writeString(f, GSON.toJson(d));
+			// Écrite à côté puis mise en place d'un coup, avec une copie de secours : une coupure pendant
+			// l'écriture ne doit pas faire croire au démarrage suivant qu'il n'y a jamais eu de village.
+			SafeFile.write(f, GSON.toJson(d));
 		} catch (IOException e) {
 			ValcombeMod.LOG.warn("Impossible d'enregistrer le village", e);
 		}
 	}
 
-	public static Village load(MinecraftServer server) {
+	/** Ce que la fiche du village apprend au démarrage. */
+	public enum Fiche {
+		/** Aucune fiche n'a jamais existé : premier démarrage. */
+		ABSENT,
+		/** La carte en service. */
+		READY,
+		/** Carte oubliée : plus de carte en service, mais ses blocs sont encore dans le monde. */
+		FORGOTTEN,
+		/** Une fiche existe mais ne se lit plus (ni elle, ni sa copie de secours). */
+		UNREADABLE
+	}
+
+	/** La fiche relue : son état et, s'il y en a une, la carte (en service ou oubliée). */
+	public record Loaded(Fiche state, Village village) {
+	}
+
+	private static Data parse(String json) {
+		Data d = GSON.fromJson(json, Data.class);
+		return d != null && d.center != null && d.center.length == 3 && d.seats != null && d.houses != null ? d : null;
+	}
+
+	private static boolean valid(String json) {
 		try {
-			Path json = file(server);
-			if (Files.exists(json)) {
-				Data d = GSON.fromJson(Files.readString(json), Data.class);
+			return parse(json) != null;
+		} catch (RuntimeException e) {
+			return false;
+		}
+	}
+
+	public static Loaded load(MinecraftServer server) {
+		return load(file(server));
+	}
+
+	static Loaded load(Path json) {
+		try {
+			if (SafeFile.exists(json)) {
+				String text = SafeFile.read(json, Village::valid);
+				if (text == null) {
+					ValcombeMod.LOG.error("Fiche du village illisible ({}), copie de secours comprise", json);
+					return new Loaded(Fiche.UNREADABLE, null);
+				}
+				Data d = parse(text);
 				Village v = new Village(pos(d.center), d.generated);
 				v.layout = d.layout;
 				v.decorGen = Math.max(1, d.decorGen);
@@ -1266,7 +1520,10 @@ public final class Village {
 				d.seats.forEach(a -> v.seats.add(pos(a)));
 				d.houses.forEach(a -> v.houses.add(pos(a)));
 				v.convocation = d.convocation == null ? null : pos(d.convocation);
-				return v;
+				// Fiche d'avant ce suivi : on ne sait pas ce qui a été bâti dessus à la main, la carte est donc à protéger.
+				v.modified = d.modified == null || d.modified;
+				v.setLibrary(d.carte, d.carteNom);
+				return new Loaded(d.forgotten ? Fiche.FORGOTTEN : Fiche.READY, v);
 			}
 			// Ancien format (version 0.1.0) : seulement le centre d'un village généré.
 			Path old = json.resolveSibling("valcombe-village.txt");
@@ -1274,20 +1531,12 @@ public final class Village {
 				String[] p = Files.readString(old).trim().split(" ");
 				Village v = generated(new BlockPos(Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])));
 				v.layout = 1;
-				return v;
+				return new Loaded(Fiche.READY, v);
 			}
 		} catch (IOException | RuntimeException e) {
-			ValcombeMod.LOG.warn("Village illisible", e);
+			ValcombeMod.LOG.error("Fiche du village illisible", e);
+			return new Loaded(Fiche.UNREADABLE, null);
 		}
-		return null;
-	}
-
-	public static void forget(MinecraftServer server) {
-		try {
-			Files.deleteIfExists(file(server));
-			Files.deleteIfExists(file(server).resolveSibling("valcombe-village.txt"));
-		} catch (IOException e) {
-			ValcombeMod.LOG.warn("Impossible d'oublier le village", e);
-		}
+		return new Loaded(Fiche.ABSENT, null);
 	}
 }

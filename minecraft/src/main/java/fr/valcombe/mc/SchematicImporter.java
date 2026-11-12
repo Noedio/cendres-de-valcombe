@@ -9,23 +9,19 @@ import java.util.List;
 import java.util.Locale;
 
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
-import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 /**
- * Import de constructions faites ailleurs : schématiques WorldEdit / FAWE (.schem, versions 2 et 3),
- * Litematica (.litematic) et structures Minecraft (.nbt). Les blocs sont posés dans le monde.
+ * Lecture de constructions faites ailleurs : schématiques WorldEdit / FAWE (.schem, versions 2 et 3),
+ * Litematica (.litematic) et structures Minecraft (.nbt). Elles deviennent une carte (McHost.importSchematic)
+ * ou une structure du catalogue (StructureStore.importFile).
  */
 final class SchematicImporter {
 	/** Taille maximale acceptée (blocs). */
@@ -42,51 +38,31 @@ final class SchematicImporter {
 	private SchematicImporter() {
 	}
 
-	/** Pose la construction : son coin bas est en `corner`. Renvoie ses dimensions « l × h × p ». */
-	static String place(ServerLevel level, BlockPos corner, String fileName, byte[] data) {
+	/**
+	 * Lit une construction sans rien poser. Elle sera posée par petits lots (voir Clip.plan), et jamais
+	 * hors de ses dimensions : dans un .nbt, chaque bloc porte sa position, qui est contrôlée ici ; les
+	 * entités du fichier sont ignorées et les données des blocs dangereux retirées.
+	 */
+	static Clip read(String fileName, byte[] data, HolderLookup.RegistryLookup<Block> blocks) {
 		String name = fileName.toLowerCase(Locale.ROOT);
+		if (!name.endsWith(".nbt") && !name.endsWith(".schem") && !name.endsWith(".litematic")) {
+			throw new GameException("Format non reconnu : fichiers .schem (WorldEdit), .litematic (Litematica) ou .nbt (structure Minecraft).");
+		}
 		CompoundTag root;
 		try {
 			root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.create(256L * 1024 * 1024));
-		} catch (IOException e) {
+		} catch (IOException | RuntimeException e) {
 			throw new GameException("Fichier illisible : ce n'est pas une construction Minecraft compressée.");
 		}
-		HolderLookup.RegistryLookup<Block> blocks = level.getServer().registryAccess().lookupOrThrow(Registries.BLOCK);
-		if (name.endsWith(".nbt")) {
-			StructureTemplate t = new StructureTemplate();
-			t.load(blocks, root);
-			var size = t.getSize();
-			check(size.getX(), size.getY(), size.getZ());
-			t.placeInWorld(level, corner, corner, new StructurePlaceSettings(), level.getRandom(), Block.UPDATE_CLIENTS);
-			return size.getX() + " × " + size.getY() + " × " + size.getZ();
-		}
-		Shape s = name.endsWith(".litematic") ? litematic(root, blocks) : sponge(root, blocks);
-		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-		for (int y = 0; y < s.height(); y++) {
-			for (int z = 0; z < s.length(); z++) {
-				for (int x = 0; x < s.width(); x++) {
-					m.set(corner.getX() + x, corner.getY() + y, corner.getZ() + z);
-					level.setBlock(m, s.at(x, y, z), Block.UPDATE_CLIENTS);
-				}
-			}
-		}
-		return s.width() + " × " + s.height() + " × " + s.length();
-	}
-
-	/** Dimensions d'un fichier, sans le poser (pour préparer la zone). */
-	static int[] size(String fileName, byte[] data, HolderLookup.RegistryLookup<Block> blocks) {
 		try {
-			CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.create(256L * 1024 * 1024));
-			String name = fileName.toLowerCase(Locale.ROOT);
 			if (name.endsWith(".nbt")) {
-				StructureTemplate t = new StructureTemplate();
-				t.load(blocks, root);
-				return new int[] {t.getSize().getX(), t.getSize().getY(), t.getSize().getZ()};
+				return Clip.read(root, blocks, MAX_SIDE, MAX_HEIGHT, MAX_SIDE);
 			}
-			Shape s = name.endsWith(".litematic") ? litematic(root, blocks) : sponge(root, blocks);
-			return new int[] {s.width(), s.height(), s.length()};
-		} catch (IOException e) {
-			throw new GameException("Fichier illisible : ce n'est pas une construction Minecraft compressée.");
+			return Clip.of(name.endsWith(".litematic") ? litematic(root, blocks) : sponge(root, blocks));
+		} catch (GameException e) {
+			throw e;
+		} catch (RuntimeException e) {
+			throw new GameException("Fichier illisible : son contenu n'est pas celui d'une construction (" + e.getMessage() + ").");
 		}
 	}
 
