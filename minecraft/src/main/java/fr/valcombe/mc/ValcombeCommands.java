@@ -328,6 +328,8 @@ public final class ValcombeCommands {
 					fr.valcombe.rules.Role.classic()))))
 				.then(Commands.literal("brumes").executes(c -> exec(c, x -> session.useScript("Les Brumes de Valcombe",
 					fr.valcombe.rules.Role.brumes()))))
+				.then(Commands.literal("table").executes(c -> exec(c, x -> session.useScript("La Table de Valcombe",
+					fr.valcombe.rules.Role.table()))))
 				.then(Commands.literal("sauver")
 					.then(Commands.argument("nom", StringArgumentType.greedyString()).executes(c -> exec(c, x -> {
 						var server = x.getSource().getServer();
@@ -511,6 +513,9 @@ public final class ValcombeCommands {
 			.then(Commands.literal("nominer")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.executes(c -> exec(c, x -> session.nominate(name(x), arg(x, "joueur"))))))
+			.then(Commands.literal("deviner")
+				.then(Commands.argument("hypotheses", StringArgumentType.greedyString())
+					.executes(c -> exec(c, x -> session.guess(name(x), List.of(arg(x, "hypotheses").trim().split("\\s+")))))))
 			.then(Commands.literal("voix")
 				.then(Commands.argument("niveau", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("chuchoter", "parler", "crier", "suivant"), b))

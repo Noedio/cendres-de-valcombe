@@ -28,6 +28,13 @@ public sealed interface Prompt {
 	record Decide(String title, String question, List<String> options) implements Prompt {
 	}
 
+	/**
+	 * Prêter un rôle à `count` joueurs (Jongleur la nuit, Bavard après le Conseil) : players, les joueurs
+	 * possibles ; roles, les rôles du script (identifiants). Réponse : /vc deviner joueur=rôle …
+	 */
+	record Guess(String title, String text, int count, List<String> players, List<String> roles) implements Prompt {
+	}
+
 	/** Le Conteur relit l'information avant l'envoi. */
 	record Confirm(String title, String to, String text, String truth) implements Prompt {
 	}

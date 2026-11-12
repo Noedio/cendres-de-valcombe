@@ -34,7 +34,8 @@ public final class ScriptStore {
 	/** Scripts fournis avec le jeu, toujours disponibles. */
 	public static final java.util.Map<String, Set<Role>> BUILT_IN = java.util.Map.of(
 		"Les Cendres de Valcombe", Role.classic(),
-		"Les Brumes de Valcombe", Role.brumes());
+		"Les Brumes de Valcombe", Role.brumes(),
+		"La Table de Valcombe", Role.table());
 
 	public static List<String> list(MinecraftServer server) {
 		List<String> out = new java.util.ArrayList<>(BUILT_IN.keySet().stream().sorted().toList());

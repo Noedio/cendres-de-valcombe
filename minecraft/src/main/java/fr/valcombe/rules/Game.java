@@ -96,6 +96,15 @@ public final class Game {
 	/** Joueur désigné par la Faussaire : ses informations de la nuit sont fausses. */
 	private int forged = -1;
 	private int protectedSeat = -1;
+	/** Sorcière : joueur maudit cette nuit (-1 : personne). */
+	private int cursed = -1;
+	/** Sièges dont la voix a été comptée au Conseil du jour, puis au dernier Conseil (Fleuriste). */
+	private List<Integer> votersToday;
+	private List<Integer> votersLastCouncil;
+	/** Jongleur : hypothèses de la nuit (siège → rôle prêté). */
+	private Map<Integer, Role> guesses;
+	/** Bavard : son hypothèse est juste ; il mourra à la fin de la nuit qui vient. */
+	private boolean bavardDoomed;
 	private int master = -1;
 	private boolean pelerineUsed;
 	private boolean arbaletrierUsed;
@@ -291,6 +300,63 @@ public final class Game {
 	public void setHouseRules(boolean absoluteMajority, boolean evilMajorityWins) {
 		this.absoluteMajority = absoluteMajority;
 		this.evilMajorityWins = evilMajorityWins;
+	}
+
+	// Les sauvegardes d'avant les rôles de la table n'ont pas ces listes : elles sont créées à la demande.
+	private List<Integer> votersToday() {
+		if (votersToday == null) {
+			votersToday = new ArrayList<>();
+		}
+		return votersToday;
+	}
+
+	private List<Integer> votersLastCouncil() {
+		if (votersLastCouncil == null) {
+			votersLastCouncil = new ArrayList<>();
+		}
+		return votersLastCouncil;
+	}
+
+	private Map<Integer, Role> guesses() {
+		if (guesses == null) {
+			guesses = new HashMap<>();
+		}
+		return guesses;
+	}
+
+	/** Jongleur : les rôles qu'il prête, avant de résoudre son réveil (les sièges sont les cibles de l'étape). */
+	public void setGuesses(Map<Integer, Role> g) {
+		guesses().clear();
+		guesses().putAll(g);
+	}
+
+	/**
+	 * Sorcière : à la fin du Conseil (après les votes), le joueur maudit meurt s'il a été accusé.
+	 * Sans effet à trois vivants ou moins. Renvoie le siège du mort, ou -1.
+	 */
+	public int applyCurse() {
+		int c = cursed;
+		cursed = -1;
+		if (c < 0 || phase != Phase.DAY || !wasNominated.contains(c) || !player(c).alive || aliveCount() <= 3) {
+			return -1;
+		}
+		kill(c, "malédiction de la Sorcière");
+		checkEvilWin();
+		return c;
+	}
+
+	/** Bavard : le rôle qu'il prête à un joueur. Juste : il mourra à la fin de la nuit qui vient. */
+	public void bavardGuess(int seat, int target, Role role) {
+		Seat b = player(seat);
+		if (b.role != Role.BAVARD || !b.alive) {
+			throw new GameException("Seul le Bavard vivant fait cette hypothèse.");
+		}
+		if (target == seat) {
+			throw new GameException("Prête un rôle à un autre joueur que toi.");
+		}
+		bavardDoomed = player(target).role == role;
+		addLog(b.name + " (Bavard) prête à " + player(target).name + " le rôle " + role.displayName
+			+ (bavardDoomed ? " : c'est juste, il mourra cette nuit." : " : c'est faux."));
 	}
 
 	/** Voix nécessaires pour mettre un joueur sur le billot. */
@@ -835,6 +901,9 @@ public final class Game {
 		customProtect().clear();
 		deathsTonight = new ArrayList<>();
 		fauconnierWakes = -1;
+		cursed = -1;
+		votersLastCouncil().clear();
+		votersLastCouncil().addAll(votersToday());
 		List<Slot> q = new ArrayList<>();
 		if (night == 1) {
 			q.add(new Slot(Step.Kind.MINION_INFO, null));
@@ -876,6 +945,12 @@ public final class Game {
 			}
 		} else if (!player(seat).alive) {
 			return null;
+		}
+		if (role == Role.JONGLEUR && night != 2) {
+			return null; // le Jongleur ne se réveille que la deuxième nuit
+		}
+		if (role == Role.SORCIERE && aliveCount() <= 3) {
+			return null; // à trois vivants, le pouvoir de la Sorcière s'éteint
 		}
 		if (role == Role.EMBAUMEUR && executedYesterday < 0) {
 			return null;
@@ -1196,6 +1271,43 @@ public final class Game {
 				return Info.none();
 			case GOULE:
 				return goule(seat, targets.get(0));
+			case SORCIERE:
+				if (!impaired(seat) && aliveCount() > 3) {
+					cursed = targets.get(0);
+				}
+				return Info.none();
+			case FLEURISTE: {
+				Ctx ctx = new Ctx("fleuriste");
+				boolean yes = false;
+				for (int v : votersLastCouncil()) {
+					if (v >= 0 && v < size() && reg(v, "evil", ctx)) {
+						yes = true;
+					}
+				}
+				Info i = new Info();
+				i.kind = Info.Kind.YESNO;
+				i.yes = impaired(seat) != yes;
+				i.truthYes = yes;
+				i.text = i.yes ? "Oui : au moins un joueur du camp des Démons a voté au dernier Conseil."
+					: "Non : aucun joueur du camp des Démons n'a voté au dernier Conseil.";
+				if (i.yes != yes) {
+					i.truthText = yes ? "Oui" : "Non";
+				}
+				return i;
+			}
+			case JONGLEUR: {
+				int right = 0;
+				for (int t : targets) {
+					Role g = guesses().get(t);
+					if (g != null && player(t).role == g) {
+						right++;
+					}
+				}
+				Info i = numberInfo(seat, right, targets.size());
+				i.text = "Hypothèses justes : " + i.value + " sur " + targets.size() + ".";
+				guesses().clear();
+				return i;
+			}
 			default:
 				return step.role.custom() ? resolveCustom(step, targets) : Info.none();
 		}
@@ -1523,6 +1635,13 @@ public final class Game {
 		if (phase != Phase.NIGHT) {
 			throw new GameException("Ce n'est pas la nuit.");
 		}
+		if (bavardDoomed) {
+			bavardDoomed = false;
+			int b = seatOf(Role.BAVARD);
+			if (b >= 0 && player(b).alive && !impaired(b)) {
+				kill(b, "il a vu juste");
+			}
+		}
 		day = night;
 		newDemon = -1;
 		executedYesterday = -1;
@@ -1540,6 +1659,7 @@ public final class Game {
 			return;
 		}
 		phase = Phase.DAY;
+		votersToday().clear();
 		nominations.clear();
 		hasNominated.clear();
 		wasNominated.clear();
@@ -1734,6 +1854,11 @@ public final class Game {
 		for (var m : customMaster().entrySet()) {
 			if (player(m.getKey()).alive && counted.contains(m.getKey()) && !counted.contains(m.getValue())) {
 				warnings.add(player(m.getKey()).name + " a voté sans son maître.");
+			}
+		}
+		for (int v : counted) {
+			if (!votersToday().contains(v)) {
+				votersToday().add(v);
 			}
 		}
 		int count = counted.size();

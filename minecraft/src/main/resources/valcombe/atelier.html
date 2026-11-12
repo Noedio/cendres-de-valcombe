@@ -266,6 +266,7 @@
 			<div class="bar" style="margin-top:0">
 				<button id="fromCendres">Partir des Cendres</button>
 				<button id="fromBrumes">Partir des Brumes</button>
+				<button id="fromTable">Partir de la Table</button>
 				<button id="clearRoles">Tout décocher</button>
 				<span class="hint" id="counts"></span>
 			</div>
@@ -486,6 +487,8 @@ let editingSc = null;
 let emblem = "e_etoile";
 const CAMPS = { CITADIN: "Citadin", ETRANGER: "Étranger", SBIRE: "Sbire", DEMON: "Démon" };
 const BRUMES_ONLY = ["sonneur", "cartographe", "faussaire"];
+// Rôles ajoutés pour la table des joueurs : ni dans les Cendres, ni dans les Brumes.
+const TABLE_ONLY = ["fleuriste", "jongleur", "bavard", "sorciere"];
 const $ = id => document.getElementById(id);
 
 async function api(path, body, raw) {
@@ -1284,7 +1287,7 @@ function editSc(s) {
 	renderScenarios();
 	announceEditing();
 	renderLocks();
-	if (!s) renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
+	if (!s) renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id) && !TABLE_ONLY.includes(r.id)).map(r => r.id));
 	renderRepart();
 }
 
@@ -1321,9 +1324,10 @@ function scForm() {
 
 $("sNom").oninput = () => { if (!editingSc) $("sId").value = slug($("sNom").value); };
 $("newSc").onclick = () => editSc(null);
-$("fromCendres").onclick = () => renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
+$("fromCendres").onclick = () => renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id) && !TABLE_ONLY.includes(r.id)).map(r => r.id));
 $("fromBrumes").onclick = () => renderRolePicker(data.integres
-	.filter(r => !["commere", "aubergiste", "alchimiste"].includes(r.id)).map(r => r.id));
+	.filter(r => !["commere", "aubergiste", "alchimiste"].includes(r.id) && !TABLE_ONLY.includes(r.id)).map(r => r.id));
+$("fromTable").onclick = () => renderRolePicker(data.integres.filter(r => !BRUMES_ONLY.includes(r.id)).map(r => r.id));
 $("clearRoles").onclick = () => renderRolePicker([]);
 $("grpBy").onclick = () => {
 	pickerBy = pickerBy === "camp" ? "groupe" : "camp";

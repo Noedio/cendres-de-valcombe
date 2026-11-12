@@ -316,8 +316,7 @@ public final class McHost implements Host {
 		int perRow = 13;
 		for (int i = 0; i < roles.size(); i++) {
 			fr.valcombe.rules.Role r = roles.get(i);
-			String model = r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
-				: "jeton_" + r.name().toLowerCase(java.util.Locale.ROOT);
+			String model = "jeton_" + r.modelSuffix();
 			int row = i / perRow;
 			int inRow = Math.min(perRow, roles.size() - row * perRow);
 			double x = h.x + (i % perRow - (inRow - 1) / 2.0) * 1.2;

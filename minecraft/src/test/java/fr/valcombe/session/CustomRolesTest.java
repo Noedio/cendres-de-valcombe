@@ -106,7 +106,7 @@ class CustomRolesTest {
 		List<Role> other = Role.otherNightsOrder();
 		assertTrue(other.indexOf(Role.parse("medecin")) < other.indexOf(Role.GOULE), "le médecin protège avant la Goule");
 		assertTrue(other.indexOf(Role.parse("ogre")) > other.indexOf(Role.GOULE));
-		assertEquals(25 + library().size(), Role.all().size());
+		assertEquals(29 + library().size(), Role.all().size());
 		Role.defineCustom(List.of());
 		assertNull(Role.parse("veilleur"), "emplacement vidé");
 	}

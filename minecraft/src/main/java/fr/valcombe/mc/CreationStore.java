@@ -88,6 +88,7 @@ public final class CreationStore {
 				used.add(d.emplacement);
 			}
 		}
+		offerTableScenario();
 		groups.clear();
 		Path g = dir.resolve("groupes.json");
 		if (Files.exists(g)) {
@@ -127,6 +128,34 @@ public final class CreationStore {
 		scenarios.sort(Comparator.comparing(d -> d.nom.toLowerCase()));
 		Role.defineCustom(roles);
 		session.setScenarios(scenarios);
+	}
+
+	/**
+	 * Scénario « La Table de Valcombe » (les 26 rôles de la liste des joueurs, Conseil de la table, majorité
+	 * absolue, victoire du mal majoritaire) : offert une fois. Supprimé, il ne revient pas.
+	 */
+	private void offerTableScenario() {
+		Path marker = dir.resolve(".scenario-table-offert");
+		if (Files.exists(marker) || scenarios.stream().anyMatch(s -> "table".equals(s.id))) {
+			return;
+		}
+		ScenarioDef d = new ScenarioDef();
+		d.id = "table";
+		d.nom = "La Table de Valcombe";
+		d.description = "Les règles de notre table : 26 rôles, toutes les accusations puis les votes, majorité absolue.";
+		d.ouverture = "Ce soir, les Démons se sont glissés parmi vous. Écoutez, accusez, votez : le village ne survivra "
+			+ "que si le Démon tombe.";
+		d.roles = new ArrayList<>(Role.table().stream().map(r -> r.name().toLowerCase(java.util.Locale.ROOT)).toList());
+		d.reglages.conseil = true;
+		d.regles.majoriteAbsolue = true;
+		d.regles.victoireMalMajoritaire = true;
+		try {
+			write("scenarios", d.id, d);
+			Files.writeString(marker, "Scénario de la table offert une fois ; supprimez ce fichier pour le recevoir à nouveau.");
+			scenarios.add(d);
+		} catch (RuntimeException | IOException e) {
+			LOG.warn("Atelier : scénario de la table non créé", e);
+		}
 	}
 
 	public synchronized java.util.Map<String, List<String>> groups() {

@@ -66,6 +66,19 @@ public enum Role {
 	// Démon
 	GOULE("La Goule", RoleType.DEMON, 0, 4, 1, false,
 		"Chaque nuit sauf la première, désigne un joueur : il meurt. Si tu te désignes, un Sbire devient la Goule."),
+	// Rôles de la table (la liste de règles des joueurs), absents des Cendres et des Brumes
+	FLEURISTE("La Fleuriste", RoleType.CITADIN, 0, 7, 0, false,
+		"Chaque nuit sauf la première, tu apprends si au moins un joueur du camp des Démons (Sbire ou Démon) a levé "
+			+ "la main pendant le dernier Conseil.", "e_rose"),
+	JONGLEUR("Le Jongleur", RoleType.CITADIN, 0, 7, 5, false,
+		"La deuxième nuit, tu prêtes un rôle à cinq joueurs. Tu apprends combien de tes cinq hypothèses sont justes.",
+		"e_masque"),
+	BAVARD("Le Bavard", RoleType.ETRANGER, 0, 0, 0, false,
+		"À la fin de chaque Conseil, tu dois confier au Conteur le rôle que tu prêtes à un joueur. Si tu as vu juste, "
+			+ "tu meurs la nuit suivante.", "e_cloche"),
+	SORCIERE("La Sorcière", RoleType.SBIRE, 3, 1, 1, false,
+		"Chaque nuit, maudis un joueur : s'il est accusé au Conseil du lendemain, il meurt à la fin du Conseil, après les "
+			+ "votes. Quand il ne reste que trois vivants, ton pouvoir s'éteint.", "e_serpent"),
 	// Voyageur : joueur arrivé en cours de partie (hors script, jamais tiré au sort).
 	VOYAGEUR("Le Voyageur", RoleType.CITADIN, 0, 0, 0, false,
 		"Tu arrives à Valcombe en cours de partie, dans le camp que le Conteur t'a donné. Tu votes et tu peux "
@@ -144,6 +157,11 @@ public enum Role {
 	public double otherKey;
 
 	Role(String displayName, RoleType type, int firstNight, int otherNights, int choose, boolean notSelf, String text) {
+		this(displayName, type, firstNight, otherNights, choose, notSelf, text, null);
+	}
+
+	/** icon : emblème de la bibliothèque (« e_rose »…) pour un rôle intégré sans jeton dessiné à lui. */
+	Role(String displayName, RoleType type, int firstNight, int otherNights, int choose, boolean notSelf, String text, String icon) {
 		this.displayName = displayName;
 		this.type = type;
 		this.firstNight = firstNight;
@@ -151,7 +169,7 @@ public enum Role {
 		this.choose = choose;
 		this.notSelf = notSelf;
 		this.text = text;
-		this.icon = name().toLowerCase(java.util.Locale.ROOT);
+		this.icon = icon != null ? icon : name().toLowerCase(java.util.Locale.ROOT);
 		this.slot = false;
 		this.active = true;
 		this.firstKey = firstNight;
@@ -171,6 +189,14 @@ public enum Role {
 	/** Rôle créé dans l'Atelier. */
 	public boolean custom() {
 		return slot;
+	}
+
+	/**
+	 * Suffixe des modèles du mod pour ce rôle (« jeton_ » + suffixe, « icone_ » + suffixe) : le rôle intégré
+	 * a le sien ; un rôle créé, ou un rôle intégré qui emprunte un emblème, prend l'emblème aux couleurs du camp.
+	 */
+	public String modelSuffix() {
+		return custom() || icon.startsWith("e_") ? icon + "_" + (evil() ? "mal" : "bien") : name().toLowerCase(java.util.Locale.ROOT);
 	}
 
 	/** Les rôles existants : les rôles intégrés et les rôles créés chargés (sans le Voyageur, hors script). */
@@ -238,6 +264,8 @@ public enum Role {
 
 	/** Rôles ajoutés par le script des Brumes (absents du script classique). */
 	private static final java.util.Set<Role> BRUMES_ONLY = java.util.EnumSet.of(SONNEUR, CARTOGRAPHE, FAUSSAIRE);
+	/** Rôles ajoutés pour la table des joueurs (absents des deux scripts d'origine). */
+	private static final java.util.Set<Role> TABLE_ONLY = java.util.EnumSet.of(FLEURISTE, JONGLEUR, BAVARD, SORCIERE);
 
 	/** Le script classique : les 22 rôles des Cendres de Valcombe. */
 	public static java.util.EnumSet<Role> classic() {
@@ -248,6 +276,14 @@ public enum Role {
 			}
 		}
 		s.removeAll(BRUMES_ONLY);
+		s.removeAll(TABLE_ONLY);
+		return s;
+	}
+
+	/** Le script de la table : les 22 rôles des Cendres, plus la Fleuriste, le Jongleur, le Bavard et la Sorcière. */
+	public static java.util.EnumSet<Role> table() {
+		java.util.EnumSet<Role> s = classic();
+		s.addAll(TABLE_ONLY);
 		return s;
 	}
 

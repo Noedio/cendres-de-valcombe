@@ -86,8 +86,7 @@ public final class ValcombeUi {
 		ItemStack s = Gui.icon(item, r.displayName, color,
 			List.of(r.type.displayName + " — camp : " + Team.of(r).displayName, r.text));
 		// Le jeton du rôle lui-même (emblème aux couleurs du camp), dessiné par le mod.
-		String icon = r.custom() ? "icone_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
-			: "icone_" + r.name().toLowerCase(java.util.Locale.ROOT);
+		String icon = "icone_" + r.modelSuffix();
 		return model(s, icon);
 	}
 
@@ -416,6 +415,9 @@ public final class ValcombeUi {
 			case Prompt.Vote v -> openVote(p, v);
 			case Prompt.Confirm cf -> openConfirm(p, cf);
 			case Prompt.Decide dc -> openDecide(p, dc);
+			// Sans le mod : l'hypothèse se donne par commande (le message du chat l'explique).
+			case Prompt.Guess gs -> openInfo(p, gs.title(), gs.text() + " Réponds par /vc deviner joueur=rôle (" + gs.count()
+				+ " fois, séparés par des espaces).");
 		}
 	}
 

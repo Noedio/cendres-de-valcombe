@@ -1516,13 +1516,106 @@ public final class Session {
 			String name = g.player(step.seat).name;
 			if (online(name)) {
 				pendingChooser = name;
-				sendChoice(name);
+				if (step.role == Role.JONGLEUR) {
+					sendGuess(name, step);
+				} else {
+					sendChoice(name);
+				}
 			} else {
-				resolve(randomTargets(step));
+				resolve(autoTargets(step));
 			}
 			return;
 		}
 		resolve(List.of());
+	}
+
+	/** Cibles tirées au hasard (joueur absent, étape passée) ; le Jongleur prête aussi des rôles au hasard. */
+	private List<Integer> autoTargets(Step step) {
+		List<Integer> targets = randomTargets(step);
+		if (step.role == Role.JONGLEUR) {
+			List<Role> roles = new ArrayList<>(script);
+			Map<Integer, Role> g = new HashMap<>();
+			for (int t : targets) {
+				g.put(t, roles.get(rng.next(roles.size())));
+			}
+			game.setGuesses(g);
+		}
+		return targets;
+	}
+
+	/** Les rôles du script, pour prêter un rôle (Jongleur, Bavard). */
+	private List<String> guessRoles() {
+		return script.stream().map(Role::name).toList();
+	}
+
+	private void sendGuess(String name, Step step) {
+		List<String> players = game.players().stream().map(p -> p.name).toList();
+		tell(name, new Msg().colored("[Nuit] " + step.title() + " : prête un rôle à " + step.choose()
+			+ " joueurs (menu J, ou /vc deviner joueur=rôle …).", "gold"));
+		setPrompt(name, new Prompt.Guess(step.title(), "Prête un rôle à " + step.choose() + " joueurs : tu apprendras combien "
+			+ "de tes hypothèses sont justes.", step.choose(), players, guessRoles()));
+	}
+
+	/** Joueurs du Bavard qui doivent encore confier leur hypothèse. */
+	final Set<String> bavardPending = new LinkedHashSet<>();
+
+	/** À la fin du Conseil, le Bavard vivant doit prêter un rôle à un joueur. */
+	private void askBavard(Game g) {
+		for (Game.Seat p : g.players()) {
+			if (p.role() == Role.BAVARD && p.alive()) {
+				bavardPending.add(p.name);
+				List<String> others = g.players().stream().map(o -> o.name).filter(n -> !n.equals(p.name)).toList();
+				tell(p.name, new Msg().colored("[Bavard] Le Conseil est fini : confie au Conteur le rôle que tu prêtes à un "
+					+ "joueur (menu J, ou /vc deviner joueur=rôle).", "gold"));
+				setPrompt(p.name, new Prompt.Guess("Le Bavard", "Quel rôle prêtes-tu à un joueur ? Si tu as vu juste, "
+					+ "tu mourras la nuit prochaine.", 1, others, guessRoles()));
+			}
+		}
+	}
+
+	/** Réponse à une invite « prêter un rôle » : des paires joueur=rôle. */
+	public String guess(String name, List<String> pairs) {
+		Game g = requireGame();
+		Map<Integer, Role> map = new java.util.LinkedHashMap<>();
+		for (String pair : pairs) {
+			int eq = pair.indexOf('=');
+			if (eq <= 0 || eq == pair.length() - 1) {
+				throw new GameException("Format : joueur=rôle (par exemple " + g.player(0).name + "=goule).");
+			}
+			int seat = seatByName(pair.substring(0, eq));
+			Role r = parseRole(pair.substring(eq + 1));
+			if (map.put(seat, r) != null) {
+				throw new GameException("Un seul rôle par joueur.");
+			}
+		}
+		if (pendingStep != null && pendingStep.role == Role.JONGLEUR && name.equals(pendingChooser)) {
+			if (map.size() != pendingStep.choose()) {
+				throw new GameException("Prête un rôle à exactement " + pendingStep.choose() + " joueurs.");
+			}
+			List<Integer> targets = new ArrayList<>(map.keySet());
+			g.validateTargets(pendingStep, targets);
+			g.setGuesses(map);
+			pendingChooser = null;
+			setPrompt(name, null);
+			resolve(targets);
+			return "Hypothèses notées.";
+		}
+		if (bavardPending.contains(name)) {
+			if (map.size() != 1) {
+				throw new GameException("Le Bavard prête un rôle à un seul joueur.");
+			}
+			var e = map.entrySet().iterator().next();
+			g.bavardGuess(g.seatOf(name), e.getKey(), e.getValue());
+			bavardPending.remove(name);
+			setPrompt(name, null);
+			if (storyteller != null && !storyteller.equals(name)) {
+				tell(storyteller, new Msg().colored("[Conteur] Le Bavard " + name + " prête à " + g.player(e.getKey()).name
+					+ " le rôle " + e.getValue().displayName + ".", "light_purple"));
+			}
+			save();
+			return "Hypothèse confiée au Conteur.";
+		}
+		throw new GameException("Tu n'as pas d'hypothèse à faire en ce moment.");
 	}
 
 	private List<Integer> randomTargets(Step step) {
@@ -1820,7 +1913,7 @@ public final class Session {
 		} else if (pendingChooser != null) {
 			setPrompt(pendingChooser, null);
 			pendingChooser = null;
-			resolve(randomTargets(pendingStep));
+			resolve(autoTargets(pendingStep));
 		} else if (deliverTo != null) {
 			storytellerSend(storyteller, null);
 		} else if (waitingAck != null) {
@@ -1839,6 +1932,10 @@ public final class Session {
 
 	private void finishNight() {
 		Game g = game;
+		for (String b : bavardPending) {
+			setPrompt(b, null);
+		}
+		bavardPending.clear();
 		List<Integer> deaths = g.endNight();
 		desk.dayBreaks();
 		clearNight();
@@ -2086,8 +2183,33 @@ public final class Session {
 		return councilVoting && voteNom == null && manual();
 	}
 
+	/** Malédiction de la Sorcière à la fin du Conseil ; true si la partie s'est terminée. */
+	private boolean curseFalls(Game g) {
+		int c = g.applyCurse();
+		if (c < 0) {
+			return false;
+		}
+		host.sound(realNames(), "death");
+		host.title(realNames(), g.player(c).name + " s'effondre", "Une malédiction pesait sur lui");
+		announce(g.player(c).name + " s'effondre : une malédiction pesait sur lui.");
+		revealDeath(g, c);
+		updateBoards();
+		save();
+		if (g.winner() != null) {
+			finish();
+			return true;
+		}
+		return false;
+	}
+
 	private void councilDone(Game g) {
+		if (curseFalls(g)) {
+			return;
+		}
 		int block = g.onTheBlock();
+		if (block >= 0 && !g.player(block).alive()) {
+			block = -1;
+		}
 		if (block >= 0) {
 			announce("Fin des votes : " + g.player(block).name + " sera exécuté (" + g.blockVotes() + " voix).");
 			host.title(realNames(), "Fin des votes", g.player(block).name + " sera exécuté");
@@ -2535,6 +2657,9 @@ public final class Session {
 		floor.clear();
 		stopCouncilTimer();
 		nominationsOpen = false;
+		if (curseFalls(g)) {
+			return "";
+		}
 		Game.DayEnd end = g.endDay();
 		save();
 		if (end.executed() >= 0) {
@@ -2550,6 +2675,7 @@ public final class Session {
 			finish();
 		} else {
 			announce("Le soleil se couche. Le Conteur fait tomber la nuit.");
+			askBavard(g);
 		}
 		return "";
 	}
@@ -2658,7 +2784,7 @@ public final class Session {
 				if (game == g && token == nightToken && name.equals(pendingChooser) && !online(name)) {
 					prompts.remove(name);
 					pendingChooser = null;
-					resolve(randomTargets(pendingStep));
+					resolve(autoTargets(pendingStep));
 				}
 			});
 		}
@@ -3209,8 +3335,7 @@ public final class Session {
 		for (Game.Seat p : g.players()) {
 			Role r = p.role();
 			models.put(p.name, p.traveller() ? "jeton_voyageur_" + (p.team() == Team.EVIL ? "mal" : "bien")
-				: r.custom() ? "jeton_" + r.icon + "_" + (r.evil() ? "mal" : "bien")
-				: "jeton_" + r.name().toLowerCase(java.util.Locale.ROOT));
+				: "jeton_" + r.modelSuffix());
 		}
 		host.seatTokens(models, true);
 		// Veillée : chaque joueur est révélé à tour de rôle, au rythme des jetons qui se retournent.
@@ -3433,6 +3558,14 @@ public final class Session {
 				case Prompt.Vote v -> answers.put(bot, brain.votesYes(bot));
 				case Prompt.Confirm cf -> storytellerSend(bot, null);
 				case Prompt.Decide dc -> decide(bot, 0);
+				case Prompt.Guess gs -> {
+					List<String> players = new ArrayList<>(gs.players());
+					List<String> pairs = new ArrayList<>();
+					for (int i = 0; i < gs.count() && !players.isEmpty(); i++) {
+						pairs.add(players.remove(rng.next(players.size())) + "=" + gs.roles().get(rng.next(gs.roles().size())));
+					}
+					guess(bot, pairs);
+				}
 			}
 		} catch (GameException ignored) {
 			// État changé entre-temps : rien à faire.

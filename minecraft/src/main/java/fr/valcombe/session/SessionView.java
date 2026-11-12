@@ -329,6 +329,14 @@ final class SessionView {
 					m.put("question", dc.question());
 					m.put("options", dc.options());
 				}
+				case Prompt.Guess gs -> {
+					m.put("type", "guess");
+					m.put("title", gs.title());
+					m.put("text", gs.text());
+					m.put("count", gs.count());
+					m.put("players", gs.players());
+					m.put("roles", gs.roles());
+				}
 				case Prompt.Confirm cf -> {
 					m.put("type", "confirm");
 					m.put("title", cf.title());

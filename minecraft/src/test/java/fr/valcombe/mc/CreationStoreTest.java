@@ -127,8 +127,12 @@ class CreationStoreTest {
 		store.saveRole(role("passeur", "CITADIN", "voisins", "fin"));
 		ScenarioDef s = scenario("bal-masque", List.of("passeur"));
 		store.saveScenario(s);
-		assertEquals(1, ses.scenarios().size());
-		assertNull(store.scenarios().get(0).problem());
+		assertEquals(2, ses.scenarios().size(), "le scénario de la table est offert, en plus");
+		assertNull(store.scenarios().stream().filter(x -> x.id.equals("bal-masque")).findFirst().orElseThrow().problem());
+		ScenarioDef table = store.scenarios().stream().filter(x -> x.id.equals("table")).findFirst().orElseThrow();
+		assertNull(table.problem(), "le scénario de la table est jouable");
+		assertEquals(26, table.script().size());
+		assertTrue(table.regles.majoriteAbsolue && table.regles.victoireMalMajoritaire && table.reglages.conseil);
 		// Choisir le scénario applique le script et les réglages
 		ses.useScenario("bal-masque");
 		assertTrue(ses.script().contains(Role.parse("passeur")));
@@ -149,7 +153,12 @@ class CreationStoreTest {
 		store2.load();
 		String result = store2.importPack(pack);
 		assertTrue(result.contains("passeur") || result.contains("Le passeur"), result);
-		assertEquals(1, store2.scenarios().size());
+		assertEquals(2, store2.scenarios().size());
+		// Supprimé, le scénario de la table ne revient pas au prochain démarrage
+		store.deleteScenario("table");
+		CreationStore again = new CreationStore(tmp, session());
+		again.load();
+		assertTrue(again.scenarios().stream().noneMatch(x -> x.id.equals("table")));
 		assertNotNull(Role.parse("passeur"));
 		assertThrows(GameException.class, () -> store2.importPack("{\"format\":\"autre\"}"));
 	}

@@ -130,9 +130,10 @@ class GameTest {
 
 	@Test
 	void vingtDeuxRolesEtOrdreDeNuit() {
-		assertEquals(25, Role.all().size(), "25 rôles intégrés, aucun rôle créé chargé");
+		assertEquals(29, Role.all().size(), "29 rôles intégrés (dont les 4 de la table), aucun rôle créé chargé");
 		assertEquals(22, Role.classic().size());
 		assertEquals(22, Role.brumes().size());
+		assertEquals(26, Role.table().size(), "la table : les 22 des Cendres et ses 4 rôles");
 		var classic = Role.classic();
 		assertEquals(13, Role.ofType(RoleType.CITADIN).stream().filter(classic::contains).count());
 		assertEquals(4, Role.ofType(RoleType.ETRANGER).stream().filter(classic::contains).count());
