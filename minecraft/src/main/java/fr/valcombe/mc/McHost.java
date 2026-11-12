@@ -2272,8 +2272,9 @@ public final class McHost implements Host {
 		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
 		for (String name : seats.keySet()) {
 			PlayerTeam current = board.getPlayersTeam(name);
-			// Un vivant garde l'équipe « valcombe_vivants » (noms cachés), sinon aucune.
-			PlayerTeam wanted = !dead.contains(name) ? (current != null && current.getName().equals(ALIVE_TEAM) ? current : null)
+			// Un vivant garde l'équipe « valcombe_vivants » (noms cachés) ou « valcombe_cache » (dans un recoin), sinon aucune.
+			PlayerTeam wanted = !dead.contains(name)
+				? (current != null && (current.getName().equals(ALIVE_TEAM) || current.getName().equals("valcombe_cache")) ? current : null)
 				: withGhostVote.contains(name) ? voters : ghosts;
 			if (current != wanted) {
 				if (current != null && current.getName().startsWith("valcombe_")) {

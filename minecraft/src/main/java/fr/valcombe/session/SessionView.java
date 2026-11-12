@@ -106,6 +106,7 @@ final class SessionView {
 		st.put("deadHat", ses.settings.deadHat);
 		st.put("roleRoom", ses.settings.roleRoom);
 		st.put("manual", ses.settings.manual);
+		st.put("autoNight", ses.settings.autoNight);
 		st.put("notebookNightOnly", ses.settings.notebookNightOnly);
 		st.put("discussionMinutes", ses.settings.discussionMinutes);
 		st.put("stepDelaySeconds", ses.settings.stepDelayTicks / 20.0);

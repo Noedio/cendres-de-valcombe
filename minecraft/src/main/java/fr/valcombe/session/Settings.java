@@ -28,6 +28,8 @@ public final class Settings {
 	public int discussionMinutes;
 	/** Sans Conteur humain : secondes entre la fin du Conseil et le coucher du soleil. */
 	public int duskSeconds = 10;
+	/** Sans Conteur humain : la nuit tombe d'elle-même (au début de la partie et après chaque coucher du soleil). */
+	public boolean autoNight = true;
 	/** Le carnet des joueurs ne s'ouvre que la nuit (temps de réflexion). */
 	public boolean notebookNightOnly;
 	/** Noms au-dessus des têtes des joueurs (toujours cachés la nuit). */

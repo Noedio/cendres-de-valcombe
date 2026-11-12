@@ -41,14 +41,22 @@ public final class VoiceRouter {
 		List<ServerPlayer> players = server.getPlayerList().getPlayers();
 		boolean day = session.game() != null && session.game().phase() == fr.valcombe.rules.Game.Phase.DAY;
 		Map<Integer, List<ServerPlayer>> byHouse = new HashMap<>();
+		Map<Integer, List<ServerPlayer>> byNook = new HashMap<>();
+		java.util.Set<String> inNooks = new java.util.HashSet<>();
 		if (day && village != null) {
 			for (ServerPlayer p : players) {
 				int h = village.houseAt(p.position());
 				if (h >= 0) {
 					byHouse.computeIfAbsent(h, k -> new ArrayList<>()).add(p);
 				}
+				int n = village.nookAt(p.position(), (net.minecraft.server.level.ServerLevel) p.level());
+				if (n >= 0) {
+					byNook.computeIfAbsent(n, k -> new ArrayList<>()).add(p);
+					inNooks.add(p.getScoreboardName());
+				}
 			}
 		}
+		hideNames(server, inNooks);
 		for (ServerPlayer p : players) {
 			Session.VoiceRule rule = session.voiceRule(p.getScoreboardName());
 			if (rule != null && rule.targets() != null) {
@@ -68,6 +76,16 @@ public final class VoiceRouter {
 					next.put(p.getUUID(), new Route(byHouse.get(h).stream().filter(o -> o != p).map(ServerPlayer::getUUID).toList(), 0));
 					continue;
 				}
+				// Un recoin est une salle privée, comme une maison.
+				for (var e : byNook.entrySet()) {
+					if (e.getValue().contains(p)) {
+						next.put(p.getUUID(), new Route(e.getValue().stream().filter(o -> o != p).map(ServerPlayer::getUUID).toList(), 0));
+						break;
+					}
+				}
+				if (next.containsKey(p.getUUID())) {
+					continue;
+				}
 			}
 			if (rule != null && rule.range() > 0) {
 				double r2 = rule.range() * rule.range();
@@ -78,5 +96,36 @@ public final class VoiceRouter {
 			}
 		}
 		routes = next;
+	}
+
+	private static final String HIDDEN_TEAM = "valcombe_cache";
+
+	/** Les noms des joueurs vivants qui sont dans un recoin ne se voient pas depuis la place. */
+	private static void hideNames(MinecraftServer server, java.util.Set<String> hidden) {
+		var board = server.getScoreboard();
+		net.minecraft.world.scores.PlayerTeam cache = board.getPlayerTeam(HIDDEN_TEAM);
+		if (cache == null) {
+			if (hidden.isEmpty()) {
+				return;
+			}
+			cache = board.addPlayerTeam(HIDDEN_TEAM);
+			cache.setNameTagVisibility(net.minecraft.world.scores.Team.Visibility.NEVER);
+		}
+		net.minecraft.world.scores.PlayerTeam alive = board.getPlayerTeam("valcombe_vivants");
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			String name = p.getScoreboardName();
+			net.minecraft.world.scores.PlayerTeam current = board.getPlayersTeam(name);
+			if (hidden.contains(name)) {
+				if (current == null || current == alive) {
+					board.addPlayerToTeam(name, cache);
+				}
+			} else if (current == cache) {
+				board.removePlayerFromTeam(name, cache);
+				// Noms cachés pour tous en ce moment (réglage du Conteur) : il retrouve l'équipe des vivants.
+				if (alive != null && alive.getNameTagVisibility() == net.minecraft.world.scores.Team.Visibility.NEVER) {
+					board.addPlayerToTeam(name, alive);
+				}
+			}
+		}
 	}
 }

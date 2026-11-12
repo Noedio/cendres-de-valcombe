@@ -36,6 +36,11 @@ public final class Simulation {
 
 	/** Hôte muet : aucune sortie, les tâches sont exécutées à la suite. */
 	private static final class QuietHost implements Host {
+		@Override
+		public boolean realTime() {
+			return false; // la simulation fait tomber la nuit elle-même
+		}
+
 		final Deque<Runnable> tasks = new ArrayDeque<>();
 
 		@Override

@@ -26,6 +26,14 @@ import org.junit.jupiter.api.Test;
 class SessionTest {
 
 	static class FakeHost implements Host {
+		/** Les tâches s'enchaînent sans horloge : pas de nuit qui tombe d'elle-même, sauf dans le test qui le vérifie. */
+		boolean realTime;
+
+		@Override
+		public boolean realTime() {
+			return realTime;
+		}
+
 		final Deque<Runnable> tasks = new ArrayDeque<>();
 		final Map<String, List<Msg>> prompts = new HashMap<>();
 		final List<String> announces = new ArrayList<>();

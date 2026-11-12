@@ -60,8 +60,12 @@ public class DurationsScreen extends BaseScreen {
 		JsonObject st = ClientState.obj(v, "settings");
 		int y = py + 12;
 		boolean manual = ClientState.bool(st, "manual");
-		button(px + pw / 2 - 120, y, 240, "Mode manuel : " + (manual ? "oui (rien n'enchaîne seul)" : "non"),
+		boolean autoNight = ClientState.bool(st, "autoNight");
+		int half = (pw - 34) / 2;
+		button(px + 14, y, half, "Mode manuel : " + (manual ? "oui" : "non"),
 			() -> send("vc reglage manuel " + (manual ? "non" : "oui")));
+		button(px + 20 + half, y, half, "Nuit auto (sans Conteur) : " + (autoNight ? "oui" : "non"),
+			() -> send("vc reglage nuit_auto " + (autoNight ? "non" : "oui")));
 		y += 24;
 		for (Row r : rows()) {
 			button(px + pw - 70, y, 24, "−", () -> set(r, r.value() - r.step()));

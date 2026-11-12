@@ -82,6 +82,14 @@ public interface Host {
 	default void deadPlayers(List<String> dead, List<String> withGhostVote) {
 	}
 
+	/**
+	 * L'hôte suit le temps réel : la partie sans Conteur peut enchaîner seule (nuit qui tombe d'elle-même).
+	 * Faux pour les hôtes de test et de simulation, qui jouent toutes les tâches d'un coup.
+	 */
+	default boolean realTime() {
+		return true;
+	}
+
 	/** Montre ou cache les noms au-dessus des têtes des joueurs assis à la table. */
 	default void nameTags(boolean visible) {
 	}

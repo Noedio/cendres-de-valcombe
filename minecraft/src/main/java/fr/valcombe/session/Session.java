@@ -1132,10 +1132,15 @@ public final class Session {
 			host.title(realNames(), scenario.nom, "");
 			announce("« " + scenario.nom + " » — " + scenario.ouverture);
 		}
+		boolean autoFirst = wanted == Mode.AUTO && settings.autoNight;
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
-			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). " + (unbriefed.isEmpty()
-				? "Le Conteur fait tomber la première nuit."
-				: "Le Conteur va recevoir chacun à l'écart pour lui remettre son rôle."));
+			+ (wanted == Mode.HUMAIN ? storyteller : "automatique") + "). " + (!unbriefed.isEmpty()
+				? "Le Conteur va recevoir chacun à l'écart pour lui remettre son rôle."
+				: autoFirst ? "Lisez votre rôle : la première nuit tombe dans 20 secondes."
+				: "Le Conteur fait tomber la première nuit."));
+		if (autoFirst) {
+			nightLater(g, 400);
+		}
 		if (!unbriefed.isEmpty()) {
 			tell(storyteller, new Msg().colored("[Conteur] Remise des rôles : ", "light_purple")
 				.button("Convoquer le suivant", "/vc convoquer suivant", "Amène le joueur suivant dans la salle de convocation et lui remet son rôle")
@@ -1377,6 +1382,7 @@ public final class Session {
 			case "nuit_muette" -> settings.nightMute = yes;
 			case "conseil" -> settings.nominationsFirst = yes;
 			case "carnet_nuit" -> settings.notebookNightOnly = yes;
+			case "nuit_auto" -> settings.autoNight = yes;
 			case "manuel" -> {
 				settings.manual = yes;
 				if (yes) {
@@ -1425,7 +1431,7 @@ public final class Session {
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat, "
-					+ "conseil, manuel, noms, carnet_nuit, majorite_absolue, victoire_majorite (oui|non), discussion_minutes <min>, "
+					+ "conseil, manuel, noms, carnet_nuit, nuit_auto, majorite_absolue, victoire_majorite (oui|non), discussion_minutes <min>, "
 					+ "pause_etapes <s>, coucher <s>, portee_chuchoter, portee_crier <blocs>, "
 					+ "duree_conseil <secondes, 0 : à la main>, temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
@@ -2674,10 +2680,36 @@ public final class Session {
 		if (g.winner() != null) {
 			finish();
 		} else {
-			announce("Le soleil se couche. Le Conteur fait tomber la nuit.");
+			boolean auto = mode == Mode.AUTO && settings.autoNight;
+			announce(auto ? "Le soleil se couche. La nuit tombe dans " + settings.duskSeconds + " secondes."
+				: "Le soleil se couche. Le Conteur fait tomber la nuit.");
 			askBavard(g);
+			if (auto) {
+				nightLater(g, Math.max(20, settings.duskSeconds * 20));
+			}
 		}
 		return "";
+	}
+
+	/** Sans Conteur humain : la nuit tombe d'elle-même, si personne ne l'a fait tomber entre-temps. */
+	private void nightLater(Game g, int ticks) {
+		if (!host.realTime()) {
+			return;
+		}
+		host.schedule(ticks, () -> {
+			if (game != g || paused || g.winner() != null) {
+				return;
+			}
+			boolean ready = g.phase() == Game.Phase.READY || g.phase() == Game.Phase.SETUP
+				|| g.phase() == Game.Phase.DAY && g.dayOver();
+			if (ready && voteNom == null) {
+				try {
+					startNight();
+				} catch (GameException ignored) {
+					// la nuit est déjà tombée, ou ne peut pas encore tomber
+				}
+			}
+		});
 	}
 
 	// ------------------------------------------------------------------

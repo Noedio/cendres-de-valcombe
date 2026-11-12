@@ -35,7 +35,7 @@ public final class Village {
 	public static final int MIN_SEATS = 5;
 	public static final int MAX_SEATS = 20;
 	/** Version du plan du village généré : un village plus ancien est reconstruit au démarrage. */
-	public static final int LAYOUT = 3;
+	public static final int LAYOUT = 4;
 	private static final int ROAD_WIDTH = 3;
 	private static final int HOUSE_HALF = 4;
 	private static final int CLEAR_HEIGHT = 16;
@@ -1111,6 +1111,8 @@ public final class Village {
 				} else {
 					stall(level, mx, mz, i);
 				}
+			} else if (nookSlot(i)) {
+				nook(level, mx, mz, p);
 			} else if (theme.equals("port")) {
 				cargo(level, mx, mz, p);
 			} else {
@@ -1300,6 +1302,78 @@ public final class Village {
 		decorGen++;
 		for (BlockPos s : seats) {
 			WorldSetup.run(server, throneDisplay(feet(s)));
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Recoins : niches murées entre deux maisons, ouvertes vers les champs, à l'abri des regards de la place
+	// ------------------------------------------------------------------
+	/** Une place sur quatre entre deux maisons reçoit un recoin (à la place d'un arbre ou d'une cargaison). */
+	private boolean nookSlot(int i) {
+		return i != 0 && i % 4 == 3;
+	}
+
+	/** Pieds d'un joueur au milieu de chaque recoin (villages générés selon le plan 4 et plus). */
+	public List<BlockPos> nooks() {
+		List<BlockPos> out = new ArrayList<>();
+		if (!generated || layout < 4) {
+			return out;
+		}
+		int midR = (plazaRadius + houseRadius) / 2;
+		for (int i = 0; i < seatTotal; i++) {
+			if (nookSlot(i)) {
+				double mid = angle(i, seatTotal) + Math.PI / seatTotal;
+				out.add(center.offset((int) Math.round(midR * Math.cos(mid)), 1, (int) Math.round(midR * Math.sin(mid))));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Numéro du recoin où se trouve cette position, ou -1. Le toit du recoin doit être là : une carte d'un
+	 * plan plus ancien (un arbre à cette place) n'a pas de recoin.
+	 */
+	public int nookAt(Vec3 pos, ServerLevel level) {
+		List<BlockPos> list = nooks();
+		for (int i = 0; i < list.size(); i++) {
+			BlockPos n = list.get(i);
+			if (Math.abs(pos.x - (n.getX() + 0.5)) <= 1.6 && Math.abs(pos.z - (n.getZ() + 0.5)) <= 1.6
+				&& pos.y >= n.getY() - 1 && pos.y <= n.getY() + 2.5
+				&& level.getBlockState(n.above(3)).is(palette(theme).roof())) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** Recoin de 5 × 5 : murs sur trois côtés (celui de la place compris), toit, lanterne et banc. */
+	private void nook(ServerLevel level, int cx, int cz, Palette p) {
+		// L'ouverture regarde vers l'extérieur du village (à l'opposé de la place).
+		boolean alongX = Math.abs(cx) >= Math.abs(cz);
+		int out = alongX ? Integer.signum(cx) : Integer.signum(cz);
+		BlockState wall = p.wallA().defaultBlockState();
+		BlockState wall2 = p.wallB().defaultBlockState();
+		for (int dx = -2; dx <= 2; dx++) {
+			for (int dz = -2; dz <= 2; dz++) {
+				int along = alongX ? dx : dz;
+				boolean edge = Math.abs(dx) == 2 || Math.abs(dz) == 2;
+				boolean opening = along == 2 * out && Math.abs(alongX ? dz : dx) <= 1;
+				set(level, cx + dx, 0, cz + dz, p.houseFloor().defaultBlockState());
+				for (int y = 1; y <= 3; y++) {
+					set(level, cx + dx, y, cz + dz, edge && !opening ? (y == 2 ? wall2 : wall) : Blocks.AIR.defaultBlockState());
+				}
+				set(level, cx + dx, 4, cz + dz, p.roof().defaultBlockState());
+			}
+		}
+		set(level, cx, 3, cz, Blocks.LANTERN.defaultBlockState().setValue(net.minecraft.world.level.block.LanternBlock.HANGING, true));
+		// Banc contre le mur du fond (côté place), tourné vers l'ouverture
+		net.minecraft.core.Direction facing = alongX ? (out > 0 ? net.minecraft.core.Direction.WEST : net.minecraft.core.Direction.EAST)
+			: (out > 0 ? net.minecraft.core.Direction.NORTH : net.minecraft.core.Direction.SOUTH);
+		for (int s = -1; s <= 1; s++) {
+			int bx = alongX ? cx - out : cx + s;
+			int bz = alongX ? cz + s : cz - out;
+			set(level, bx, 1, bz, Blocks.SPRUCE_STAIRS.defaultBlockState()
+				.setValue(net.minecraft.world.level.block.StairBlock.FACING, facing.getOpposite()));
 		}
 	}
 

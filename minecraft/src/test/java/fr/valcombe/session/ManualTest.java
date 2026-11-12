@@ -97,6 +97,18 @@ class ManualTest {
 	}
 
 	@Test
+	void sansConteurLaNuitTombeDElleMeme() {
+		SessionTest.FakeHost h = new SessionTest.FakeHost();
+		h.realTime = true;
+		Session s = game(h, Session.Mode.AUTO, 24);
+		assertEquals(Game.Phase.READY, s.game().phase());
+		for (int i = 0; i < 20 && s.game().phase() != Game.Phase.NIGHT && !h.tasks.isEmpty(); i++) {
+			h.tasks.poll().run();
+		}
+		assertEquals(Game.Phase.NIGHT, s.game().phase(), "la première nuit tombe toute seule");
+	}
+
+	@Test
 	void ordreDeReveilModifiableEnPartie() {
 		Game g = fr.valcombe.rules.GameTestAccess.fixed(Role.GOULE, Role.ALCHIMISTE, Role.VEILLEUSE, Role.CHAPELAIN, Role.TEMPLIER);
 		List<Role> before = g.plannedOrder();
