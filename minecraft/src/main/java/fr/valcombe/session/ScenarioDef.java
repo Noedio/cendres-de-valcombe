@@ -28,6 +28,10 @@ public final class ScenarioDef {
 
 	/** Réglages de partie (ceux du Conteur). */
 	public static final class Reglages {
+		/** Toutes les accusations d'abord, puis les votes dans l'ordre (sans défense). */
+		public boolean conseil = true;
+		/** Durée du Conseil en secondes (0 : le Conteur passe aux votes). */
+		public int dureeConseil = 0;
 		public int defense = 20;
 		/** Secondes de l'aiguille par siège. */
 		public double horloge = 1.5;
@@ -60,6 +64,10 @@ public final class ScenarioDef {
 		public boolean chuchotementsInterdits;
 		/** Le rôle d'un joueur est révélé à tous quand il meurt. */
 		public boolean roleReveleALaMort;
+		/** Exécution seulement à la majorité absolue des vivants (au lieu de la moitié). */
+		public boolean majoriteAbsolue;
+		/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
+		public boolean victoireMalMajoritaire;
 		/** Rôles toujours en jeu (dans la limite des places de leur type). */
 		public List<String> imposes = new ArrayList<>();
 		/** Répartition propre : nombre de joueurs → [Citadins, Étrangers, Sbires, Démons]. */
@@ -183,6 +191,9 @@ public final class ScenarioDef {
 		}
 		if (reglages.defense < 5 || reglages.defense > 180 || reglages.horloge < 0.5 || reglages.horloge > 5) {
 			return "Réglages hors limites : défense de 5 à 180 s, aiguille de 0,5 à 5 s par trône.";
+		}
+		if (reglages.dureeConseil < 0 || reglages.dureeConseil > 1800) {
+			return "Durée du Conseil : de 0 (à la main) à 1800 secondes.";
 		}
 		if (regles.discussionMinutes < 0 || regles.discussionMinutes > 30) {
 			return "Discussion libre : de 0 à 30 minutes.";

@@ -403,6 +403,10 @@ public final class Session {
 		script = java.util.EnumSet.copyOf(d.script());
 		scriptName = d.nom;
 		ScenarioDef.Reglages r = d.reglages;
+		settings.nominationsFirst = r.conseil;
+		settings.councilSeconds = Math.max(0, r.dureeConseil);
+		settings.absoluteMajority = d.regles.majoriteAbsolue;
+		settings.evilMajorityWins = d.regles.victoireMalMajoritaire;
 		settings.defenseSeconds = r.defense;
 		settings.clockTicks = (int) Math.round(r.horloge * 20);
 		settings.nightHouses = r.nuitMaisons;
@@ -961,6 +965,7 @@ public final class Session {
 		} else {
 			g.setupRandom(script, shift);
 		}
+		g.setHouseRules(settings.absoluteMajority, settings.evilMajorityWins);
 		if (wanted == Mode.HUMAIN) {
 			g.decide = policies;
 		}
@@ -1243,6 +1248,19 @@ public final class Session {
 			case "nuit_sombre" -> settings.nightDark = yes;
 			case "nuit_maisons" -> settings.nightHouses = yes;
 			case "nuit_muette" -> settings.nightMute = yes;
+			case "conseil" -> settings.nominationsFirst = yes;
+			case "duree_conseil" -> settings.councilSeconds = Math.max(0, Math.min(1800, number(value)));
+			case "majorite_absolue", "victoire_majorite" -> {
+				if (key.equals("majorite_absolue")) {
+					settings.absoluteMajority = yes;
+				} else {
+					settings.evilMajorityWins = yes;
+				}
+				if (game != null) {
+					game.setHouseRules(settings.absoluteMajority, settings.evilMajorityWins);
+					updateBoards();
+				}
+			}
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
@@ -1259,8 +1277,9 @@ public final class Session {
 			case "effets" -> settings.fullEffects = !value.equalsIgnoreCase("reduits") && !value.equalsIgnoreCase("réduits")
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
-				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat (oui|non), "
-					+ "temps_defense <secondes>, "
+				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat, "
+					+ "conseil, majorite_absolue, victoire_majorite (oui|non), "
+					+ "duree_conseil <secondes, 0 : à la main>, temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
 		}
 		return "Réglage modifié.";
@@ -1675,14 +1694,20 @@ public final class Session {
 			finish();
 			return;
 		}
-		nominationsOpen = mode == Mode.AUTO;
+		boolean talkFirst = scenario != null && scenario.regles.discussionMinutes > 0;
+		// Avec une discussion minutée, le Conseil (les accusations) ne s'ouvre qu'à la fin de la discussion.
+		nominationsOpen = mode == Mode.AUTO && !talkFirst;
+		councilVoting = false;
 		save();
 		updateBoards();
-		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre les nominations.");
+		announce("Jour " + g.day() + " : discutez, chuchotez, puis le Conteur ouvre "
+			+ (settings.nominationsFirst ? "le Conseil." : "les nominations."));
 		tip("jour", "Le jour se lève", "Le jour, on discute. Chuchoter (bouton du menu) est privé, mais tout le monde "
 			+ "voit qui chuchote. Avec la plume d'accusation, vise un joueur et fais un clic droit pour l'accuser.");
-		if (scenario != null && scenario.regles.discussionMinutes > 0) {
+		if (talkFirst) {
 			discussion(scenario.regles.discussionMinutes);
+		} else if (nominationsOpen) {
+			councilTimer();
 		}
 		votersOf.clear();
 		dawnFigures(g);
@@ -1715,15 +1740,197 @@ public final class Session {
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("Les nominations n'ont lieu que de jour.");
 		}
+		if (open && councilVoting) {
+			throw new GameException("Les votes du Conseil sont en cours.");
+		}
 		nominationsOpen = open;
 		if (open) {
 			host.sound(realNames(), "bell");
-			host.title(realNames(), "Les nominations sont ouvertes", "Qui accusez-vous ?");
-			announce("Les nominations sont ouvertes.");
+			if (settings.nominationsFirst) {
+				host.title(realNames(), "Le Conseil est ouvert", "Qui accusez-vous ?");
+				announce("Le Conseil est ouvert : accusez maintenant. Les votes auront lieu ensuite, un par accusé, "
+					+ "dans l'ordre des accusations.");
+				councilTimer();
+			} else {
+				host.title(realNames(), "Les nominations sont ouvertes", "Qui accusez-vous ?");
+				announce("Les nominations sont ouvertes.");
+			}
 		} else {
+			stopCouncilTimer();
+			if (settings.nominationsFirst && voteNom == null && !g.pendingNominations().isEmpty()) {
+				return startVotes();
+			}
 			announce("Les nominations sont closes.");
 		}
+		updateBoards();
 		return "";
+	}
+
+	// ------------------------------------------------------------------
+	// Conseil de la table : toutes les accusations, puis un vote par accusé, dans l'ordre
+	// ------------------------------------------------------------------
+	/** Les votes du Conseil sont en cours (entre deux votes compris). */
+	boolean councilVoting;
+	private int councilToken;
+	/** Secondes de Conseil restantes avant les votes (0 : pas de minuteur). */
+	int councilLeft;
+
+	public boolean councilVoting() {
+		return councilVoting;
+	}
+
+	/** Durée du Conseil : celle du réglage ; sans Conteur humain, trois minutes au plus si rien n'est réglé. */
+	private int councilDuration() {
+		if (!settings.nominationsFirst) {
+			return 0;
+		}
+		return settings.councilSeconds > 0 ? settings.councilSeconds : mode == Mode.AUTO ? 180 : 0;
+	}
+
+	private void councilTimer() {
+		int token = ++councilToken;
+		int secs = councilDuration();
+		if (secs <= 0) {
+			councilLeft = 0;
+			return;
+		}
+		councilLeft = secs;
+		host.timer(realNames(), "Conseil : les accusations", secs);
+		tickCouncil(token);
+	}
+
+	private void stopCouncilTimer() {
+		councilToken++;
+		if (councilLeft > 0) {
+			councilLeft = 0;
+			host.timer(realNames(), "", 0);
+		}
+	}
+
+	private void tickCouncil(int token) {
+		host.schedule(20, () -> {
+			Game g = game;
+			if (token != councilToken || g == null || g.phase() != Game.Phase.DAY || g.dayOver() || !nominationsOpen) {
+				return;
+			}
+			if (paused || voteNom != null || --councilLeft > 0) {
+				tickCouncil(token);
+				return;
+			}
+			councilLeft = 0;
+			host.timer(realNames(), "", 0);
+			if (!g.pendingNominations().isEmpty()) {
+				startVotes();
+				return;
+			}
+			nominationsOpen = false;
+			host.sound(realNames(), "bell");
+			announce("Fin du Conseil : personne n'a été accusé.");
+			updateBoards();
+			autoDusk(g);
+		});
+	}
+
+	/** Clôt les accusations et lance les votes, un par accusé, dans l'ordre des accusations. */
+	public String startVotes() {
+		Game g = requireGame();
+		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
+			throw new GameException("Les votes n'ont lieu que de jour.");
+		}
+		if (voteNom != null || councilVoting) {
+			throw new GameException("Les votes sont déjà en cours.");
+		}
+		List<Game.Nomination> pending = g.pendingNominations();
+		if (pending.isEmpty()) {
+			throw new GameException("Aucune accusation à mettre aux voix.");
+		}
+		nominationsOpen = false;
+		stopCouncilTimer();
+		councilVoting = true;
+		List<String> order = new ArrayList<>();
+		for (Game.Nomination n : pending) {
+			order.add((order.size() + 1) + ". " + g.player(n.nominee()).name + " (accusé par " + g.player(n.nominator()).name + ")");
+		}
+		host.sound(realNames(), "bell");
+		host.title(realNames(), "Place aux votes", pending.size() + (pending.size() > 1 ? " accusés" : " accusé"));
+		announce("Fin des accusations. Ordre des votes : " + String.join(", ", order) + ".");
+		updateBoards();
+		save();
+		host.schedule(Math.max(20, settings.stepDelayTicks * 2), this::nextVote);
+		return "";
+	}
+
+	private void nextVote() {
+		Game g = game;
+		if (g == null || !councilVoting || voteNom != null) {
+			return;
+		}
+		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
+			councilVoting = false;
+			return;
+		}
+		if (paused) {
+			host.schedule(20, this::nextVote);
+			return;
+		}
+		List<Game.Nomination> pending = g.pendingNominations();
+		if (pending.isEmpty()) {
+			councilVoting = false;
+			councilDone(g);
+			return;
+		}
+		social.endAllTalks();
+		voteNom = pending.get(0);
+		answers.clear();
+		lockedHands.clear();
+		defense = false;
+		host.sit(realNames(), false);
+		startClock();
+		updateBoards();
+	}
+
+	/** Après un vote du Conseil : le suivant, après un court temps. */
+	private void afterVote() {
+		if (councilVoting) {
+			host.schedule(Math.max(20, settings.stepDelayTicks * 2), this::nextVote);
+		}
+	}
+
+	private void councilDone(Game g) {
+		int block = g.onTheBlock();
+		if (block >= 0) {
+			announce("Fin des votes : " + g.player(block).name + " sera exécuté (" + g.blockVotes() + " voix).");
+			host.title(realNames(), "Fin des votes", g.player(block).name + " sera exécuté");
+		} else if (g.blockTie()) {
+			announce("Fin des votes : égalité en tête, personne ne sera exécuté.");
+			host.title(realNames(), "Fin des votes", "Égalité : personne n'est exécuté");
+		} else {
+			announce("Fin des votes : personne n'atteint le seuil, personne ne sera exécuté.");
+			host.title(realNames(), "Fin des votes", "Personne n'est exécuté");
+		}
+		updateBoards();
+		save();
+		if (mode == Mode.HUMAIN && storyteller != null) {
+			tell(storyteller, "Les votes sont terminés : clos la journée quand tu veux.");
+		}
+		autoDusk(g);
+	}
+
+	/** Sans Conteur humain, la journée se clôt seule peu après la fin du Conseil. */
+	private void autoDusk(Game g) {
+		if (mode != Mode.AUTO) {
+			return;
+		}
+		announce("Le soleil se couchera dans dix secondes.");
+		host.schedule(200, () -> {
+			if (game == g && g.phase() == Game.Phase.DAY && !g.dayOver() && voteNom == null && !councilVoting) {
+				try {
+					endDay();
+				} catch (GameException ignored) {
+					// la journée a été close entre-temps
+				}
+			}
+		});
 	}
 
 	private int discussionToken;
@@ -1800,6 +2007,9 @@ public final class Session {
 		if (voteNom != null) {
 			throw new GameException("Attends la fin du vote en cours.");
 		}
+		if (councilVoting) {
+			throw new GameException("Les votes ont commencé : plus d'accusation aujourd'hui.");
+		}
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		Game.Nomination nom = g.nominate(a, b);
@@ -1808,6 +2018,9 @@ public final class Session {
 		host.accusation(name, g.player(b).name);
 		host.title(realNames(), name + (exileCall ? " veut exiler " : " accuse ") + g.player(b).name, "");
 		if (nom.pelerine()) {
+			// Le Conseil prend fin : les accusations déjà faites ne seront pas votées.
+			stopCouncilTimer();
+			nominationsOpen = false;
 			announce(name + " est exécuté sur-le-champ !");
 			revealDeath(g, a);
 			host.sound(realNames(), "death");
@@ -1819,6 +2032,14 @@ public final class Session {
 				save();
 				announce("La journée s'achève. Le Conteur fait tomber la nuit.");
 			}
+			return "";
+		}
+		if (settings.nominationsFirst) {
+			// Conseil de la table : l'accusation attend son vote, qui aura lieu à la fin des accusations.
+			int waiting = g.pendingNominations().size();
+			announce("Accusation n°" + waiting + " notée : le vote aura lieu à la fin du Conseil.");
+			updateBoards();
+			save();
 			return "";
 		}
 		startDefense(nom);
@@ -1875,6 +2096,9 @@ public final class Session {
 
 	/** Le Conteur écourte la défense et lance le vote. */
 	public String startVoteNow() {
+		if (voteNom == null && settings.nominationsFirst) {
+			return startVotes();
+		}
 		if (voteNom == null || !defense) {
 			throw new GameException("Aucune défense en cours.");
 		}
@@ -1995,6 +2219,7 @@ public final class Session {
 			if (g.winner() != null) {
 				finish();
 			}
+			afterVote();
 			return;
 		}
 		announce(r.count() + " voix contre " + nominee + " (seuil " + r.threshold() + ") : "
@@ -2003,6 +2228,7 @@ public final class Session {
 		if (!r.warnings().isEmpty() && storyteller != null) {
 			tell(storyteller, "Avertissement : " + String.join(" ", r.warnings()));
 		}
+		afterVote();
 	}
 
 	// ------------------------------------------------------------------
@@ -2103,6 +2329,10 @@ public final class Session {
 		if (voteNom != null) {
 			throw new GameException("Un vote est en cours.");
 		}
+		// Le Conteur peut clore la journée entre deux votes du Conseil : les votes restants n'ont pas lieu.
+		councilVoting = false;
+		stopCouncilTimer();
+		nominationsOpen = false;
 		Game.DayEnd end = g.endDay();
 		save();
 		if (end.executed() >= 0) {
@@ -2429,6 +2659,7 @@ public final class Session {
 			save();
 		}
 		announce(message);
+		afterVote();
 	}
 
 	/** Gracie le joueur sur le billot. */
@@ -2640,7 +2871,7 @@ public final class Session {
 		List<String> raised = answers.entrySet().stream()
 			.filter(e -> Boolean.TRUE.equals(e.getValue()) && (defense || waitingVote.contains(e.getKey())))
 			.map(Map.Entry::getKey).toList();
-		host.voteScene(new VoteScene(nominee, defense, pointing, moveTicks, raised, locked, (g.aliveCount() + 1) / 2));
+		host.voteScene(new VoteScene(nominee, defense, pointing, moveTicks, raised, locked, g.voteThreshold()));
 	}
 
 	/** Fin de partie : chaque jeton révèle le rôle, aux couleurs du camp. */

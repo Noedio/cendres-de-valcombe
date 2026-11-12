@@ -105,6 +105,10 @@ final class SessionView {
 		st.put("fullEffects", ses.settings.fullEffects);
 		st.put("deadHat", ses.settings.deadHat);
 		st.put("roleRoom", ses.settings.roleRoom);
+		st.put("council", ses.settings.nominationsFirst);
+		st.put("councilSeconds", ses.settings.councilSeconds);
+		st.put("absoluteMajority", ses.settings.absoluteMajority);
+		st.put("evilMajorityWins", ses.settings.evilMajorityWins);
 		v.put("settings", st);
 		Game g = ses.game;
 		if (g == null) {
@@ -155,7 +159,7 @@ final class SessionView {
 				vote.put("clockSeat", ses.clockPos >= 0 && ses.clockPos < ses.clockOrder.size() ? ses.clockOrder.get(ses.clockPos) : -1);
 				vote.put("locked", List.copyOf(ses.lockedHands));
 				vote.put("count", ses.lockedHands.size());
-				vote.put("threshold", (g.aliveCount() + 1) / 2);
+				vote.put("threshold", g.voteThreshold());
 				vote.put("myHand", Boolean.TRUE.equals(ses.answers.get(me)));
 				vote.put("canVote", ses.canVote(me));
 				vote.put("order", ses.clockOrder.stream().map(i -> g.player(i).name).toList());
@@ -165,6 +169,8 @@ final class SessionView {
 				v.put("vote", vote);
 			}
 			v.put("nominationsOpen", ses.nominationsOpen);
+			v.put("council", ses.settings.nominationsFirst);
+			v.put("councilVoting", ses.councilVoting);
 			Map<String, Object> speech = ses.desk.speechView();
 			if (speech != null) {
 				speech.put("mine", ses.desk.queue.contains(me) || me.equals(ses.desk.speaker));
@@ -217,7 +223,7 @@ final class SessionView {
 				day.put("block", g.onTheBlock() >= 0 ? g.player(g.onTheBlock()).name : null);
 				day.put("blockVotes", g.blockVotes());
 				day.put("tie", g.blockTie());
-				day.put("threshold", (g.aliveCount() + 1) / 2);
+				day.put("threshold", g.voteThreshold());
 				boolean forbidden = ses.scenario != null && ses.scenario.regles.pasAccusationPremierJour && g.day() == 1;
 				day.put("forbidden", forbidden);
 				day.put("canNominate", !forbidden && mySeat >= 0 && g.player(mySeat).alive() && !g.hasNominatedToday(mySeat));

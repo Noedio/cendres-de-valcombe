@@ -110,6 +110,7 @@ class ScenarioRulesTest {
 		d.regles.accusationsMax = 1;
 		d.regles.chuchotementsInterdits = true;
 		d.regles.roleReveleALaMort = true;
+		d.reglages.conseil = false; // accusation, défense puis vote, une à la fois
 		Session s = start(d, 7, 6);
 		SessionTest.FakeHost h = (SessionTest.FakeHost) s.host;
 		s.startNight();

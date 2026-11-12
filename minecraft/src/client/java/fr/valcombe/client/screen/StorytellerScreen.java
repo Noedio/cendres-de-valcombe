@@ -171,8 +171,15 @@ public class StorytellerScreen extends BaseScreen {
 						}
 						col.add(new Entry("Discussion libre (5 min)", () -> send("vc discussion 5"), false));
 						col.add(new Entry("Prolonger d'une minute", () -> send("vc prolonger 1"), false));
-						col.add(new Entry(open ? "Fermer les nominations" : "Ouvrir les nominations",
-							() -> send("vc nominations " + (open ? "fermer" : "ouvrir")), true));
+						if (ClientState.bool(v, "council")) {
+							if (!ClientState.bool(v, "councilVoting")) {
+								col.add(new Entry(open ? "Clore les accusations et voter" : "Ouvrir le Conseil",
+									() -> send("vc nominations " + (open ? "fermer" : "ouvrir")), true));
+							}
+						} else {
+							col.add(new Entry(open ? "Fermer les nominations" : "Ouvrir les nominations",
+								() -> send("vc nominations " + (open ? "fermer" : "ouvrir")), true));
+						}
 						if (vote != null && "DEFENSE".equals(ClientState.str(vote, "stage"))) {
 							col.add(new Entry("Lancer le vote", () -> send("vc voter"), false));
 						}

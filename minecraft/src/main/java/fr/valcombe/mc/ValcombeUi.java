@@ -588,9 +588,13 @@ public final class ValcombeUi {
 		if (session.game() != null) {
 			gui.set(28, Gui.icon(Items.BELL, "Rassembler le village", "Ramène tout le monde au cercle."),
 				act(pl -> session.gather()));
-			gui.set(29, Gui.icon(Items.OAK_SIGN, session.nominationsOpen() ? "Fermer les nominations" : "Ouvrir les nominations"),
+			boolean council = session.settings.nominationsFirst;
+			gui.set(29, Gui.icon(Items.OAK_SIGN, council
+					? session.nominationsOpen() ? "Clore les accusations et voter" : "Ouvrir le Conseil"
+					: session.nominationsOpen() ? "Fermer les nominations" : "Ouvrir les nominations"),
 				act(pl -> session.setNominations(!session.nominationsOpen()), this::openStoryteller));
-			gui.set(30, Gui.icon(Items.CLOCK, "Lancer le vote maintenant", "Écourte la défense de l'accusé."),
+			gui.set(30, Gui.icon(Items.CLOCK, council ? "Passer aux votes" : "Lancer le vote maintenant",
+					council ? "Clôt les accusations : un vote par accusé, dans l'ordre." : "Écourte la défense de l'accusé."),
 				act(pl -> session.startVoteNow()));
 			// Reprendre la main : pause, vote annulé, grâce, étape précédente.
 			gui.set(31, Gui.icon(Items.SHEARS, "Annuler le vote", "L'accusation est retirée."),

@@ -48,7 +48,13 @@ class ConteurTest {
 	}
 
 	private static Session game(Host h, int players, Session.Mode mode, long seed) {
+		return game(h, players, mode, seed, false);
+	}
+
+	/** council : Conseil de la table (accusations puis votes) ; false : accusation, défense puis vote, une à la fois. */
+	private static Session game(Host h, int players, Session.Mode mode, long seed, boolean council) {
 		Session s = new Session(h, Rng.of(new Random(seed)));
+		s.settings.nominationsFirst = council;
 		for (int i = 1; i <= players; i++) {
 			s.join("J" + i);
 		}
@@ -69,6 +75,70 @@ class ConteurTest {
 			s.setNominations(true);
 		}
 		return s;
+	}
+
+	@Test
+	void conseilToutesLesAccusationsPuisLesVotesDansLOrdre() {
+		Host h = new Host();
+		Session s = game(h, 7, Session.Mode.HUMAIN, 3, true);
+		s.startNight();
+		SessionTest.pump(s, h, new Random(3));
+		assertEquals(Game.Phase.DAY, s.game().phase());
+		s.setNominations(true);
+		s.nominate("J1", "J2");
+		assertFalse(s.voteOpen(), "pas de vote tant que le Conseil accuse");
+		s.nominate("J3", "J4");
+		s.nominate("J5", "J6");
+		assertEquals(3, s.game().pendingNominations().size());
+		assertThrows(GameException.class, () -> s.vote("J3", true), "aucun vote ouvert pendant les accusations");
+		assertTrue(s.game().nominationsToday().stream().allMatch(n -> n[2] < 0));
+		s.setNominations(false); // clore les accusations lance les votes
+		assertTrue(s.councilVoting());
+		assertThrows(GameException.class, () -> s.nominate("J7", "J1"), "plus d'accusation pendant les votes");
+		List<String> order = new ArrayList<>();
+		for (int guard = 0; guard < 5000 && !h.tasks.isEmpty() && s.councilVoting(); guard++) {
+			h.prompts.clear();
+			if (s.voteOpen() && (order.isEmpty() || !order.get(order.size() - 1).equals(accused(s)))) {
+				order.add(accused(s));
+				if (accused(s).equals("J4")) {
+					for (int i = 1; i <= 7; i++) {
+						s.vote("J" + i, true); // tout le village contre J4
+					}
+				}
+			}
+			h.tasks.poll().run();
+		}
+		assertEquals(List.of("J2", "J4", "J6"), order, "un vote par accusé, dans l'ordre des accusations");
+		assertFalse(s.councilVoting());
+		assertTrue(s.game().nominationsToday().stream().allMatch(n -> n[2] >= 0), "chaque accusation a été votée");
+		assertEquals("J4", s.game().player(s.game().onTheBlock()).name);
+		assertTrue(h.announces.stream().anyMatch(a -> a.startsWith("Fin des votes : J4 sera exécuté")));
+	}
+
+	@Test
+	void conseilLeVoteAnnulePasseAuSuivant() {
+		Host h = new Host();
+		Session s = game(h, 7, Session.Mode.HUMAIN, 4, true);
+		s.startNight();
+		SessionTest.pump(s, h, new Random(4));
+		s.setNominations(true);
+		s.nominate("J1", "J2");
+		s.nominate("J3", "J4");
+		s.startVoteNow(); // « Passer aux votes »
+		for (int guard = 0; guard < 100 && !s.voteOpen(); guard++) {
+			h.tasks.poll().run();
+		}
+		assertEquals("J2", accused(s));
+		s.cancelVote();
+		for (int guard = 0; guard < 100 && !s.voteOpen(); guard++) {
+			h.tasks.poll().run();
+		}
+		assertEquals("J4", accused(s), "l'accusation suivante est mise aux voix");
+		assertThrows(GameException.class, s::endDay, "un vote est en cours");
+	}
+
+	private static String accused(Session s) {
+		return s.voteNom == null ? null : s.game().player(s.voteNom.nominee()).name;
 	}
 
 	private static void runTasks(Host h, int max) {

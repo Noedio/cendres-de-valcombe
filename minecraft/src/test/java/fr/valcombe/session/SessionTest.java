@@ -290,6 +290,7 @@ class SessionTest {
 	void voteALHorloge() {
 		FakeHost h = new FakeHost();
 		Session s = new Session(h, Rng.of(new Random(5)));
+		s.settings.nominationsFirst = false; // accusation, défense puis vote
 		for (int i = 1; i <= 6; i++) {
 			s.join("J" + i);
 		}

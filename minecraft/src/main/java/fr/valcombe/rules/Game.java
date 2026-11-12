@@ -284,6 +284,20 @@ public final class Game {
 		this.maxNominations = Math.max(0, maxNominations);
 	}
 
+	/** Règles de table : exécution à la majorité absolue des vivants ; le mal gagne dès qu'il est majoritaire. */
+	private boolean absoluteMajority;
+	private boolean evilMajorityWins;
+
+	public void setHouseRules(boolean absoluteMajority, boolean evilMajorityWins) {
+		this.absoluteMajority = absoluteMajority;
+		this.evilMajorityWins = evilMajorityWins;
+	}
+
+	/** Voix nécessaires pour mettre un joueur sur le billot. */
+	public int voteThreshold() {
+		return absoluteMajority ? aliveCount() / 2 + 1 : (aliveCount() + 1) / 2;
+	}
+
 	/** Applique un ordre choisi à la liste habituelle des réveils. */
 	static List<Role> ordered(List<Role> usual, List<String> wanted) {
 		if (wanted == null || wanted.isEmpty()) {
@@ -787,6 +801,12 @@ public final class Game {
 	private void checkEvilWin() {
 		if (winner == null && demonSeat() >= 0 && aliveResidents() <= 2) {
 			setWinner(Team.EVIL, "Il ne reste que deux joueurs vivants.");
+		}
+		if (winner == null && evilMajorityWins && demonSeat() >= 0) {
+			long evil = seats.stream().filter(p -> p.alive && !p.traveller && p.team() == Team.EVIL).count();
+			if (evil * 2 > aliveResidents()) {
+				setWinner(Team.EVIL, "Le mal est majoritaire parmi les vivants.");
+			}
 		}
 	}
 
@@ -1475,6 +1495,18 @@ public final class Game {
 		return out;
 	}
 
+	/** Nominations du jour pas encore votées, dans l'ordre où elles ont été faites. */
+	public List<Nomination> pendingNominations() {
+		List<Nomination> out = new ArrayList<>();
+		for (int i = 0; i < nominations.size(); i++) {
+			int[] n = nominations.get(i);
+			if (n[2] < 0) {
+				out.add(new Nomination(i, n[0], n[1], false));
+			}
+		}
+		return out;
+	}
+
 	/** Siège « sur le billot » (le plus de voix, au moins le seuil, sans égalité), ou -1. */
 	public int onTheBlock() {
 		return top >= 0 && !tie && executedToday < 0 ? nominations.get(top)[1] : -1;
@@ -1550,12 +1582,15 @@ public final class Game {
 		return new Nomination(nominations.size() - 1, nominator, nominee, false);
 	}
 
-	/** Annule la dernière nomination tant qu'elle n'a pas été votée : accusateur et accusé retrouvent leurs droits. */
+	/** Annule une nomination tant qu'elle n'a pas été votée : accusateur et accusé retrouvent leurs droits. */
 	public void cancelNomination(int index) {
-		if (index < 0 || index != nominations.size() - 1 || nominations.get(index)[2] >= 0) {
+		if (index < 0 || index >= nominations.size() || nominations.get(index)[2] >= 0) {
 			throw new GameException("Cette nomination ne peut plus être annulée.");
 		}
 		int[] n = nominations.remove(index);
+		if (top > index) {
+			top--;
+		}
 		hasNominated.remove(n[0]);
 		wasNominated.remove(n[1]);
 		addLog("Le Conteur annule la nomination de " + player(n[1]).name + " par " + player(n[0]).name + ".");
@@ -1639,7 +1674,7 @@ public final class Game {
 			}
 		}
 		int count = counted.size();
-		int threshold = (aliveCount() + 1) / 2;
+		int threshold = voteThreshold();
 		nominations.get(index)[2] = count;
 		if (count >= threshold) {
 			if (count > topVotes) {

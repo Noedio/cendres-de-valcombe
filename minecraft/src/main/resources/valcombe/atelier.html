@@ -272,12 +272,14 @@
 			<div id="sRoles"></div>
 			<h3>Réglages</h3>
 			<div class="row">
+				<div><label>Durée du Conseil (s, 0 : le Conteur passe aux votes)</label><input id="sConsDur" type="number" min="0" max="1800" value="0"></div>
 				<div><label>Défense de l'accusé (s)</label><input id="sDef" type="number" min="5" max="180" value="20"></div>
 				<div><label>Aiguille (s par trône)</label><input id="sHor" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
 				<div><label>Coiffe des morts</label><select id="sCoiffe"><option value="chapeau">Chapeau</option><option value="crane">Crâne</option><option value="aucun">Aucune</option></select></div>
 				<div><label>Discussion libre chaque jour (min)</label><input id="sDisc" type="number" min="0" max="30" value="0"></div>
 			</div>
 			<div class="row">
+				<label class="check"><input type="checkbox" id="sConseil" checked> Conseil : toutes les accusations, puis un vote par accusé (sans défense)</label>
 				<label class="check"><input type="checkbox" id="sMaisons" checked> La nuit, chacun chez soi</label>
 				<label class="check"><input type="checkbox" id="sImmo" checked> Immobiles la nuit</label>
 				<label class="check"><input type="checkbox" id="sSombre" checked> Écran noir la nuit</label>
@@ -292,6 +294,8 @@
 				<label class="check"><input type="checkbox" id="sChu"> Chuchotements écrits interdits</label>
 				<label class="check"><input type="checkbox" id="sSansVote"> Les morts n'ont pas de vote de fantôme</label>
 				<label class="check"><input type="checkbox" id="sReveal"> Le rôle d'un mort est révélé à tous</label>
+				<label class="check"><input type="checkbox" id="sMajAbs"> Exécution à la majorité absolue des vivants</label>
+				<label class="check"><input type="checkbox" id="sMalMaj"> Le mal gagne dès qu'il est majoritaire</label>
 				<div><label>Accusations par jour (0 : sans limite)</label><input id="sAccMax" type="number" min="0" max="20" value="0"></div>
 			</div>
 			<h3>Rôles toujours en jeu</h3>
@@ -1170,6 +1174,8 @@ function editSc(s) {
 	$("sOuv").value = s ? s.ouverture || "" : "";
 	$("sCarte").value = s ? s.carte || "" : "";
 	const g = s ? s.reglages : {};
+	$("sConseil").checked = g.conseil ?? true;
+	$("sConsDur").value = g.dureeConseil ?? 0;
 	$("sDef").value = g.defense ?? 20;
 	$("sHor").value = g.horloge ?? 1.5;
 	$("sCoiffe").value = g.coiffe || "chapeau";
@@ -1186,6 +1192,8 @@ function editSc(s) {
 	$("sChu").checked = !!rg.chuchotementsInterdits;
 	$("sSansVote").checked = !!rg.mortsSansVote;
 	$("sReveal").checked = !!rg.roleReveleALaMort;
+	$("sMajAbs").checked = !!rg.majoriteAbsolue;
+	$("sMalMaj").checked = !!rg.victoireMalMajoritaire;
 	$("sAccMax").value = rg.accusationsMax || 0;
 	imposes = (rg.imposes || []).slice();
 	repart = JSON.parse(JSON.stringify(rg.repartition || {}));
@@ -1214,6 +1222,7 @@ function scForm() {
 		roles: currentPicked(),
 		carte: $("sCarte").value,
 		reglages: {
+			conseil: $("sConseil").checked, dureeConseil: parseInt($("sConsDur").value || "0", 10),
 			defense: parseInt($("sDef").value, 10), horloge: parseFloat($("sHor").value),
 			nuitMaisons: $("sMaisons").checked, nuitImmobile: $("sImmo").checked, nuitSombre: $("sSombre").checked,
 			nuitMuette: $("sMuette").checked, coiffe: $("sCoiffe").value, effetsComplets: $("sEffets").checked,
@@ -1223,6 +1232,7 @@ function scForm() {
 			annoncesInterdites: $("sAnn").checked, apartesInterdits: $("sApa").checked,
 			chuchotementsInterdits: $("sChu").checked, mortsSansVote: $("sSansVote").checked,
 			roleReveleALaMort: $("sReveal").checked, accusationsMax: parseInt($("sAccMax").value || "0", 10),
+			majoriteAbsolue: $("sMajAbs").checked, victoireMalMajoritaire: $("sMalMaj").checked,
 			imposes: imposes.filter(id => currentPicked().includes(id)),
 			repartition: $("sRepOn").checked ? repart : {},
 			// L'ordre n'est enregistré que s'il diffère de l'ordre habituel.

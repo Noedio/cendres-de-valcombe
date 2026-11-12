@@ -8,6 +8,17 @@ public final class Settings {
 	public boolean nightHouses = true;
 	/** La nuit, les micros des joueurs sont coupés (Simple Voice Chat). */
 	public boolean nightMute = true;
+	/**
+	 * Conseil de la table : toutes les accusations d'abord, puis un vote pour chacune, dans l'ordre
+	 * des accusations, sans temps de défense. false : accusation, défense puis vote, une à la fois.
+	 */
+	public boolean nominationsFirst = true;
+	/** Durée du Conseil avant le passage aux votes, en secondes (0 : le Conteur passe aux votes lui-même). */
+	public int councilSeconds = 0;
+	/** Exécution seulement à la majorité absolue des vivants (au lieu de la moitié). */
+	public boolean absoluteMajority;
+	/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
+	public boolean evilMajorityWins;
 	/** Temps de parole de l'accusé avant le vote. */
 	public int defenseSeconds = 20;
 	/** Ticks entre deux sièges pour l'aiguille du vote (20 = 1 seconde). */

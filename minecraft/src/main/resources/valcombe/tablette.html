@@ -335,7 +335,11 @@ function renderControls(v) {
 		c.append(btn("Rassembler", "vc rassembler"));
 		c.append(btn("Discussion 5 min", "vc discussion 5"));
 		c.append(btn("+1 minute", "vc prolonger 1"));
-		c.append(v.nominationsOpen ? btn("Fermer les nominations", "vc nominations fermer") : btn("Ouvrir les nominations", "vc nominations ouvrir", "main"));
+		if (v.council) {
+			if (!v.councilVoting) c.append(v.nominationsOpen ? btn("Clore les accusations et voter", "vc nominations fermer", "main") : btn("Ouvrir le Conseil", "vc nominations ouvrir", "main"));
+		} else {
+			c.append(v.nominationsOpen ? btn("Fermer les nominations", "vc nominations fermer") : btn("Ouvrir les nominations", "vc nominations ouvrir", "main"));
+		}
 		if (block && !v.vote) c.append(btn("Gracier " + block, "vc gracier"));
 		c.append(btn(block ? "Exécuter " + block + " et clore le jour" : "Clore la journée", "vc finjour"));
 		if (v.dayOver) c.append(btn("Faire tomber la nuit", "vc nuit", "main"));

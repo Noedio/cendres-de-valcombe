@@ -300,7 +300,10 @@ public final class Hud {
 				JsonObject n = e.getAsJsonObject();
 				String target = ClientState.str(n, "target");
 				int votes = ClientState.num(n, "votes", -1);
-				String t = ClientState.str(n, "by") + " → " + target + " : " + (votes < 0 ? "vote en cours" : votes + " voix");
+				JsonObject current = ClientState.obj(v, "vote");
+				boolean now = current != null && target.equals(ClientState.str(current, "nominee"));
+				String t = ClientState.str(n, "by") + " → " + target + " : "
+					+ (votes >= 0 ? votes + " voix" : now ? "vote en cours" : "vote à venir");
 				var vs = n.getAsJsonArray("voters");
 				if (vs != null && !vs.isEmpty()) {
 					StringBuilder who = new StringBuilder();
@@ -320,8 +323,12 @@ public final class Hud {
 		}
 		if (ClientState.bool(day, "forbidden")) {
 			lines.add(new String[] {"Pas d'accusation aujourd'hui (règle du scénario)", "gray"});
+		} else if (ClientState.bool(v, "councilVoting")) {
+			lines.add(new String[] {"Votes en cours, dans l'ordre des accusations", "gold"});
 		} else if (!ClientState.bool(v, "nominationsOpen")) {
 			lines.add(new String[] {"Accusations fermées", "gray"});
+		} else if (ClientState.bool(v, "council") && ClientState.bool(day, "canNominate")) {
+			lines.add(new String[] {"Conseil ouvert : accuse (plume en main, vise, clic droit). Les votes viendront après.", "gold"});
 		} else if (ClientState.bool(day, "canNominate")) {
 			lines.add(new String[] {"Tu peux accuser : plume en main, vise, clic droit", "gold"});
 		}
