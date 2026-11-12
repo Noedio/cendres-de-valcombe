@@ -369,7 +369,7 @@ public final class Session {
 			throw new GameException("Les figures se choisissent entre deux parties.");
 		}
 		if (on ? figures.add(id) : figures.remove(id)) {
-			announce((on ? "Figure neutre ajoutée : " : "Figure neutre retirée : ") + FIGURES.get(id)[0] + " — " + FIGURES.get(id)[1]);
+			announce((on ? "Figure neutre ajoutée : " : "Figure neutre retirée : ") + FIGURES.get(id)[0] + ". " + FIGURES.get(id)[1]);
 		}
 		return "";
 	}
@@ -1010,7 +1010,7 @@ public final class Session {
 			return "Personne n'est inscrit.";
 		}
 		return "Inscrits : " + String.join(", ", lobby)
-			+ (storyteller != null ? " — Conteur : " + storyteller : "");
+			+ (storyteller != null ? ", Conteur : " + storyteller : "");
 	}
 
 	public String toggleStoryteller(String name) {
@@ -1130,7 +1130,7 @@ public final class Session {
 		}
 		if (scenario != null && scenario.ouverture != null && !scenario.ouverture.isBlank()) {
 			host.title(realNames(), scenario.nom, "");
-			announce("« " + scenario.nom + " » — " + scenario.ouverture);
+			announce("« " + scenario.nom + " » : " + scenario.ouverture);
 		}
 		boolean autoFirst = wanted == Mode.AUTO && settings.autoNight;
 		announce("La partie commence à " + names.size() + " joueurs (Conteur "
@@ -1184,7 +1184,7 @@ public final class Session {
 		}
 		tell(name, new Msg()
 			.colored("Ton rôle : " + role.displayName, "gold")
-			.text(" — " + role.type.displayName + ", camp : " + Team.of(role).displayName + ". ")
+			.text(" : " + role.type.displayName + ", camp : " + Team.of(role).displayName + ". ")
 			.text(role.text));
 	}
 
@@ -1323,7 +1323,7 @@ public final class Session {
 	}
 
 	private void sendGrimoire(String name) {
-		tell(name, "— Grimoire —");
+		tell(name, "Grimoire :");
 		for (String line : game.grimoireLines()) {
 			tell(name, line);
 		}
@@ -2066,7 +2066,7 @@ public final class Session {
 			return;
 		}
 		councilLeft = secs;
-		host.timer(realNames(), "Conseil : les accusations", secs);
+		host.timer(realNames(), "Conseil", secs);
 		tickCouncil(token);
 	}
 
@@ -2966,7 +2966,7 @@ public final class Session {
 		if (!name.equals(storyteller)) {
 			throw new GameException("Seul le Conteur lit le journal pendant la partie.");
 		}
-		tell(name, "— Journal de la partie —");
+		tell(name, "Journal de la partie :");
 		for (String line : g.log()) {
 			tell(name, line);
 		}
@@ -3030,7 +3030,7 @@ public final class Session {
 				}
 				case "prolonger" -> {
 					councilLeft = Math.min(1800, councilLeft + add);
-					host.timer(realNames(), "Conseil : les accusations", councilLeft);
+					host.timer(realNames(), "Conseil", councilLeft);
 					return "Conseil prolongé de " + add + " s.";
 				}
 				case "arreter" -> {
@@ -3376,7 +3376,7 @@ public final class Session {
 		List<Game.Seat> seats = new ArrayList<>(g.players());
 		for (int i = 0; i < seats.size(); i++) {
 			Game.Seat p = seats.get(i);
-			String sub = p.role().displayName + (p.team() == Team.EVIL ? " — camp du mal" : " — camp du bien")
+			String sub = p.role().displayName + (p.team() == Team.EVIL ? ", camp du mal" : ", camp du bien")
 				+ (p.alive() ? "" : " († mort)");
 			host.schedule(100 + 34 * i, () -> {
 				if (token == vigilToken && game == null) {

@@ -371,6 +371,19 @@ Comparaison avec Beffroi, l'autre projet du même genre : Valcombe était en ava
 - **L'Atelier** en un clic : le launcher démarre le serveur local et ouvre l'Atelier dans le navigateur, sans commande à taper en jeu.
 - Limites : l'hébergement par Internet demande toujours d'ouvrir deux ports sur la box, ou un réseau privé (Tailscale, playit.gg) ; le launcher reste réservé à Windows.
 
+## Phase 15 : les règles de la table (novembre 2026)
+
+Retours de la table et documents de règles des joueurs, en cinq sprints (suivis dans Cap, projet « Blood on the clocktower »).
+
+- **Conseil de la table** (actif par défaut) : on accuse d'abord, sans temps de défense, puis un vote par accusé dans l'ordre des accusations. Options : exécution à la majorité absolue, victoire du mal dès qu'il est majoritaire.
+- **Voix** : pendant le Conseil tout le village s'entend, chuchoter n'atteint que ses deux voisins de trône, les morts se taisent sauf si un vivant leur donne la parole. Ailleurs : chuchoter (4 blocs), parler, crier (96 blocs), touche B. Noms au-dessus des têtes réglables, toujours cachés la nuit.
+- **Conteur aux commandes** : mode manuel (rien n'enchaîne seul), minuteur en cours à passer, prolonger ou arrêter, écran « Durées et minuteurs », ordre de réveil modifiable en partie, groupes de rôles dans l'Atelier.
+- **Carnet** : confiance, rôle prêté et note par joueur ; onglet Indices rempli par les informations de la nuit ; option « carnet la nuit seulement ».
+- **Rôles de la table** : la Sorcière, la Fleuriste, le Jongleur et le Bavard ; script et scénario « La Table de Valcombe » (26 rôles).
+- **Village** : recoins à l'écart de la place (salle privée, noms cachés) ; sans Conteur humain, la nuit tombe d'elle-même.
+- Textes : plus de tiret long dans les textes affichés.
+- Limites : les villages déjà bâtis n'ont leurs recoins qu'une fois reconstruits ; les groupes de rôles ne voyagent pas encore dans les fichiers `.valcombe` ; le vocal et le Conseil restent à éprouver lors d'une vraie soirée.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** à 8–12 joueurs : c'est désormais la seule étape du plan qui reste, et elle dira quoi corriger.

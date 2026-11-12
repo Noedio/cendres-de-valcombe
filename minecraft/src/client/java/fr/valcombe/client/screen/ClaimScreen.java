@@ -57,7 +57,7 @@ public class ClaimScreen extends BaseScreen {
 				onClose();
 			});
 			t.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
-				net.minecraft.network.chat.Component.literal(r.displayName + " — " + r.type.displayName)));
+				net.minecraft.network.chat.Component.literal(r.displayName + ", " + r.type.displayName)));
 			addRenderableWidget(t);
 		}
 		button(px + 12, py + ph - 26, 130, "Ne rien annoncer", () -> {

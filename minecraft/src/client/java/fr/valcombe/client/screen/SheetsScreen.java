@@ -80,7 +80,7 @@ public class SheetsScreen extends BaseScreen {
 		int dy = py + 22;
 		Theme.token(g, dx + dw / 2, dy + 24, 44, shown.name(), Team.of(shown).name(), true, false, false);
 		Theme.centered(g, font, shown.displayName, dx + dw / 2, dy + 52, Theme.INK);
-		Theme.centered(g, font, shown.type.displayName + " — " + Team.of(shown).displayName, dx + dw / 2, dy + 64,
+		Theme.centered(g, font, shown.type.displayName + ", " + Team.of(shown).displayName, dx + dw / 2, dy + 64,
 			shown.evil() ? Theme.EVIL : Theme.GOOD);
 		Theme.paragraph(g, font, shown.text, dx, dy + 80, dw, Theme.INK, py + ph - 32 - (dy + 80));
 	}

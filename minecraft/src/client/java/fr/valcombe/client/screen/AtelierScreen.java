@@ -283,7 +283,7 @@ public class AtelierScreen extends BaseScreen {
 			info = ClientState.str(a, "resume");
 		} else {
 			JsonObject m = objects(a, "cartes").stream().filter(c -> map.equals(ClientState.str(c, "id"))).findFirst().orElse(null);
-			info = m == null ? "" : "« " + ClientState.str(m, "nom") + " » (" + map + ") — " + ClientState.num(m, "sieges", 0) + " trônes, "
+			info = m == null ? "" : "« " + ClientState.str(m, "nom") + " » (" + map + "), " + ClientState.num(m, "sieges", 0) + " trônes, "
 				+ ClientState.num(m, "maisons", 0) + " maisons, " + (ClientState.bool(m, "genere")
 					? "village généré (" + ClientState.str(m, "theme") + ")." : "faite à la main.");
 		}

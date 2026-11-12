@@ -99,7 +99,7 @@ public class GuessScreen extends BaseScreen {
 			Role r = NotebookScreen.roleOf(picks.get(name));
 			int x = px + 14 + (i / rows) * (colW + 8);
 			int y = py + 44 + (i % rows) * 20;
-			var b = button(x, y, colW, name + " : " + (r == null ? "—" : r.displayName), () -> {
+			var b = button(x, y, colW, name + " : " + (r == null ? "?" : r.displayName), () -> {
 				pickingFor = name;
 				rebuildWidgets();
 			});

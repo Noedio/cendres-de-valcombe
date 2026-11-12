@@ -410,7 +410,7 @@ class SessionTest {
 		// Appel au Conteur, sans pouvoir le harceler
 		assertEquals("Le Conteur est prévenu.", s.callStoryteller("J3"));
 		assertEquals("Le Conteur est déjà prévenu.", s.callStoryteller("J3"));
-		assertTrue(s.roleSummary("J1").startsWith("J1 — "), s.roleSummary("J1"));
+		assertTrue(s.roleSummary("J1").startsWith("J1 · "), s.roleSummary("J1"));
 		// Coiffe des morts
 		s.setting("coiffe", "crâne");
 		assertEquals("crane", s.settings().deadHat);

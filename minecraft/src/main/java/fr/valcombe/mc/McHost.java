@@ -294,7 +294,7 @@ public final class McHost implements Host {
 		List<String> lobby = ses.lobby();
 		String st = ses.storyteller();
 		String text = g != null
-			? "Partie en cours — " + (g.phase() == fr.valcombe.rules.Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day())
+			? "Partie en cours (" + (g.phase() == fr.valcombe.rules.Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day()) + ")"
 				+ "\nRôles du script : " + name
 			: "Prochaine partie : " + name + "\n" + (lobby.isEmpty() ? "Personne n'est encore inscrit"
 				: lobby.size() + " inscrit(s) : " + String.join(", ", lobby.stream().limit(8).toList())
@@ -429,7 +429,7 @@ public final class McHost implements Host {
 			if (g != null && ValcombeUi.isStaffItem(sp.getMainHandItem())) {
 				String target = aimedPlayer(sp);
 				hint = target != null ? ses.roleSummary(target)
-					: ses.aside() != null ? "Aparté avec " + ses.aside() + " — accroupi + clic droit pour finir"
+					: ses.aside() != null ? "Aparté avec " + ses.aside() + " : accroupi + clic droit pour finir"
 					: "Vise un joueur pour voir son rôle";
 			}
 			String before = featherHint.getOrDefault(st, "");
@@ -450,14 +450,14 @@ public final class McHost implements Host {
 				&& ValcombeUi.isAccuseItem(p.getMainHandItem())) {
 				if (ses.voteOpen()) {
 					hint = !ses.canVote(name) ? "Ta voix n'est plus attendue pour ce vote."
-						: ses.handRaised(name) ? "✋ Main levée — clic droit (ou H) pour la baisser"
-						: "Main baissée — clic droit (ou H) pour la lever";
+						: ses.handRaised(name) ? "✋ Main levée : clic droit (ou H) pour la baisser"
+						: "Main baissée : clic droit (ou H) pour la lever";
 				} else if (!ses.nominationsOpen()) {
 					hint = "Les nominations ne sont pas ouvertes.";
 				} else {
 					String target = aimedPlayer(p);
 					hint = target == null ? "Vise un joueur, puis clic droit pour l'accuser"
-						: "⚖ " + target + " — clic droit pour l'accuser";
+						: "⚖ " + target + " : clic droit pour l'accuser";
 				}
 			}
 			String before = featherHint.getOrDefault(name, "");
@@ -1190,7 +1190,7 @@ public final class McHost implements Host {
 
 	public String mapInfo() {
 		Village v = requireVillage();
-		return (v.libraryName().isEmpty() ? "" : "« " + v.libraryName() + " »" + (v.modified() ? " (retouchée depuis)" : "") + " — ")
+		return (v.libraryName().isEmpty() ? "" : "« " + v.libraryName() + " »" + (v.modified() ? " (retouchée depuis)" : "") + ", ")
 			+ (v.isGenerated() ? "village généré" : "carte faite à la main") + ", place en " + v.center().toShortString()
 			+ ", " + v.seatCount() + " trône(s), " + v.houseCount() + " maison(s), salle de convocation "
 			+ (v.convocation() != null ? "posée." : "absente.");
@@ -1964,7 +1964,7 @@ public final class McHost implements Host {
 		Component top = big ? Component.literal(title).withStyle(ChatFormatting.GOLD) : Component.empty();
 		Component sub = big ? Component.literal(subtitle).withStyle(ChatFormatting.GRAY)
 			: Component.literal(title).withStyle(ChatFormatting.GOLD)
-				.append(subtitle.isEmpty() ? Component.empty() : Component.literal(" — " + subtitle).withStyle(ChatFormatting.GRAY));
+				.append(subtitle.isEmpty() ? Component.empty() : Component.literal(" : " + subtitle).withStyle(ChatFormatting.GRAY));
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			if (p != null) {
@@ -2067,7 +2067,7 @@ public final class McHost implements Host {
 			return;
 		}
 		bar.setProgress(Math.max(0f, left / (float) total));
-		bar.setName(Component.literal(title + " — " + left / 60 + ":" + String.format("%02d", left % 60)));
+		bar.setName(Component.literal(title + " : " + left / 60 + ":" + String.format("%02d", left % 60)));
 		if (left > 0) {
 			schedule(20, () -> tickTimer(token, bar, title, left - 1, total));
 		}

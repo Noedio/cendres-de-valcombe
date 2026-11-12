@@ -87,7 +87,7 @@ final class SessionView {
 		List<Map<String, Object>> scs = new ArrayList<>();
 		for (ScenarioDef d : ses.scenarios()) {
 			List<Integer> n = d.playable();
-			scs.add(Map.of("id", d.id, "nom", d.nom, "joueurs", n.isEmpty() ? "" : n.get(0) + "–" + n.get(n.size() - 1),
+			scs.add(Map.of("id", d.id, "nom", d.nom, "joueurs", n.isEmpty() ? "" : n.get(0) + " à " + n.get(n.size() - 1),
 				"carte", d.carte == null ? "" : d.carte));
 		}
 		v.put("scenarios", scs);

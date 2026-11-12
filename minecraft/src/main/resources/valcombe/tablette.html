@@ -221,7 +221,7 @@ function setState(text, bad) {
 function phaseLabel(v) {
 	switch (v.phase) {
 		case "NIGHT": return "Nuit " + v.night;
-		case "DAY": return "Jour " + v.day + (v.dayOver ? " — terminé" : "");
+		case "DAY": return "Jour " + v.day + (v.dayOver ? " (terminé)" : "");
 		case "READY": return "La partie va commencer";
 		default: return "Salon : " + (v.lobby || []).length + " inscrit(s)";
 	}
@@ -232,7 +232,7 @@ function render() {
 	document.getElementById("phase").textContent = phaseLabel(v);
 	setState((v.online ? "Connecté en tant que " : "Hors jeu : ") + v.me
 		+ (v.storyteller ? " · Conteur : " + v.storyteller : " · Conteur automatique")
-		+ (v.online ? "" : " — connectez-vous au jeu pour agir"), !v.online);
+		+ (v.online ? "" : " : connectez-vous au jeu pour agir"), !v.online);
 	document.getElementById("pauseBox").hidden = !v.paused;
 	renderPrompt(v);
 	renderVote(v);
@@ -294,7 +294,7 @@ function renderVote(v) {
 	const row = el("div", "vote");
 	const defense = vote.stage === "DEFENSE";
 	row.append(el("div", "", defense
-		? vote.nominee + " (accusé par " + vote.nominator + ") se défend — " + vote.defenseLeft + " s"
+		? vote.nominee + " (accusé par " + vote.nominator + ") se défend (" + vote.defenseLeft + " s)"
 		: "Vote sur " + vote.nominee + " : " + vote.count + " voix, seuil " + vote.threshold));
 	if (defense) row.append(btn("Passer au vote", "vc voter", "main"));
 	row.append(btn("Annuler le vote", "vc vote annuler"));
@@ -354,7 +354,7 @@ function renderControls(v) {
 	c.append(confirmBtn("Arrêter la partie", "vc arreter"));
 	if (v.speech) {
 		c.append(el("div", "state", "Parole : " + (v.speech.speaker || "personne")
-			+ (v.speech.queue.length ? " — demandent : " + v.speech.queue.join(", ") : "")));
+			+ (v.speech.queue.length ? ". Demandent la parole : " + v.speech.queue.join(", ") : "")));
 	}
 }
 
@@ -378,13 +378,13 @@ function renderNight(v) {
 	if (!order.length) list.append(el("div", "empty", "Plus aucun réveil."));
 	for (const e of order) {
 		const mark = e.state === 0 ? "▶ " : e.state < 0 ? "✔ " : "· ";
-		list.append(el("div", e.state === 0 ? "now" : e.state < 0 ? "done" : "", mark + e.title + (e.player ? " — " + e.player : "")));
+		list.append(el("div", e.state === 0 ? "now" : e.state < 0 ? "done" : "", mark + e.title + (e.player ? " · " + e.player : "")));
 	}
 	const card = document.getElementById("stepCard");
 	card.replaceChildren();
 	const ns = v.nightStep;
 	if (!ns) { card.append(el("div", "empty", "Aucune étape en cours.")); return; }
-	card.append(el("div", "title", ns.title + (ns.player ? " — " + ns.player : "")));
+	card.append(el("div", "title", ns.title + (ns.player ? " · " + ns.player : "")));
 	if (ns.waiting) card.append(el("div", "state", "On attend : " + ns.waiting));
 	for (const a of ns.alerts || []) card.append(el("div", "alert", "⚠ " + a));
 	card.append(el("div", "todo", ns.todo || ""));
@@ -499,7 +499,7 @@ function renderSeats(v) {
 
 function openSheet(s, g) {
 	document.getElementById("sheetName").textContent = s.name;
-	document.getElementById("sheetRole").textContent = g ? g.role.name + " — " + g.role.text : "";
+	document.getElementById("sheetRole").textContent = g ? g.role.name + " : " + g.role.text : "";
 	const a = document.getElementById("sheetActions");
 	a.replaceChildren();
 	if (s.alive) a.append(btn("Tuer", "vc tuer " + s.name, "danger"));

@@ -174,7 +174,7 @@ final class BuildQueue {
 		}
 		job.bar.setProgress(total == 0 ? 1f : Math.min(1f, (float) ((double) job.cursor / total)));
 		if (server.getTickCount() % 20 == 0 || job.cursor >= total) {
-			job.bar.setName(Component.literal(job.label + " — " + (total == 0 ? 100 : 100L * job.cursor / total) + " %"));
+			job.bar.setName(Component.literal(job.label + " : " + (total == 0 ? 100 : 100L * job.cursor / total) + " %"));
 			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 				job.bar.addPlayer(p);
 			}

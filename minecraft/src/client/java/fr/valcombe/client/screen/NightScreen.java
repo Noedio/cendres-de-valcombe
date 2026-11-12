@@ -84,7 +84,7 @@ public class NightScreen extends BaseScreen {
 			int state = ClientState.num(e, "state", 1);
 			String who = ClientState.str(e, "player");
 			String line = (state == 0 ? "▶ " : state < 0 ? "✔ " : "· ") + ClientState.str(e, "title")
-				+ (who == null || who.isEmpty() ? "" : " — " + who);
+				+ (who == null || who.isEmpty() ? "" : " · " + who);
 			if (font.width(line) > 128) {
 				line = font.plainSubstrByWidth(line, 124) + "…";
 			}
@@ -108,7 +108,7 @@ public class NightScreen extends BaseScreen {
 			return;
 		}
 		String who = ClientState.str(ns, "player");
-		Theme.ink(g, font, ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " — " + who), cx, cy, Theme.WINE);
+		Theme.ink(g, font, ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " · " + who), cx, cy, Theme.WINE);
 		cy += 12;
 		String wait = ClientState.str(ns, "waiting");
 		if (wait != null && !wait.isEmpty()) {

@@ -148,12 +148,12 @@ class WorkshopTest {
 		assertEquals("Aucune carte sur le serveur.", Workshop.describe(null));
 		java.util.Map<String, Object> cur = new java.util.HashMap<>(java.util.Map.of("nom", "Le Port", "modifiee", true, "genere", false,
 			"theme", "port", "sieges", 12, "maisons", 12));
-		assertEquals("Carte actuelle : « Le Port », retouchée depuis — 12 trônes, 12 maisons.", Workshop.describe(cur));
+		assertEquals("Carte actuelle : « Le Port », retouchée depuis. 12 trônes, 12 maisons.", Workshop.describe(cur));
 		cur.put("nom", "");
-		assertEquals("Carte actuelle : faite à la main, pas encore enregistrée — 12 trônes, 12 maisons.", Workshop.describe(cur));
+		assertEquals("Carte actuelle : faite à la main, pas encore enregistrée. 12 trônes, 12 maisons.", Workshop.describe(cur));
 		cur.put("genere", true);
 		cur.put("modifiee", false);
-		assertEquals("Carte actuelle : village généré (port) — 12 trônes, 12 maisons.", Workshop.describe(cur));
+		assertEquals("Carte actuelle : village généré (port). 12 trônes, 12 maisons.", Workshop.describe(cur));
 	}
 
 	// ------------------------------------------------------------------

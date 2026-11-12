@@ -115,7 +115,7 @@ public class ChronicleScreen extends BaseScreen {
 			y += font.lineHeight + 2;
 		}
 		String where = section < 0 ? "Tout" : sections.get(section);
-		String hint = where + (lines.size() > visible() ? " — " + (scroll + 1) + "–" + end + " / " + lines.size() + " (molette)" : "");
+		String hint = where + (lines.size() > visible() ? ", lignes " + (scroll + 1) + " à " + end + " sur " + lines.size() + " (molette)" : "");
 		Theme.ink(g, font, hint, px + 120, py + ph - 21, Theme.ASH);
 	}
 }

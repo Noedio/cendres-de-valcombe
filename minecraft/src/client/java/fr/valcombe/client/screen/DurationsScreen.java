@@ -95,7 +95,7 @@ public class DurationsScreen extends BaseScreen {
 		JsonObject timer = ClientState.obj(view(), "timer");
 		if (timer != null) {
 			String kind = ClientState.str(timer, "kind");
-			String text = "Minuteur en cours : " + kind + " — " + (ClientState.bool(timer, "held")
+			String text = "Minuteur en cours : " + kind + ", " + (ClientState.bool(timer, "held")
 				? "attend le Conteur" : clockText(ClientState.num(timer, "left", 0)));
 			Theme.centered(g, font, text, px + pw / 2, py + ph - 64, Theme.INK);
 		}

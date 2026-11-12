@@ -281,7 +281,7 @@ public class StorytellerScreen extends BaseScreen {
 			String who = ClientState.str(speech, "speaker");
 			List<String> queue = strings(speech, "queue");
 			text += "\nParole : " + (who == null ? "personne" : who)
-				+ (queue.isEmpty() ? "" : " — demandent : " + String.join(", ", queue));
+				+ (queue.isEmpty() ? "" : ". Demandent la parole : " + String.join(", ", queue));
 		}
 		String note = ClientState.str(v, "gameNote");
 		if (note != null && !note.isEmpty() && currentTab() == 0) {
@@ -296,7 +296,7 @@ public class StorytellerScreen extends BaseScreen {
 		boolean lobby = ClientState.phase().equals("LOBBY");
 		int top = py + (lobby ? 12 : 34);
 		String mode = "HUMAIN".equals(ClientState.str(v, "mode")) ? "Conteur humain" : "Conteur automatique";
-		Theme.ink(g, font, phaseLabel() + (ClientState.bool(v, "paused") ? " — EN PAUSE" : ""), px + 14, top, Theme.WINE);
+		Theme.ink(g, font, phaseLabel() + (ClientState.bool(v, "paused") ? " (en pause)" : ""), px + 14, top, Theme.WINE);
 		Theme.ink(g, font, mode, px + 14, top + 11, Theme.ASH);
 		if (lobby) {
 			int y = top + 30;

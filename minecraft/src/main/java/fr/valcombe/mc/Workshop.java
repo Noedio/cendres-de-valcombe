@@ -160,7 +160,7 @@ public final class Workshop {
 		String origin = !nom.isEmpty() ? "« " + nom + " »" + (modified ? ", retouchée depuis" : "")
 			: (Boolean) cur.get("genere") ? "village généré (" + cur.get("theme") + ")" + (modified ? ", retouché" : "")
 			: "faite à la main, pas encore enregistrée";
-		return "Carte actuelle : " + origin + " — " + cur.get("sieges") + " trônes, " + cur.get("maisons") + " maisons.";
+		return "Carte actuelle : " + origin + ". " + cur.get("sieges") + " trônes, " + cur.get("maisons") + " maisons.";
 	}
 
 	/** La même chose en bref, pour la ligne du haut de l'écran en jeu. */

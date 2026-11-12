@@ -1599,7 +1599,7 @@ public final class Game {
 					t.append(" (désignés : ").append(String.join(", ", targets.stream().map(x -> player(x).name).toList())).append(")");
 				}
 				if (impaired(seat)) {
-					t.append(" — le joueur est ivre ou empoisonné");
+					t.append(" (le joueur est ivre ou empoisonné)");
 				}
 				i.truthText = t.toString();
 				return i;
@@ -2015,12 +2015,12 @@ public final class Game {
 			if (p.believed != p.role) {
 				role += " (croit être " + p.believed.displayName + ")";
 			}
-			lines.add((i + 1) + ". " + p.name + (p.alive ? "" : " (mort)") + " — " + role
+			lines.add((i + 1) + ". " + p.name + (p.alive ? "" : " (mort)") + " · " + role
 				+ (marks.isEmpty() ? "" : " [" + String.join(", ", marks) + "]"));
 		}
 		lines.add("Bluffs du Démon : " + String.join(", ", bluffs.stream().map(r -> r.displayName).toList()));
 		lines.add("Pèlerine utilisée : " + (pelerineUsed ? "oui" : "non")
-			+ " — Tir de l'Arbalétrier : " + (arbaletrierUsed ? "oui" : "non"));
+			+ ". Tir de l'Arbalétrier : " + (arbaletrierUsed ? "oui" : "non"));
 		return lines;
 	}
 }

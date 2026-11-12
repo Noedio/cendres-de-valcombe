@@ -38,7 +38,7 @@ public class ScriptScreen extends BaseScreen {
 			int y = py + 52 + (i / 9) * 30;
 			TokenWidget t = new TokenWidget(x, y, 26, "", r.name(), in ? Team.of(r).name() : null, in, in,
 				() -> send("vc script basculer " + r.name().toLowerCase()));
-			t.setTooltip(Tooltip.create(Component.literal(r.displayName + (in ? " — dans le script" : " — exclu"))));
+			t.setTooltip(Tooltip.create(Component.literal(r.displayName + (in ? " (dans le script)" : " (exclu)"))));
 			addRenderableWidget(t);
 		}
 		int bx = px + pw - 142;
@@ -64,7 +64,7 @@ public class ScriptScreen extends BaseScreen {
 	@Override
 	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
 		JsonObject script = ClientState.obj(view(), "script");
-		Theme.ink(g, font, ClientState.str(script, "name") + " — " + strings(script, "roles").size() + " rôles",
+		Theme.ink(g, font, ClientState.str(script, "name") + " : " + strings(script, "roles").size() + " rôles",
 			px + 14, py + 14, Theme.WINE);
 		Theme.ink(g, font, "Clique sur un jeton pour l'inclure ou l'exclure.", px + 14, py + 24, Theme.ASH);
 		String problem = ClientState.str(script, "problem");

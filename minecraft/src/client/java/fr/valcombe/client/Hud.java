@@ -249,7 +249,7 @@ public final class Hud {
 			}
 			JsonObject role = ClientState.obj(row, "role");
 			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
-			String label = name + " — " + ClientState.str(role, "name") + (ClientState.bool(row, "alive") ? "" : " †");
+			String label = name + " · " + ClientState.str(role, "name") + (ClientState.bool(row, "alive") ? "" : " †");
 			labels.add(new Object[] {sx, sy, label, evil ? 0xFFFF7A70 : 0xFF8CC4FF, cz});
 		}
 		// Les plus proches d'abord ; une étiquette qui en chevauche une autre monte d'un cran.
@@ -405,24 +405,26 @@ public final class Hud {
 		int color = Theme.PARCH;
 		if (ClientState.bool(v, "inCouncil")) {
 			if (!alive && !floor) {
-				text = "Conseil : les morts se taisent (un vivant peut te donner la parole)";
+				text = "Mort : tu te tais";
 				color = 0xFF9A9090;
 			} else if ("chuchoter".equals(voice)) {
-				text = "Conseil : tu chuchotes à tes deux voisins (B : changer)";
+				text = "Chuchote aux voisins";
 			} else {
-				text = "Conseil : tout le village t'entend" + (floor ? " (on t'a donné la parole)" : "");
+				text = "Conseil : à voix haute";
 			}
 		} else if ("chuchoter".equals(voice)) {
-			text = "Tu chuchotes : " + ClientState.num(st, "whisperRange", 4) + " blocs (B : changer)";
+			text = "Chuchoter : " + ClientState.num(st, "whisperRange", 4) + " blocs";
 		} else if ("crier".equals(voice)) {
-			text = "Tu cries : " + ClientState.num(st, "shoutRange", 96) + " blocs (B : changer)";
+			text = "Crier : " + ClientState.num(st, "shoutRange", 96) + " blocs";
 			color = Theme.GOLD;
 		} else {
 			return;
 		}
+		// À droite de la barre d'objets : le chat (à gauche) et les consignes (au-dessus) restent libres.
 		int tw = mc.font.width(text);
-		g.fill(4, h - 72, 12 + tw, h - 60, 0xC01B1214);
-		g.text(mc.font, text, 8, h - 70, color, false);
+		int x = Math.max(g.guiWidth() / 2 + 96, g.guiWidth() - tw - 8);
+		g.fill(x - 3, h - 19, x + tw + 3, h - 7, 0xC01B1214);
+		g.text(mc.font, text, x, h - 17, color, false);
 	}
 
 	private static void draw(GuiGraphicsExtractor g) {
@@ -498,8 +500,8 @@ public final class Hud {
 			int count = ClientState.num(vote, "count", 0);
 			int threshold = Math.max(1, ClientState.num(vote, "threshold", 1));
 			String text = defense
-				? ClientState.str(vote, "nominee") + " se défend — " + ClientState.num(vote, "defenseLeft", 0) + " s"
-				: "Vote sur " + ClientState.str(vote, "nominee") + " — " + count + " voix / seuil " + threshold;
+				? ClientState.str(vote, "nominee") + " se défend (" + ClientState.num(vote, "defenseLeft", 0) + " s)"
+				: "Vote sur " + ClientState.str(vote, "nominee") + " : " + count + " voix, seuil " + threshold;
 			int vw = mc.font.width(text) + 26;
 			int vx = w / 2 - vw / 2;
 			g.fill(vx, 24, vx + vw, 38, 0xD05A1E2A);
@@ -516,8 +518,8 @@ public final class Hud {
 			}
 			if (ClientState.bool(vote, "canVote")) {
 				boolean up = ClientState.bool(vote, "myHand");
-				String hand = up ? "✋ Ta main est levée — H ou plume (clic droit) pour la baisser"
-					: "Ta main est baissée — H ou plume (clic droit) pour la lever";
+				String hand = up ? "✋ Ta main est levée. H ou plume (clic droit) pour la baisser"
+					: "Ta main est baissée. H ou plume (clic droit) pour la lever";
 				centered(g, mc, hand, w, y, up ? 0xFF8FD18F : Theme.PARCH, false);
 			}
 		}
@@ -548,7 +550,7 @@ public final class Hud {
 			String who = ClientState.str(ns, "player");
 			String wait = ClientState.str(ns, "waiting");
 			String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
-				+ (wait == null || wait.isEmpty() ? "" : " — " + wait);
+				+ (wait == null || wait.isEmpty() ? "" : " : " + wait);
 			int nw = mc.font.width(t) + 12;
 			g.fill(w / 2 - nw / 2, 24, w / 2 + nw / 2, 38, 0xD02A1840);
 			g.outline(w / 2 - nw / 2, 24, nw, 14, 0xFFB08CD8);
@@ -561,7 +563,7 @@ public final class Hud {
 			String t = "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)";
 			centered(g, mc, t, w, h - 84, 0xFFC8A8F0, true);
 		} else if (invite != null && !invite.isEmpty()) {
-			String t = invite + " veut te parler en privé — touche J pour répondre";
+			String t = invite + " veut te parler en privé (touche J pour répondre)";
 			centered(g, mc, t, w, h - 84, Theme.GOLD, true);
 		}
 		// Aparté avec le Conteur (vocal seul à seul)
@@ -573,7 +575,7 @@ public final class Hud {
 			centered(g, mc, t, w, h - 72, 0xFFC8A8F0, true);
 		}
 		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
-			String hint = "Une action t'attend — touche J";
+			String hint = "Une action t'attend (touche J)";
 			centered(g, mc, hint, w, h - 60, Theme.GOLD, true);
 		}
 	}

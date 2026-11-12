@@ -49,6 +49,7 @@ Page **Personnalisation › Graphismes du jeu** : décochez les shaders si le je
 | **H** | Lever ou baisser la main pendant un vote |
 | **G** | Faire un signe au-dessus de sa tête (oui, non, question…) |
 | **K** | Revoir sa carte de rôle |
+| **B** | Voix : chuchoter (4 blocs), parler, crier (96 blocs) |
 | **V** | Réglages du vocal (choisir son micro) |
 | Clic droit sur un trône | S'asseoir (accroupi pour se lever) |
 | Plume d'accusation | Viser un joueur et clic droit : l'accuser ; pendant un vote : lever la main |
@@ -110,12 +111,12 @@ Les joueurs arrivent dans la **salle d'attente** : la dalle **dorée** pour s'in
 ### Le but
 
 - Le **bien** (Citadins et Étrangers) gagne quand le **Démon meurt**.
-- Le **mal** (le Démon et ses Sbires) gagne quand il ne reste que **deux vivants** (sans compter les voyageurs).
+- Le **mal** (le Démon et ses Sbires) gagne quand il ne reste que **deux vivants** (sans compter les voyageurs). Avec la règle de la table « le mal gagne dès qu'il est majoritaire », il gagne aussi dès qu'il y a plus de mauvais que de bons parmi les vivants.
 - Le mal sait qui il est (à partir de 7 joueurs) ; le bien doit deviner qui ment.
 
 ### Le lancement
 
-Le Conteur (ou l'opérateur, en Conteur automatique) lance la partie : menu J › Panneau du Conteur › Lancer. Chacun reçoit son rôle : une carte tombe à l'écran et se retourne (touche **K** pour la revoir). Les joueurs sont assis sur leur trône, autour de la place.
+Le Conteur (ou l'opérateur, en Conteur automatique) lance la partie : menu J › Panneau du Conteur › Lancer. Chacun reçoit son rôle : une carte tombe à l'écran et se retourne (touche **K** pour la revoir). Les joueurs sont assis sur leur trône, autour de la place. Sans Conteur humain, la première nuit tombe d'elle-même 20 secondes plus tard.
 
 ### La nuit
 
@@ -127,13 +128,15 @@ Le Conteur (ou l'opérateur, en Conteur automatique) lance la partie : menu J �
 ### Le jour
 
 1. **L'aube** : la cloche sonne, le glas annonce les morts de la nuit (leur jeton montre un crâne).
-2. **La discussion** : on parle sur la place, on va **chuchoter** (menu J, le village voit qui chuchote à qui), on **parle en privé** (invitation, puis vocal à deux), on **annonce un rôle** (vrai ou bluff, affiché sous son nom), on fait des **signes** (G). Les maisons sont des salles privées.
-3. **Le conseil** : le Conteur rassemble le village (cloche) et ouvre les accusations. Pendant le conseil, les joueurs brillent à travers les murs.
-4. **Accuser** : plume d'accusation en main, viser un joueur (même de loin), clic droit. Chacun accuse au plus une fois par jour, et chacun ne peut être accusé qu'une fois par jour.
-5. **La défense** : l'accusé a quelques secondes pour se défendre. On peut déjà lever la main (H ou la plume).
+2. **La discussion** : on parle sur la place, on va **chuchoter** (menu J, le village voit qui chuchote à qui), on **parle en privé** (invitation, puis vocal à deux), on **annonce un rôle** (vrai ou bluff, affiché sous son nom), on fait des **signes** (G). La touche **B** change la portée de la voix. Les maisons et les **recoins** entre les maisons sont des salles privées ; dans un recoin, votre nom ne se voit pas depuis la place.
+3. **Le Conseil** : le Conteur rassemble le village (cloche) et ouvre le Conseil. Pendant le Conseil, tout le village s'entend ; en mode « chuchoter », seuls vos deux voisins de trône vous entendent. Les morts se taisent, sauf si un vivant leur donne la parole (menu J › Donner la parole…). Les joueurs brillent à travers les murs.
+4. **Accuser** : plume d'accusation en main, viser un joueur (même de loin), clic droit. Chacun accuse au plus une fois par jour, et chacun ne peut être accusé qu'une fois par jour. Toutes les accusations se font d'abord, sans vote ni défense.
+5. **Les votes** : quand le Conteur clôt les accusations (ou à la fin du minuteur du Conseil), on vote pour chaque accusé, dans l'ordre des accusations.
 6. **Le vote à l'horloge** : une aiguille dorée fait le tour du cercle à partir du voisin de l'accusé. Quand elle passe devant vous, votre main est comptée si elle est levée. Un bandeau montre l'ordre de passage, les mains comptées et quand l'aiguille arrive à vous.
-7. **Le billot** : il faut au moins la moitié des vivants. Celui qui a le plus de voix (sans égalité) est « sur le billot ». Le tableau du jour (en haut à droite) montre chaque accusation, ses voix et **qui a voté**.
+7. **Le billot** : il faut au moins la moitié des vivants (ou plus de la moitié, avec la règle de la majorité absolue). Celui qui a le plus de voix (sans égalité) est « sur le billot ». Le tableau du jour (en haut à droite) montre chaque accusation, ses voix et **qui a voté**.
 8. **La fin du jour** : le Conteur clôt la journée ; le joueur sur le billot est exécuté (le gibet sort de terre). Puis la nuit tombe.
+
+Le Conteur peut revenir à l'ancien déroulé (accusation, défense, puis vote, une à la fois) : Panneau du Conteur › Réglages › « Accuser puis voter : non ».
 
 ### Les morts
 

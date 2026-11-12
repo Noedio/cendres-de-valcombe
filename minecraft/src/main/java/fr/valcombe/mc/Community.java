@@ -187,7 +187,7 @@ public final class Community {
 		d.append("*").append(r.reason()).append("*\n\n");
 		for (GameReport.Player p : r.players()) {
 			d.append(p.team().equals("EVIL") ? "🔴 " : "🔵 ")
-				.append("**").append(escape(p.name())).append("** — ").append(p.role());
+				.append("**").append(escape(p.name())).append("** : ").append(p.role());
 			if (p.believed() != null) {
 				d.append(" (croyait être ").append(p.believed()).append(")");
 			}
@@ -226,7 +226,7 @@ public final class Community {
 	private static JsonObject field(String name, String value) {
 		JsonObject f = new JsonObject();
 		f.addProperty("name", name);
-		f.addProperty("value", value.isEmpty() ? "—" : value);
+		f.addProperty("value", value.isEmpty() ? "aucun" : value);
 		f.addProperty("inline", true);
 		return f;
 	}

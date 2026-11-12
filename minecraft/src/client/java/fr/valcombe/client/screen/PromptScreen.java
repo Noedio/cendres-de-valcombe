@@ -99,7 +99,7 @@ public class PromptScreen extends BaseScreen {
 			case "info" -> {
 				// Ce que l'on apprend la nuit est noté dans le carnet (onglet Indices).
 				String phase = ClientState.phase().equals("NIGHT") ? "Nuit " + ClientState.num(view(), "night", 0) + " : " : "";
-				NotebookScreen.addClue(phase + ClientState.str(p, "title") + " — " + ClientState.str(p, "text"));
+				NotebookScreen.addClue(phase + ClientState.str(p, "title") + " : " + ClientState.str(p, "text"));
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "grimoire" -> {

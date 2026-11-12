@@ -278,7 +278,7 @@ public class NotebookScreen extends BaseScreen {
 			}
 			return;
 		}
-		Theme.ink(g, font, "Joueur — rôle annoncé · confiance · rôle que tu lui prêtes · note", px + 14, py + 32, Theme.ASH);
+		Theme.ink(g, font, "Joueur et rôle annoncé, confiance, rôle que tu lui prêtes, note", px + 14, py + 32, Theme.ASH);
 		List<String> names = players();
 		if (names.isEmpty()) {
 			Theme.paragraph(g, font, "Le carnet se remplit pendant une partie : une ligne par joueur. Rien à noter pour l'instant.",

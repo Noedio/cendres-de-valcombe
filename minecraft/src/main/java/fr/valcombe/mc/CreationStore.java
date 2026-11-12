@@ -143,8 +143,8 @@ public final class CreationStore {
 		d.id = "table";
 		d.nom = "La Table de Valcombe";
 		d.description = "Les règles de notre table : 26 rôles, toutes les accusations puis les votes, majorité absolue.";
-		d.ouverture = "Ce soir, les Démons se sont glissés parmi vous. Écoutez, accusez, votez : le village ne survivra "
-			+ "que si le Démon tombe.";
+		d.ouverture = "Ce soir, les Démons se sont glissés parmi vous. Le village tient tant que le Démon tombe avant "
+			+ "qu'ils ne soient les plus nombreux.";
 		d.roles = new ArrayList<>(Role.table().stream().map(r -> r.name().toLowerCase(java.util.Locale.ROOT)).toList());
 		d.reglages.conseil = true;
 		d.regles.majoriteAbsolue = true;

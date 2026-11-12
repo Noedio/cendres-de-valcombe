@@ -71,7 +71,7 @@ public class OrderScreen extends BaseScreen {
 		for (int i = scroll; i < plan.size() && i < scroll + visible(); i++) {
 			JsonObject e = plan.get(i);
 			String player = ClientState.str(e, "player");
-			String text = (i + 1) + ". " + ClientState.str(e, "title") + (player == null || player.isEmpty() ? "" : " — " + player);
+			String text = (i + 1) + ". " + ClientState.str(e, "title") + (player == null || player.isEmpty() ? "" : " · " + player);
 			g.text(font, text, px + 14, y, Theme.INK, false);
 			y += ROW;
 		}

@@ -39,7 +39,7 @@ public class RolePickerScreen extends BaseScreen {
 			int y = py + 30 + (i / 12) * 30;
 			TokenWidget t = new TokenWidget(x, y, 28, "", r.name(), Team.of(r).name(), true, false, () -> pick(r));
 			t.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
-				net.minecraft.network.chat.Component.literal(r.displayName + " — " + r.type.displayName)));
+				net.minecraft.network.chat.Component.literal(r.displayName + ", " + r.type.displayName)));
 			addRenderableWidget(t);
 		}
 		button(px + pw - 92, py + ph - 26, 80, "Retour", () -> minecraft.gui.setScreen(new SeatScreen(name)));

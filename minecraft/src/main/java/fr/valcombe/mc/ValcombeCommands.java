@@ -125,7 +125,7 @@ public final class ValcombeCommands {
 	private static String atelierLink(ServerPlayer p) throws Exception {
 		List<String> links = ValcombeMod.tablet().openAtelier(p.getScoreboardName());
 		p.sendSystemMessage(Component.literal("Atelier web ouvert : créez des rôles et des scénarios, gérez les cartes. "
-			+ "Ouvrez ce lien sur un ordinateur du même réseau — ne le partagez pas :")
+			+ "Ouvrez ce lien sur un ordinateur du même réseau, sans le partager :")
 			.withStyle(net.minecraft.ChatFormatting.GOLD));
 		for (String link : links) {
 			p.sendSystemMessage(Component.literal("  " + link).withStyle(st -> st
@@ -689,7 +689,7 @@ public final class ValcombeCommands {
 					Tablet t = ValcombeMod.tablet();
 					t.open(p.getScoreboardName());
 					p.sendSystemMessage(Component.literal("Grimoire sur tablette ouvert. Ouvrez ce lien sur votre tablette ou téléphone "
-						+ "(même réseau, ou port " + ValcombeMod.community().tabletPort() + " ouvert) — ne le partagez pas :")
+						+ "(même réseau, ou port " + ValcombeMod.community().tabletPort() + " ouvert), sans le partager :")
 						.withStyle(net.minecraft.ChatFormatting.GOLD));
 					for (String link : t.links()) {
 						p.sendSystemMessage(Component.literal("  " + link).withStyle(st -> st

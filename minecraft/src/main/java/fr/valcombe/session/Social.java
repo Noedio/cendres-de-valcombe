@@ -90,7 +90,7 @@ final class Social {
 			return name;
 		}
 		Game.Seat p = g.player(s);
-		StringBuilder b = new StringBuilder(name).append(" — ").append(p.role().displayName);
+		StringBuilder b = new StringBuilder(name).append(" · ").append(p.role().displayName);
 		if (p.believed() != p.role()) {
 			b.append(" (se croit ").append(p.believed().displayName).append(")");
 		}

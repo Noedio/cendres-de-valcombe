@@ -169,7 +169,7 @@
 			<div class="lock hidden" id="roleLock"></div>
 			<label>Partir d'un exemple (facultatif)</label>
 			<select id="rExemple">
-				<option value="">— Choisir un exemple —</option>
+				<option value="">Choisir un exemple…</option>
 				<option value="guetteur">Le Guetteur : combien de mauvais parmi deux joueurs (Citadin)</option>
 				<option value="lanterniere">La Lanternière : protège un joueur chaque nuit (Citadin)</option>
 				<option value="fossoyeur">Le Fossoyeur : apprend le rôle de l'exécuté (Citadin)</option>
@@ -182,7 +182,7 @@
 				<option value="geolier">Le Geôlier : compte les mauvais et protège (Citadin, deux effets)</option>
 			</select>
 			<label>Ou partir d'un rôle intégré, pour en faire une variante</label>
-			<select id="rIntegre"><option value="">— Choisir un rôle intégré —</option></select>
+			<select id="rIntegre"><option value="">Choisir un rôle intégré…</option></select>
 			<div class="row">
 				<div><label>Nom</label><input id="rNom" maxlength="40" placeholder="Le Passeur"></div>
 				<div><label>Identifiant (fichier, partage)</label><input id="rId" maxlength="30" placeholder="passeur"></div>
@@ -819,7 +819,7 @@ function renderRoles() {
 	const integ = $("rIntegre");
 	if (integ.options.length <= 1) {
 		for (const t of data.modelesIntegres || []) {
-			integ.add(new Option(t.nom.replace(" (variante)", "") + " — " + CAMPS[t.camp], t.id));
+			integ.add(new Option(t.nom.replace(" (variante)", "") + " · " + CAMPS[t.camp], t.id));
 		}
 	}
 	updateFields();
@@ -914,7 +914,7 @@ function preview() {
 	$("pTok").className = "token big " + camp;
 	$("pImg").src = "/atelier/embleme/" + emblem + ".png";
 	$("pNom").textContent = $("rNom").value || "Nom du rôle";
-	$("pCamp").textContent = CAMPS[camp] + (evil(camp) ? " — camp du mal" : " — camp du bien");
+	$("pCamp").textContent = CAMPS[camp] + (evil(camp) ? ", camp du mal" : ", camp du bien");
 	$("pTexte").textContent = $("rTexte").value;
 }
 
@@ -1652,8 +1652,8 @@ function renderPlanSel(m, editable) {
 	box.classList.remove("hidden");
 	const n = s.index + 1;
 	const t = document.createElement("div");
-	t.textContent = s.type === "siege" ? "Trône " + n + (n <= m.plan.maisons.length ? " — son joueur dort dans la maison " + n + "." : " — pas de maison n° " + n + " : son joueur partagera une maison ou restera sur son trône.")
-		: s.type === "maison" ? "Maison " + n + (n <= m.plan.sieges.length ? " — c'est celle du joueur du trône " + n + "." : " — pas de trône n° " + n + " : elle ne sert à personne.")
+	t.textContent = s.type === "siege" ? "Trône " + n + (n <= m.plan.maisons.length ? " : son joueur dort dans la maison " + n + "." : " : pas de maison n° " + n + " : son joueur partagera une maison ou restera sur son trône.")
+		: s.type === "maison" ? "Maison " + n + (n <= m.plan.sieges.length ? " : c'est celle du joueur du trône " + n + "." : " : pas de trône n° " + n + " : elle ne sert à personne.")
 		: s.type === "centre" ? "Centre de la place : les joueurs regardent vers lui, et le plan est mesuré depuis ce point."
 		: "Salle de convocation : le Conteur y reçoit un joueur à l'écart, pour lui remettre et lui expliquer son rôle.";
 	const bar = document.createElement("div");
@@ -1826,7 +1826,7 @@ function renderStructures() {
 	const held = ed.structure ? (data.structures.find(x => x.id === ed.structure) || { nom: ed.structure }).nom : null;
 	$("stState").textContent = !data.enJeu ? "Connectez-vous au jeu : l'éditeur agit là où vous vous trouvez."
 		: !ed.construction ? "Vous n'êtes pas en mode construction : « Prendre en main » vous y fera entrer."
-		: "Mode construction — " + sel + (ed.pressePapiers ? ", une copie en mémoire" : "") + ". "
+		: "Mode construction : " + sel + (ed.pressePapiers ? ", une copie en mémoire" : "") + ". "
 			+ (held ? "En main : « " + held + " »" + (ed.orientation ? " (" + ed.orientation + ")" : "") + "." : "Aucune structure en main.");
 	for (const id of ["stTurn", "stFlip", "stPlace"]) $(id).disabled = !held;
 	$("edUndo").textContent = "Annuler la dernière opération" + (ed.annulables ? " (" + ed.annulables + ")" : "");

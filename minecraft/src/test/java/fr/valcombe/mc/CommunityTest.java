@@ -67,7 +67,7 @@ class CommunityTest {
 		JsonObject embed = msg.getAsJsonArray("embeds").get(0).getAsJsonObject();
 		assertEquals("Victoire du bien", embed.get("title").getAsString());
 		String desc = embed.get("description").getAsString();
-		assertTrue(desc.contains("**Bob** — Démon ✝"), desc);
+		assertTrue(desc.contains("**Bob** : Démon ✝"), desc);
 		assertTrue(desc.contains("croyait être Cuisinier"), desc);
 		assertEquals(0, msg.getAsJsonObject("allowed_mentions").getAsJsonArray("parse").size());
 	}

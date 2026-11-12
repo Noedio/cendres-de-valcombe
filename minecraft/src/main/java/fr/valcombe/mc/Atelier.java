@@ -163,7 +163,7 @@ final class Atelier {
 
 	private void log(String who, String what) {
 		String time = java.time.LocalTime.now().withNano(0).toString().substring(0, 5);
-		activity.addFirst(time + " — " + who + " " + what);
+		activity.addFirst(time + " · " + who + " " + what);
 		while (activity.size() > 15) {
 			activity.removeLast();
 		}

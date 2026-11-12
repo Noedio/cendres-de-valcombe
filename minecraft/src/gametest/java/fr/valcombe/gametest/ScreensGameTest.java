@@ -151,7 +151,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 					+ pv.getAsJsonArray("sieges").size());
 		});
 		System.out.println("[valcombe-test] atelier en jeu, carte actuelle : " + here);
-		check(here.equals("village-test | Carte actuelle : « Village de test » — 16 trônes, 16 maisons. | aperçu 48 2304 16"),
+		check(here.equals("village-test | Carte actuelle : « Village de test ». 16 trônes, 16 maisons. | aperçu 48 2304 16"),
 			"carte actuelle et aperçu : " + here);
 		shot(ctx, "28a-atelier-cartes");
 		// Une carte de la bibliothèque : aperçu, copie sous un identifiant libre, suppression en deux clics.
@@ -258,7 +258,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		long botsBefore = server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.session().lobby().stream().filter(n -> n.startsWith("Bot")).count());
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(5));
 		ctx.waitTicks(10);
-		press(ctx, "Essai sur le village  (5–16)");
+		press(ctx, "Essai sur le village  (5 à 16)");
 		shot(ctx, "28l-atelier-creations");
 		press(ctx, "Partie d'essai (charge sa carte)");
 		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.session().scenario()) == null, "l'essai qui charge une carte se confirme");
@@ -949,7 +949,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				});
 				send(ctx, "vc nominer " + target);
 				ctx.waitTicks(10);
-				send(ctx, "vc vote oui"); // main levée dès la défense
+				send(ctx, "vc vote oui"); // Conseil de la table : refusé tant que les votes n'ont pas commencé
 				ctx.waitTicks(20);
 				shot(ctx, "5b-defense");
 				world.getServer().runCommand("vc voter");

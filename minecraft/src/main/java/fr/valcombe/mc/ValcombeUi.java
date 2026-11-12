@@ -84,7 +84,7 @@ public final class ValcombeUi {
 		};
 		ChatFormatting color = r.evil() ? ChatFormatting.RED : ChatFormatting.AQUA;
 		ItemStack s = Gui.icon(item, r.displayName, color,
-			List.of(r.type.displayName + " — camp : " + Team.of(r).displayName, r.text));
+			List.of(r.type.displayName + ", camp : " + Team.of(r).displayName, r.text));
 		// Le jeton du rôle lui-même (emblème aux couleurs du camp), dessiné par le mod.
 		String icon = "icone_" + r.modelSuffix();
 		return model(s, icon);
@@ -505,7 +505,7 @@ public final class ValcombeUi {
 			Game.Seat s = g.player(i);
 			Role r = s.role();
 			ChatFormatting color = r.evil() ? ChatFormatting.RED : ChatFormatting.AQUA;
-			gui.set(i, seatIcon(s.name, s.alive(), s.name + " — " + r.displayName, color, List.of(lines.get(i))));
+			gui.set(i, seatIcon(s.name, s.alive(), s.name + " · " + r.displayName, color, List.of(lines.get(i))));
 		}
 		gui.set(31, Gui.icon(Items.PAPER, "Bluffs et pouvoirs", ChatFormatting.GOLD,
 			List.of(lines.get(g.size()), lines.get(g.size() + 1))));
