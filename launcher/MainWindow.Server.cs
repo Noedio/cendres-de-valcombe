@@ -151,7 +151,7 @@ public partial class MainWindow
         SrvPicker.Items.Add(new ComboBoxItem { Content = "Ce PC (le serveur hébergé ici)", Tag = LocalTarget });
         foreach (var r in _config.RemoteServers)
         {
-            SrvPicker.Items.Add(new ComboBoxItem { Content = $"{r.Name}  ·  {r.Endpoint}", Tag = r.Id });
+            SrvPicker.Items.Add(new ComboBoxItem { Content = $"{r.Name}  ·  {(r.KeyFromServer ? r.Host + " (tunnel SSH)" : r.Endpoint)}", Tag = r.Id });
         }
         if (SelectedRemote == null)
         {
@@ -230,7 +230,7 @@ public partial class MainWindow
         }
         else
         {
-            id = $"distant:{remote.Id}:{remote.Access}:{remote.Host}:{remote.ApiPort}:{remote.ProtectedKey}";
+            id = $"distant:{remote.Id}:{remote.Access}:{remote.Host}:{remote.ApiPort}:{remote.VpsId}:{remote.ProtectedKey}";
             open = () =>
             {
                 if (_captureDir != null)
@@ -239,7 +239,8 @@ public partial class MainWindow
                 }
                 // La clé est déchiffrée une fois ici pour savoir si elle se lit sur ce compte Windows ;
                 // la connexion la redéchiffre à chaque requête, elle ne reste pas en clair en mémoire.
-                if (remote.ReadKey() == null)
+                // Par le tunnel SSH, la clé est lue sur le serveur lui-même : rien à vérifier ici.
+                if (!remote.KeyFromServer && remote.ReadKey() == null)
                 {
                     _srvKeyProblem = remote.ProtectedKey.Length == 0 ? "manquante" : "illisible";
                     return null;
@@ -1608,7 +1609,8 @@ public partial class MainWindow
             return (null, null, "Cette clé n'a pas la bonne forme : 32 à 128 caractères, lettres sans accent, chiffres, « _ » et « - ». "
                 + "Copiez-la telle que /vc admin cle l'affiche.");
         }
-        if (key.Length == 0 && _srvEditing?.ReadKey() == null)
+        // Un serveur loué (tunnel SSH) donne lui-même sa clé : le formulaire n'en demande pas.
+        if (key.Length == 0 && _srvEditing is not { KeyFromServer: true } && _srvEditing?.ReadKey() == null)
         {
             return (null, null, "Donnez la clé d'administration du serveur.");
         }
@@ -1621,6 +1623,7 @@ public partial class MainWindow
             ApiPort = port,
             ProtectedKey = _srvEditing?.ProtectedKey ?? "",
             Access = _srvEditing?.Access ?? RemoteServer.AccessDirect,
+            VpsId = _srvEditing?.VpsId ?? "",
         };
         if (key.Length > 0)
         {

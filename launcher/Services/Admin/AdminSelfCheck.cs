@@ -126,6 +126,25 @@ public static class AdminSelfCheck
             string sealedKey = Dpapi.ProtectText(secret);
             Check(!sealedKey.Contains(secret) && Dpapi.UnprotectText(sealedKey) == secret && Dpapi.UnprotectText("abîmé") == null,
                 "Clé chiffrée avec DPAPI : relue sur ce PC, illisible en clair, un chiffré abîmé donne null");
+            string salted = Dpapi.ProtectText(secret, "valcombe-ssh");
+            Check(Dpapi.UnprotectText(salted, "valcombe-ssh") == secret && Dpapi.UnprotectText(salted) == null,
+                "DPAPI salé (secrets SSH) à côté du DPAPI sans sel (clés d'administration) : chacun ne se relit que par sa voie");
+
+            // Tunnel SSH : la fiche d'un serveur loué passe par SshConnection ; sans son profil, une explication.
+            var orphan = new RemoteServer { Name = "Loué", Host = "vps.exemple.fr", Access = RemoteServer.AccessSsh, VpsId = Guid.NewGuid().ToString("N") };
+            await using (var orphanConn = ServerConnections.Open(orphan))
+            {
+                var lost = await Expect(() => new AdminClient(orphanConn).GetStateAsync(ct));
+                Check(orphan.KeyFromServer && orphanConn is FailedConnection && orphanConn.Description.Contains("tunnel SSH")
+                    && lost?.Status == 0 && lost.Message.Contains("serveurs-loues.json"),
+                    "Serveur loué sans profil SSH : connexion qui l'explique, sans planter ni demander de clé");
+            }
+            var profile = new Ssh.VpsProfile { Name = "Essai", Host = "vps.exemple.fr", User = "debian" };
+            await using (var ssh = new SshConnection(profile))
+            {
+                Check(ssh.CanStartServer && ssh.Description == "tunnel SSH vers debian@vps.exemple.fr",
+                    "Tunnel SSH : décrit par son compte et son hôte, sait démarrer le serveur arrêté");
+            }
             var vanilla = ConsoleFeed.ParseProcessLine("[21:04:13] [Server thread/WARN]: Can't keep up!");
             var fabric = ConsoleFeed.ParseProcessLine("[21:04:13] [main/INFO] (FabricLoader) Loading 9 mods");
             Check(vanilla == ("21:04:13", "WARN", "Can't keep up!") && fabric == ("21:04:13", "INFO", "Loading 9 mods")

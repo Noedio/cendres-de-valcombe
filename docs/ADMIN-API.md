@@ -86,7 +86,7 @@ ssh -N -L 25570:localhost:25570 utilisateur@adresse-du-vps
 
 Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alors au serveur comme si elles venaient de la machine elle-même. Le port 25570 n'a pas besoin d'être ouvert au public pour cela.
 
-Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/Ssh`, `VpsServer.OpenAdminTunnelAsync`) : côté PC, un port libre choisi par Windows (jamais 25565, 25570 ni 24454, que le serveur personnel de l'hôte peut occuper) ; côté serveur, `127.0.0.1` et le port `tabletPort` lu dans `config/valcombe-communaute.json`. Il lit aussi la clé dans `config/valcombe/admin.json` par SSH (avec le compte du serveur, jamais en root) : l'hôte n'a rien à copier. La page Serveur ne voit qu'une `IServerConnection` (adresse de base et clé).
+Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/Ssh`, `VpsServer.OpenAdminTunnelAsync`) : côté PC, un port libre choisi par Windows (jamais 25565, 25570 ni 24454, que le serveur personnel de l'hôte peut occuper) ; côté serveur, `127.0.0.1` et le port `tabletPort` lu dans `config/valcombe-communaute.json`. Il lit aussi la clé dans `config/valcombe/admin.json` par SSH (avec le compte du serveur, jamais en root) : l'hôte n'a rien à copier. Le tunnel ouvert (`IAdminTunnel` : adresse locale et clé) est enveloppé par `SshConnection`, une `IServerConnection` comme l'accès direct : la page Serveur s'en sert sans rien savoir de SSH.
 
 ## Forme des réponses
 
@@ -551,7 +551,7 @@ curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
 
 La page **Serveur** du launcher est écrite contre ce contrat (`launcher/Services/Admin`) :
 
-- `IServerConnection` : un chemin vers l'API. `DirectConnection` envoie les requêtes à une adresse (le serveur de ce PC sur `127.0.0.1`, ou un serveur joignable sans tunnel) ; le tunnel SSH implémentera la même interface. `ServerConnections.Open` choisit d'après le champ `Access` du serveur enregistré.
+- `IServerConnection` : un chemin vers l'API. `DirectConnection` envoie les requêtes à une adresse (le serveur de ce PC sur `127.0.0.1`, ou un serveur joignable sans tunnel) ; `SshConnection` passe par un tunnel SSH vers un serveur loué (profil de `ValcombeData/serveurs-loues.json`, clé et port de l'API lus sur le serveur, tunnel rouvert s'il tombe, démarrage du serveur arrêté par systemd). `ServerConnections.Open` choisit d'après le champ `Access` du serveur enregistré (`direct` ou `ssh`, avec `VpsId` pour le profil SSH).
 - `AdminClient` : un appel par point d'accès ; une erreur devient `AdminException`, avec le message `erreur` du serveur. Après un `401`, un `403` ou un `404`, la page cesse d'interroger le serveur jusqu'à « Réessayer » (insister avec une mauvaise clé mènerait au blocage) ; après un `429`, elle attend `Retry-After`.
 - `ConsoleFeed` : le suivi de `/admin/console` (une lecture par seconde sur l'onglet Console, `depuis`, changement d'`instance`, `plusLoin`).
 - Pour le serveur de ce PC, la clé est lue dans `config/valcombe/admin.json` et le port dans la ligne du journal « API d'administration prête sur le port … ». Une clé de serveur distant est gardée chiffrée avec DPAPI dans `launcher.json`.

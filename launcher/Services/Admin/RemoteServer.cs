@@ -28,10 +28,23 @@ public sealed class RemoteServer
     public string ProtectedKey { get; set; } = "";
 
     /// <summary>
-    /// Par où passer : <see cref="AccessDirect"/> aujourd'hui. Le tunnel SSH (Services/Ssh) ajoutera sa valeur
-    /// et ses propres réglages ; <see cref="ServerConnections.Open"/> choisit la connexion d'après ce champ.
+    /// Par où passer : <see cref="AccessDirect"/> ou <see cref="AccessSsh"/> ; <see cref="ServerConnections.Open"/>
+    /// choisit la connexion d'après ce champ.
     /// </summary>
     public string Access { get; set; } = AccessDirect;
+
+    /// <summary>
+    /// Par un tunnel SSH vers un serveur loué : la connexion (adresse, compte, secrets) est celle du profil
+    /// <see cref="VpsId"/> de ValcombeData/serveurs-loues.json ; la clé et le port de l'API sont lus sur le serveur.
+    /// </summary>
+    public const string AccessSsh = "ssh";
+
+    /// <summary>Pour <see cref="AccessSsh"/> : l'identifiant du profil SSH (<see cref="Ssh.VpsProfile.Id"/>).</summary>
+    public string VpsId { get; set; } = "";
+
+    /// <summary>Vrai si la clé d'administration est lue sur le serveur (tunnel SSH) et non donnée par l'hôte.</summary>
+    [JsonIgnore]
+    public bool KeyFromServer => Access == AccessSsh;
 
     /// <summary>La clé en clair, lue au moment de la requête ; null si absente ou illisible sur ce PC.</summary>
     public string? ReadKey() => Dpapi.UnprotectText(ProtectedKey);
@@ -47,11 +60,15 @@ public sealed class RemoteServer
 public static class ServerConnections
 {
     /// <summary>
-    /// La connexion vers ce serveur. Le tunnel SSH viendra s'ajouter ici (<c>"ssh" =&gt; new SshConnection(...)</c>),
-    /// sans rien changer à la page.
+    /// La connexion vers ce serveur : tunnel SSH (<see cref="SshConnection"/>) pour un serveur loué, accès direct
+    /// sinon. Un profil SSH introuvable donne une connexion qui l'explique à chaque essai.
     /// </summary>
     public static IServerConnection Open(RemoteServer server) => server.Access switch
     {
+        RemoteServer.AccessSsh => Ssh.VpsProfiles.Load().Find(p => p.Id == server.VpsId) is { } profile
+            ? new SshConnection(profile)
+            : new FailedConnection($"tunnel SSH vers {server.Host}",
+                "Le serveur loué de cette fiche n'est plus enregistré sur ce PC (ValcombeData/serveurs-loues.json) : enregistrez-le de nouveau."),
         _ => new DirectConnection(server.Host, server.ApiPort, server.ReadKey),
     };
 

@@ -9,9 +9,9 @@ namespace Valcombe.Launcher.Services.Admin;
 /// <list type="bullet">
 /// <item><see cref="DirectConnection"/> : requêtes HTTP envoyées tout droit à une adresse (le serveur de ce PC,
 /// ou un serveur distant joignable par un réseau privé ou un VPN, avec <c>adminLocalOnly</c> à <c>false</c>).</item>
-/// <item>Le tunnel SSH (ticket à part, dossier Services/Ssh) : il ouvrira le tunnel dans <see cref="ConnectAsync"/>,
-/// puis enverra les requêtes à <c>localhost</c> par ce tunnel, le serveur les recevant comme venues de lui-même.
-/// Il pourra aussi démarrer un serveur arrêté (<see cref="CanStartServer"/>).</item>
+/// <item><see cref="SshConnection"/> : le tunnel SSH vers un serveur loué (dossier Services/Ssh). Il ouvre le tunnel
+/// dans <see cref="ConnectAsync"/>, puis envoie les requêtes à <c>127.0.0.1</c> par ce tunnel, le serveur les recevant
+/// comme venues de lui-même. Il sait aussi démarrer un serveur arrêté (<see cref="CanStartServer"/>).</item>
 /// </list>
 /// Des requêtes peuvent se croiser (une commande envoyée pendant l'interrogation régulière de la page) : une
 /// implémentation doit le supporter. La page ferme la connexion (<see cref="IAsyncDisposable.DisposeAsync"/>) quand
