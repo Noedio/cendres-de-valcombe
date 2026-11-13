@@ -16,15 +16,18 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.core.HolderSet;
+import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
@@ -34,6 +37,7 @@ import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.gamerules.GameRule;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.FlatLevelSource;
@@ -47,8 +51,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import xyz.nucleoid.fantasy.Fantasy;
+import xyz.nucleoid.fantasy.RemoveFromRegistry;
 import xyz.nucleoid.fantasy.RuntimeLevelConfig;
-import xyz.nucleoid.fantasy.RuntimeLevelHandle;
 
 /**
  * Gestionnaire des mondes de Valcombe : hub, parties, parties d'essai, ateliers. C'est la base des voyages
@@ -68,10 +72,12 @@ import xyz.nucleoid.fantasy.RuntimeLevelHandle;
  * <b>Fil d'exécution</b> : tout ce qui touche aux mondes (créer, ouvrir, recréer, supprimer, téléporter) se fait
  * sur le fil du serveur. Les lectures du registre ({@link #list()}, {@link #find(String)}...) se font de partout.
  * <p>
- * <b>Recréer et supprimer</b> prennent quelques ticks : le monde est d'abord déchargé et retiré du serveur (ses
- * joueurs en sont sortis par le {@linkplain #setFallback monde de repli}), puis fermé et ses fichiers effacés. Le résultat
- * arrive par un {@link CompletableFuture} complété sur le fil du serveur. Si le serveur s'arrête entre-temps,
- * l'effacement est terminé au démarrage suivant.
+ * <b>Recréer et supprimer</b> prennent quelques ticks : les joueurs sont aussitôt sortis du monde par le
+ * {@linkplain #setFallback monde de repli} ; au tick suivant, le monde est retiré du serveur (il ne tourne plus), ses
+ * tronçons sont déchargés comme à l'arrêt du serveur, puis il est fermé et ses fichiers effacés. On n'attend pas, comme
+ * le ferait Fantasy, que le serveur décharge de lui-même tous les tronçons : un monde où un joueur vient d'arriver
+ * en garde parfois pendant plus d'une minute. Le résultat arrive par un {@link CompletableFuture} complété sur le fil
+ * du serveur. Si le serveur s'arrête entre-temps, l'effacement est terminé au démarrage suivant.
  */
 public final class WorldManager {
 	private static final Logger LOG = LoggerFactory.getLogger("valcombe");
@@ -113,21 +119,32 @@ public final class WorldManager {
 	/** Repli par défaut : le point d'apparition du monde principal (la place du village quand une carte est posée). */
 	public static final Fallback MAIN_WORLD = (player, from) -> toMainWorld(player);
 
+	/**
+	 * Au plus combien de ticks (5 s) on laisse les tronçons d'un monde retiré du serveur se décharger avant de le
+	 * fermer quand même : la fermeture enregistre et libère tout ce qui reste, elle bloque seulement un peu plus longtemps.
+	 */
+	static final int DRAIN_TICKS = 100;
+	/** Au plus combien de tâches de tronçons on traite par tick pour un monde retiré du serveur. */
+	private static final int DRAIN_TASKS = 10_000;
+
 	private final MinecraftServer server;
 	private final WorldRegistry registry;
-	/** Poignées Fantasy des mondes ouverts, par identifiant. */
-	private final Map<String, RuntimeLevelHandle> handles = new HashMap<>();
 	/** Recréations et suppressions en cours, par identifiant. */
 	private final Map<String, Pending> pending = new LinkedHashMap<>();
 	private volatile Fallback fallback = MAIN_WORLD;
 
-	/** Une recréation ou une suppression qui attend que Fantasy ait retiré l'ancien monde du serveur. */
+	/**
+	 * Une recréation ou une suppression en cours : l'ancien monde est retiré du serveur au premier tick, ses
+	 * tronçons déchargés pendant les suivants, puis il est fermé et ses fichiers effacés.
+	 */
 	private static final class Pending {
 		final WorldEntry entry;
 		final ServerLevel old;
 		final boolean recreate;
 		final CompletableFuture<ServerLevel> done = new CompletableFuture<>();
 		int ticks;
+		/** Retiré de la table des mondes du serveur (le serveur ne le fait plus tourner). */
+		boolean detached;
 		boolean closed;
 		int deleteTries;
 
@@ -199,12 +216,12 @@ public final class WorldManager {
 	/**
 	 * À l'arrêt du serveur : les mondes ouverts sont enregistrés par le serveur lui-même. Une recréation ou une
 	 * suppression en cours échoue ici ; ses fichiers seront effacés au démarrage suivant. Un ancien monde déjà retiré
-	 * du serveur par Fantasy mais pas encore fermé l'est ici : le serveur ne le fermera plus, et ses fichiers restés
-	 * ouverts (en solo, Java continue de tourner) empêcheraient leur effacement au prochain lancement du monde.
+	 * du serveur mais pas encore fermé l'est ici : le serveur ne le fermera plus, et ses fichiers restés ouverts (en
+	 * solo, Java continue de tourner) empêcheraient leur effacement au prochain lancement du monde.
 	 */
 	public void stop() {
 		for (Pending p : pending.values()) {
-			if (p.old != null && !p.closed && server.getLevel(key(p.entry.id())) != p.old) {
+			if (p.old != null && !p.closed && p.detached) {
 				p.closed = true;
 				try {
 					p.old.close();
@@ -216,7 +233,6 @@ public final class WorldManager {
 				+ " » sera remis à neuf au prochain démarrage."));
 		}
 		pending.clear();
-		handles.clear();
 	}
 
 	// ------------------------------------------------------------------
@@ -393,7 +409,6 @@ public final class WorldManager {
 		if (!recreate) {
 			registry.remove(e.id());
 		}
-		RuntimeLevelHandle handle = handles.remove(e.id());
 		ServerLevel old = server.getLevel(key(e.id()));
 		if (old == null) {
 			// Monde fermé : rien à attendre.
@@ -401,24 +416,20 @@ public final class WorldManager {
 			finish(p);
 			return p.done;
 		}
+		// Les joueurs sortent tout de suite ; le monde est retiré du serveur au prochain tick (voir tick()). Ni
+		// le déchargement de Fantasy (handle.unload), qui attend que le serveur ait déchargé de lui-même tous les
+		// tronçons, ni sa suppression (handle.delete), qui efface le dossier d'un monde encore ouvert : sous Windows
+		// les fichiers ouverts résistent, et Fantasy demande alors leur effacement à l'arrêt de Java, ce qui
+		// emporterait les fichiers du monde recréé au même endroit.
 		evacuate(old, e, recreate);
 		Pending p = new Pending(e, old, recreate);
 		pending.put(e.id(), p);
-		if (handle == null) {
-			// Ouvert sans poignée (par une autre voie) : Fantasy redonne une poignée sur le monde déjà ouvert.
-			handle = Fantasy.get(server).getOrOpenPersistentLevel(key(e.id()).identifier(), config(e.sorte()));
-		}
-		// Fantasy décharge le monde (le retire du serveur une fois ses tronçons déchargés), puis on le ferme et on
-		// efface ses fichiers nous-mêmes. Sa suppression à lui (delete) efface le dossier d'un monde encore ouvert :
-		// sous Windows, les fichiers ouverts résistent et Fantasy demande alors leur effacement à l'arrêt de Java,
-		// ce qui emporterait les fichiers du monde recréé au même endroit.
-		handle.unload();
 		return p.done;
 	}
 
 	/**
-	 * À appeler à chaque tick du serveur : avance les recréations et suppressions en cours, une fois que Fantasy
-	 * a retiré l'ancien monde du serveur.
+	 * À appeler à chaque tick du serveur, en fin de tick (hors de la boucle où le serveur fait tourner ses mondes) :
+	 * avance les recréations et suppressions en cours.
 	 */
 	public void tick() {
 		if (pending.isEmpty()) {
@@ -426,14 +437,67 @@ public final class WorldManager {
 		}
 		for (Pending p : new ArrayList<>(pending.values())) {
 			p.ticks++;
-			if (p.old != null && server.getLevel(key(p.entry.id())) == p.old) {
-				if (p.ticks % 600 == 0) {
-					LOG.warn("Monde {} : toujours pas déchargé après {} ticks (tronçons gardés chargés ?).", p.entry.id(), p.ticks);
+			if (p.old != null && !p.closed) {
+				if (!p.detached) {
+					// Un joueur arrivé depuis par une autre voie (commande, portail) en sort lui aussi.
+					evacuate(p.old, p.entry, p.recreate);
+					p.detached = true; // une seule fois, même si une étape échoue : la suite ferme le monde quand même
+					detach(p.old);
 				}
-				continue;
+				if (!drain(p)) {
+					continue;
+				}
 			}
 			finish(p);
 		}
+	}
+
+	/**
+	 * Retire ce monde du serveur, qui cesse aussitôt de le faire tourner, comme Fantasy le fait au déchargement :
+	 * plus aucun ticket ne garde ses tronçons, il quitte la table des mondes et celle des dimensions, et les mods
+	 * en sont avertis (événement de déchargement de Fabric). Il reste à décharger ses tronçons et à le fermer.
+	 */
+	private void detach(ServerLevel level) {
+		// Comme à l'arrêt du serveur : les tickets (joueurs, chargements forcés, portails...) ne comptent plus.
+		level.getChunkSource().deactivateTicketsOnClosing();
+		if (!((fr.valcombe.mixin.MinecraftServerLevelsAccessor) server).valcombe$levels().remove(level.dimension(), level)) {
+			return; // déjà retiré par une autre voie : plus rien à annoncer
+		}
+		try {
+			ServerLevelEvents.UNLOAD.invoker().onLevelUnload(server, level);
+		} catch (RuntimeException ex) {
+			LOG.error("Déchargement du monde " + level.dimension().identifier() + " : un mod a échoué", ex);
+		}
+		// Retiré aussi des dimensions déclarées, comme au déchargement par Fantasy : une recréation l'y remet, et un
+		// monde supprimé n'est plus enregistré dans level.dat.
+		@SuppressWarnings("unchecked")
+		MappedRegistry<LevelStem> stems = (MappedRegistry<LevelStem>) server.registries().compositeAccess()
+			.lookupOrThrow(Registries.LEVEL_STEM);
+		RemoveFromRegistry.remove(stems, level.dimension().identifier());
+	}
+
+	/**
+	 * Fait avancer le déchargement des tronçons d'un monde retiré du serveur, comme le serveur le fait pour tous ses
+	 * mondes à l'arrêt ; vrai quand il n'y a plus rien à faire, ou quand on a assez attendu ({@link #DRAIN_TICKS}).
+	 */
+	private boolean drain(Pending p) {
+		ServerChunkCache chunks = p.old.getChunkSource();
+		chunks.deactivateTicketsOnClosing();
+		chunks.tick(() -> true, false);
+		// Les tâches de tronçons destinées au fil du serveur (fin de chargement, de génération) : le serveur ne les
+		// traite plus pour un monde qu'il ne connaît plus.
+		for (int i = 0; i < DRAIN_TASKS && chunks.pollTask(); i++) {
+			// rien d'autre : pollTask() exécute une tâche
+		}
+		if (!chunks.chunkMap.hasWork()) {
+			return true;
+		}
+		if (p.ticks >= DRAIN_TICKS) {
+			LOG.warn("Monde {} : tronçons toujours en cours de déchargement après {} ticks, fermé quand même ({} tronçons).",
+				p.entry.id(), p.ticks, chunks.getLoadedChunksCount());
+			return true;
+		}
+		return false;
 	}
 
 	/** Ferme l'ancien monde, efface ses fichiers, puis le recrée (ou non) ; complète le résultat. */
@@ -441,8 +505,8 @@ public final class WorldManager {
 		String id = p.entry.id();
 		if (p.old != null && !p.closed) {
 			p.closed = true;
-			// Fantasy retire le monde sans le fermer : ses fichiers resteraient ouverts (et donc impossibles à
-			// effacer sous Windows). On le ferme ici, une fois qu'il ne tourne plus.
+			// La fermeture enregistre ce qui reste, attend les écritures en cours et ferme les fichiers du monde
+			// (sinon impossibles à effacer sous Windows), comme à l'arrêt du serveur.
 			try {
 				p.old.close();
 			} catch (IOException | RuntimeException ex) {
@@ -491,8 +555,14 @@ public final class WorldManager {
 		this.fallback = fallback == null ? MAIN_WORLD : fallback;
 	}
 
-	/** Envoie au monde de repli tous les joueurs de ce monde, avec un mot pour leur dire pourquoi. */
+	/**
+	 * Envoie au monde de repli tous les joueurs de ce monde, avec un mot pour leur dire pourquoi. Un joueur que ni
+	 * le repli ni le monde principal n'ont pu sortir est déconnecté : il ne doit pas rester dans un monde que le
+	 * serveur ne fait plus tourner (à sa reconnexion, Minecraft le place dans le monde principal).
+	 */
 	private void evacuate(ServerLevel level, WorldEntry e, boolean recreate) {
+		Component why = Component.literal("Le monde « " + e.nom() + " » " + (recreate ? "est remis à neuf" : "est supprimé")
+			+ " : tu en as été sorti.");
 		for (ServerPlayer p : new ArrayList<>(level.players())) {
 			try {
 				fallback.evacuate(p, e);
@@ -500,10 +570,18 @@ public final class WorldManager {
 				LOG.error("Monde de repli en échec pour " + p.getScoreboardName(), ex);
 			}
 			if (p.level() == level) {
-				toMainWorld(p); // le repli n'a rien fait : le monde principal, toujours là
+				try {
+					toMainWorld(p); // le repli n'a rien fait : le monde principal, toujours là
+				} catch (RuntimeException ex) {
+					LOG.error("Retour au monde principal en échec pour " + p.getScoreboardName(), ex);
+				}
 			}
-			p.sendSystemMessage(Component.literal("Le monde « " + e.nom() + " » " + (recreate ? "est remis à neuf" : "est supprimé")
-				+ " : tu en as été sorti.").withStyle(ChatFormatting.GRAY));
+			if (p.level() == level) {
+				LOG.warn("{} n'a pas pu sortir du monde {} : déconnecté.", p.getScoreboardName(), e.id());
+				p.connection.disconnect(why);
+				continue;
+			}
+			p.sendSystemMessage(why.copy().withStyle(ChatFormatting.GRAY));
 		}
 	}
 
@@ -529,9 +607,7 @@ public final class WorldManager {
 
 	/** Ouvre (ou crée) le monde Fantasy de cette fiche. */
 	private ServerLevel open(WorldEntry e) {
-		RuntimeLevelHandle handle = Fantasy.get(server).getOrOpenPersistentLevel(key(e.id()).identifier(), config(e.sorte()));
-		handles.put(e.id(), handle);
-		return handle.asLevel();
+		return Fantasy.get(server).getOrOpenPersistentLevel(key(e.id()).identifier(), config(e.sorte())).asLevel();
 	}
 
 	/** Les règles de jeu d'un monde de Valcombe : paisible et sans dégâts, comme le monde de la partie. */

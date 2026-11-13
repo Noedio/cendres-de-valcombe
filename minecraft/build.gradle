@@ -144,3 +144,36 @@ fabricApi {
 		eula = true
 	}
 }
+
+// Vocal des lancements de développement (runClient, runServer, runClientGameTest) : jamais le port par défaut de
+// Simple Voice Chat (24454), ni 25565 ou 25570 (ces trois ports sont pris par le serveur personnel), ni « -1 » (le
+// port du serveur Minecraft). Avant chaque lancement, le réglage « port » du vocal de son dossier passe à 24499 s'il
+// manque ou s'il vaut l'un d'eux ; les autres réglages du fichier restent tels quels.
+// Le dossier est celui de la configuration de lancement de Loom (runClientGameTest : build/run/clientGameTest) : la
+// tâche ne reçoit son dossier de travail qu'au moment de lancer le jeu, après ce réglage.
+def devVoicePort = '24499'
+def forbiddenVoicePorts = ['24454', '25565', '25570', '-1']
+tasks.withType(JavaExec).matching { it.name.startsWith('run') && it.name.length() > 3 }.configureEach { t ->
+	def runName = t.name.substring(3, 4).toLowerCase() + t.name.substring(4)
+	def runDir = providers.provider {
+		def run = loom.runs.findByName(runName)
+		run == null ? null : file(run.runDir)
+	}
+	t.doFirst { task ->
+		def dir = runDir.getOrNull() ?: task.workingDir
+		def props = new File(dir, 'config/voicechat/voicechat-server.properties')
+		def lines = props.exists() ? props.readLines('UTF-8') : []
+		int at = lines.findIndexOf { it.trim().startsWith('port=') }
+		if (at >= 0 && !forbiddenVoicePorts.contains(lines[at].trim().substring(5).trim())) {
+			return
+		}
+		if (at >= 0) {
+			lines[at] = "port=${devVoicePort}".toString()
+		} else {
+			lines << "port=${devVoicePort}".toString()
+		}
+		props.parentFile.mkdirs()
+		props.write(lines.join('\n') + '\n', 'UTF-8')
+		task.logger.lifecycle("Vocal de développement : port ${devVoicePort} ({})", props)
+	}
+}

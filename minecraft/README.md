@@ -31,7 +31,7 @@ Il faut Java 25.
 | --- | --- |
 | `./gradlew build` | Compile et lance les tests JUnit ; le mod est dans `build/libs/` |
 | `./gradlew runClientGameTest` | Joue une partie en jeu et enregistre des captures dans `build/run/clientGameTest/screenshots/` |
-| `./gradlew runServer`, `./gradlew runClient` | Serveur et client de développement (Simple Voice Chat inclus) |
+| `./gradlew runServer`, `./gradlew runClient` | Serveur et client de développement (Simple Voice Chat inclus) ; le vocal de ces lancements et des tests en jeu prend le port 24499, jamais 24454, 25565 ni 25570 (réglé par `build.gradle` avant chaque lancement) |
 | `python tools/make_assets.py`, puis `make_models.py` et `make_tools.py` | Régénèrent les textures en 128 px (moteur de dessin `tools/dessin.py`, sans dépendance) ; `make_assets.py --cadres` redessine aussi le parchemin, le cadre et les boutons |
 | `python tools/make_ui.py` | Régénère les textures d'interface haute résolution et les polices déclarées (`--polices` : retélécharge les polices libres) |
 | `python tools/make_modpack.py` | Fabrique `dist/Valcombe-<version>.mrpack` et `dist/serveur-valcombe/` |

@@ -27,6 +27,9 @@ import net.minecraft.world.level.block.Blocks;
  * supprimer avec un joueur dedans (il est renvoyé au monde principal, les fichiers sont effacés).
  */
 public class WorldsGameTest implements FabricClientGameTest {
+	/** Au plus 10 s (200 ticks) pour remettre à neuf ou supprimer un monde. */
+	private static final int LIMIT = 200;
+
 	private static void check(boolean ok, String what) {
 		if (!ok) {
 			throw new AssertionError("Échec : " + what);
@@ -126,8 +129,9 @@ public class WorldsGameTest implements FabricClientGameTest {
 				old.set(worlds().level(id));
 				recreated.set(worlds().recreate(id));
 			});
-			// Fantasy décharge d'abord le monde (tronçons déchargés un à un) : quelques secondes au plus.
-			check(waitFor(ctx, world, 600, s -> recreated.get().isDone()), "remise à neuf terminée");
+			// Le monde est retiré du serveur au tick suivant, ses tronçons déchargés, puis il est fermé : quelques
+			// secondes au plus (WorldManager.DRAIN_TICKS), même si le serveur gardait des tronçons chargés.
+			check(waitFor(ctx, world, LIMIT, s -> recreated.get().isDone()), "remise à neuf terminée");
 			check(!recreated.get().isCompletedExceptionally(), "remise à neuf sans erreur");
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
 				"joueur renvoyé au monde principal");
@@ -160,12 +164,13 @@ public class WorldsGameTest implements FabricClientGameTest {
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
 				"/vc monde aller principal");
 
-			// Supprimer, avec le joueur dedans : il est sorti, la fiche et les fichiers disparaissent.
+			// Supprimer, avec le joueur tout juste arrivé dedans (ses tronçons encore en chargement) : il est sorti,
+			// la fiche et les fichiers disparaissent.
 			send(ctx, "vc monde aller " + id);
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals("valcombe:" + id)), "dans le monde avant sa suppression");
 			java.nio.file.Path folder = server.computeOnServer(s -> worlds().folder(id));
 			send(ctx, "vc monde supprimer " + id);
-			check(waitFor(ctx, world, 600, s -> worlds().find(id) == null && !worlds().busy(id)
+			check(waitFor(ctx, world, LIMIT, s -> worlds().find(id) == null && !worlds().busy(id)
 				&& s.getLevel(WorldManager.key(id)) == null), "monde supprimé du serveur et du registre");
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
 				"joueur renvoyé au monde principal");
