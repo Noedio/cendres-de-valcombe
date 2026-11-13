@@ -93,9 +93,17 @@ Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo u
 
 ## 6. Sauvegardes automatiques
 
-`sauvegarder.sh` archive le monde, les réglages de Valcombe (`config/` : village, scripts, partie en cours, statistiques, webhook) et les listes de joueurs. Il garde les 14 dernières archives dans `/opt/valcombe/sauvegardes/`.
+**Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières ; celle qui tombe pendant une partie attend la fin de la partie (24 heures au plus). Le jeu continue pendant la copie. Rien à installer :
 
-Sauvegarde chaque nuit à 5 h :
+- `/vc sauvegarde` dit où elles en sont, `/vc sauvegarde maintenant` en fait une tout de suite, `/vc sauvegarde liste` les montre ;
+- **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. L'API d'administration le fait d'un clic (restauration puis redémarrage), et c'est par elle que le launcher le fera ;
+- les réglages (intervalle, nombre gardé...) : `/vc sauvegarde reglages`, ou `config/valcombe/sauvegardes.json`.
+
+Les archives ne contiennent ni la clé d'administration, ni le webhook Discord, ni `server.properties` et les listes de joueurs. Le détail (contenu, rotation, restauration) est dans [docs/ADMIN-API.md](docs/ADMIN-API.md#les-sauvegardes). L'arrêt du serveur attend la fin de la sauvegarde d'arrêt : le service systemd lui laisse 10 minutes.
+
+`sauvegarder.sh`, en plus, archive tout le dossier de façon brute (le monde, tout `config/` avec le webhook, `server.properties` et les listes de joueurs) et garde les 14 dernières archives dans `/opt/valcombe/sauvegardes/`. Utile une fois par nuit, en complément.
+
+Sauvegarde brute chaque nuit à 5 h :
 
 ```bash
 sudo crontab -u valcombe -e
@@ -107,7 +115,7 @@ Ajoutez la ligne :
 0 5 * * * /opt/valcombe/sauvegarder.sh
 ```
 
-Pour restaurer : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
+Pour restaurer une archive brute : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC (celles du mod se téléchargent par l'API d'administration) : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
 
 ## 7. Mettre à jour
 
@@ -119,7 +127,7 @@ Une partie en cours est sauvegardée automatiquement et reprend après le redém
 
 ## 8. Piloter le serveur : l'API d'administration
 
-Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage. Le launcher s'en servira pour piloter le serveur ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
+Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage, sauvegardes (liste, téléchargement, restauration d'un clic). Le launcher s'en servira pour piloter le serveur ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
 
 - **La clé** s'affiche dans le journal au premier démarrage (`sudo journalctl -u valcombe | grep "Clé d'administration"`). Elle est gardée dans `/opt/valcombe/config/valcombe/admin.json`. Ensuite : `/vc admin cle` (console, ou opérateur en jeu) la réaffiche, `/vc admin nouvellecle` la remplace. Elle donne tout pouvoir sur le serveur : ne la partagez pas.
 - **Elle n'accepte que la machine elle-même** (une requête venue d'ailleurs est refusée, même avec la clé) : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :

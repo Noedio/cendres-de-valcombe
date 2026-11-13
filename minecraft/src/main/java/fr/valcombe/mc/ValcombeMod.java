@@ -88,6 +88,28 @@ public final class ValcombeMod implements ModInitializer {
 		return worldsView;
 	}
 
+	private static volatile BackupService backups;
+
+	/** Gestionnaire des sauvegardes (disponible une fois le serveur démarré, jusqu'à son arrêt). */
+	public static BackupService backups() {
+		return backups;
+	}
+
+	/** Version du mod Valcombe. */
+	static String modVersion() {
+		return net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
+			.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+	}
+
+	/**
+	 * Une partie est-elle en cours (joueurs assis, de la mise en place à la fin) ? Une sauvegarde automatique attend
+	 * alors la fin de la partie (réglage pendantPartie). Fil du serveur.
+	 */
+	static boolean gameInProgress() {
+		var g = SESSION.game();
+		return g != null && g.phase() != fr.valcombe.rules.Game.Phase.SETUP && g.phase() != fr.valcombe.rules.Game.Phase.ENDED;
+	}
+
 	/** Le serveur est-il en veille (vide depuis une minute, il ne fait plus de tick) ? */
 	static boolean asleep() {
 		return System.nanoTime() - lastTick > 2_000_000_000L;
@@ -276,6 +298,12 @@ public final class ValcombeMod implements ModInitializer {
 		if (!fr.valcombe.admin.ConsoleCapture.install(CONSOLE)) {
 			LOG.warn("Console du serveur non copiée : l'API d'administration la montrera vide.");
 		}
+		// Restauration prévue (POST /admin/sauvegardes/restaurer, /vc sauvegarde restaurer) : sur un serveur dédié, le
+		// mod est initialisé avant que Minecraft ne lise server.properties et n'ouvre le monde. C'est le seul moment où
+		// l'on peut remplacer les fichiers des mondes.
+		if (net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType() == net.fabricmc.api.EnvType.SERVER) {
+			BackupService.restoreAtStartup(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir(), modVersion());
+		}
 		ValcombeNet.registerPayloads();
 		HOST.setUi(UI);
 		// Dalles de la salle d'attente
@@ -321,6 +349,14 @@ public final class ValcombeMod implements ModInitializer {
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
 			setUpAdmin(server);
+			// Sauvegardes : réglages, archives interrompues effacées, sauvegardes automatiques (serveur dédié).
+			try {
+				BackupService b = new BackupService(server, modVersion(), SESSION::saveNow, ValcombeMod::gameInProgress);
+				b.start();
+				backups = b;
+			} catch (RuntimeException e) {
+				LOG.error("Sauvegardes indisponibles", e);
+			}
 			HOST.prepareWorld();
 			// Mondes de Valcombe (Fantasy) : rouverts avant l'arrivée des joueurs, qui peuvent s'y être déconnectés.
 			try {
@@ -351,6 +387,10 @@ public final class ValcombeMod implements ModInitializer {
 			if (idleClock != null) {
 				idleClock.shutdownNow();
 				idleClock = null;
+			}
+			// Une copie en cours est abandonnée avant que Minecraft n'enregistre les mondes (la sauvegarde d'arrêt suit).
+			if (backups != null) {
+				backups.stopping();
 			}
 			try {
 				SESSION.saveNow(); // la partie en cours reprendra au prochain démarrage
@@ -387,6 +427,18 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			if (tablet != null) {
 				tablet.close();
+			}
+		});
+		// Mondes enregistrés et fermés : la sauvegarde d'arrêt (serveur dédié), avant que le processus ne se termine.
+		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+			BackupService b = backups;
+			backups = null;
+			if (b != null) {
+				try {
+					b.stopped();
+				} catch (RuntimeException e) {
+					LOG.error("Sauvegarde d'arrêt impossible", e);
+				}
 			}
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {

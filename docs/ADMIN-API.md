@@ -16,6 +16,14 @@ Version du contrat : **1** (champ `api` de `GET /admin/etat`). Elle n'augmente q
 | POST | `/admin/reglages` | Change ces réglages ; dit si un redémarrage est nécessaire |
 | POST | `/admin/arreter` | Arrêt propre du serveur |
 | POST | `/admin/redemarrer` | Arrêt propre, avec le drapeau qui demande la relance |
+| GET | `/admin/sauvegardes` | Les sauvegardes, celle en cours, la prochaine, la restauration prévue |
+| POST | `/admin/sauvegardes` | Une sauvegarde maintenant |
+| GET | `/admin/sauvegardes/reglages` | Réglages des sauvegardes automatiques |
+| POST | `/admin/sauvegardes/reglages` | Change ces réglages |
+| POST | `/admin/sauvegardes/restaurer` | Prévoit la restauration d'une sauvegarde au prochain démarrage, et redémarre si demandé |
+| DELETE | `/admin/sauvegardes/restaurer` | Annule la restauration prévue |
+| GET | `/admin/sauvegardes/<nom>` | Télécharge l'archive |
+| DELETE | `/admin/sauvegardes/<nom>` | Efface une sauvegarde |
 
 ## Où et quand
 
@@ -80,7 +88,7 @@ Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alor
 
 ## Forme des réponses
 
-- Toujours du JSON en UTF-8 (`Content-Type: application/json; charset=utf-8`), avec `Cache-Control: no-store`.
+- Toujours du JSON en UTF-8 (`Content-Type: application/json; charset=utf-8`), avec `Cache-Control: no-store`, sauf le téléchargement d'une sauvegarde (`application/zip`).
 - Les noms de champs sont en français, comme dans le reste du mod.
 - En cas d'erreur, l'objet a un seul champ `erreur`, un message en français à montrer tel quel :
 
@@ -91,13 +99,13 @@ Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alor
 | Statut | Quand |
 | --- | --- |
 | 200 | Réussi |
-| 202 | Arrêt ou redémarrage accepté (le serveur s'arrête juste après la réponse) |
+| 202 | Arrêt ou redémarrage accepté (le serveur s'arrête juste après la réponse) ; sauvegarde lancée (elle continue après la réponse) |
 | 400 | Requête fautive : JSON invalide, champ inconnu, valeur hors bornes, paramètre illisible |
 | 401 | Clé absente ou fausse |
 | 403 | Adresse refusée (`adminLocalOnly`) |
 | 404 | Point d'accès inconnu, API désactivée (`enabled: false`) ou fermée (partie solo) |
 | 405 | Mauvaise méthode ; l'en-tête `Allow` dit laquelle est attendue |
-| 409 | Impossible dans cet état (par exemple arrêter une partie solo) |
+| 409 | Impossible dans cet état (par exemple arrêter une partie solo, ou lancer une sauvegarde pendant qu'une autre se fait) |
 | 413 | Corps de requête trop gros |
 | 429 | Trop d'essais ratés : réessayer après `Retry-After` secondes |
 | 500 | Erreur interne (détail dans le journal du serveur) |
@@ -321,6 +329,202 @@ Le mod ne peut pas se relancer lui-même : c'est **celui qui a lancé le serveur
   - Le launcher, quand il lance lui-même le serveur (vague 2), applique la même règle.
   - Un serveur lancé autrement (commande `java` à la main, hébergeur avec son propre panneau) s'arrête simplement : il faut le relancer soi-même.
 
+## Les sauvegardes
+
+Le mod sauvegarde lui-même les mondes et les créations, dans des archives zip horodatées rangées dans le dossier `backups/` du serveur (à côté de `server.properties`), et les restaure d'un clic.
+
+### Ce qu'une archive contient
+
+| Dans l'archive | Ce que c'est |
+| --- | --- |
+| `monde/` | Le dossier du monde du serveur (`world/` d'ordinaire), donc **tous les mondes de Valcombe** : le hub, les parties, les ateliers sont rangés dans `world/dimensions/valcombe/<id>`. Le verrou `session.lock` n'y est pas. |
+| `config/valcombe/` | Les créations de l'Atelier, les cartes de la bibliothèque, les structures, le registre des mondes (`mondes.json`). |
+| `config/valcombe-*` | L'état du jeu rangé à côté : partie en cours, fiche du village posé, instantané de la carte, statistiques, scripts. |
+| `valcombe-sauvegarde.json` | La fiche de l'archive (dernière entrée) : sorte, date, auteur, version du mod et de Minecraft, nombre de fichiers, noms des mondes. Une archive sans fiche lisible n'est pas restaurée. |
+
+**Jamais dans une archive, et jamais touchés par une restauration** :
+
+- `config/valcombe/admin.json`, la **clé d'administration**. Une archive se télécharge et se copie sur d'autres machines : elle ne doit jamais porter un secret qui donne tout pouvoir sur le serveur. La chiffrer ne servirait à rien (la clé de chiffrement serait sur le même serveur), et restaurer une ancienne clé couperait le launcher qui pilote le serveur au moment même où il en a besoin.
+- `config/valcombe-communaute.json` : le webhook Discord (un secret lui aussi), le port de la tablette et le message d'accueil, qui sont des réglages du serveur et non l'état du jeu.
+- `config/valcombe/sauvegardes.json` (une restauration ne rallume ni n'éteint les sauvegardes automatiques), la demande de restauration, le drapeau de redémarrage, le lien d'ouverture de l'Atelier pour l'hôte et les fichiers en cours d'écriture (`.tmp`).
+- Les réglages de Minecraft (`server.properties`, liste blanche, opérateurs) : restaurer les mondes ne change pas qui entre sur le serveur ni qui le commande.
+
+### Nom d'une archive
+
+`valcombe-AAAA-MM-JJ_HH-MM-SS-<sorte>.zip`, à l'heure du serveur, par exemple `valcombe-2026-11-13_09-12-44-auto.zip`. Deux archives de la même sorte nées dans la même seconde prennent un numéro (`...-manuelle-2.zip`). Le nom est l'identifiant de la sauvegarde partout (API, commandes) ; un nom qui ne suit pas exactement ce modèle est refusé.
+
+| Sorte | Quand | Effacée par la rotation |
+| --- | --- | --- |
+| `auto` | À intervalle régulier | Oui |
+| `arret` | À chaque arrêt du serveur | Oui |
+| `manuelle` | Demandée (API, `/vc sauvegarde maintenant`) | Non : seulement à la main |
+| `avant-restauration` | L'état du serveur juste avant une restauration, faite par la restauration elle-même | Oui |
+
+**Rotation** : après chaque sauvegarde réussie, les plus anciennes des sortes `auto`, `arret` et `avant-restauration` sont effacées pour n'en garder que `garder` (10 par défaut). Les sauvegardes manuelles ne comptent pas et ne sont jamais effacées d'elles-mêmes. Un `garder` abaissé s'applique à la sauvegarde suivante, pas tout de suite.
+
+### Comment une sauvegarde se fait
+
+Une sauvegarde est **cohérente sans geler le jeu** :
+
+1. sur le fil du serveur : la partie en cours est enregistrée, tout est écrit sur le disque (comme `save-all flush`), puis l'écriture des mondes est suspendue (comme `save-off`) : plus aucun fichier de monde ne change pendant la copie. Ce temps-là est court ;
+2. sur un fil à part, de faible priorité : la copie dans l'archive, pendant que le jeu continue. L'archive s'écrit sous le nom `<nom>.zip.partiel` et ne prend son vrai nom qu'une fois complète ;
+3. sur le fil du serveur : l'écriture des mondes reprend (comme `save-on`), chaque monde retrouvant exactement l'état qu'il avait (un `save-off` tapé par un opérateur est respecté). Puis la rotation.
+
+Une seule sauvegarde à la fois. Avant de copier, le mod vérifie qu'il reste sur le disque la taille des fichiers plus 64 Mo ; sinon la sauvegarde échoue avec un message qui le dit. Si le serveur s'arrête pendant une copie, elle est abandonnée proprement (son `.partiel` est effacé) et la sauvegarde d'arrêt la remplace.
+
+### Sauvegardes automatiques
+
+Sur un **serveur dédié** seulement (en solo, seulement à la demande) :
+
+- **à intervalle** : `intervalleMinutes` (6 heures par défaut) après la dernière sauvegarde, quelle qu'en soit la sorte (ou après le démarrage s'il n'y en a aucune). Le mod regarde toutes les 30 secondes, même quand le serveur vide est en veille ;
+- **à l'arrêt** (`aLArret`) : une fois les mondes enregistrés et fermés, avant que le processus ne se termine. Elle n'est pas faite quand une restauration est prévue (la sauvegarde de sécurité du démarrage suivant contiendra le même état). Sur un gros monde, l'arrêt prend donc un peu plus de temps : le service systemd fourni laisse 10 minutes ;
+- **jamais pendant une partie en cours**, par défaut (`pendantPartie: false`) : l'écriture des mondes sur le disque et la copie peuvent provoquer un à-coup, et on n'en veut pas au milieu d'un vote. Une sauvegarde automatique qui tombe pendant une partie (joueurs assis, de la mise en place à la fin) attend la fin de la partie, mais jamais plus de 24 heures. Les sauvegardes manuelles et d'arrêt se font toujours.
+
+### GET /admin/sauvegardes
+
+```json
+{
+  "dossier": "backups",
+  "sauvegardes": [
+    {
+      "nom": "valcombe-2026-11-13_15-12-44-auto.zip",
+      "sorte": "auto",
+      "date": "2026-11-13T15:12:44+01:00",
+      "octets": 48213301,
+      "rotation": true,
+      "lisible": true,
+      "par": "automatique",
+      "versionMod": "0.14.0",
+      "fichiers": 1873,
+      "octetsDecompresses": 61400211,
+      "mondes": ["Hub", "Partie principale", "Atelier structures"]
+    }
+  ],
+  "nombre": 1,
+  "octetsTotal": 48213301,
+  "espaceLibre": 81604378624,
+  "enCours": null,
+  "derniere": {"nom": "valcombe-2026-11-13_15-12-44-auto.zip", "sorte": "auto", "ok": true, "message": "Sauvegarde ... terminée : 46,0 Mo, 1873 fichiers, en 4 s.", "octets": 48213301, "fichiers": 1873, "dureeSecondes": 4.2, "fin": "2026-11-13T14:12:48.920Z", "effacees": []},
+  "prochaineAuto": "2026-11-13T20:12:44Z",
+  "reportee": false,
+  "restaurationPossible": true,
+  "restaurationPrevue": null,
+  "derniereRestauration": null,
+  "reglages": {"actives": true, "intervalleMinutes": 360, "aLArret": true, "garder": 10, "pendantPartie": false}
+}
+```
+
+- `sauvegardes` : de la plus récente à la plus ancienne. `date` : moment de la sauvegarde, avec le décalage horaire du serveur. `octets` : taille de l'archive. `rotation` : la rotation peut l'effacer. `lisible: false` (avec `erreur`) : archive abîmée ou qui n'est pas une sauvegarde de Valcombe ; les champs tirés de la fiche (`par`, `versionMod`, `fichiers`, `octetsDecompresses`, `mondes`) manquent alors.
+- `espaceLibre` : place libre sur le disque du dossier `backups/`, en octets (-1 si inconnue).
+- `enCours` : la sauvegarde en cours, ou `null` :
+
+```json
+{"nom": "valcombe-2026-11-13_15-30-02-manuelle.zip", "sorte": "manuelle", "par": "API d'administration (127.0.0.1)", "debut": "2026-11-13T14:30:02.114Z", "phase": "copie", "fichiers": 812, "fichiersTotal": 1873, "octets": 30145872, "octetsTotal": 61400211, "pourcent": 49}
+```
+
+  `phase` : `attente` (elle commence au tick suivant), `enregistrement`, `copie`, `rotation`. Pour suivre une sauvegarde, relire toutes les secondes jusqu'à `enCours: null`, puis lire `derniere`.
+- `derniere` : la dernière sauvegarde terminée depuis le démarrage, réussie ou non (`ok`, `message` à montrer tel quel), ou `null`. `effacees` : les anciennes effacées par la rotation.
+- `prochaineAuto` : moment de la prochaine sauvegarde automatique (`null` si elles sont désactivées ou hors serveur dédié). `reportee` : elle attend la fin d'une partie en cours.
+- `restaurationPossible` : faux en solo. `restaurationPrevue` : `{"nom", "demandeLe", "par"}` ou `null`. `derniereRestauration` : le compte rendu de la dernière restauration (voir plus bas), ou `null`.
+
+### POST /admin/sauvegardes
+
+Lance une sauvegarde **manuelle**. Corps vide ou `{}`. Réponse `202` tout de suite, la sauvegarde continue ensuite :
+
+```json
+{"ok": true, "message": "Sauvegarde valcombe-2026-11-13_15-30-02-manuelle.zip lancée : suivez-la dans GET /admin/sauvegardes (enCours).", "nom": "valcombe-2026-11-13_15-30-02-manuelle.zip", "enCours": {"…": "comme dans GET /admin/sauvegardes"}}
+```
+
+`409` si une sauvegarde est déjà en cours, ou si le serveur s'arrête.
+
+### GET et POST /admin/sauvegardes/reglages
+
+Les réglages sont gardés dans `config/valcombe/sauvegardes.json` (créé au premier démarrage).
+
+```json
+{
+  "reglages": {"actives": true, "intervalleMinutes": 360, "aLArret": true, "garder": 10, "pendantPartie": false},
+  "bornes": {"intervalleMinutes": [15, 10080], "garder": [1, 500]},
+  "parDefaut": {"actives": true, "intervalleMinutes": 360, "aLArret": true, "garder": 10, "pendantPartie": false},
+  "automatiquesPossibles": true,
+  "prochaineAuto": "2026-11-13T20:12:44Z"
+}
+```
+
+| Champ | Par défaut | Règle | Rôle |
+| --- | --- | --- | --- |
+| `actives` | `true` | `true` ou `false` | Sauvegardes automatiques (à intervalle et à l'arrêt) |
+| `intervalleMinutes` | `360` | Entier de 15 à 10 080 (une semaine) | Délai après la dernière sauvegarde |
+| `aLArret` | `true` | `true` ou `false` | Une sauvegarde à chaque arrêt |
+| `garder` | `10` | Entier de 1 à 500 | Sauvegardes automatiques gardées |
+| `pendantPartie` | `false` | `true` ou `false` | Faux : une sauvegarde automatique attend la fin de la partie en cours |
+
+`POST` : un ou plusieurs de ces champs ; tout est validé d'abord, une demande fautive est refusée en entier (`400`, avec toutes ses fautes). Réponse `200` : `{"ok": true, "message": "...", ...}` suivi des mêmes champs que le `GET`. Pris en compte tout de suite. `automatiquesPossibles` : faux en solo, où les réglages sont gardés mais seules les sauvegardes manuelles se font.
+
+### POST /admin/sauvegardes/restaurer
+
+Un serveur qui tourne garde ses mondes ouverts : on ne remplace pas leurs fichiers sous ses pieds. La restauration est donc **prévue au prochain démarrage**.
+
+```json
+{"nom": "valcombe-2026-11-13_15-12-44-auto.zip", "redemarrer": true}
+```
+
+- `nom` (obligatoire) : la sauvegarde à restaurer. `redemarrer` (facultatif, `false` par défaut) : redémarrer tout de suite pour l'appliquer. **La restauration d'un clic, c'est `"redemarrer": true`.**
+- Le mod vérifie l'archive (nom, existence, fiche lisible), puis pose la demande `config/valcombe/restaurer.json`. Une demande précédente est remplacée.
+- Sans `redemarrer` : réponse `200`, la restauration attend le prochain démarrage (`POST /admin/redemarrer`, ou un arrêt et une relance à la main).
+- Avec `redemarrer` : le mod pose aussi le **drapeau de redémarrage** et s'arrête proprement, exactement comme `POST /admin/redemarrer` (même règle pour celui qui a lancé le serveur). Réponse `202` :
+
+```json
+{"ok": true, "nom": "valcombe-2026-11-13_15-12-44-auto.zip", "redemarrage": true, "message": "Restauration de « ... » prévue au prochain démarrage du serveur. L'état actuel sera d'abord sauvegardé. Le serveur s'arrête proprement, puis celui qui l'a lancé le relance.", "drapeau": "config/valcombe/redemarrer"}
+```
+
+- Erreurs : `400` (nom absent ou hors modèle, champ inconnu), `404` (aucune sauvegarde de ce nom), `409` (partie solo, ou archive illisible), `500` (demande ou drapeau impossible à écrire ; si seul le drapeau a échoué, la restauration reste prévue et le serveur n'est pas arrêté).
+
+**Au démarrage suivant**, le mod applique la demande **avant que Minecraft n'ouvre le monde** (il est initialisé avant même la lecture de `server.properties`). C'est pourquoi la restauration n'existe que sur un serveur dédié : en solo, le jeu ouvre le monde depuis son écran, avant que le mod puisse y toucher. Le déroulement est pensé pour ne jamais laisser le serveur à moitié restauré :
+
+1. la demande est lue puis retirée tout de suite : quoi qu'il arrive, elle n'est pas rejouée (pas de boucle de redémarrages) ;
+2. l'archive est déballée en entier dans `backups/.restauration` ; chaque fichier est contrôlé (somme de contrôle du zip, chemin sans danger, seulement ce qu'une sauvegarde peut contenir). Une archive abîmée s'arrête ici, **sans rien changer** ;
+3. l'état actuel est sauvegardé (sorte `avant-restauration`) : une restauration se défait en restaurant cette archive-là. Si cette sauvegarde échoue (disque plein...), **rien n'est changé** ;
+4. le monde actuel est mis de côté, le monde restauré prend sa place ; les fichiers de Valcombe de `config/` sont remplacés (ceux créés depuis la sauvegarde sont retirés ; les fichiers privés ne sont jamais touchés) ;
+5. si cette mise en place échoue en route, l'état d'avant est remis depuis la sauvegarde de sécurité.
+
+Le compte rendu est dans le journal du serveur (donc dans `/admin/console`) et dans `backups/derniere-restauration.json`, que `GET /admin/sauvegardes` donne dans `derniereRestauration` :
+
+```json
+{"nom": "valcombe-2026-11-13_15-12-44-auto.zip", "demandeLe": "2026-11-13T16:02:11.402Z", "faiteLe": "2026-11-13T16:02:19.977Z", "ok": true, "message": "Sauvegarde « valcombe-2026-11-13_15-12-44-auto.zip » restaurée. L'état d'avant est gardé dans « valcombe-2026-11-13_17-02-15-avant-restauration.zip ».", "securite": "valcombe-2026-11-13_17-02-15-avant-restauration.zip"}
+```
+
+Le launcher, après une restauration avec redémarrage, attend que l'API réponde de nouveau, puis lit `derniereRestauration` pour dire ce qui s'est passé.
+
+### DELETE /admin/sauvegardes/restaurer
+
+Annule la restauration prévue. Réponse `200` : `{"ok": true, "annulee": true, "message": "Restauration prévue annulée."}` (`annulee: false` s'il n'y en avait pas).
+
+### GET /admin/sauvegardes/&lt;nom&gt;
+
+Télécharge l'archive : `200`, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<nom>"`, `Content-Length` exact. `404` si elle n'existe pas (ou si le nom ne suit pas le modèle). Chaque téléchargement est noté dans le journal. Copiez de temps en temps une archive hors du serveur : une sauvegarde qui ne le quitte jamais ne protège pas d'une panne de ce serveur.
+
+### DELETE /admin/sauvegardes/&lt;nom&gt;
+
+Efface une sauvegarde (de n'importe quelle sorte). `200` : `{"ok": true, "message": "Sauvegarde « ... » effacée."}`, `404` si elle n'existe pas, `409` si sa restauration est prévue au prochain démarrage (annulez-la d'abord). La rotation, elle non plus, n'efface jamais l'archive dont la restauration est prévue.
+
+### En jeu et à la console
+
+| Commande | Qui | Rôle |
+| --- | --- | --- |
+| `/vc sauvegarde` | Opérateurs | Où en sont les sauvegardes (nombre, place, prochaine, en cours, dernière, restauration prévue) |
+| `/vc sauvegarde maintenant` | Opérateurs | Une sauvegarde manuelle ; un message dit quand elle est finie |
+| `/vc sauvegarde liste` | Opérateurs | Les 15 plus récentes ; un clic prépare la commande de restauration |
+| `/vc sauvegarde reglages` | Opérateurs | Les réglages |
+| `/vc sauvegarde restaurer <nom>` | Console, opérateurs de niveau 4 | Prévoit la restauration au prochain démarrage (sans redémarrer) |
+| `/vc sauvegarde restaurer annuler` | Console, opérateurs de niveau 4 | Annule la restauration prévue |
+| `/vc sauvegarde supprimer <nom>` | Console, opérateurs de niveau 4 | Efface une sauvegarde |
+| `/vc sauvegarde reglage actives\|intervalle\|arret\|garder\|pendantpartie <valeur>` | Console, opérateurs de niveau 4 | Change un réglage (`oui`/`non`, ou un nombre) |
+
+### Restaurer à la main
+
+Serveur arrêté, une archive se restaure aussi sans le mod : remplacer le dossier du monde par le contenu de `monde/`, et les fichiers de Valcombe de `config/` par ceux de `config/` (sans toucher à `config/valcombe/admin.json`). Le plus simple reste de poser la demande puis de relancer le serveur.
+
 ## Exemples avec curl
 
 ```bash
@@ -332,9 +536,15 @@ curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
 curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
      -d '{"listeBlanche": {"ajouter": ["Alice"]}}' http://localhost:25570/admin/reglages
 curl -s -X POST -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/redemarrer
+curl -s -X POST -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/sauvegardes
+curl -s -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/sauvegardes
+curl -s -OJ -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/sauvegardes/valcombe-2026-11-13_15-12-44-auto.zip
+curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
+     -d '{"intervalleMinutes": 180, "garder": 20}' http://localhost:25570/admin/sauvegardes/reglages
+curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
+     -d '{"nom": "valcombe-2026-11-13_15-12-44-auto.zip", "redemarrer": true}' http://localhost:25570/admin/sauvegardes/restaurer
 ```
 
 ## Ce qui viendra
 
 - L'état des parties dans `mondes` (sprint 12).
-- Les sauvegardes (sprint 14, ticket à part).

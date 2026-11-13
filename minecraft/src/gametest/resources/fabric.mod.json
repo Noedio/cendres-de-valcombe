@@ -13,6 +13,7 @@
 			"fr.valcombe.gametest.HdGameTest",
 			"fr.valcombe.gametest.MapPlacerGameTest",
 			"fr.valcombe.gametest.HubGameTest",
+			"fr.valcombe.gametest.BackupsGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},
