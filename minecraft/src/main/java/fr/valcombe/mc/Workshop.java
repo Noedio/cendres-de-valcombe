@@ -246,7 +246,9 @@ public final class Workshop {
 
 	/** Les commandes dont l'écran de l'Atelier affiche la réponse. */
 	static boolean shows(String command) {
-		return command.startsWith("vc carte ") || command.startsWith("vc edit ") || command.startsWith("vc structure ")
+		return command.startsWith("vc carte ") || command.startsWith("vc structure ") || command.startsWith("vc structures ")
+			|| command.equals("vc annuler") || command.startsWith("vc annuler ") || command.equals("vc retablir")
+			|| command.startsWith("vc retablir ") || command.equals("vc baguette")
 			|| command.startsWith("vc atelier ") || command.startsWith("vc scenario ");
 	}
 

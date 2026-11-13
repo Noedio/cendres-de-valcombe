@@ -118,7 +118,36 @@ public final class ValcombeUi {
 		return model(Gui.icon(Items.CLOCK, MENU_ITEM_NAME, "Clic droit : ouvrir le menu du jeu."), "grimoire");
 	}
 
-	/** Outils de carte du mode construction : un objet par sorte de repère, une gomme, et les deux outils de l'éditeur. */
+	/**
+	 * L'objet de la baguette de construction, tel que WorldEdit le nomme : c'est aussi la baguette de WorldEdit
+	 * ({@code wand-item}, voir WorldEditBridge). Un mot, et non l'objet lui-même : lire Items ici chargerait tous les
+	 * objets du jeu avant son démarrage.
+	 */
+	public static final String WAND_ID = "minecraft:blaze_rod";
+	public static final String WAND_NAME = "Baguette de construction";
+
+	/** L'objet de base de la baguette de construction (la baguette de feu). */
+	public static net.minecraft.world.item.Item wandBase() {
+		return Items.BLAZE_ROD;
+	}
+
+	/**
+	 * Baguette de construction : la baguette de sélection de WorldEdit, dessinée pour Valcombe. Elle est donnée à qui
+	 * construit dans un atelier (et reprise à la sortie) ; elle n'agit que là où WorldEdit est permis.
+	 */
+	public static ItemStack wandItem() {
+		return model(Gui.icon(wandBase(), WAND_NAME, "Clic gauche sur un bloc : premier coin de la sélection.",
+			"Clic droit sur un bloc : second coin. La sélection s'affiche avec ses dimensions.",
+			"Puis //set, //replace, //walls, //copy, //paste, //rotate, //move, //stack…",
+			"Annuler : /vc annuler. En faire une structure : /vc structures depuis-selection."), "outil_baguette");
+	}
+
+	public static boolean isWand(ItemStack stack) {
+		Component n = stack.get(DataComponents.CUSTOM_NAME);
+		return stack.is(wandBase()) && n != null && n.getString().equals(WAND_NAME);
+	}
+
+	/** Outils de carte du mode construction : un objet par sorte de repère, une gomme, l'outil de structure et la main. */
 	public enum MapTool {
 		SEAT(Items.GOLD_INGOT, "Carte : trône", "Clic droit sur un bloc : poser un trône.",
 			"Clic droit sur un trône déjà posé : le prendre, puis cliquer là où le reposer."),
@@ -130,10 +159,6 @@ public final class ValcombeUi {
 			"Accroupi + clic droit : bâtir la salle ici."),
 		ERASE(Items.BARRIER, "Carte : gomme", "Clic droit sur le bloc sous une étiquette : retirer ce repère.",
 			"Une maison ou une salle bâtie d'un clic disparaît avec lui."),
-		SELECT(Items.WOODEN_AXE, "Carte : sélection", "Clic gauche sur un bloc : premier coin de la sélection.",
-			"Clic droit sur un bloc : second coin.",
-			"Puis /vc edit remplir, remplacer, vider, murs, copier, couper, coller, déplacer, empiler.",
-			"/vc edit annuler et /vc edit retablir reviennent sur chaque opération."),
 		STRUCTURE(Items.BRICK, "Carte : structure", "Choisir une structure du catalogue : /vc structure poser <id>.",
 			"Clic droit sur un bloc : la poser là où le fantôme la montre.",
 			"Accroupi + clic droit : la tourner d'un quart de tour. Clic gauche : la retourner."),
@@ -159,7 +184,6 @@ public final class ValcombeUi {
 				case CENTER -> "centre";
 				case ROOM -> "salle";
 				case ERASE -> "gomme";
-				case SELECT -> "selection";
 				case STRUCTURE -> "structure";
 				case HAND -> "main";
 			};

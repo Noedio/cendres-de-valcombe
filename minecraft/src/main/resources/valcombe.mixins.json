@@ -2,7 +2,7 @@
 	"required": true,
 	"package": "fr.valcombe.mixin",
 	"compatibilityLevel": "JAVA_21",
-	"mixins": ["UseItemOnMixin", "DedicatedServerAccessor", "SettingsAccessor", "MinecraftServerLevelsAccessor"],
+	"mixins": ["UseItemOnMixin", "DedicatedServerAccessor", "SettingsAccessor", "MinecraftServerLevelsAccessor", "CommandsMixin"],
 	"injectors": {
 		"defaultRequire": 1
 	}

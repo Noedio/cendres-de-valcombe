@@ -445,7 +445,7 @@
 				<button id="edRedo">Rétablir</button>
 			</div>
 			<h2 style="margin-top:20px">Enregistrer la sélection</h2>
-			<p class="hint">Dans le jeu, l'outil « Carte : sélection » pose deux coins (clic gauche, clic droit). Tenez-vous dans la sélection à l'endroit qui devra se trouver sur le bloc visé à la pose, puis enregistrez-la ici.</p>
+			<p class="hint">Dans un atelier du jeu, la baguette de construction (WorldEdit) pose les deux coins de la sélection (clic gauche, clic droit). Tenez-vous dans la sélection à l'endroit qui devra se trouver sur le bloc visé à la pose, puis enregistrez-la ici (ou <code>/vc structures depuis-selection &lt;id&gt; "&lt;nom&gt;"</code>).</p>
 			<div class="row">
 				<div><label>Nom</label><input id="stNom" maxlength="50" placeholder="La Tour du guet"></div>
 				<div><label>Identifiant</label><input id="stId" maxlength="30" placeholder="tour-du-guet"></div>
@@ -1829,11 +1829,13 @@ let structuresShown = "";
 
 function renderStructures() {
 	const ed = data.editeur || {};
-	const sel = ed.selection ? "sélection de " + ed.selection.join(" × ") : "aucune sélection";
+	// La sélection est celle de WorldEdit : largeur, hauteur, longueur, montrée en L × l × h.
+	const sel = ed.selection ? "sélection WorldEdit de L " + ed.selection[0] + " × l " + ed.selection[2] + " × h " + ed.selection[1]
+		: ed.worldedit ? "aucune sélection WorldEdit" : "WorldEdit sert dans les ateliers";
 	const held = ed.structure ? (data.structures.find(x => x.id === ed.structure) || { nom: ed.structure }).nom : null;
 	$("stState").textContent = !data.enJeu ? "Connectez-vous au jeu : l'éditeur agit là où vous vous trouvez."
-		: !ed.construction ? "Vous n'êtes pas en mode construction : « Prendre en main » vous y fera entrer."
-		: "Mode construction : " + sel + (ed.pressePapiers ? ", une copie en mémoire" : "") + ". "
+		: !ed.construction ? "Vous n'êtes pas en mode construction : « Prendre en main » vous y fera entrer (" + sel + ")."
+		: "Mode construction : " + sel + ". "
 			+ (held ? "En main : « " + held + " »" + (ed.orientation ? " (" + ed.orientation + ")" : "") + "." : "Aucune structure en main.");
 	for (const id of ["stTurn", "stFlip", "stPlace"]) $(id).disabled = !held;
 	$("edUndo").textContent = "Annuler la dernière opération" + (ed.annulables ? " (" + ed.annulables + ")" : "");

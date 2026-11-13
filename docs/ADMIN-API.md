@@ -16,6 +16,10 @@ Version du contrat : **1** (champ `api` de `GET /admin/etat`). Elle n'augmente q
 | POST | `/admin/reglages` | Change ces réglages ; dit si un redémarrage est nécessaire |
 | POST | `/admin/arreter` | Arrêt propre du serveur |
 | POST | `/admin/redemarrer` | Arrêt propre, avec le drapeau qui demande la relance |
+| GET | `/admin/ateliers` | Invitations à construire dans les ateliers, et WorldEdit dans les parties d'essai |
+| POST | `/admin/ateliers` | Ouvre ou ferme WorldEdit aux opérateurs dans les parties d'essai |
+| POST | `/admin/ateliers/inviter` | Invite un joueur à construire dans un atelier (ou dans tous) |
+| POST | `/admin/ateliers/retirer` | Retire une invitation (ou toutes celles d'un joueur) |
 | GET | `/admin/sauvegardes` | Les sauvegardes, celle en cours, la prochaine, la restauration prévue |
 | POST | `/admin/sauvegardes` | Une sauvegarde maintenant |
 | GET | `/admin/sauvegardes/reglages` | Réglages des sauvegardes automatiques |
@@ -153,7 +157,7 @@ Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/
 {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "etat": "charge", "joueurs": 6}
 ```
 
-  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. D'autres champs pourront s'ajouter (l'état des parties au sprint 12).
+  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. Un atelier a en plus `invites` : les joueurs invités à y construire (invitations à cet atelier et à tous les ateliers), en plus des opérateurs, par exemple `"invites": ["Alice", "Bob"]`. D'autres champs pourront s'ajouter (l'état des parties au sprint 12).
 - `redemarrageNecessaire` : un réglage enregistré n'agira qu'au prochain démarrage (voir `/admin/reglages`).
 
 ### GET /admin/joueurs
@@ -330,6 +334,37 @@ Le mod ne peut pas se relancer lui-même : c'est **celui qui a lancé le serveur
   - `demarrer.sh` et `demarrer.bat`, fournis avec le serveur (`tools/make_modpack.py`), relancent le serveur tant que le drapeau est posé. Le service systemd `valcombe.service` lance `demarrer.sh` : un redémarrage par l'API ne passe donc pas par systemd.
   - Le launcher, quand il lance lui-même le serveur (page Héberger ou Serveur), applique la même règle (`LocalServer`) : il relance le serveur avec les mêmes réglages. Un arrêt qu'il a lui-même demandé ne relance jamais rien, même si un drapeau traîne.
   - Un serveur lancé autrement (commande `java` à la main, hébergeur avec son propre panneau) s'arrête simplement : il faut le relancer soi-même.
+
+## Les ateliers : invitations à construire
+
+On construit avec WorldEdit **dans les ateliers seulement** (atelier carte, atelier structures) : les opérateurs, et les joueurs qu'ils y invitent. Un invité voit l'atelier depuis le hub, y va, y construit en mode créatif avec WorldEdit (sans ce qui touche au serveur : recharger WorldEdit, changer de monde, scripts, fichiers). Les invitations sont gardées dans `config/valcombe/ateliers.json` ; en jeu : `/vc atelier inviter <joueur> [atelier|tous]`, `/vc atelier retirer <joueur> [atelier|tous]`, `/vc atelier liste`. Ce que l'API fait se voit en jeu tout de suite (menu « Mondes », droits de WorldEdit, retour au hub d'un joueur dont l'invitation est retirée), et inversement.
+
+### GET /admin/ateliers
+
+```json
+{
+  "worldEditEssais": false,
+  "invitations": [
+    {"joueur": "Alice", "uuid": "0f3c…", "atelier": "atelier-carte-1", "nomAtelier": "Carte du port", "par": "Yoann", "le": "2026-11-13T10:02:11Z"},
+    {"joueur": "Bob", "uuid": null, "atelier": "*", "nomAtelier": "Tous les ateliers", "par": "l'API d'administration", "le": "2026-11-13T10:05:40Z"}
+  ]
+}
+```
+
+- `invitations` : dans l'ordre où elles ont été faites. `atelier` : l'identifiant de l'atelier, ou `*` pour tous les ateliers (y compris ceux créés plus tard). `uuid` : l'identifiant du compte, `null` tant que le joueur invité hors ligne n'est pas venu (il est reconnu par son nom, puis son identifiant est noté ; un joueur qui change de nom garde ses invitations). `par` : l'opérateur qui a invité, `la console` ou `l'API d'administration`.
+- `worldEditEssais` : WorldEdit est-il ouvert aux opérateurs dans les parties d'essai (fermé par défaut ; jamais aux autres joueurs).
+
+### POST /admin/ateliers
+
+Corps : `{"worldEditEssais": true}` ou `false`. Réponse : comme `GET /admin/ateliers`. `400` sans ce champ (vrai ou faux).
+
+### POST /admin/ateliers/inviter
+
+Corps : `{"joueur": "Alice", "atelier": "atelier-carte-1"}`. `atelier` : identifiant ou nom d'un atelier (comme `/vc monde aller`), ou `tous`. Réponse : comme `GET /admin/ateliers`, avec `message` (la phrase de la commande en jeu : « Alice est invité à construire dans … »). Une invitation déjà là réussit avec un message qui le dit ; un opérateur n'a pas besoin d'invitation (message, rien d'enregistré). `409` si le nom n'est pas un nom de joueur Minecraft ou si l'atelier n'existe pas (le message dit lesquels existent) ; `400` sans `joueur` ou sans `atelier`.
+
+### POST /admin/ateliers/retirer
+
+Corps : `{"joueur": "Alice"}` retire toutes ses invitations ; `{"joueur": "Alice", "atelier": "atelier-carte-1"}` celle de cet atelier (`"tous"` : son invitation à tous les ateliers). Réponse : comme `GET /admin/ateliers`, avec `message`. `409` si le joueur n'a pas d'invitation à retirer. Un joueur connecté qui se trouve dans un atelier où il n'a plus droit revient au hub.
 
 ## Les sauvegardes
 

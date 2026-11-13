@@ -14,8 +14,9 @@ import java.util.List;
 
 /**
  * Menu J, « Mondes » : les mondes où le joueur peut aller (le hub, le village actuel, les mondes de partie, et
- * les ateliers pour un opérateur), avec le nombre de joueurs dans chacun. « Y aller » (ou un double-clic) l'y
- * emmène : il y retrouve sa dernière position.
+ * les ateliers pour un opérateur ou un invité), avec le nombre de joueurs dans chacun. « Y aller » (ou un double-clic)
+ * l'y emmène : il y retrouve sa dernière position. Un opérateur voit qui est invité à construire dans chaque atelier ;
+ * un invité voit les ateliers où il construit.
  * <p>
  * La liste vient du serveur (vue {@code mondes} : {@code liste}, {@code ici}, {@code bloque}) ; une destination est
  * une ligne générique (identifiant, nom, sorte, joueurs), pour que le tableau des parties puisse s'y ajouter sans
@@ -78,8 +79,10 @@ public class WorldsScreen extends HdScreen {
 			case "village" -> "Le village où se joue la partie en ce moment : salle d'attente, place et maisons.";
 			case "partie" -> "Un monde de partie, avec sa propre carte.";
 			case "essai" -> "Une partie d'essai, pour répéter une carte ou un scénario sans toucher à la vraie.";
-			case "atelier-carte" -> "Un atelier de carte, réservé aux opérateurs : on y construit une carte de la bibliothèque.";
-			case "atelier-structures" -> "L'atelier des structures, réservé aux opérateurs.";
+			case "atelier-carte" -> "Un atelier de carte, pour les opérateurs et leurs invités : on y construit une carte de la "
+				+ "bibliothèque, en mode créatif et avec WorldEdit.";
+			case "atelier-structures" -> "L'atelier des structures, pour les opérateurs et leurs invités : on y retouche les "
+				+ "structures du catalogue, avec WorldEdit.";
 			default -> "";
 		};
 	}
@@ -87,6 +90,37 @@ public class WorldsScreen extends HdScreen {
 	/** « personne », « 1 joueur », « 3 joueurs ». */
 	private static String count(int n) {
 		return n == 0 ? "personne" : n == 1 ? "1 joueur" : n + " joueurs";
+	}
+
+	/** « Alice », « Alice et Bob », « Alice, Bob et Chloé ». */
+	private static String names(List<String> names) {
+		if (names.size() <= 1) {
+			return names.isEmpty() ? "" : names.get(0);
+		}
+		return String.join(", ", names.subList(0, names.size() - 1)) + " et " + names.get(names.size() - 1);
+	}
+
+	/** Les invités d'un atelier (vue d'un opérateur), ou null si la destination n'en dit rien. */
+	private static List<String> guests(JsonObject d) {
+		if (d == null || !d.has("invites") || !d.get("invites").isJsonArray()) {
+			return null;
+		}
+		List<String> out = new java.util.ArrayList<>();
+		d.getAsJsonArray("invites").forEach(e -> out.add(e.getAsString()));
+		return out;
+	}
+
+	/** Ce que la ligne d'un monde dit sous son nom : sa sorte, ses joueurs, et pour un invité qu'il y construit. */
+	private static String subtitle(JsonObject d) {
+		String sub = ClientState.str(d, "label") + " · " + count(ClientState.num(d, "joueurs", 0));
+		if (ClientState.bool(d, "invite")) {
+			sub += " · invité à construire";
+		}
+		List<String> g = guests(d);
+		if (g != null && !g.isEmpty()) {
+			sub += " · " + (g.size() == 1 ? "1 invité" : g.size() + " invités");
+		}
+		return sub;
 	}
 
 	/** La destination choisie, ou null. */
@@ -128,7 +162,7 @@ public class WorldsScreen extends HdScreen {
 			int bw = here ? hd.width(HdStyle.PETIT, badge) + hd.u(6) : 0;
 			hd.text(HdStyle.FORT, hd.ellipsize(HdStyle.FORT, ClientState.str(d, "nom"), w - (tx - x) - bw - hd.u(4)), tx, y + hd.u(2),
 				sel ? Hd.LIGHT : Hd.INK);
-			String sub = ClientState.str(d, "label") + " · " + count(ClientState.num(d, "joueurs", 0));
+			String sub = subtitle(d);
 			hd.text(HdStyle.PETIT, hd.ellipsize(HdStyle.PETIT, sub, w - (tx - x) - hd.u(4)), tx, y + hd.u(14), sel ? Hd.GOLD : Hd.INK_SOFT);
 			if (here) {
 				hd.textRight(HdStyle.PETIT, badge, x + w - hd.u(5), y + hd.u(3), sel ? Hd.GOLD : Hd.WINE);
@@ -176,10 +210,23 @@ public class WorldsScreen extends HdScreen {
 		}
 		int tx = rx + hd.u(28); // à droite de l'emblème
 		hd.text(HdStyle.SECTION, hd.ellipsize(HdStyle.SECTION, ClientState.str(d, "nom"), rw - hd.u(28)), tx, hd.px(py + 14), Hd.WINE);
-		hd.text(HdStyle.PETIT, ClientState.str(d, "label") + " · " + count(ClientState.num(d, "joueurs", 0)), tx, hd.px(py + 28), Hd.INK_SOFT);
+		hd.text(HdStyle.PETIT, hd.ellipsize(HdStyle.PETIT, subtitle(d), rw - hd.u(28)), tx, hd.px(py + 28), Hd.INK_SOFT);
 		hd.separator(rx, hd.px(py + 42), rw);
 		int y = hd.px(py + 48);
 		y += hd.paragraph(HdStyle.TEXTE, description(ClientState.str(d, "sorte")), rx, y, rw, Hd.INK, hd.px(py + ph - 58) - y);
+		// Les ateliers : qui y est invité (pour un opérateur), ou que l'on y est invité.
+		String build = null;
+		List<String> g = guests(d);
+		if (g != null) {
+			build = g.isEmpty() ? "Aucun invité : /vc atelier inviter <joueur> pour ouvrir cet atelier à un joueur."
+				: "Invités à construire : " + names(g) + ".";
+		} else if (ClientState.bool(d, "invite")) {
+			build = "Tu es invité à y construire : mode créatif, baguette de construction et WorldEdit.";
+		}
+		if (build != null && hd.px(py + ph - 58) - y > hd.u(10)) {
+			y += hd.u(4);
+			y += hd.paragraph(HdStyle.TEXTE, build, rx, y, rw, Hd.WINE, hd.px(py + ph - 58) - y);
+		}
 		String why = blocked();
 		if (why != null) {
 			hd.paragraph(HdStyle.TEXTE, why, rx, y + hd.u(6), rw, Hd.WINE, hd.px(py + ph - 58) - y - hd.u(6));

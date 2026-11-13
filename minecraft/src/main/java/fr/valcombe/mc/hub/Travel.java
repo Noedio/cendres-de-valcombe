@@ -1,6 +1,7 @@
 package fr.valcombe.mc.hub;
 
 import fr.valcombe.mc.McHost;
+import fr.valcombe.mc.worlds.BuildAccess;
 import fr.valcombe.mc.worlds.WorldEntry;
 import fr.valcombe.mc.worlds.WorldKind;
 import fr.valcombe.mc.worlds.WorldManager;
@@ -33,7 +34,7 @@ import net.minecraft.world.phys.Vec3;
  * d'accueil au hub, la salle d'attente (ou la place) au village, le centre ailleurs.</li>
  * <li>À la connexion, tout le monde arrive au hub, sauf un joueur que la partie en cours retient au village.</li>
  * <li>Les opérateurs voient tous les mondes ; les autres joueurs le hub, le village actuel et les mondes de partie
- * ({@link WorldKind#openToAll()}).</li>
+ * ({@link WorldKind#openToAll()}), plus les ateliers où un opérateur les a invités à construire ({@link BuildAccess}).</li>
  * <li>Un joueur assis à la partie en cours ne quitte pas le village avant la fin.</li>
  * <li>C'est aussi le repli du gestionnaire de mondes : les joueurs d'un monde remis à neuf ou supprimé vont au hub
  * (ceux du hub lui-même, au village).</li>
@@ -117,8 +118,15 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		return p.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
 	}
 
-	/** Ce joueur peut-il voir ce monde (et y aller) ? Les opérateurs, tous ; les autres, le hub et les mondes de partie. */
+	/**
+	 * Ce joueur peut-il voir ce monde (et y aller) ? Les opérateurs, tous ; les autres, le hub et les mondes de partie,
+	 * plus les ateliers où ils sont invités à construire (voir {@link BuildAccess#canSee}).
+	 */
 	public boolean canSee(ServerPlayer p, WorldEntry e) {
+		BuildAccess access = BuildAccess.current();
+		if (access != null) {
+			return access.canSee(p, e);
+		}
 		return e != null && (operator(p) || e.sorte().openToAll());
 	}
 
@@ -171,10 +179,27 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		return new Destination(e.id(), e.nom(), e.sorte().code(), e.sorte().label(), present.getOrDefault(e.id(), 0), e.id().equals(here));
 	}
 
-	/** Le menu « Mondes » de ce joueur : les destinations, où il est, et pourquoi il ne peut pas partir (ou null). */
+	/**
+	 * Le menu « Mondes » de ce joueur : les destinations, où il est, et pourquoi il ne peut pas partir (ou null). Pour un
+	 * atelier, chaque destination dit aussi si ce joueur y construit ({@code construire}) et, pour un opérateur, qui y
+	 * est invité ({@code invites}).
+	 */
 	public Map<String, Object> view(ServerPlayer p) {
 		Map<String, Object> m = new LinkedHashMap<>();
-		m.put("liste", destinations(p).stream().map(Destination::view).toList());
+		BuildAccess access = BuildAccess.current();
+		boolean op = operator(p);
+		m.put("liste", destinations(p).stream().map(d -> {
+			Map<String, Object> v = d.view();
+			WorldEntry e = MAIN.equals(d.id()) ? null : worlds.find(d.id());
+			if (access != null && e != null && e.sorte().workshop()) {
+				v.put("construire", op || access.invited(p, e));
+				v.put("invite", !op && access.invited(p, e));
+				if (op) {
+					v.put("invites", access.invitations().guests(e.id()));
+				}
+			}
+			return v;
+		}).toList());
 		m.put("ici", keyOf(p));
 		m.put("bloque", blocked(p));
 		return m;
@@ -303,7 +328,8 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	public String go(ServerPlayer p, String key, LastPositions.Spot leaveAt) {
 		WorldEntry target = MAIN.equals(key) ? null : worlds.get(key);
 		if (target != null && !canSee(p, target)) {
-			throw new GameException("« " + target.nom() + " » est réservé aux opérateurs.");
+			throw new GameException("« " + target.nom() + " » est réservé aux opérateurs"
+				+ (target.sorte().workshop() ? " et à leurs invités : un opérateur peut t'y inviter (/vc atelier inviter)." : "."));
 		}
 		String from = keyOf(p);
 		if (key.equals(from)) {

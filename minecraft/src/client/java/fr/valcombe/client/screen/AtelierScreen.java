@@ -21,7 +21,7 @@ import net.minecraft.client.gui.screens.ChatScreen;
  * rôle ou d'un scénario reste à la page web.
  */
 public class AtelierScreen extends BaseScreen {
-	private static final String[] TABS = {"Cartes", "Village", "Repères", "Structures", "Sélection", "Créations"};
+	private static final String[] TABS = {"Cartes", "Village", "Repères", "Structures", "WorldEdit", "Créations"};
 	private static final String[] SIZES = {"petite", "normale", "grande"};
 	private static final String[] SHELVES = {"maisons", "place", "decor", "perso"};
 	private static final String[] SHELF_NAMES = {"Maisons", "Place", "Décor", "Les vôtres"};
@@ -571,56 +571,64 @@ public class AtelierScreen extends BaseScreen {
 	}
 
 	// ------------------------------------------------------------------
-	// Outils de sélection
+	// WorldEdit : la construction, dans les ateliers
 	// ------------------------------------------------------------------
+	/** Une commande de WorldEdit lancée telle quelle, comme tapée dans le chat (« /copy » pour //copy). */
+	private WaxButton worldEdit(int x, int y, int w, String label, String command) {
+		return button(x, y, w, label, () -> {
+			armed = null;
+			minecraft.player.connection.sendCommand(command);
+		});
+	}
+
 	private void buildSelection(JsonObject a) {
 		JsonObject ed = ClientState.obj(a, "editeur");
-		if (!ClientState.bool(ed, "construction")) {
-			button(px + pw / 2 - 100, row(2), 200, "Entrer en mode construction", () -> go("vc carte construction"));
+		if (!ClientState.bool(ed, "worldedit")) {
+			// Hors des ateliers, WorldEdit ne répond pas : le chemin vers eux.
+			button(px + pw / 2 - 100, row(3), 200, "Aller dans un atelier…", () -> minecraft.gui.setScreen(new WorldsScreen()));
 			return;
 		}
 		int w = (pw - 24 - 8) / 3;
 		int top = py + 58;
+		// Texte à compléter (un bloc, un nombre) : le chat s'ouvre, la commande commencée. Sinon : lancée tout de suite.
 		Object[][] grid = {
-			{"Remplir…", "vc edit remplir ", true}, {"Remplacer…", "vc edit remplacer ", true}, {"Vider", "vc edit vider", false},
-			{"Murs…", "vc edit murs ", true}, {"Contour…", "vc edit contour ", true}, {"Étendre…", "vc edit etendre ", true},
-			{"Copier", "vc edit copier", false}, {"Couper", "vc edit couper", false}, {"Coller", "vc edit coller", false},
-			{"Coller sans l'air", "vc edit coller sansair", false}, {"Tourner la copie", "vc edit tourner", false},
-			{"Retourner la copie", "vc edit miroir", false},
-			{"Déplacer…", "vc edit deplacer ", true}, {"Empiler…", "vc edit empiler ", true},
-			{"Désélectionner", "vc edit deselectionner", false},
-			{"Annuler (" + ClientState.num(ed, "annulables", 0) + ")", "vc edit annuler", false},
-			{"Rétablir (" + ClientState.num(ed, "retablissables", 0) + ")", "vc edit retablir", false},
-			{"Outil de sélection", "vc carte outils", false},
+			{"Remplir…", "/set ", "chat"}, {"Remplacer…", "/replace ", "chat"}, {"Vider", "/set air", "we"},
+			{"Murs…", "/walls ", "chat"}, {"Étendre…", "/expand ", "chat"}, {"Désélectionner", "/sel", "we"},
+			{"Copier", "/copy", "we"}, {"Couper", "/cut", "we"}, {"Coller", "/paste", "we"},
+			{"Tourner la copie", "/rotate 90", "we"}, {"Retourner la copie", "/flip", "we"}, {"Coller sans l'air", "/paste -a", "we"},
+			{"Déplacer…", "/move ", "chat"}, {"Empiler…", "/stack ", "chat"}, {"En structure…", "vc structures depuis-selection ", "chat"},
+			{"Annuler (" + ClientState.num(ed, "annulables", 0) + ")", "vc annuler", "vc"},
+			{"Rétablir (" + ClientState.num(ed, "retablissables", 0) + ")", "vc retablir", "vc"},
+			{"Baguette", "vc baguette", "vc"},
 		};
 		for (int i = 0; i < grid.length; i++) {
 			int x = px + 12 + (i % 3) * (w + 4);
 			int y = top + (i / 3) * ROW;
 			String label = (String) grid[i][0];
 			String command = (String) grid[i][1];
-			if ((Boolean) grid[i][2]) {
-				chat(x, y, w, label, command);
-			} else {
-				action(x, y, w, label, command);
+			switch ((String) grid[i][2]) {
+				case "chat" -> chat(x, y, w, label, command);
+				case "we" -> worldEdit(x, y, w, label, command);
+				default -> action(x, y, w, label, command);
 			}
 		}
 	}
 
 	private void drawSelection(GuiGraphicsExtractor g, JsonObject a) {
 		JsonObject ed = ClientState.obj(a, "editeur");
-		if (!ClientState.bool(ed, "construction")) {
-			Theme.paragraph(g, font, "Les outils de sélection servent en mode construction : l'outil « Carte : sélection » pose deux "
-				+ "coins (clic gauche, clic droit), puis ces boutons remplissent, vident, copient, collent, déplacent.",
+		if (!ClientState.bool(ed, "worldedit")) {
+			Theme.paragraph(g, font, "WorldEdit sert dans les ateliers (carte et structures), aux opérateurs et aux joueurs qu'ils "
+				+ "y invitent : /vc atelier inviter <joueur> [atelier|tous]. Là-bas, la baguette de construction pose les deux coins "
+				+ "de la sélection (clic gauche, clic droit), puis ces boutons remplissent, copient, collent, déplacent.",
 				px + 40, py + 46, pw - 80, Theme.ASH);
 			return;
 		}
 		var sel = ed.get("selection");
 		String text = sel != null && sel.isJsonArray()
-			? "Sélection : " + sel.getAsJsonArray().get(0).getAsInt() + " × " + sel.getAsJsonArray().get(1).getAsInt() + " × "
-				+ sel.getAsJsonArray().get(2).getAsInt()
-			: "Aucune sélection : clic gauche puis clic droit avec l'outil de sélection";
-		Theme.ink(g, font, fit(text + (ClientState.bool(ed, "pressePapiers") ? " · une copie en mémoire" : "") + ".", pw - 28),
-			px + 14, py + 46, Theme.INK);
+			? "Sélection : L " + sel.getAsJsonArray().get(0).getAsInt() + " × l " + sel.getAsJsonArray().get(2).getAsInt() + " × h "
+				+ sel.getAsJsonArray().get(1).getAsInt() + ". Annuler : WorldEdit et repères, dans l'ordre"
+			: "Aucune sélection : baguette de construction, clic gauche puis clic droit";
+		Theme.ink(g, font, fit(text + ".", pw - 28), px + 14, py + 46, Theme.INK);
 	}
 
 	// ------------------------------------------------------------------

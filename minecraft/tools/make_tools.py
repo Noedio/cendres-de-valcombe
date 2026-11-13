@@ -111,20 +111,33 @@ def gomme(i):
         i.disc(x, y, r, (232, 160, 170))
 
 
-def selection(i):
-    # Coins de sélection en pointillés d'or et stylet de bois à pointe de fer
-    for k in range(5):
-        x = 1.5 + 3 * k
-        i.rect(x - 0.6, 0.9, x + 0.6, 1.9, A.GOLD)
-        i.rect(x - 0.6, 14.1, x + 0.6, 15.1, A.GOLD)
-        i.rect(0.9, x - 0.6, 1.9, x + 0.6, A.GOLD)
-        i.rect(14.1, x - 0.6, 15.1, x + 0.6, A.GOLD)
-    i.composee(D.union(D.rect(0.9, 0.9, 4.2, 2.1), D.rect(0.9, 0.9, 2.1, 4.2)), A.GOLD)
-    i.composee(D.union(D.rect(11.8, 13.9, 15.1, 15.1), D.rect(13.9, 11.8, 15.1, 15.1)), A.GOLD)
-    i.line(4, 12, 11.4, 4.6, WOOD, 2.0)
-    i.line(4.6, 11.4, 11, 5, A.shade(WOOD, 1.25), 0.5, relief=0)
-    i.poly([(10.6, 3.6), (14, 2), (12.4, 5.4)], STONE)
-    i.line(9.6, 4.4, 11.6, 6.4, A.BRONZE, 0.8)
+def baguette(i):
+    # Baguette de construction (la baguette de WorldEdit dans les ateliers) : manche d'ébène cerclé d'or, et au bout
+    # un cube de sélection en fil d'or, ses deux coins marqués (rouge le premier, bleu le second), un cœur d'ambre
+    # qui luit et deux étincelles.
+    cube = [(9.2, 3.2), (12.6, 1.6), (15.2, 3.0), (11.8, 4.6)]           # face du dessus, en perspective
+    bas = [(x, y + 3.6) for x, y in cube]
+    i.halo(12.2, 5.0, 4.6, (255, 196, 92), force=0.55)
+    i.poly([cube[0], cube[3], bas[3], bas[0]], A.shade(A.GOLD, 0.35) + (110,), relief=0)   # faces à peine teintées
+    i.poly([cube[3], cube[2], bas[2], bas[3]], A.shade(A.GOLD, 0.25) + (90,), relief=0)
+    i.poly(cube, A.shade(A.GOLD, 0.5) + (120,), relief=0)
+    i.disc(12.2, 4.8, 1.25, (255, 214, 120), relief=0.4)                  # cœur d'ambre
+    i.disc(11.9, 4.5, 0.45, A.WHITE + (220,), relief=0)
+    for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):                         # arêtes en fil d'or
+        i.line(cube[a][0], cube[a][1], cube[b][0], cube[b][1], A.GOLD, 0.45, relief=0.3)
+        i.line(cube[a][0], cube[a][1], bas[a][0], bas[a][1], A.GOLD, 0.45, relief=0.3)
+    for a, b in ((0, 3), (3, 2)):
+        i.line(bas[a][0], bas[a][1], bas[b][0], bas[b][1], A.GOLD, 0.45, relief=0.3)
+    i.line(1.6, 14.4, 9.6, 6.4, (38, 26, 28), 2.0)                        # manche d'ébène
+    i.line(2.1, 13.5, 9.1, 6.5, A.shade((38, 26, 28), 2.4), 0.45, relief=0)
+    for t in (0.18, 0.62, 0.92):                                          # bagues d'or
+        x, y = 1.6 + 8 * t, 14.4 - 8 * t
+        i.line(x - 0.75, y - 0.75, x + 0.75, y + 0.75, A.GOLD, 0.85, relief=0.6)
+    i.disc(1.4, 14.6, 0.95, A.BRONZE, relief=0.6)                         # pommeau
+    i.disc(bas[0][0], bas[0][1], 0.8, RED, relief=0.5)                    # coin 1, au bout du manche
+    i.disc(cube[2][0], cube[2][1], 0.8, BLUE, relief=0.5)                 # coin 2
+    i.etincelle(4.6, 3.6, 1.3, (255, 236, 170), relief=0)
+    i.etincelle(14.6, 10.4, 0.9, (255, 236, 170), relief=0)
 
 
 def structure(i):
@@ -172,7 +185,7 @@ def main_(i):
 
 
 TOOLS = {"trone": trone, "maison": maison, "centre": centre, "salle": salle, "gomme": gomme,
-         "selection": selection, "structure": structure, "main": main_}
+         "baguette": baguette, "structure": structure, "main": main_}
 
 
 def dessiner(name):

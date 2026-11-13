@@ -8,8 +8,11 @@ import com.sk89q.worldedit.regions.Region;
 
 import fr.valcombe.mc.ValcombeMod;
 import fr.valcombe.mc.ValcombeUi;
+import fr.valcombe.mc.worlds.WorldKind;
 
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -20,20 +23,20 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.InteractionHand;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
 
 /**
- * WorldEdit fait partie du jeu : il est chargé avec le mod Valcombe, ses commandes arrivent jusqu'au joueur
- * opérateur, une vraie construction passe (sélection, remplissage, annulation), et l'API avec laquelle le mod
- * est compilé (build.gradle, compileOnly) est bien celle du mod chargé. Les outils de carte de Valcombe gardent
- * la main sur leurs clics (hache « Carte : sélection », boussole « Carte : centre »), et la hache de //wand
- * reste celle de WorldEdit.
+ * WorldEdit fait partie du jeu : il est chargé avec le mod Valcombe, ses commandes sont enregistrées, une vraie
+ * construction passe dans un atelier (sélection, remplissage, annulation), et l'API avec laquelle le mod est compilé
+ * (build.gradle, compileOnly) est bien celle du mod chargé. La baguette de WorldEdit est celle de Valcombe (réglage
+ * wand-item) ; //wand en donne une qui prend son apparence ; ses clics posent les coins de WorldEdit. La boussole
+ * « Carte : centre » de Valcombe garde la main : la navigation de WorldEdit lui est refusée.
+ * <p>
+ * Les limites (hub, partie, invités) sont vérifiées par BuildWorkshopGameTest.
  */
 public class WorldEditGameTest implements FabricClientGameTest {
 
@@ -43,12 +46,23 @@ public class WorldEditGameTest implements FabricClientGameTest {
 		}
 	}
 
-	/** Combien de blocs de cette sorte dans le pavé (coins compris). */
-	private static int count(TestSingleplayerContext world, BlockPos a, BlockPos b, Block block) {
+	private static boolean waitFor(ClientGameTestContext ctx, TestSingleplayerContext world, int ticks, Predicate<MinecraftServer> cond) {
+		for (int i = 0; i < ticks; i += 2) {
+			if (world.getServer().computeOnServer(cond::test)) {
+				return true;
+			}
+			ctx.waitTicks(2);
+		}
+		return world.getServer().computeOnServer(cond::test);
+	}
+
+	/** Combien de blocs de cette sorte dans le pavé (coins compris), dans ce monde. */
+	private static int count(TestSingleplayerContext world, String id, BlockPos a, BlockPos b, Block block) {
 		return world.getServer().computeOnServer(server -> {
+			ServerLevel level = ValcombeMod.worlds().level(id);
 			int n = 0;
 			for (BlockPos pos : BlockPos.betweenClosed(a, b)) {
-				if (server.overworld().getBlockState(pos).is(block)) {
+				if (level.getBlockState(pos).is(block)) {
 					n++;
 				}
 			}
@@ -116,25 +130,30 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
 			ctx.waitTicks(40);
-			// On arrive au hub : ce test se passe au village actuel (monde principal).
-			ctx.runOnClient(mc -> fr.valcombe.client.ClientState.send("vc monde aller principal"));
-			ctx.waitTicks(40);
 
-			// Les commandes sont enregistrées sur le serveur et envoyées au joueur opérateur (« //wand » s'écrit
-			// « /wand » dans l'arbre des commandes).
+			// Les commandes sont enregistrées sur le serveur (« //wand » s'écrit « /wand » dans l'arbre des commandes).
 			check(world.getServer().computeOnServer(server -> {
 				var root = server.getCommands().getDispatcher().getRoot();
 				return root.getChild("/wand") != null && root.getChild("/pos1") != null && root.getChild("/set") != null;
 			}), "commandes de WorldEdit enregistrées sur le serveur");
-			check(ctx.computeOnClient(mc -> mc.player.connection.getCommands().getRoot().getChild("/set") != null),
-				"commandes de WorldEdit reçues par le joueur opérateur");
+			// La baguette de WorldEdit est l'objet de la baguette de construction de Valcombe.
+			check(ValcombeUi.WAND_ID.equals(world.getServer().computeOnServer(s -> WorldEdit.getInstance().getConfiguration().wandItem)),
+				"baguette de WorldEdit réglée sur celle de Valcombe");
 
-			// Un pavé de 3 x 3 x 3 en l'air, au-dessus du joueur, rempli puis annulé.
-			BlockPos feet = world.getServer().computeOnServer(server ->
-				server.getPlayerList().getPlayerByName(me).blockPosition());
-			BlockPos a = feet.offset(4, 40, 4);
+			// Un atelier, où WorldEdit sert.
+			String id = world.getServer().computeOnServer(s -> ValcombeMod.worlds().create(WorldKind.ATELIER_CARTE,
+				"Atelier WorldEdit " + (System.currentTimeMillis() % 100000)).id());
+			world.getServer().runOnServer(s -> ValcombeMod.travel().go(s.getPlayerList().getPlayerByName(me), id, null));
+			check(waitFor(ctx, world, 100, s -> s.getPlayerList().getPlayerByName(me).level().dimension().identifier().toString()
+				.equals("valcombe:" + id)), "arrivée dans l'atelier");
+			ctx.waitTicks(20);
+			check(ctx.computeOnClient(mc -> mc.player.connection.getCommands().getRoot().getChild("/set") != null),
+				"commandes de WorldEdit reçues par le joueur dans l'atelier");
+
+			// Un pavé de 3 x 3 x 3 en l'air, rempli puis annulé.
+			BlockPos a = new BlockPos(4, 75, 4);
 			BlockPos b = a.offset(2, 2, 2);
-			check(count(world, a, b, Blocks.GOLD_BLOCK) == 0, "pavé vide au départ");
+			check(count(world, id, a, b, Blocks.GOLD_BLOCK) == 0, "pavé vide au départ");
 			type(ctx, String.format(Locale.ROOT, "/pos1 %d,%d,%d", a.getX(), a.getY(), a.getZ()));
 			type(ctx, String.format(Locale.ROOT, "/pos2 %d,%d,%d", b.getX(), b.getY(), b.getZ()));
 
@@ -143,70 +162,71 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			check(sel != null && sel.getVolume() == 27, "sélection de 27 blocs lue par l'API de WorldEdit (lu : " + sel + ")");
 
 			type(ctx, "/set gold_block");
-			int filled = count(world, a, b, Blocks.GOLD_BLOCK);
+			int filled = count(world, id, a, b, Blocks.GOLD_BLOCK);
 			check(filled == 27, "//set remplit le pavé (" + filled + " blocs d'or sur 27)");
 
 			type(ctx, "/undo");
-			int left = count(world, a, b, Blocks.GOLD_BLOCK);
+			int left = count(world, id, a, b, Blocks.GOLD_BLOCK);
 			check(left == 0, "//undo vide le pavé (" + left + " blocs d'or restants)");
-			System.out.println("[valcombe-test] WorldEdit : sélection, remplissage et annulation vérifiés");
+			System.out.println("[valcombe-test] WorldEdit : sélection, remplissage et annulation vérifiés dans l'atelier");
 
-			checkToolPriority(ctx, world, me, feet, a);
+			checkWand(ctx, world, me, id, a);
+
+			AtomicReference<CompletableFuture<Void>> gone = new AtomicReference<>();
+			world.getServer().runOnServer(s -> gone.set(ValcombeMod.worlds().delete(id)));
+			check(waitFor(ctx, world, 600, s -> gone.get().isDone()), "atelier supprimé");
 		}
 	}
 
 	/**
-	 * Les outils de carte de Valcombe passent avant WorldEdit : de vrais clics avec la hache « Carte : sélection »
-	 * posent les coins de Valcombe sans toucher à la sélection de WorldEdit ; la boussole « Carte : centre » ne
-	 * déclenche pas la navigation de WorldEdit ; la hache sans nom donnée par //wand pose, elle, le coin de WorldEdit.
+	 * La baguette de construction : //wand en donne une « nue », qui prend l'apparence de celle de Valcombe ; ses vrais
+	 * clics posent les coins de WorldEdit sans casser le bloc. La boussole « Carte : centre » de Valcombe, elle, ne
+	 * déclenche pas la navigation de WorldEdit.
 	 */
-	private static void checkToolPriority(ClientGameTestContext ctx, TestSingleplayerContext world, String me,
-			BlockPos feet, BlockPos weCorner) {
-		BlockPos first = feet.offset(2, 0, -1);
-		BlockPos second = feet.offset(2, 0, 1);
-		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", first.getX(), first.getY(), first.getZ()));
-		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", second.getX(), second.getY(), second.getZ()));
-		// L'éditeur de Valcombe ne répond qu'en mode construction : on y entre (il donne aussi les outils de carte).
-		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));
+	private static void checkWand(ClientGameTestContext ctx, TestSingleplayerContext world, String me, String id, BlockPos weCorner) {
+		// Deux blocs de pierre devant le joueur, posés sur l'herbe (dessus du sol plat : y = 64).
+		BlockPos first = new BlockPos(2, 65, -1);
+		BlockPos second = new BlockPos(2, 65, 1);
+		world.getServer().runOnServer(s -> {
+			ServerLevel level = ValcombeMod.worlds().level(id);
+			level.setBlockAndUpdate(first, Blocks.STONE.defaultBlockState());
+			level.setBlockAndUpdate(second, Blocks.STONE.defaultBlockState());
+			var p = s.getPlayerList().getPlayerByName(me);
+			p.teleportTo(level, 0.5, 65, 0.5, java.util.Set.of(), -90f, 30f, false);
+			// La baguette donnée à l'arrivée est rangée : //wand doit en donner une autre.
+			var inv = p.getInventory();
+			for (int i = 0; i < inv.getContainerSize(); i++) {
+				if (ValcombeUi.isWand(inv.getItem(i))) {
+					inv.setItem(i, ItemStack.EMPTY);
+				}
+			}
+		});
 		ctx.waitTicks(10);
-		check(world.getServer().computeOnServer(server -> (Boolean) ValcombeMod.editor().state(me).get("construction")), "mode construction");
-
-		check(hold(ctx, world, me, s -> ValcombeUi.mapTool(s) == ValcombeUi.MapTool.SELECT), "outil « Carte : sélection » en main");
+		type(ctx, "/wand");
+		ctx.waitTicks(30); // la baguette nue prend l'apparence de celle de Valcombe en moins d'une seconde
+		check(hold(ctx, world, me, ValcombeUi::isWand), "//wand donne la baguette de construction de Valcombe");
 		ctx.runOnClient(mc -> mc.gameMode.startDestroyBlock(first, Direction.UP));
 		ctx.waitTicks(10);
-		ctx.runOnClient(mc -> mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
-			new BlockHitResult(Vec3.atCenterOf(second), Direction.UP, second, false)));
+		ctx.runOnClient(mc -> mc.gameMode.useItemOn(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND,
+			new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(second), Direction.UP, second, false)));
 		ctx.waitTicks(10);
-		String clicks = world.getServer().computeOnServer(server -> {
-			var p = server.getPlayerList().getPlayerByName(me);
-			var ed = ValcombeMod.editor();
-			return "coin 1 " + ed.isCorner(p, 1, first) + " | coin 2 " + ed.isCorner(p, 2, second) + " | bloc intact "
-				+ server.overworld().getBlockState(first).is(Blocks.STONE);
-		});
-		check(clicks.equals("coin 1 true | coin 2 true | bloc intact true"), "clics de l'outil de sélection de Valcombe : " + clicks);
-		Region sel = selection(world, me);
-		check(sel != null && sel.getVolume() == 27 && sel.contains(vec(weCorner)) && !sel.contains(vec(first)),
-			"la sélection de WorldEdit n'a pas bougé (" + sel + ")");
+		Region wand = selection(world, me);
+		check(wand != null && wand.contains(vec(first)) && wand.contains(vec(second)) && !wand.contains(vec(weCorner))
+			&& world.getServer().computeOnServer(s -> ValcombeMod.worlds().level(id).getBlockState(first).is(Blocks.STONE)),
+			"les clics de la baguette posent les coins de WorldEdit, sans casser le bloc (" + wand + ")");
 
 		// La boussole de Valcombe en main : WorldEdit n'a pas le droit de téléporter (clic droit ou gauche).
+		world.getServer().runOnServer(s -> ValcombeUi.mapTools(s.getPlayerList().getPlayerByName(me), true));
 		check(hold(ctx, world, me, s -> ValcombeUi.mapTool(s) == ValcombeUi.MapTool.CENTER), "outil « Carte : centre » en main");
 		check(Boolean.FALSE.equals(worldEditPermission(world, me, "navigation.jumpto.tool"))
 			&& Boolean.FALSE.equals(worldEditPermission(world, me, "navigation.thru.tool")),
 			"navigation de WorldEdit refusée avec la boussole de Valcombe");
-
-		// La hache sans nom de //wand reste la baguette de WorldEdit, et la navigation redevient la sienne.
-		type(ctx, "/wand");
-		check(hold(ctx, world, me, s -> s.is(Items.WOODEN_AXE) && ValcombeUi.mapTool(s) == null), "hache de //wand en main");
+		check(hold(ctx, world, me, ValcombeUi::isWand), "baguette de nouveau en main");
 		check(!Boolean.FALSE.equals(worldEditPermission(world, me, "navigation.thru.tool")),
-			"navigation de WorldEdit permise sans outil de Valcombe en main");
-		ctx.runOnClient(mc -> mc.gameMode.startDestroyBlock(second, Direction.UP));
-		ctx.waitTicks(10);
-		Region wand = selection(world, me);
-		check(wand != null && wand.contains(vec(second)) && world.getServer().computeOnServer(server ->
-			server.overworld().getBlockState(second).is(Blocks.STONE)), "la baguette de WorldEdit pose son premier coin (" + wand + ")");
-		check(world.getServer().computeOnServer(server -> ValcombeMod.editor().isCorner(server.getPlayerList().getPlayerByName(me), 1, first)),
-			"le coin de Valcombe n'a pas bougé");
-		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));
-		System.out.println("[valcombe-test] WorldEdit : les outils de Valcombe gardent leurs clics, //wand garde les siens");
+			"navigation de WorldEdit permise sans outil de Valcombe en main, dans l'atelier");
+		world.getServer().runOnServer(s -> ValcombeUi.mapTools(s.getPlayerList().getPlayerByName(me), false));
+		check(java.util.Arrays.stream(ValcombeUi.MapTool.values()).noneMatch(t -> t.name().equals("SELECT")),
+			"plus d'outil « Carte : sélection » : la sélection est celle de WorldEdit");
+		System.out.println("[valcombe-test] WorldEdit : la baguette de Valcombe pose ses coins, la boussole garde ses clics");
 	}
 }

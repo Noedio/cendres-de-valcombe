@@ -102,7 +102,7 @@ class HubHallTest {
 		assertTrue(WorldKind.HUB.openToAll());
 		assertTrue(WorldKind.PARTIE.openToAll());
 		assertTrue(WorldKind.ESSAI.openToAll());
-		assertFalse(WorldKind.ATELIER_CARTE.openToAll(), "les ateliers : opérateurs (et leurs invités, plus tard)");
+		assertFalse(WorldKind.ATELIER_CARTE.openToAll(), "les ateliers : opérateurs et leurs invités seulement");
 		assertFalse(WorldKind.ATELIER_STRUCTURES.openToAll());
 		assertNotNull(Travel.MAIN_NAME);
 		assertEquals("principal", Travel.MAIN);

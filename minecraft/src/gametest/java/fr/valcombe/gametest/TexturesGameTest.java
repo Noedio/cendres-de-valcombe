@@ -130,7 +130,7 @@ public class TexturesGameTest implements FabricClientGameTest {
 			x = 6;
 			List<String> items = new ArrayList<>(List.of("jeton_vivant", "jeton_mort", "jeton_fantome", "jeton_goule",
 				"icone_commere", "icone_e_rose_mal", "plume", "baton", "equerre", "grimoire"));
-			for (String t : new String[] { "trone", "maison", "centre", "salle", "gomme", "selection", "structure", "main" }) {
+			for (String t : new String[] { "trone", "maison", "centre", "salle", "gomme", "baguette", "structure", "main" }) {
 				items.add("outil_" + t);
 			}
 			for (String name : items) {
