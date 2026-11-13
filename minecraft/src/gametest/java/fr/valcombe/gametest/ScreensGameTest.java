@@ -1287,8 +1287,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 			// Un autre village : le monde est de nouveau remis à neuf, il ne reste rien du précédent (ni blocs ni décors).
 			send(ctx, "vc carte construire port");
 			waitBuild(ctx, world);
-			ctx.waitTicks(20);
-			String second = world.getServer().computeOnServer(server -> {
+			// L'envoi a sorti le joueur au hub : les tronçons du monde de la partie ne sont plus chargés, et leurs entités
+			// (les trônes sculptés) n'y sont pas comptées. On revient sur la place, puis on attend qu'elles soient chargées.
+			backToVillage(ctx, world, me);
+			String second = "";
+			for (int i = 0; i < 20 && !second.equals("thème port | trônes sculptés 16 dont anciens 0"); i++) {
+				ctx.waitTicks(10);
+				second = world.getServer().computeOnServer(server -> {
 				var level = fr.valcombe.mc.games.Games.main().host().level();
 				var v = fr.valcombe.mc.games.Games.main().host().village();
 				int thrones = 0;
@@ -1302,7 +1307,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 					}
 				}
 				return "thème " + v.theme() + " | trônes sculptés " + thrones + " dont anciens " + stale;
-			});
+				});
+			}
 			System.out.println("[valcombe-test] village renvoyé : " + second);
 			check(second.equals("thème port | trônes sculptés 16 dont anciens 0"), "un monde neuf pour chaque carte : " + second);
 			// On revient sur la place pour la photo.

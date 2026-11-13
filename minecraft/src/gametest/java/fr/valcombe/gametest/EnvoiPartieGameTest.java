@@ -227,17 +227,16 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				for (int i = 0; i < v.seatCount(); i++) {
 					seats &= level.getBlockState(v.markerPos(new Village.Hit(Village.Mark.SEAT, i))).is(Blocks.BARRIER);
 				}
-				int[] t = thrones(level, v);
 				var folder = ValcombeMod.worlds().folder(gameId);
 				return v.libraryId() + " | centre " + v.center().equals(center) + " | tour " + level.getBlockState(tower.above(14))
 					.is(Blocks.STONE_BRICKS) + " | trônes " + v.seatCount() + " posés " + seats
-					+ " | sculptés " + t[0] + " anciens " + t[1] + " | maisons " + v.houseCount() + " | convocation " + (v.convocation() != null)
+					+ " | maisons " + v.houseCount() + " | convocation " + (v.convocation() != null)
 					+ " | fiche " + Files.exists(host.villageFile()) + " | carte du monde " + Files.exists(folder.resolve("valcombe-carte.json"))
 					+ " | registre " + ValcombeMod.worlds().find(gameId).carte()
 					+ " | marque " + Files.exists(folder.resolve("valcombe-chantier.txt"));
 			});
 			System.out.println("[valcombe-test] carte A : " + placedA);
-			check(placedA.equals(MAP_A + " | centre true | tour true | trônes 8 posés true | sculptés 8 anciens 0 | maisons 8 | convocation true"
+			check(placedA.equals(MAP_A + " | centre true | tour true | trônes 8 posés true | maisons 8 | convocation true"
 				+ " | fiche true | carte du monde true | registre " + MAP_A + " | marque false"), "carte A en place : " + placedA);
 
 			// 5. Le lien du message ramène au village de la partie.
@@ -248,6 +247,10 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				ServerPlayer p = player(s, me);
 				return spawn != null && Math.abs(p.getX() - (spawn.getX() + 0.5)) < 2 && Math.abs(p.getZ() - (spawn.getZ() + 0.5)) < 2;
 			}), "à la salle d'attente de la carte envoyée");
+			// Les trônes sculptés sont des entités : celles d'un monde où personne ne se trouve ne sont pas chargées,
+			// on les compte donc une fois revenu sur la place.
+			check(waitFor(ctx, world, 200, s -> java.util.Arrays.equals(thrones(fr.valcombe.mc.games.Games.main().host().level(), fr.valcombe.mc.games.Games.main().host().village()),
+				new int[] {8, 0})), "les 8 trônes sculptés de la carte A, aucun ancien");
 			shot(ctx, "envoi-carte-a");
 
 			// 6. Envoyer la carte B, plus petite : rien ne reste de la carte A, ni sa tour au loin, ni ses trônes sculptés.
@@ -259,14 +262,17 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				var host = fr.valcombe.mc.games.Games.main().host();
 				ServerLevel level = host.level();
 				Village v = host.village();
-				int[] t = thrones(level, v);
-				return v.libraryId() + " | trônes " + v.seatCount() + " | sculptés " + t[0] + " anciens " + t[1]
+				return v.libraryId() + " | trônes " + v.seatCount()
 					+ " | restes de A " + builtInRing(level, center, rayonB + 1, rayonA)
 					+ " | registre " + ValcombeMod.worlds().find(gameId).carte() + " | A gardée " + ValcombeMod.maps().exists(MAP_A);
 			});
 			System.out.println("[valcombe-test] carte B : " + placedB);
-			check(placedB.equals(MAP_B + " | trônes 5 | sculptés 5 anciens 0 | restes de A 0 | registre " + MAP_B + " | A gardée true"),
+			check(placedB.equals(MAP_B + " | trônes 5 | restes de A 0 | registre " + MAP_B + " | A gardée true"),
 				"il ne reste rien de la carte A : " + placedB);
+			send(ctx, "vc monde aller " + gameId);
+			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(gameDim)), "retour au village de la carte B");
+			check(waitFor(ctx, world, 200, s -> java.util.Arrays.equals(thrones(fr.valcombe.mc.games.Games.main().host().level(), fr.valcombe.mc.games.Games.main().host().village()),
+				new int[] {5, 0})), "les 5 trônes sculptés de la carte B, aucun de la carte A");
 
 			// 7. Une partie se lance sur la carte envoyée ; pendant qu'elle se joue, on n'envoie rien.
 			send(ctx, "vc rejoindre");
