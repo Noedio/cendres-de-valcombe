@@ -162,6 +162,9 @@ public class HdTabs extends AbstractWidget implements HdKeyed {
 
 	@Override
 	protected void updateWidgetNarration(NarrationElementOutput output) {
+		if (labels.isEmpty()) {
+			return;
+		}
 		output.add(NarratedElementType.TITLE, Component.literal("Onglet " + labels.get(selected) + ", "
 			+ (selected + 1) + " sur " + labels.size()));
 	}

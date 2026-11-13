@@ -66,6 +66,11 @@ public class HdList<T> extends AbstractWidget implements HdKeyed {
 			selected = -1;
 		}
 		layout();
+		// Avec une clé posée avant les éléments, la position gardée n'a pas pu être reprise (liste vide) : on la
+		// reprend ici, pour que l'ordre de key() et items() n'ait pas d'importance.
+		if (key != null && OFFSETS.containsKey(key)) {
+			scroll.setOffset(OFFSETS.get(key));
+		}
 		return this;
 	}
 
