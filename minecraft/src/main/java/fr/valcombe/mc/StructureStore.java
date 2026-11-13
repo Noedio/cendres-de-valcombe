@@ -658,6 +658,43 @@ public final class StructureStore {
 		}
 	}
 
+	/**
+	 * Garde dans la corbeille une copie datée de la version actuelle d'une structure, qui reste en place : l'atelier
+	 * structures s'en sert avant d'enregistrer une parcelle par-dessus une version changée ailleurs. Renvoie faux s'il
+	 * n'y a rien à copier (structure fournie jamais modifiée, structure inconnue).
+	 */
+	public boolean backup(String id) {
+		Path json;
+		Path nbt;
+		if (isBuiltin(id)) {
+			if (!isOverridden(id)) {
+				return false;
+			}
+			json = dir.resolve(OVERRIDES).resolve(id + ".json");
+			nbt = dir.resolve(OVERRIDES).resolve(id + ".nbt");
+		} else {
+			checkId(id);
+			json = dir.resolve(id + ".json");
+			nbt = dir.resolve(id + ".nbt");
+		}
+		if (!Files.exists(nbt)) {
+			return false;
+		}
+		Path trash = dir.resolve(TRASH);
+		String stamp = LocalDateTime.now().format(STAMP);
+		try {
+			Files.createDirectories(trash);
+			for (Path f : List.of(json, nbt)) {
+				if (Files.exists(f)) {
+					Files.copy(f, trash.resolve(stamp + "-" + f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+				}
+			}
+		} catch (IOException e) {
+			throw new GameException("Copie dans la corbeille impossible : " + e.getMessage());
+		}
+		return true;
+	}
+
 	/** Le dossier de la corbeille des structures (pour le dire à l'opérateur et pour les tests). */
 	public Path trashDir() {
 		return dir.resolve(TRASH);

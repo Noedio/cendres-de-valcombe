@@ -40,7 +40,9 @@ Autres actions du pupitre :
 | Supprimer | Structures créées (après confirmation) : la structure va à la corbeille du catalogue, la parcelle est rasée |
 | Nouvelle structure | Une parcelle vide, nommée (petite 11, moyenne 17, grande 25 ou immense 41 blocs de côté), au bout de la rangée « Vos structures » |
 
-L'écran dit si la parcelle a des **modifications non enregistrées** (comparaison case par case avec la version posée ou enregistrée en dernier). Si une structure change ailleurs pendant que sa parcelle en a, rien n'est écrasé : la parcelle est marquée « changée ailleurs » (« Reposer » prend la version du catalogue, « Enregistrer » garde la vôtre).
+L'écran dit si la parcelle a des **modifications non enregistrées** (comparaison case par case avec la version posée ou enregistrée en dernier). Si une structure change ailleurs pendant que sa parcelle en a, rien n'est écrasé : la parcelle est marquée « changée ailleurs » (« Reposer » prend la version du catalogue, « Enregistrer » garde la vôtre ; la version venue d'ailleurs est alors copiée dans la corbeille). Une structure supprimée ailleurs emporte sa parcelle, sauf si celle-ci a des modifications non enregistrées : elle reste alors en parcelle neuve, marquée « changée ailleurs », et « Enregistrer » remet la structure au catalogue.
+
+Une pose interrompue (serveur arrêté ou partie quittée pendant la barre) est reprise au retour dans l'atelier : la parcelle est reposée en entier, et les allées de même.
 
 ## Commandes
 
@@ -70,7 +72,7 @@ Remettre l'atelier à neuf (`/vc monde recreer atelier-structures`) refait la di
 
 - **Enregistrer une construction d'un monde** (« Sélection WorldEdit → structure du catalogue ») : `StructureStore.saveFromWorld(level, a, b, id, nom, pieds, repere)` pour une structure à vous, `StructureStore.overrideFromWorld(level, a, b, id, pieds)` pour une structure fournie (surcharge). La boîte [a, b] est capturée telle quelle, contenu des blocs compris (sans données dangereuses).
 - **Lire** : `list()`, `def(id)` (pour une structure fournie modifiée : sa taille, son ancre et `modifiee = true`), `exists(id)`, `isBuiltin(id)`, `isOverridden(id)`, `signature(id)` (change à chaque enregistrement).
-- **Revenir à l'originale** : `revert(id)`. Renommer, repère, supprimer : `rename`, `setMark`, `delete` (corbeille).
+- **Revenir à l'originale** : `revert(id)`. Renommer, repère, supprimer : `rename`, `setMark`, `delete` (corbeille). Garder une copie de la version actuelle avant de l'écraser : `backup(id)` (corbeille, la version reste en place).
 - **Droits** : `fr.valcombe.mc.worlds.BuildRights` est le point unique « peut construire ici » : `canBuild(joueur, monde)` et `require(...)`. Les opérateurs construisent partout ; dans un atelier, un invité aussi. Le module des invitations branche sa règle par `BuildRights.setGuests((joueur, monde) -> ...)`, sans rien changer d'autre.
 
 ## Tests

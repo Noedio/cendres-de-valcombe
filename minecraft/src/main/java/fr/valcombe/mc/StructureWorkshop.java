@@ -372,6 +372,21 @@ public final class StructureWorkshop implements WorldManager.Listener {
 		return new Version(store.originalClip(id), store.originalDef(id).ancre.clone(), true);
 	}
 
+	/**
+	 * La version d'une parcelle dont la pose a été interrompue : celle qui lui était destinée (retenue à côté de la
+	 * disposition), sinon celle du catalogue ; null pour une parcelle neuve (posée vide).
+	 */
+	private Version resumed(StructurePlots.Plot p) {
+		if (p.brouillon) {
+			return null;
+		}
+		Snapshot s = snapshot(p);
+		if (s.clip() != null) {
+			return new Version(s.clip(), s.ancre().clone(), StructureStore.isBuiltin(p.id) && !store.isOverridden(p.id));
+		}
+		return store.exists(p.id) ? library(p.id) : null;
+	}
+
 	/** L'état d'une parcelle, tel que l'affichent le panneau et l'écran. */
 	private String state(StructurePlots.Plot p) {
 		if (p.brouillon) {
@@ -557,6 +572,7 @@ public final class StructureWorkshop implements WorldManager.Listener {
 			Version v = e.getValue();
 			plan.then(placePlan(level, p, v));
 			remember(p, v == null ? null : v.clip(), v == null ? null : v.ancre());
+			p.aPoser = true; // enregistré avec la disposition : une pose interrompue par un arrêt reprend au retour
 			pending.add(p.id);
 			holds.put(p.id, new BlockPos(p.x, S, p.z));
 			ids.add(p.id);
@@ -569,11 +585,17 @@ public final class StructureWorkshop implements WorldManager.Listener {
 				holds.remove(id);
 				dirtyCache.remove(id);
 			});
+			boolean finished = false;
 			for (String id : ids) {
 				StructurePlots.Plot p = layout == null ? null : layout.plot(id);
 				if (p != null) {
+					finished |= p.aPoser;
+					p.aPoser = false;
 					label(level, p);
 				}
+			}
+			if (finished) {
+				saveLayout();
 			}
 			if (then != null) {
 				then.run();
@@ -628,7 +650,15 @@ public final class StructureWorkshop implements WorldManager.Listener {
 			}
 		}
 		plan.set(WELCOME, lectern);
-		queue.add("Atelier structures : allées", level, plan, null, pl -> pl.level() == level, null);
+		// Retenu avec la disposition : des allées interrompues par un arrêt du serveur sont reprises au retour.
+		l.allees = false;
+		saveLayout();
+		queue.add("Atelier structures : allées", level, plan, () -> {
+			if (layout == l) {
+				l.allees = true;
+				saveLayout();
+			}
+		}, pl -> pl.level() == level, null);
 	}
 
 	// ------------------------------------------------------------------
@@ -645,10 +675,19 @@ public final class StructureWorkshop implements WorldManager.Listener {
 		boolean changed = false;
 		int bands = l.bandes.size();
 		boolean fresh = l.parcelles.isEmpty() && l.bandes.isEmpty();
-		// Structures disparues du catalogue (supprimées ailleurs) : leur parcelle s'en va.
+		// Structures disparues du catalogue (supprimées ailleurs) : leur parcelle s'en va, sauf si elle a des
+		// modifications non enregistrées. Celle-là reste, en parcelle neuve : « Enregistrer » remet la structure au
+		// catalogue, « Supprimer » l'abandonne.
 		for (StructurePlots.Plot p : new ArrayList<>(l.parcelles)) {
 			if (!p.brouillon && !store.exists(p.id) && !pending.contains(p.id)) {
-				clear(level, p);
+				if (!p.aPoser && dirty(level, p)) {
+					p.brouillon = true;
+					p.nom = p.id;
+					p.conflit = true;
+					label(level, p);
+				} else {
+					clear(level, p);
+				}
 				changed = true;
 			} else if (p.brouillon && store.exists(p.id)) {
 				p.brouillon = false; // rangée sous le même identifiant ailleurs : la parcelle la suit désormais
@@ -664,6 +703,13 @@ public final class StructureWorkshop implements WorldManager.Listener {
 			}
 		}
 		Map<StructurePlots.Plot, Version> toPlace = new LinkedHashMap<>();
+		// Poses interrompues (serveur arrêté, partie quittée pendant la barre) : la parcelle est reposée en entier, avec
+		// la version qui lui était destinée. Sans cela elle resterait à moitié posée, vue comme « modifiée ».
+		for (StructurePlots.Plot p : l.parcelles) {
+			if (p.aPoser && !pending.contains(p.id)) {
+				toPlace.put(p, resumed(p));
+			}
+		}
 		if (!needs.isEmpty()) {
 			for (StructurePlots.Plot p : StructurePlots.allocate(l, needs)) {
 				p.signature = store.signature(p.id);
@@ -702,7 +748,7 @@ public final class StructureWorkshop implements WorldManager.Listener {
 			}
 			changed = true;
 		}
-		if (fresh || l.bandes.size() != bands) {
+		if (fresh || l.bandes.size() != bands || !l.allees && !queue.busy(level)) {
 			placeGrounds(level, l);
 		}
 		if (!toPlace.isEmpty()) {
@@ -1107,6 +1153,9 @@ public final class StructureWorkshop implements WorldManager.Listener {
 		StructurePlots.Plot plot = current(p, level, id);
 		requireIdle(plot);
 		Captured cap = capture(level, plot);
+		// « Changée ailleurs » : la version venue d'ailleurs (éditeur, Atelier web, pack) n'est pas perdue, une copie
+		// part à la corbeille avant d'être remplacée par celle de la parcelle.
+		boolean keptOther = plot.conflit && !plot.brouillon && store.backup(plot.id);
 		String msg;
 		if (plot.brouillon) {
 			msg = store.save(plot.id, plot.nom, cap.clip(), cap.ancre(), "");
@@ -1123,7 +1172,7 @@ public final class StructureWorkshop implements WorldManager.Listener {
 		focus.put(p.getUUID(), plot.id);
 		saveLayout();
 		label(level, plot);
-		return msg;
+		return keptOther ? msg + " La version changée ailleurs est gardée dans la corbeille." : msg;
 	}
 
 	/** Revenir à l'originale : la surcharge d'une structure fournie part à la corbeille, l'originale est reposée. */

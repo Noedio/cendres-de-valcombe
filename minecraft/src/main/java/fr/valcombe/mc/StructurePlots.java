@@ -104,6 +104,11 @@ final class StructurePlots {
 		int[] ancre;
 		/** La structure a changé ailleurs pendant que la parcelle avait des modifications : rien n'a été écrasé. */
 		boolean conflit;
+		/**
+		 * Une pose de la parcelle a été lancée et n'est pas encore finie. Resté vrai après un arrêt du serveur (partie
+		 * quittée pendant la barre) : la parcelle, à moitié posée, est reposée au passage suivant.
+		 */
+		boolean aPoser;
 
 		/** La bordure ouest et la bordure est. */
 		int west() {
@@ -133,6 +138,8 @@ final class StructurePlots {
 	/** Toute la disposition : les rangées et les parcelles. */
 	static final class Layout {
 		int version = 1;
+		/** Les allées et le pupitre d'accueil sont posés en entier (faux pendant leur pose, et après une pose interrompue). */
+		boolean allees;
 		List<Band> bandes = new ArrayList<>();
 		List<Plot> parcelles = new ArrayList<>();
 

@@ -146,6 +146,26 @@ class StructureOverrideTest {
 	}
 
 	@Test
+	void uneCopieDeLaVersionActuelleVaALaCorbeilleSansLaRetirer() throws IOException {
+		StructureStore store = new StructureStore(creations);
+		assertFalse(store.backup("puits"), "une structure fournie jamais modifiée : rien à copier");
+		store.writeOverride(meta("puits", 5, 8, 5, new int[] {2, 1, 2}), new byte[] {7, 7});
+		assertTrue(store.backup("puits"));
+		assertTrue(store.isOverridden("puits"), "la version copiée reste en place");
+		Path dir = creations.resolve("structures");
+		Files.writeString(dir.resolve("ma-tour.json"), "{\"id\":\"ma-tour\",\"nom\":\"Ma tour\",\"taille\":[3,5,3]}");
+		Files.write(dir.resolve("ma-tour.nbt"), new byte[] {9});
+		store.reload();
+		assertTrue(store.backup("ma-tour"));
+		assertTrue(store.exists("ma-tour"));
+		List<String> trashed = trash();
+		assertEquals(4, trashed.size(), trashed.toString());
+		assertTrue(trashed.stream().anyMatch(n -> n.endsWith("-ma-tour.nbt")) && trashed.stream().anyMatch(n -> n.endsWith("-puits.nbt")),
+			trashed.toString());
+		assertFalse(store.backup("inconnue"));
+	}
+
+	@Test
 	void identifiantLibreTireDUnNom() throws IOException {
 		Path dir = creations.resolve("structures");
 		Files.createDirectories(dir);
