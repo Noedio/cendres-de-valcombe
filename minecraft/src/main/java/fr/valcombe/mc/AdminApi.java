@@ -176,6 +176,11 @@ final class AdminApi {
 			workshops(ex, path, method, from);
 			return;
 		}
+		if (path.equals("parties/suspendre") || path.equals("parties/reprendre")) {
+			only(ex, method, "POST");
+			suspendGame(ex, path.endsWith("suspendre"), from);
+			return;
+		}
 		switch (path) {
 			case "etat" -> {
 				only(ex, method, "GET");
@@ -286,6 +291,30 @@ final class AdminApi {
 		}
 	}
 
+	// ------------------------------------------------------------------
+	// POST /admin/parties/suspendre et /admin/parties/reprendre
+	// ------------------------------------------------------------------
+	/**
+	 * Met une partie en suspens (ses joueurs au hub, son horloge gelée, elle reprendra où elle en est), ou la reprend (ses
+	 * joueurs rappelés). Corps : {@code {"partie": "<id du monde de la partie>"}}. Réponse : la partie après le geste, et le
+	 * message du serveur.
+	 */
+	private void suspendGame(HttpExchange ex, boolean suspend, InetAddress from) throws IOException {
+		String id = text(readJson(ex), "partie", true);
+		ValcombeMod.LOG.info("API d'administration ({}) : {} la partie {}", from.getHostAddress(),
+			suspend ? "met en suspens" : "reprend", id);
+		json(ex, 200, onServer(() -> {
+			fr.valcombe.mc.games.GameRoom r = fr.valcombe.mc.games.Games.byWorld(id);
+			if (r == null) {
+				throw new AdminException(404, "Aucune partie dans le monde « " + id + " ».");
+			}
+			String said = suspend ? r.suspend() : r.resume();
+			Map<String, Object> m = new LinkedHashMap<>(game(r));
+			m.put("message", said);
+			return m;
+		}, 10));
+	}
+
 	private static void only(HttpExchange ex, String method, String expected) {
 		if (!method.equals(expected)) {
 			throw notAllowed(ex, method, expected);
@@ -383,27 +412,34 @@ final class AdminApi {
 		List<Map<String, Object>> out = new ArrayList<>();
 		try {
 			for (fr.valcombe.mc.games.GameRoom r : fr.valcombe.mc.games.Games.all()) {
-				Map<String, Object> m = new LinkedHashMap<>();
-				var session = r.session();
-				var g = session.game();
-				m.put("id", r.id());
-				m.put("nom", r.name());
-				m.put("sorte", r.kind().code());
-				m.put("principale", r.main());
-				m.put("etat", r.state());
-				m.put("enCours", r.inProgress());
-				m.put("phase", g == null ? null : g.phase().name().toLowerCase(java.util.Locale.ROOT));
-				m.put("inscrits", session.lobby().size());
-				m.put("assis", g == null ? 0 : g.size());
-				m.put("conteur", session.storyteller());
-				var level = r.levelIfReady();
-				m.put("joueurs", level == null ? 0 : level.players().size());
-				out.add(m);
+				out.add(game(r));
 			}
 		} catch (RuntimeException e) {
 			ValcombeMod.LOG.warn("API d'administration : liste des parties illisible", e);
 		}
 		return out;
+	}
+
+	/** Une partie telle que l'API la décrit (voir docs/ADMIN-API.md). Fil du serveur. */
+	private static Map<String, Object> game(fr.valcombe.mc.games.GameRoom r) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		var session = r.session();
+		var g = session.game();
+		m.put("id", r.id());
+		m.put("nom", r.name());
+		m.put("sorte", r.kind().code());
+		m.put("principale", r.main());
+		m.put("etat", r.state());
+		m.put("enCours", r.inProgress());
+		m.put("enPause", r.paused());
+		m.put("suspendue", r.suspended());
+		m.put("phase", g == null ? null : g.phase().name().toLowerCase(java.util.Locale.ROOT));
+		m.put("inscrits", session.lobby().size());
+		m.put("assis", g == null ? 0 : g.size());
+		m.put("conteur", session.storyteller());
+		var level = r.levelIfReady();
+		m.put("joueurs", level == null ? 0 : level.players().size());
+		return m;
 	}
 
 	private static List<Map<String, Object>> worlds() {

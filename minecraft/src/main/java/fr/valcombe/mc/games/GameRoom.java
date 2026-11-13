@@ -90,10 +90,42 @@ public final class GameRoom {
 			|| name.equals(session.storyteller()) || session.isTrainee(name);
 	}
 
-	/** Une partie est-elle en cours (joueurs assis, de la mise en place à la fin) ? */
+	/** Une partie est-elle en cours (joueurs assis, de la mise en place à la fin) ? En suspens aussi : elle reprendra. */
 	public boolean inProgress() {
 		Game g = session.game();
 		return g != null && g.phase() != Game.Phase.SETUP && g.phase() != Game.Phase.ENDED;
+	}
+
+	/** La partie est-elle en suspens (horloge gelée, joueurs au hub, en attente d'être reprise) ? */
+	public boolean suspended() {
+		return session.suspended();
+	}
+
+	/** La partie est-elle en pause (par le Conteur, ou parce qu'elle est en suspens) ? */
+	public boolean paused() {
+		return session.paused();
+	}
+
+	/**
+	 * Une partie en cours qui se joue en ce moment : ni en suspens ni finie. Les sauvegardes automatiques du serveur
+	 * attendent qu'il n'y en ait plus ; une partie en suspens, elle, est enregistrée et gelée : elle ne les retient pas.
+	 */
+	public boolean live() {
+		return inProgress() && !suspended();
+	}
+
+	/** Met cette partie en suspens (voir {@link Session#suspend}) ; renvoie le message pour qui l'a demandée. */
+	public String suspend() {
+		String said = session.suspend();
+		Games.LOG.info("Partie « {} » mise en suspens.", name());
+		return said;
+	}
+
+	/** Reprend cette partie en suspens (voir {@link Session#resumeSuspended}) ; renvoie le message pour qui l'a demandée. */
+	public String resume() {
+		String said = session.resumeSuspended();
+		Games.LOG.info("Partie « {} » reprise.", name());
+		return said;
 	}
 
 	/** Cette partie vue par la logique des tables (voir {@link GameSeats}). */
@@ -101,15 +133,22 @@ public final class GameRoom {
 		return new GameSeats.Table(worldId, name(), session);
 	}
 
-	/** Ce que la partie fait en une ligne : « nuit 2 », « jour 1 », « 3 inscrit(s) », « salon ouvert ». */
+	/**
+	 * Ce que la partie fait en une ligne : « nuit 2 », « jour 1, en pause », « en suspens (jour 3) », « 3 inscrit(s) »,
+	 * « salon ouvert ». Une partie en suspens le dit partout où cette ligne paraît (liste des parties, portes du hub, API).
+	 */
 	public String state() {
 		Game g = session.game();
 		if (g != null && g.winner() == null) {
-			return switch (g.phase()) {
+			String phase = switch (g.phase()) {
 				case NIGHT -> "nuit " + g.night();
 				case DAY -> "jour " + g.day();
 				default -> "mise en place";
 			};
+			if (session.suspended()) {
+				return "en suspens (" + phase + ")";
+			}
+			return session.paused() ? phase + ", en pause" : phase;
 		}
 		int n = session.lobby().size();
 		return n == 0 ? "salon ouvert" : n + " inscrit(s)";

@@ -52,6 +52,8 @@ final class SessionView {
 		v.put("bots", List.copyOf(ses.bots));
 		v.put("inLobby", ses.lobby.contains(me));
 		v.put("paused", ses.paused);
+		// En suspens : horloge gelée, joueurs au hub ; la vue le dit à tous ceux de la table (bandeau, pupitre du Conteur).
+		v.put("suspended", ses.suspended);
 		if (leader && ses.game == null) {
 			String[] ready = ses.lobbyStatus();
 			v.put("lobbyReady", ready[0].equals("oui"));

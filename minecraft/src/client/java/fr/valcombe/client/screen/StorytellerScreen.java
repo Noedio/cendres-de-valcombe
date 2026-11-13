@@ -118,7 +118,7 @@ public class StorytellerScreen extends HdScreen {
 	}
 
 	private static String phaseLine(JsonObject v) {
-		return phaseLabel() + (ClientState.bool(v, "paused") ? " (en pause)" : "");
+		return phaseLabel() + (ClientState.bool(v, "suspended") ? " (en suspens)" : ClientState.bool(v, "paused") ? " (en pause)" : "");
 	}
 
 	@Override
@@ -174,7 +174,10 @@ public class StorytellerScreen extends HdScreen {
 				first = 0;
 				rebuildSoon();
 			}));
-			String pause = paused ? "Reprendre la partie" : "Mettre en pause";
+			// En suspens (joueurs au hub, horloge gelée) : le même bouton reprend la partie et rappelle ses joueurs.
+			boolean suspended = ClientState.bool(v, "suspended");
+			String pause = suspended ? "Reprendre la partie en suspens" : paused ? "Reprendre la partie" : "Mettre en pause";
+			String pauseCmd = suspended ? "vc partie reprendre" : "vc pause";
 			switch (t) {
 				case 0 -> {
 					boolean over = ClientConfig.get().rolesAuDessus;
@@ -195,7 +198,11 @@ public class StorytellerScreen extends HdScreen {
 					}
 					col.add(new Entry("Journal de la partie…", () -> minecraft.gui.setScreen(new ChronicleScreen("journal")), true));
 					col.add(new Entry("Note de partie", () -> minecraft.gui.setScreen(new ChatScreen("/vc note partie ", false)), false));
-					col.add(new Entry(pause, () -> send("vc pause"), true));
+					col.add(new Entry(pause, () -> send(pauseCmd), true));
+					if (!suspended) {
+						// Tout le monde au hub, la partie reprendra là où elle en est (second clic pour confirmer).
+						col.add(confirm("Mettre en suspens", "vc partie suspendre", false));
+					}
 				}
 				case 1 -> {
 					if (phase.equals("READY") && "HUMAIN".equals(ClientState.str(v, "mode"))) {
@@ -221,7 +228,7 @@ public class StorytellerScreen extends HdScreen {
 							() -> send("vc suivant"), ClientState.bool(v, "waitingNext")));
 						col.add(new Entry("Ordre de réveil…", () -> minecraft.gui.setScreen(new OrderScreen()), false));
 					}
-					col.add(new Entry(pause, () -> send("vc pause"), true));
+					col.add(new Entry(pause, () -> send(pauseCmd), true));
 				}
 				case 2 -> {
 					if (phase.equals("DAY")) {
@@ -270,7 +277,7 @@ public class StorytellerScreen extends HdScreen {
 					} else {
 						col.add(new Entry("Clore la journée", () -> send("vc finjour"), false));
 					}
-					col.add(new Entry(pause, () -> send("vc pause"), !phase.equals("DAY")));
+					col.add(new Entry(pause, () -> send(pauseCmd), !phase.equals("DAY")));
 				}
 				case 3 -> {
 					JsonObject speech = ClientState.obj(v, "speech");

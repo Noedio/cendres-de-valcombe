@@ -661,6 +661,13 @@ public final class ValcombeUi {
 			gui.set(33, Gui.icon(Items.HOPPER, session.paused() ? "Reprendre la partie" : "Mettre en pause",
 					"Minuteurs, nuit et vote attendent."),
 				act(pl -> session.togglePause(), this::openStoryteller));
+			// Mise en suspens : la partie s'arrête là où elle en est, tout le monde va au hub ; elle reprendra plus tard.
+			gui.set(34, session.suspended()
+					? Gui.icon(Items.RECOVERY_COMPASS, "Reprendre la partie en suspens",
+						"Les joueurs sont rappelés et retrouvent leur place.")
+					: Gui.icon(Items.ENDER_CHEST, "Mettre en suspens",
+						"La partie s'arrête là où elle en est, tout le monde va au hub. Elle reprendra plus tard, même après un redémarrage."),
+				act(pl -> session.suspended() ? session.resumeSuspended() : session.suspend()));
 			gui.set(13, Gui.icon(Items.SPECTRAL_ARROW, "Étape précédente", "Rejoue le réveil précédent de la nuit."),
 				act(pl -> session.previous()));
 		}

@@ -346,7 +346,7 @@ public final class ValcombeMod implements ModInitializer {
 		if (session == null) {
 			state = "Aucune partie ouverte";
 		} else if (session.game() != null) {
-			state = "Partie en cours (" + session.game().size() + " joueurs)";
+			state = (session.suspended() ? "Partie en suspens (" : "Partie en cours (") + session.game().size() + " joueurs)";
 		} else {
 			int n = session.lobby().size();
 			state = n == 0 ? "Salon ouvert" : n + " inscrit(s) au salon";

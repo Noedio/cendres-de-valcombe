@@ -1,5 +1,6 @@
 package fr.valcombe.mc;
 
+import fr.valcombe.mc.games.VoiceZones;
 import fr.valcombe.session.Session;
 
 import java.util.ArrayList;
@@ -18,6 +19,12 @@ import net.minecraft.server.level.ServerPlayer;
  * se parlent seuls à seuls ; pendant le Conseil, tout le village s'entend (les morts se taisent
  * sauf si on leur donne la parole) ; le jour, ceux qui sont dans une même maison s'entendent
  * entre eux ; ailleurs, on chuchote ou on crie à la portée choisie.
+ * <p>
+ * <b>Une partie, un vocal.</b> Chaque partie route les joueurs de son monde, et eux seuls ; et chaque joueur est rangé
+ * dans la zone de sa partie ({@link VoiceZones}) : le plugin arrête toute voix qui passerait d'une zone à l'autre (groupes
+ * du vocal compris). On n'entend donc jamais une autre partie, ni le hub depuis une partie, ni l'inverse ; le Conteur
+ * n'entend que sa partie. Les noms cachés dans les recoins sont ceux de chaque partie, dans ses propres équipes
+ * ({@link McHost#hideNames}).
  */
 public final class VoiceRouter {
 	/**
@@ -35,22 +42,46 @@ public final class VoiceRouter {
 
 	private static final boolean VOICE = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("voicechat");
 
+	/** La zone de chaque joueur (sa partie, ou hors des parties), lue par le plugin du vocal sur son fil. */
+	private static volatile VoiceZones zones = VoiceZones.NONE;
+
 	public static Route route(UUID speaker) {
 		return routes.get(speaker);
 	}
 
+	/** Cette voix peut-elle aller de speaker à listener ? Seulement dans une même partie, ou hors des parties tous deux. */
+	public static boolean mayHear(UUID speaker, UUID listener) {
+		return zones.mayHear(speaker, listener);
+	}
+
+	/** Les zones du vocal en ce moment (pour les tests en jeu). */
+	public static VoiceZones zones() {
+		return zones;
+	}
+
 	/**
 	 * Recalcule les routes de toutes les parties du serveur. Chaque partie route les joueurs de son monde, et
-	 * seulement eux : une route ne mène jamais à un joueur d'un autre monde. On n'entend donc jamais une autre partie,
-	 * et un joueur au hub ou dans un atelier garde le vocal de proximité de son monde.
+	 * seulement eux : une route ne mène jamais à un joueur d'un autre monde. Chaque joueur est rangé dans la zone de sa
+	 * partie (hors des parties : hub, ateliers) ; une voix ne passe jamais d'une zone à l'autre.
 	 */
 	static void update(MinecraftServer server, List<fr.valcombe.mc.games.GameRoom> rooms) {
 		Map<UUID, Route> next = new HashMap<>();
-		java.util.Set<String> inNooks = new java.util.HashSet<>();
-		for (fr.valcombe.mc.games.GameRoom room : rooms) {
-			route(server, room.session(), room.host().village(), room.host().levelIfReady(), next, inNooks);
+		Map<UUID, String> zoneOf = new HashMap<>();
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			zoneOf.put(p.getUUID(), VoiceZones.OUTSIDE);
 		}
-		hideNames(server, inNooks);
+		for (fr.valcombe.mc.games.GameRoom room : rooms) {
+			java.util.Set<String> inNooks = new java.util.HashSet<>();
+			ServerLevel level = room.host().levelIfReady();
+			if (level != null) {
+				for (ServerPlayer p : level.players()) {
+					zoneOf.put(p.getUUID(), room.id());
+				}
+			}
+			route(server, room.session(), room.host().village(), level, next, inNooks);
+			room.host().hideNames(inNooks);
+		}
+		zones = new VoiceZones(zoneOf);
 		routes = next;
 	}
 
@@ -127,37 +158,6 @@ public final class VoiceRouter {
 					.filter(o -> o != p && o.level() == p.level() && o.position().distanceToSqr(p.position()) <= r2)
 					.map(ServerPlayer::getUUID).toList();
 				next.put(p.getUUID(), new Route(ids, (float) rule.range()));
-			}
-		}
-	}
-
-	private static final String HIDDEN_TEAM = "valcombe_cache";
-
-	/** Les noms des joueurs vivants qui sont dans un recoin ne se voient pas depuis la place. */
-	private static void hideNames(MinecraftServer server, java.util.Set<String> hidden) {
-		var board = server.getScoreboard();
-		net.minecraft.world.scores.PlayerTeam cache = board.getPlayerTeam(HIDDEN_TEAM);
-		if (cache == null) {
-			if (hidden.isEmpty()) {
-				return;
-			}
-			cache = board.addPlayerTeam(HIDDEN_TEAM);
-			cache.setNameTagVisibility(net.minecraft.world.scores.Team.Visibility.NEVER);
-		}
-		net.minecraft.world.scores.PlayerTeam alive = board.getPlayerTeam("valcombe_vivants");
-		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-			String name = p.getScoreboardName();
-			net.minecraft.world.scores.PlayerTeam current = board.getPlayersTeam(name);
-			if (hidden.contains(name)) {
-				if (current == null || current == alive) {
-					board.addPlayerToTeam(name, cache);
-				}
-			} else if (current == cache) {
-				board.removePlayerFromTeam(name, cache);
-				// Noms cachés pour tous en ce moment (réglage du Conteur) : il retrouve l'équipe des vivants.
-				if (alive != null && alive.getNameTagVisibility() == net.minecraft.world.scores.Team.Visibility.NEVER) {
-					board.addPlayerToTeam(name, alive);
-				}
 			}
 		}
 	}

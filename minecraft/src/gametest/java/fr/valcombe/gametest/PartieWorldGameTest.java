@@ -198,9 +198,11 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			}), "nuit dans le monde de la partie (heure " + server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().level().getDefaultClockTime() % 24000) + ")");
 			check(server.computeOnServer(s -> ValcombeMod.worlds().level(hubId).getDefaultClockTime() == hubTime), "le hub garde son heure");
 
-			// 7. La sauvegarde de partie porte le monde où elle se joue.
+			// 7. La fiche de la partie (une par partie, config/valcombe/parties/<monde>.json) porte le monde où elle se joue.
 			server.runOnServer(s -> fr.valcombe.mc.games.Games.main().session().saveNow());
-			Path save = server.computeOnServer(s -> s.getServerDirectory().resolve("config").resolve("valcombe-partie.json"));
+			Path save = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().saveFile());
+			check(save.equals(server.computeOnServer(s -> GameSave.file(s.getServerDirectory().resolve("config"), gameId))),
+				"fiche de la partie principale : " + save);
 			check(server.computeOnServer(s -> {
 				try {
 					return GameSave.read(Files.readString(save, StandardCharsets.UTF_8), gameId).verdict() == GameSave.Verdict.OK;

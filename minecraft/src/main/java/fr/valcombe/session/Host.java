@@ -191,4 +191,37 @@ public interface Host {
 	/** La partie est finie et la carte reste comme elle est (remise en état coupée dans les réglages). */
 	default void keepMap() {
 	}
+
+	// ------------------------------------------------------------------
+	// Mise en suspens (voir Session.suspend)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Gèle (ou remet en marche) l'horloge de la partie : tant qu'elle est gelée, rien de ce qui a été confié à
+	 * {@link #schedule} ne s'exécute, et le temps de la partie ne passe pas. Minuteurs, étapes de la nuit, aiguille du
+	 * vote et joueurs fictifs repartent exactement où ils en étaient.
+	 */
+	default void freeze(boolean frozen) {
+	}
+
+	/**
+	 * Partie mise en suspens : tous les joueurs qui se trouvent à la table (dans le monde de la partie) s'en vont au hub,
+	 * leur position gardée, sans rien emporter de la partie (nuit, apparence de fantôme, nom de la partie). Renvoie les
+	 * noms de ceux qui sont partis.
+	 */
+	default List<String> sendAway() {
+		return List.of();
+	}
+
+	/**
+	 * Partie reprise : ces joueurs sont rappelés (un lien pour revenir) ; à leur retour dans le monde de la partie, ils
+	 * retrouvent leur place ({@code Session.backAtTable}).
+	 */
+	default void recall(List<String> players) {
+	}
+
+	/** Ce joueur est-il à la table : dans le monde de la partie, ou absent (déconnecté) ? Faux s'il est ailleurs. */
+	default boolean atTable(String player) {
+		return true;
+	}
 }

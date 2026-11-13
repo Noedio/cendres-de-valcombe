@@ -1,5 +1,6 @@
 package fr.valcombe.mc.games;
 
+import fr.valcombe.mc.GameSave;
 import fr.valcombe.mc.Gui;
 import fr.valcombe.mc.McHost;
 import fr.valcombe.mc.ScriptStore;
@@ -64,18 +65,26 @@ import org.slf4j.LoggerFactory;
  * <li>Vues : {@code ViewSync} envoie à chacun la vue de sa partie, avec le champ {@code partie} (id, nom, sorte, ici) ;
  * hors de toute partie, une table vide. Annonces, titres, sons et barres : {@code McHost.here()}, les joueurs du monde.</li>
  * <li>Un joueur, une table : {@link GameSeats} (branché sur {@code Session.admission}).</li>
- * <li>Sauvegarde : un fichier par partie ({@code McHost.saveFile}), reprise à l'ouverture ({@link #open}) ; mise en
- * suspens et reprise de toutes les parties : à brancher ici (ouverture, {@link #stop}) et sur {@code GameRoom}.</li>
- * <li>Vocal : {@code VoiceRouter.update} route chaque partie dans son monde. Équipes et noms au-dessus des têtes
- * ({@code McHost.nameTags}, équipes {@code valcombe_vivants}, {@code valcombe_cache}) : encore communes au tableau des
- * scores du serveur, à séparer par partie.</li>
+ * <li>Sauvegarde : une fiche par partie ({@code config/valcombe/parties/<monde>.json}, voir {@code GameSave.file} et
+ * {@code McHost.saveFile}), reprise à l'ouverture ({@link #open}) : chaque partie enregistrée reprend dans son monde au
+ * démarrage, en cours, en pause ou en suspens. L'ancienne sauvegarde unique ({@code config/valcombe-partie.json}) est
+ * mise de côté au démarrage ({@link #start}).</li>
+ * <li>Mise en suspens : {@link GameRoom#suspend}, {@link GameRoom#resume} ({@code /vc partie suspendre|reprendre},
+ * pupitre du Conteur, {@code POST /admin/parties/suspendre|reprendre}). L'horloge de la partie est gelée, ses joueurs vont
+ * au hub ; à la reprise, ils sont rappelés et retrouvent leur place. Un joueur d'une partie en suspens qui se connecte
+ * arrive au hub ({@link #onJoin}) ; on n'entre pas dans son monde sans la mener ({@code Travel.go}).</li>
+ * <li>Vocal : {@code VoiceRouter.update} route chaque partie dans son monde et range chaque joueur dans la zone de sa
+ * partie ({@link VoiceZones}) : le plugin arrête toute voix d'une zone à l'autre, groupes du vocal compris.</li>
+ * <li>Équipes et noms au-dessus des têtes : chaque partie a les siennes, nommées d'après son préfixe court
+ * ({@link GameTeams}, donné à l'ouverture) ; retirées à la fin et au suspens, quittées par qui sort du monde ; toutes celles
+ * laissées par un arrêt sont retirées au démarrage.</li>
  * <li>Hub, API et launcher : {@link #all()}, {@link GameRoom#state()}, {@code GET /admin/etat} (champ {@code parties}),
  * portes du hub (état de chaque partie) ; les dalles du hub inscrivent à la partie principale.</li>
  * </ul>
  * Fil du serveur, sauf les lectures de {@link #current()}.
  */
 public final class Games implements WorldManager.Listener {
-	private static final Logger LOG = LoggerFactory.getLogger("valcombe");
+	static final Logger LOG = LoggerFactory.getLogger("valcombe");
 	private static volatile Games current;
 
 	private final MinecraftServer server;
@@ -234,9 +243,12 @@ public final class Games implements WorldManager.Listener {
 		return r == null ? null : r.host();
 	}
 
-	/** Une partie au moins est-elle en cours (joueurs assis) ? Les sauvegardes automatiques l'attendent. */
+	/**
+	 * Une partie au moins se joue-t-elle en ce moment (joueurs assis, pas en suspens) ? Les sauvegardes automatiques
+	 * l'attendent. Une partie en suspens est enregistrée et gelée : elle ne les retient pas.
+	 */
 	public static boolean anyInProgress() {
-		return all().stream().anyMatch(GameRoom::inProgress);
+		return all().stream().anyMatch(GameRoom::live);
 	}
 
 	/** Enregistre toutes les parties en cours (arrêt du serveur, sauvegarde du serveur, sauvegarde périodique). */
@@ -270,6 +282,25 @@ public final class Games implements WorldManager.Listener {
 	 */
 	public void start(String mainWorldId) {
 		this.mainId = mainWorldId;
+		// Le tableau des scores est enregistré avec le monde : les équipes des parties d'avant l'arrêt y sont encore. Elles
+		// sont retirées, et chaque partie reprise repose les siennes.
+		try {
+			int purged = McHost.purgeTeams(server);
+			if (purged > 0) {
+				LOG.info("Équipes de parties laissées par l'arrêt retirées : {}.", purged);
+			}
+		} catch (RuntimeException ex) {
+			LOG.warn("Équipes des parties non nettoyées au démarrage", ex);
+		}
+		java.nio.file.Path config = server.getServerDirectory().resolve("config");
+		try {
+			String said = GameSave.retireLegacy(config);
+			if (said != null) {
+				LOG.warn(said);
+			}
+		} catch (java.io.IOException | RuntimeException ex) {
+			LOG.warn("Ancienne sauvegarde de partie (config/" + GameSave.LEGACY + ") ignorée, mais pas mise de côté", ex);
+		}
 		WorldEntry main = worlds.find(mainWorldId);
 		if (main != null) {
 			open(main, true); // la partie principale a toujours où se jouer : son village est bâti s'il manque
@@ -280,7 +311,14 @@ public final class Games implements WorldManager.Listener {
 			}
 		}
 		worlds.addListener(this);
-		LOG.info("Parties de Valcombe : {}.", String.join(", ", snapshot.stream().map(r -> r.id()).toList()));
+		for (String id : GameSave.savedWorlds(config)) {
+			if (!rooms.containsKey(id)) {
+				LOG.warn("Fiche de partie sans monde de partie (« {} », dans config/{}) : ignorée, laissée sur le disque.", id,
+					GameSave.DIR);
+			}
+		}
+		LOG.info("Parties de Valcombe : {}.", String.join(", ", snapshot.stream()
+			.map(r -> r.id() + (r.suspended() ? " (en suspens)" : r.inProgress() ? " (en cours)" : "")).toList()));
 	}
 
 	/**
@@ -298,6 +336,8 @@ public final class Games implements WorldManager.Listener {
 		GameRoom room = new GameRoom(e.id(), host, session, ui);
 		boolean main = e.id().equals(mainId);
 		host.setMainGame(main);
+		// Ses équipes du tableau des scores portent un préfixe court qui n'est qu'à elle (voir GameTeams).
+		host.setTeamKey(GameTeams.key(e.id(), rooms.values().stream().map(r -> r.host().teamKey()).toList()));
 		host.setSession(session);
 		host.setUi(ui);
 		host.setServer(server);
@@ -313,6 +353,7 @@ public final class Games implements WorldManager.Listener {
 			host.setLeaving(travel::remember);
 			host.setBring(p -> travel.toGame(p, e.id()));
 			host.setHubArrival(travel::toHubArrival);
+			host.setToHub(travel::toHub); // mise en suspens : chacun au hub, sa place ici gardée
 		}
 		var hub = ValcombeMod.hub();
 		if (hub != null && main) {
@@ -370,9 +411,15 @@ public final class Games implements WorldManager.Listener {
 		worlds.removeGuard(room.host());
 		worlds.removeListener(room.host());
 		try {
-			java.nio.file.Files.deleteIfExists(room.host().saveFile());
+			room.host().clearTeams();
+		} catch (RuntimeException ex) {
+			LOG.warn("Équipes de la partie « {} » non retirées : {}", worldId, ex.getMessage());
+		}
+		try {
+			// Par l'identifiant du monde, pas par l'hôte : il a peut-être déjà oublié son monde supprimé.
+			fr.valcombe.mc.SafeFile.delete(GameSave.file(server.getServerDirectory().resolve("config"), worldId));
 		} catch (java.io.IOException | RuntimeException ex) {
-			LOG.warn("Sauvegarde de la partie « {} » non effacée : {}", worldId, ex.getMessage());
+			LOG.warn("Fiche de la partie « {} » non effacée : {}", worldId, ex.getMessage());
 		}
 		room.host().setServer(null);
 		LOG.info("Partie fermée : « {} ».", worldId);
@@ -392,6 +439,7 @@ public final class Games implements WorldManager.Listener {
 				r.host().setHubArrival(null);
 				r.host().setLeaving(null);
 				r.host().setBring(null);
+				r.host().setToHub(null);
 				r.host().setServer(null);
 			} catch (RuntimeException e) {
 				LOG.error("Partie « " + r.id() + " » mal fermée à l'arrêt", e);
@@ -510,12 +558,21 @@ public final class Games implements WorldManager.Listener {
 		Game g = target.session().game();
 		boolean seated = g != null && g.seatOf(name) >= 0;
 		boolean stay = seated || (g != null && g.winner() == null && name.equals(target.session().storyteller()));
-		target.host().onJoin(p, seated, stay);
+		boolean suspended = target.suspended();
+		// Sa partie est en suspens : il arrive au hub, prévenu ; elle le rappellera à sa reprise.
+		target.host().onJoin(p, seated && !suspended, stay && !suspended);
 		for (GameRoom r : snapshot) {
 			if (r != target) {
 				r.host().warnOperator(p);
 				r.host().restoreMode(p);
 			}
+		}
+		if (suspended) {
+			if (stay) {
+				p.sendSystemMessage(Gui.plain("Ta partie « " + target.name() + " » est en suspens : elle reprendra où elle en est, "
+					+ "et toi à ta place. Tu seras rappelé à sa reprise.", ChatFormatting.GOLD));
+			}
+			return;
 		}
 		// Une seconde plus tard : le client a eu le temps de s'annoncer (écrans du mod ou menus coffre).
 		target.host().schedule(20, () -> target.session().onJoin(name));

@@ -1,5 +1,6 @@
 package fr.valcombe.mc;
 
+import fr.valcombe.mc.games.GameTeams;
 import fr.valcombe.mc.worlds.WorldEntry;
 import fr.valcombe.mc.worlds.WorldManager;
 import fr.valcombe.session.Host;
@@ -930,8 +931,8 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			// le joueur à son monde de départ : un voyage vers un autre monde à ce moment-là le laisserait inscrit dans les
 			// deux (le hub le garderait en double, et le voyage suivant le marquerait retiré). Le hub l'accueille donc au
 			// tick suivant, une fois le joueur bien posé dans le monde où Minecraft le place (le monde principal pour un
-			// nouveau venu : il n'y passe que ce tick-là).
-			schedule(1, () -> {
+			// nouveau venu : il n'y passe que ce tick-là). Horloge du serveur : une partie en suspens n'arrête pas l'accueil.
+			later(1, () -> {
 				if (p.isRemoved() || server.getPlayerList().getPlayer(p.getUUID()) != p) {
 					return; // reparti entre-temps
 				}
@@ -1747,60 +1748,51 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	/**
-	 * La sauvegarde de cette partie : {@code config/valcombe-partie.json} pour la partie principale (comme avant les
-	 * parties multiples), {@code config/valcombe/parties/<monde>.json} pour une partie d'essai. Chaque partie a la sienne :
-	 * deux parties en cours ne s'écrasent jamais, et chacune reprend dans son monde au redémarrage.
+	 * La fiche de cette partie : {@code config/valcombe/parties/<monde>.json} (voir {@link GameSave#file}). Chaque partie a
+	 * la sienne, la principale comme les parties d'essai : deux parties en cours ne s'écrasent jamais, et chacune reprend
+	 * dans son monde au redémarrage (en cours, en pause ou en suspens). Null tant que la partie n'a pas de monde.
 	 */
 	public java.nio.file.Path saveFile() {
-		java.nio.file.Path config = server.getServerDirectory().resolve("config");
-		if (mainGame || worldId == null) {
-			return config.resolve("valcombe-partie.json");
+		if (server == null || worldId == null) {
+			return null;
 		}
-		return config.resolve("valcombe").resolve("parties").resolve(worldId + ".json");
+		return GameSave.file(server.getServerDirectory().resolve("config"), worldId);
 	}
 
 	@Override
 	public void persist(String json) {
-		if (server == null) {
+		java.nio.file.Path f = saveFile();
+		if (f == null) {
 			return;
 		}
 		try {
-			java.nio.file.Path f = saveFile();
 			if (json.isEmpty()) {
-				java.nio.file.Files.deleteIfExists(f);
+				SafeFile.delete(f); // plus de partie à reprendre : la fiche et sa copie de secours s'en vont
 			} else {
-				// Écriture dans un fichier voisin, puis remplacement : une coupure ne laisse jamais une sauvegarde à moitié écrite.
-				java.nio.file.Files.createDirectories(f.getParent());
-				java.nio.file.Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
-				// Le monde où se joue la partie : elle ne reprendra que là (voir GameSave).
-				java.nio.file.Files.writeString(tmp, GameSave.withWorld(json, worldId));
-				try {
-					java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-						java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-				} catch (java.nio.file.AtomicMoveNotSupportedException e) {
-					java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-				}
+				// Écrite à côté puis mise en place d'un coup ; la précédente reste en « .bak » (voir SafeFile). Le monde où se
+				// joue la partie y est noté : elle ne reprendra que là (voir GameSave).
+				SafeFile.write(f, GameSave.withWorld(json, worldId));
 			}
-		} catch (java.io.IOException e) {
-			ValcombeMod.LOG.warn("Sauvegarde de la partie impossible", e);
+		} catch (java.io.IOException | RuntimeException e) {
+			ValcombeMod.LOG.warn("Fiche de la partie « " + worldName() + " » non enregistrée", e);
 		}
 	}
 
 	/**
-	 * La partie laissée par un arrêt du serveur, à reprendre dans le monde de la partie, ou null. Une sauvegarde d'avant
-	 * les mondes de Valcombe (sans monde) est mise de côté ({@code valcombe-partie.json.ancienne}) : ses joueurs étaient
-	 * assis dans le monde principal, elle ne reprend pas. Une sauvegarde d'un autre monde est laissée sur le disque.
+	 * La partie laissée par un arrêt du serveur, à reprendre dans le monde de la partie, ou null. Une fiche illisible se
+	 * relit dans sa copie de secours ; si aucune ne l'est, elle est mise de côté ({@code .illisible}). Une fiche sans monde
+	 * (d'avant les mondes de Valcombe) est mise de côté ({@code .ancienne}) ; une fiche d'un autre monde reste sur le disque.
 	 */
 	public String savedGame() {
 		java.nio.file.Path f = saveFile();
-		String text;
-		try {
-			if (!java.nio.file.Files.exists(f)) {
-				return null;
-			}
-			text = java.nio.file.Files.readString(f);
-		} catch (java.io.IOException e) {
-			ValcombeMod.LOG.warn("Sauvegarde de la partie illisible", e);
+		if (f == null || !SafeFile.exists(f)) {
+			return null;
+		}
+		String text = SafeFile.read(f, t -> GameSave.read(t, worldId).verdict() != GameSave.Verdict.UNREADABLE);
+		if (text == null) {
+			ValcombeMod.LOG.error("Fiche de la partie « {} » illisible, copie de secours comprise : elle ne reprend pas, et le "
+				+ "fichier est mis de côté ({}.illisible).", worldName(), f.getFileName());
+			setAside(f, ".illisible");
 			return null;
 		}
 		GameSave.Read read = GameSave.read(text, worldId);
@@ -1811,18 +1803,25 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			case NO_WORLD -> {
 				ValcombeMod.LOG.warn("Partie enregistrée avant les mondes de Valcombe (dans le monde principal) : elle ne reprend "
 					+ "pas, et le fichier est mis de côté ({}.ancienne).", f.getFileName());
-				try {
-					java.nio.file.Files.move(f, f.resolveSibling(f.getFileName() + ".ancienne"),
-						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-				} catch (java.io.IOException e) {
-					ValcombeMod.LOG.warn("Ancienne sauvegarde de partie non mise de côté", e);
-				}
+				setAside(f, ".ancienne");
 			}
 			case OTHER_WORLD -> ValcombeMod.LOG.warn("Partie enregistrée dans le monde « {} », pas dans celui de la partie (« {} ») : "
 				+ "elle ne reprend pas.", read.world(), worldId);
-			case UNREADABLE -> ValcombeMod.LOG.error("Sauvegarde de partie illisible ({}) : ignorée.", f);
+			case UNREADABLE -> ValcombeMod.LOG.error("Fiche de partie illisible ({}) : ignorée.", f);
 		}
 		return null;
+	}
+
+	/** Met une fiche de partie de côté (suffixe ajouté), sans rien effacer. */
+	private static void setAside(java.nio.file.Path f, String suffix) {
+		try {
+			if (java.nio.file.Files.exists(f)) {
+				java.nio.file.Files.move(f, f.resolveSibling(f.getFileName() + suffix), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+			java.nio.file.Files.deleteIfExists(SafeFile.backup(f));
+		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Fiche de partie non mise de côté ({})", f, e);
+		}
 	}
 
 	public Village village() {
@@ -2721,7 +2720,10 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 	}
 
-	/** Fantômes : nom grisé précédé d'une croix ; une main s'ils ont encore leur vote. */
+	/**
+	 * Fantômes : nom grisé précédé d'une croix ; une main s'ils ont encore leur vote. Seulement pour les joueurs qui sont
+	 * dans le monde de la partie : un joueur au hub (partie en suspens) n'y porte ni l'apparence ni le nom de la partie.
+	 */
 	@Override
 	public void deadPlayers(List<String> dead, List<String> withGhostVote) {
 		if (server == null) {
@@ -2732,7 +2734,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		ghostNames.addAll(dead);
 		for (String name : seats.keySet()) {
 			ServerPlayer p = player(name);
-			if (p == null) {
+			if (p == null || away(name)) {
 				continue;
 			}
 			// Les morts deviennent translucides (le mod client les garde visibles, en transparence).
@@ -2745,22 +2747,27 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		String hat = session.settings().deadHat;
 		for (String name : seats.keySet()) {
 			ServerPlayer p = player(name);
-			if (p != null) {
+			if (p != null && !away(name)) {
 				String model = !dead.contains(name) || "aucun".equals(hat) ? null
 					: ("crane".equals(hat) ? "crane_mort" : "chapeau_mort") + (withGhostVote.contains(name) ? "_vote" : "");
 				wearHat(p, model);
 			}
 		}
-		PlayerTeam ghosts = team(board, "valcombe_fantomes", "† ", "");
-		PlayerTeam voters = team(board, "valcombe_fantomes_vote", "† ", " ✋");
+		String aliveId = teamName(GameTeams.Kind.VIVANTS);
+		String hiddenId = teamName(GameTeams.Kind.CACHE);
+		PlayerTeam ghosts = dead.isEmpty() ? null : team(board, teamName(GameTeams.Kind.FANTOMES), "† ", "");
+		PlayerTeam voters = withGhostVote.isEmpty() ? null : team(board, teamName(GameTeams.Kind.FANTOMES_VOTE), "† ", " ✋");
 		for (String name : seats.keySet()) {
+			if (away(name)) {
+				continue; // hors du monde de la partie : il n'en porte aucune équipe (voir pruneTeams)
+			}
 			PlayerTeam current = board.getPlayersTeam(name);
-			// Un vivant garde l'équipe « valcombe_vivants » (noms cachés) ou « valcombe_cache » (dans un recoin), sinon aucune.
+			// Un vivant garde l'équipe des vivants de la partie (noms cachés) ou celle du recoin, sinon aucune.
 			PlayerTeam wanted = !dead.contains(name)
-				? (current != null && (current.getName().equals(ALIVE_TEAM) || current.getName().equals("valcombe_cache")) ? current : null)
+				? (current != null && (current.getName().equals(aliveId) || current.getName().equals(hiddenId)) ? current : null)
 				: withGhostVote.contains(name) ? voters : ghosts;
 			if (current != wanted) {
-				if (current != null && current.getName().startsWith("valcombe_")) {
+				if (current != null && GameTeams.ours(current.getName())) {
 					board.removePlayerFromTeam(name, current);
 				}
 				if (wanted != null) {
@@ -2796,7 +2803,30 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 	}
 
-	private static final String ALIVE_TEAM = "valcombe_vivants";
+	// ------------------------------------------------------------------
+	// Équipes du tableau des scores : les noms au-dessus des têtes, propres à cette partie (voir GameTeams)
+	// ------------------------------------------------------------------
+	/** Le préfixe court des équipes de cette partie, donné par Games à son ouverture (unique parmi les parties). */
+	private String teamKey = "pp";
+
+	public void setTeamKey(String key) {
+		this.teamKey = key;
+	}
+
+	public String teamKey() {
+		return teamKey;
+	}
+
+	/** Le nom de l'équipe {@code kind} de cette partie. */
+	public String teamName(GameTeams.Kind kind) {
+		return GameTeams.name(teamKey, kind);
+	}
+
+	/** Ce joueur est connecté, mais hors du monde de la partie (au hub, dans un atelier, dans une autre partie). */
+	private boolean away(String name) {
+		ServerPlayer p = player(name);
+		return p != null && !inGameWorld(p);
+	}
 
 	@Override
 	public void nameTags(boolean visible) {
@@ -2805,18 +2835,25 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 		var board = server.getScoreboard();
 		var mode = visible ? net.minecraft.world.scores.Team.Visibility.ALWAYS : net.minecraft.world.scores.Team.Visibility.NEVER;
-		PlayerTeam alive = board.getPlayerTeam(ALIVE_TEAM);
-		if (alive == null) {
-			alive = board.addPlayerTeam(ALIVE_TEAM);
+		String aliveId = teamName(GameTeams.Kind.VIVANTS);
+		PlayerTeam alive = board.getPlayerTeam(aliveId);
+		if (alive == null && !visible) {
+			alive = board.addPlayerTeam(aliveId);
 		}
-		for (String id : List.of(ALIVE_TEAM, "valcombe_fantomes", "valcombe_fantomes_vote")) {
+		for (String id : List.of(aliveId, teamName(GameTeams.Kind.FANTOMES), teamName(GameTeams.Kind.FANTOMES_VOTE))) {
 			PlayerTeam t = board.getPlayerTeam(id);
 			if (t != null && t.getNameTagVisibility() != mode) {
 				t.setNameTagVisibility(mode);
 			}
 		}
+		if (alive == null) {
+			return; // noms visibles, et personne n'est rangé chez les vivants : rien d'autre à faire
+		}
 		// Les vivants n'ont pas d'équipe à eux : on les range dans celle-ci tant que les noms sont cachés.
 		for (String name : seats.keySet()) {
+			if (away(name)) {
+				continue;
+			}
 			PlayerTeam current = board.getPlayersTeam(name);
 			if (!visible && current == null) {
 				board.addPlayerToTeam(name, alive);
@@ -2824,6 +2861,109 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 				board.removePlayerFromTeam(name, alive);
 			}
 		}
+	}
+
+	/**
+	 * Les noms des joueurs de cette partie qui sont dans un recoin ne se voient pas depuis la place (appelé par le vocal,
+	 * quatre fois par seconde). hidden : les joueurs du monde de la partie qui sont dans un recoin.
+	 */
+	public void hideNames(Set<String> hidden) {
+		if (server == null) {
+			return;
+		}
+		var board = server.getScoreboard();
+		String cacheId = teamName(GameTeams.Kind.CACHE);
+		PlayerTeam cache = board.getPlayerTeam(cacheId);
+		if (cache == null) {
+			if (hidden.isEmpty()) {
+				return;
+			}
+			cache = board.addPlayerTeam(cacheId);
+			cache.setNameTagVisibility(net.minecraft.world.scores.Team.Visibility.NEVER);
+		}
+		PlayerTeam alive = board.getPlayerTeam(teamName(GameTeams.Kind.VIVANTS));
+		Set<String> names = new java.util.HashSet<>(hidden);
+		names.addAll(cache.getPlayers());
+		for (String name : names) {
+			PlayerTeam current = board.getPlayersTeam(name);
+			if (hidden.contains(name)) {
+				if (current == null || current == alive) {
+					board.addPlayerToTeam(name, cache);
+				}
+			} else if (current == cache) {
+				board.removePlayerFromTeam(name, cache);
+				// Noms cachés pour tous en ce moment (nuit, réglage du Conteur) : il retrouve l'équipe des vivants.
+				if (alive != null && alive.getNameTagVisibility() == net.minecraft.world.scores.Team.Visibility.NEVER
+					&& seats.containsKey(name) && !away(name)) {
+					board.addPlayerToTeam(name, alive);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Qui quitte le monde de la partie (au hub, ailleurs) quitte ses équipes : il n'y porte plus le nom de la partie (pas de
+	 * croix, pas de nom caché). Un joueur déconnecté les garde : il retrouve sa place en revenant.
+	 */
+	private void pruneTeams() {
+		var board = server.getScoreboard();
+		for (String id : GameTeams.names(teamKey)) {
+			PlayerTeam t = board.getPlayerTeam(id);
+			if (t == null) {
+				continue;
+			}
+			for (String name : List.copyOf(t.getPlayers())) {
+				if (away(name)) {
+					board.removePlayerFromTeam(name, t);
+				}
+			}
+		}
+	}
+
+	/** Retire les équipes de cette partie du tableau des scores (fin de partie, mise en suspens, partie fermée). */
+	public void clearTeams() {
+		if (server == null) {
+			return;
+		}
+		var board = server.getScoreboard();
+		for (String id : GameTeams.names(teamKey)) {
+			PlayerTeam t = board.getPlayerTeam(id);
+			if (t != null) {
+				board.removePlayerTeam(t);
+			}
+		}
+	}
+
+	/** Les équipes de cette partie qui existent en ce moment, avec leurs membres (pour les tests en jeu). */
+	public Map<String, List<String>> teams() {
+		Map<String, List<String>> out = new java.util.LinkedHashMap<>();
+		if (server == null) {
+			return out;
+		}
+		for (String id : GameTeams.names(teamKey)) {
+			PlayerTeam t = server.getScoreboard().getPlayerTeam(id);
+			if (t != null) {
+				out.put(id, List.copyOf(t.getPlayers()));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Au démarrage du serveur : retire toutes les équipes de Valcombe laissées dans le tableau des scores (il est enregistré
+	 * avec le monde), celles d'avant les parties multiples comprises. Les parties reprises reposent les leurs. Renvoie le
+	 * nombre d'équipes retirées.
+	 */
+	public static int purgeTeams(MinecraftServer server) {
+		var board = server.getScoreboard();
+		int n = 0;
+		for (PlayerTeam t : List.copyOf(board.getPlayerTeams())) {
+			if (GameTeams.ours(t.getName())) {
+				board.removePlayerTeam(t);
+				n++;
+			}
+		}
+		return n;
 	}
 
 	private static PlayerTeam team(net.minecraft.server.ServerScoreboard board, String id, String prefix, String suffix) {
@@ -2850,11 +2990,139 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	// ------------------------------------------------------------------
+	// Mise en suspens : les joueurs au hub, puis rappelés à leur place
+	// ------------------------------------------------------------------
+	/** Le voyage d'un joueur vers le hub, sa position ici gardée (Travel.toHub) ; renvoie le message à lui dire. */
+	private java.util.function.Function<ServerPlayer, String> toHub;
+
+	public void setToHub(java.util.function.Function<ServerPlayer, String> toHub) {
+		this.toHub = toHub;
+	}
+
+	/** Joueurs rappelés par la reprise d'une partie en suspens : à leur retour dans le monde, ils retrouvent leur place. */
+	private final Set<String> recalled = new java.util.LinkedHashSet<>();
+
+	@Override
+	public List<String> sendAway() {
+		List<String> out = new ArrayList<>();
+		var go = toHub;
+		for (ServerPlayer p : here()) {
+			String name = p.getScoreboardName();
+			if (p.isPassenger()) {
+				p.stopRiding();
+			}
+			// Rien de la partie ne le suit au hub : ni la nuit, ni l'apparence de fantôme. Tout revient à la reprise.
+			p.removeEffect(MobEffects.BLINDNESS);
+			p.removeEffect(MobEffects.INVISIBILITY);
+			p.removeEffect(MobEffects.GLOWING);
+			wearHat(p, null);
+			out.add(name);
+			if (go == null) {
+				ValcombeMod.LOG.warn("Partie « {} » en suspens : pas de hub où envoyer {}.", worldName(), name);
+				continue;
+			}
+			try {
+				go.apply(p);
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Partie « " + worldName() + " » en suspens : " + name + " n'a pas pu aller au hub", e);
+				continue;
+			}
+			boolean seated = seats.containsKey(name);
+			p.sendSystemMessage(Component.literal("[Valcombe] La partie « " + worldName() + " » est en suspens : te voilà au hub. "
+				+ (seated ? "Elle reprendra où elle en est, et toi à ta place." : "Elle reprendra où elle en est."))
+				.withStyle(ChatFormatting.GOLD));
+		}
+		clearTeams(); // personne n'emporte le nom de la partie ; ses équipes reviennent avec elle
+		return out;
+	}
+
+	@Override
+	public void recall(List<String> players) {
+		for (String name : players) {
+			recalled.add(name);
+			ServerPlayer p = player(name);
+			if (p == null || inGameWorld(p)) {
+				continue; // déconnecté : sa place l'attend à la connexion ; déjà là : il la retrouve au prochain passage
+			}
+			p.sendSystemMessage(Component.literal("[Valcombe] La partie « " + worldName() + " » reprend : ")
+				.withStyle(ChatFormatting.GOLD).append(goLink()));
+		}
+	}
+
+	/** Le lien qui ramène dans le monde de cette partie (la même commande que le tableau des parties). */
+	private MutableComponent goLink() {
+		String cmd = "/vc partie aller " + worldId;
+		return Component.literal("[Y aller]").withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
+			.withStyle(st -> st.withClickEvent(new ClickEvent.RunCommand(cmd))
+				.withHoverEvent(new HoverEvent.ShowText(Component.literal("Retrouver ta place dans « " + worldName() + " »"))));
+	}
+
+	/** Les joueurs rappelés de retour dans le monde de la partie retrouvent leur place (deux fois par seconde). */
+	private void recallArrivals() {
+		if (recalled.isEmpty() || session == null || clockFrozen) {
+			return;
+		}
+		for (String name : List.copyOf(recalled)) {
+			ServerPlayer p = player(name);
+			if (p != null && inGameWorld(p)) {
+				recalled.remove(name);
+				try {
+					session.backAtTable(name);
+				} catch (RuntimeException e) {
+					ValcombeMod.LOG.warn("Retour de " + name + " à sa place impossible", e);
+				}
+			}
+		}
+	}
+
+	/** Les joueurs rappelés qui ne sont pas encore revenus (pour les tests en jeu). */
+	public Set<String> recalled() {
+		return java.util.Collections.unmodifiableSet(recalled);
+	}
+
+	@Override
+	public boolean atTable(String name) {
+		ServerPlayer p = player(name);
+		return p == null || inGameWorld(p);
+	}
+
+	// ------------------------------------------------------------------
 	// Temps
 	// ------------------------------------------------------------------
+	/**
+	 * Le temps de la partie, en ticks : il ne passe pas tant que la partie est en suspens ({@link #freeze}). Tout ce que
+	 * la session confie à {@link #schedule} (minuteurs, étapes de la nuit, aiguille du vote, joueurs fictifs) est compté
+	 * sur cette horloge, et repart exactement où il en était.
+	 */
+	private long gameTick;
+	/** Partie en suspens : son horloge est gelée, ses joueurs sont au hub (voir {@link #freeze}, {@link #sendAway}). */
+	private boolean clockFrozen;
+	/** Ce que l'hôte fait pour lui-même, sur l'horloge du serveur (jamais gelée) : l'accueil des joueurs au hub. */
+	private final List<Task> serverTasks = new ArrayList<>();
+
 	@Override
 	public void schedule(int ticks, Runnable r) {
-		tasks.add(new Task(tick + Math.max(1, ticks), r));
+		tasks.add(new Task(gameTick + Math.max(1, ticks), r));
+	}
+
+	/** Exécute r dans ticks ticks du serveur, que la partie soit en suspens ou non. */
+	private void later(int ticks, Runnable r) {
+		serverTasks.add(new Task(tick + Math.max(1, ticks), r));
+	}
+
+	@Override
+	public void freeze(boolean on) {
+		if (on && !clockFrozen) {
+			ValcombeMod.LOG.info("Partie « {} » : horloge gelée (mise en suspens).", worldName());
+		} else if (!on && clockFrozen) {
+			ValcombeMod.LOG.info("Partie « {} » : horloge remise en marche.", worldName());
+		}
+		clockFrozen = on;
+	}
+
+	/** L'horloge de la partie est-elle gelée (partie en suspens) ? */
+	public boolean clockFrozen() {
+		return clockFrozen;
 	}
 
 	/** Un chantier ou une remise en état de la carte est en cours ou attend son heure. */
@@ -2865,6 +3133,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Appelé à chaque tick serveur. */
 	public void onTick() {
 		tick++;
+		if (!clockFrozen) {
+			gameTick++;
+		}
 		if (restoreAt >= 0 && tick >= restoreAt && server != null && !builds.busy() && session.game() == null) {
 			restoreAt = -1;
 			startRestore();
@@ -2874,12 +3145,16 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		if (tick % 10 == 0) {
 			checkPads();
 			pruneBars();
+			if (server != null) {
+				pruneTeams();
+				recallArrivals();
+			}
 		}
 		if (tick % 20 == 0) {
 			cleanChairs();
 			showMarkers();
 		}
-		if (tick % 20 == 0 && !seats.isEmpty()) {
+		if (tick % 20 == 0 && !seats.isEmpty() && !clockFrozen) {
 			councilGlow();
 		}
 		if (tick % 100 == 0 && server != null) {
@@ -2894,13 +3169,21 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			run("kill @e[distance=0..,tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
 			run("kill @e[distance=0..,tag=vc_repere,tag=!vc_rep_" + (builders.isEmpty() ? -1 : labelGen) + "]");
 		}
-		if (tick % 4 == 0 && !seats.isEmpty()) {
+		if (tick % 4 == 0 && !seats.isEmpty() && !clockFrozen) {
 			featherHints();
 		}
 		List<Task> due = new ArrayList<>();
-		for (Iterator<Task> it = tasks.iterator(); it.hasNext();) {
+		for (Iterator<Task> it = serverTasks.iterator(); it.hasNext();) {
 			Task t = it.next();
 			if (t.due() <= tick) {
+				due.add(t);
+				it.remove();
+			}
+		}
+		// Horloge de la partie : gelée en suspens, rien n'y arrive à échéance.
+		for (Iterator<Task> it = tasks.iterator(); it.hasNext();) {
+			Task t = it.next();
+			if (t.due() <= gameTick) {
 				due.add(t);
 				it.remove();
 			}
@@ -2921,6 +3204,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 				}
 			}
 		}
+		if (clockFrozen) {
+			return; // en suspens : personne n'est retenu à sa place (ils sont au hub)
+		}
 		if (sitEnforced && !inHouses && tick % 10 == 0) {
 			sit(new ArrayList<>(seats.keySet()), true);
 		}
@@ -2928,7 +3214,8 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			for (Map.Entry<String, SeatPos> e : (inHouses ? houses : seats).entrySet()) {
 				ServerPlayer p = player(e.getKey());
 				SeatPos s = e.getValue();
-				if (p != null && !p.isPassenger() && p.position().distanceToSqr(s.pos()) > 0.36) {
+				// Seulement qui est à la table : un joueur rappelé, encore au hub, n'est pas ramené de force (il a son lien).
+				if (p != null && !p.isPassenger() && inGameWorld(p) && p.position().distanceToSqr(s.pos()) > 0.36) {
 					p.teleportTo(s.level(), s.pos().x, s.pos().y, s.pos().z, Set.of(), s.yaw(), p.getXRot(), false);
 				}
 			}
@@ -3213,6 +3500,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 		deadPlayers(List.of(), List.of());
 		nameTags(true);
+		clearTeams(); // les équipes de la partie disparaissent avec elle
+		clockFrozen = false;
+		recalled.clear();
 		frozen = false;
 		inHouses = false;
 		storytellerBack = null;

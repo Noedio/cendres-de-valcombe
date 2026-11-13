@@ -277,6 +277,8 @@ public final class ValcombeCommands {
 				+ (st == null ? "" : ", Conteur " + st) + ".");
 		}
 		out.add("Y aller : /vc partie aller <id>. Créer une partie d'essai : /vc partie creer <nom> (opérateurs).");
+		out.add("Mettre une partie en suspens (ses joueurs au hub, elle reprendra où elle en est) : /vc partie suspendre [id] ; "
+			+ "la reprendre : /vc partie reprendre [id] (son Conteur ou un opérateur).");
 		return out;
 	}
 
@@ -310,7 +312,34 @@ public final class ValcombeCommands {
 							throw new GameException("Les voyages entre les mondes ne sont pas disponibles sur ce serveur.");
 						}
 						return travel.toGame(player(x), r.id());
-					})))));
+					}))))
+			// Mise en suspens et reprise : la partie du monde d'où part la commande (au hub : sa table d'attache), ou celle
+			// qu'on nomme. Le Conteur de la partie ou un opérateur.
+			.then(Commands.literal("suspendre")
+				.executes(c -> exec(c, x -> suspendGame(x.getSource(), null, true)))
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> suspendGame(x.getSource(), arg(x, "id"), true)))))
+			.then(Commands.literal("reprendre")
+				.executes(c -> exec(c, x -> suspendGame(x.getSource(), null, false)))
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> suspendGame(x.getSource(), arg(x, "id"), false))))));
+	}
+
+	/**
+	 * /vc partie suspendre|reprendre [id] : la partie nommée, sinon celle que vise la commande (son monde, ou la table
+	 * d'attache de qui la lance depuis le hub). Seuls son Conteur (ou son élève) et les opérateurs la mènent.
+	 */
+	private static String suspendGame(CommandSourceStack src, String id, boolean suspend) {
+		GameRoom r = id == null ? Games.require(src) : Games.byWorld(id);
+		if (r == null) {
+			throw new GameException("Aucune partie dans « " + id + " » (/vc partie liste).");
+		}
+		ServerPlayer p = src.getPlayer();
+		if (p != null && !r.isLeader(p)) {
+			throw new GameException("Seuls le Conteur de « " + r.name() + " » et les opérateurs peuvent la "
+				+ (suspend ? "mettre en suspens." : "reprendre."));
+		}
+		return suspend ? r.suspend() : r.resume();
 	}
 
 	/** /vc structure enregistrer : la sélection WorldEdit du joueur devient une structure du catalogue. */

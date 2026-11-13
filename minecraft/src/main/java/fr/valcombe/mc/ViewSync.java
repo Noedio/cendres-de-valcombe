@@ -20,7 +20,8 @@ import net.minecraft.server.permissions.Permissions;
  * Une vue par joueur, de <b>sa</b> partie : celle du monde où il se trouve. Au hub ou dans un atelier, c'est sa table
  * d'attache (la partie où il est inscrit, assis, Conteur ou spectateur) ; s'il n'en a pas, une table vide (aucune
  * partie : le menu propose de s'inscrire). On ne reçoit jamais la vue d'une autre partie. Le champ {@code partie} dit
- * laquelle c'est ({@code id}, {@code nom}, {@code sorte}, {@code ici} : le joueur est dans son monde), ou null.
+ * laquelle c'est ({@code id}, {@code nom}, {@code sorte}, {@code ici} : le joueur est dans son monde, {@code suspens} :
+ * elle est en suspens et ses joueurs l'attendent au hub), ou null.
  */
 public final class ViewSync {
 	private static final Gson GSON = new GsonBuilder().serializeNulls().create();
@@ -68,6 +69,7 @@ public final class ViewSync {
 			game.put("nom", room.name());
 			game.put("sorte", room.kind().code());
 			game.put("ici", room.here(p));
+			game.put("suspens", room.suspended());
 			view.put("partie", game);
 		} else {
 			view = noTable.view(name, p.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER));

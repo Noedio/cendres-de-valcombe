@@ -38,6 +38,8 @@ import net.minecraft.world.phys.Vec3;
  * <li>Les opérateurs voient tous les mondes ; les autres joueurs le hub et les mondes de partie
  * ({@link WorldKind#openToAll()}), plus les ateliers où un opérateur les a invités à construire ({@link BuildAccess}).</li>
  * <li>Un joueur assis à la partie en cours ne quitte pas son monde avant la fin.</li>
+ * <li>Une partie en suspens renvoie tout son monde au hub ({@link #toHub}) ; on n'y entre plus, sauf pour la mener
+ * (opérateur, son Conteur), jusqu'à sa reprise.</li>
  * <li>C'est aussi le repli du gestionnaire de mondes : les joueurs d'un monde remis à neuf ou supprimé vont au hub
  * (ceux du hub lui-même, au village de la partie).</li>
  * </ul>
@@ -153,6 +155,9 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	/** Pourquoi ce joueur ne peut pas quitter le monde où il est, ou null s'il le peut. */
 	public String blocked(ServerPlayer p) {
 		GameRoom room = Games.of(p); // la partie du monde où il est, s'il y en a une
+		if (room != null && room.suspended()) {
+			return null; // partie en suspens : rien ne retient personne
+		}
 		Game g = room == null ? null : room.session().game();
 		if (g != null && g.winner() == null && g.seatOf(p.getScoreboardName()) >= 0) {
 			return "Tu joues la partie en cours : tu restes au village jusqu'à la fin.";
@@ -369,6 +374,11 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		if (why != null) {
 			throw new GameException(why);
 		}
+		GameRoom room = Games.byWorld(key);
+		if (room != null && room.suspended() && !room.isLeader(p)) {
+			throw new GameException("La partie « " + target.nom() + " » est en suspens : elle reprendra où elle en est, et "
+				+ "ses joueurs seront rappelés.");
+		}
 		ServerLevel level = worlds.level(key); // ouvre le monde au besoin ; refuse un monde en cours de remise à neuf
 		if (from != null && !worlds.busy(from)) {
 			positions.put(p.getUUID(), p.getScoreboardName(), from, leaveAt != null ? leaveAt : spotOf(p));
@@ -400,6 +410,30 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 			throw new GameException("La partie n'a pas de monde sur ce serveur (voir son journal).");
 		}
 		return go(p, worldId, null);
+	}
+
+	/**
+	 * Envoie ce joueur au hub, d'où qu'il soit et même s'il est assis à une partie (c'est elle qui l'y envoie : mise en
+	 * suspens) : sa position dans le monde qu'il quitte est gardée, il retrouve au hub sa dernière position (sinon le point
+	 * d'arrivée). Renvoie le message à lui dire ; une {@link GameException} si le hub n'est pas disponible.
+	 */
+	public String toHub(ServerPlayer p) {
+		WorldEntry hub = hub();
+		if (hub == null || worlds.busy(hub.id())) {
+			throw new GameException("Le hub n'est pas disponible sur ce serveur.");
+		}
+		String from = keyOf(p);
+		if (hub.id().equals(from)) {
+			return "Te voilà au hub.";
+		}
+		ServerLevel level = worlds.level(hub.id());
+		if (from != null && !worlds.busy(from)) {
+			positions.put(p.getUUID(), p.getScoreboardName(), from, spotOf(p));
+		}
+		LastPositions.Spot saved = positions.get(p.getUUID(), hub.id());
+		teleport(p, level, saved != null && free(p, level, saved) ? saved : arrival(p, hub.id()));
+		positions.save();
+		return "Te voilà au hub.";
 	}
 
 	/** Envoie ce joueur au point d'arrivée du hub (connexion) ; faux si le hub n'est pas disponible. */
