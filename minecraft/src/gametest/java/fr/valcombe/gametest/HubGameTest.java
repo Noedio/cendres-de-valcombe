@@ -83,6 +83,17 @@ public class HubGameTest implements FabricClientGameTest {
 			p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot());
 	}
 
+	/**
+	 * Rend au joueur, ou lui retire, les droits d'opérateur. En partie solo, /op et /deop n'existent pas : l'hôte
+	 * est opérateur tant que les commandes sont permises dans le monde (PlayerList.isOp), on joue donc sur ce réglage.
+	 */
+	private static void operator(TestSingleplayerContext world, String me, boolean op) {
+		world.getServer().runOnServer(s -> {
+			s.getWorldData().setAllowCommands(op);
+			s.getPlayerList().sendPlayerPermissionLevel(player(s, me));
+		});
+	}
+
 	/** Place le joueur ici, dans ce monde, côté serveur (comme s'il y avait marché). */
 	private static void place(TestSingleplayerContext world, String me, String id, double x, double y, double z, float yaw, float pitch) {
 		world.getServer().runOnServer(s -> {
@@ -116,6 +127,14 @@ public class HubGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			var server = world.getServer();
 			server.runCommand("op " + me);
+			// La session de Valcombe survit d'une classe de test à l'autre (même jeu) : un test d'avant a pu laisser ce
+			// joueur Conteur, et le Conteur ne s'inscrit pas par la dalle dorée. On repart d'un joueur ordinaire.
+			server.runOnServer(s -> {
+				var session = ValcombeMod.session();
+				if (me.equals(session.storyteller())) {
+					session.toggleStoryteller(me);
+				}
+			});
 			ctx.waitTicks(40);
 
 			// 1. Arrivée : le hub existe, sa salle est bâtie, le joueur est au point d'arrivée, face au mur des rôles.
@@ -264,7 +283,7 @@ public class HubGameTest implements FabricClientGameTest {
 				.filter(e -> e.sorte() == fr.valcombe.mc.worlds.WorldKind.ATELIER_CARTE && e.nom().startsWith("Atelier du hub"))
 				.map(WorldEntry::id).findFirst().orElse(null));
 			check(atelier != null, "atelier créé : " + atelier);
-			server.runCommand("deop " + me);
+			operator(world, me, false);
 			ctx.waitTicks(20);
 			check(server.computeOnServer(s -> ValcombeMod.travel().destinations(player(s, me)).stream()
 				.noneMatch(d -> d.id().equals(atelier))), "atelier caché à un joueur qui n'est pas opérateur");
@@ -273,7 +292,7 @@ public class HubGameTest implements FabricClientGameTest {
 			send(ctx, "vc monde aller " + atelier);
 			ctx.waitTicks(40); // le temps qu'un voyage, s'il était accepté, ait lieu
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals("valcombe:" + id)), "aller dans l'atelier refusé");
-			server.runCommand("op " + me);
+			operator(world, me, true);
 			ctx.waitTicks(20);
 			AtomicReference<CompletableFuture<Void>> gone = new AtomicReference<>();
 			server.runOnServer(s -> gone.set(ValcombeMod.worlds().delete(atelier)));

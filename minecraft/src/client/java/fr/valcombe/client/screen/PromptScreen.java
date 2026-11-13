@@ -56,8 +56,8 @@ public class PromptScreen extends HdScreen {
 
 	/**
 	 * Le grimoire montré au Mouchard, en jetons haute résolution : rôle, linceul, marqueurs et infobulle détaillée
-	 * (ligne du grimoire et note), comme Grimoire.place, qui pose encore les jetons d'avant pour les écrans du
-	 * Conteur. Rien n'est posé si la vue n'a pas un grimoire complet (une ligne par siège).
+	 * (ligne du grimoire et note), comme Grimoire.hdTokens au pupitre du Conteur, mais sur le cercle fixe de
+	 * l'invite. Rien n'est posé si la vue n'a pas un grimoire complet (une ligne par siège).
 	 */
 	private void grimoire(int cx, int cy, int radius, int size) {
 		List<JsonObject> seats = objects(view(), "seats");

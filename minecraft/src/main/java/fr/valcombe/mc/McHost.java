@@ -592,9 +592,27 @@ public final class McHost implements Host {
 		if (stay) {
 			return; // sa place l'attend : la partie l'y ramène (Session.onJoin)
 		}
-		if (hubArrival != null && hubArrival.test(p)) {
+		var hub = hubArrival;
+		if (hub != null) {
+			// L'arrivée de Fabric (JOIN) est appelée au milieu de PlayerList.placeNewPlayer, avant que Minecraft n'ajoute
+			// le joueur à son monde de départ : un voyage vers un autre monde à ce moment-là le laisserait inscrit dans les
+			// deux (le hub le garderait en double, et le voyage suivant le marquerait retiré). Le hub l'accueille donc au
+			// tick suivant, une fois le joueur bien posé dans le monde principal.
+			schedule(1, () -> {
+				if (p.isRemoved() || server.getPlayerList().getPlayer(p.getUUID()) != p) {
+					return; // reparti entre-temps
+				}
+				if (!hub.test(p)) {
+					toVillageSpawn(p);
+				}
+			});
 			return;
 		}
+		toVillageSpawn(p);
+	}
+
+	/** Sur la place (ou la salle d'attente) du village actuel, s'il y en a un ; sinon le joueur reste où il est. */
+	private void toVillageSpawn(ServerPlayer p) {
 		if (village != null) {
 			BlockPos s = village.spawn();
 			p.teleportTo(server.overworld(), s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
