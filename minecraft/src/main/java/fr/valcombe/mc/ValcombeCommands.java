@@ -497,6 +497,9 @@ public final class ValcombeCommands {
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
 						.executes(c -> exec(c, x -> ValcombeMod.maps().load(arg(x, "id"))))))
+				// Une carte de la bibliothèque dans un monde de Valcombe, et l'inverse (voir MapPlacer).
+				.then(MapPlacerCommands.place())
+				.then(MapPlacerCommands.capture())
 				.then(Commands.literal("supprimer")
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))

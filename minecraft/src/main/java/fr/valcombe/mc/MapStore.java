@@ -34,10 +34,10 @@ import net.minecraft.server.level.ServerLevel;
 public final class MapStore {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 	/** Hauteur enregistrée : 4 blocs sous la place, et au moins 24 au-dessus (davantage si la carte monte plus haut). */
-	private static final int BELOW = 4;
-	private static final int HEIGHT = 28;
+	static final int BELOW = 4;
+	static final int HEIGHT = 28;
 	/** Plus grande hauteur enregistrée : celle qu'on rase pour retirer une carte du monde (voir McHost.clearHeight). */
-	private static final int MAX_HEIGHT = SchematicImporter.MAX_HEIGHT + 10;
+	static final int MAX_HEIGHT = SchematicImporter.MAX_HEIGHT + 10;
 	/** Taille maximale d'une carte partagée (structure compressée). */
 	private static final int MAX_BYTES = 24 * 1024 * 1024;
 
@@ -56,7 +56,8 @@ public final class MapStore {
 		/** Hauteur de la zone enregistrée, les 4 blocs sous la place compris (0 : carte d'avant ce champ, 28 blocs). */
 		public int hauteur;
 
-		int height() {
+		/** Hauteur réelle de la zone enregistrée (28 blocs pour une carte d'avant le champ « hauteur »). */
+		public int height() {
 			return hauteur > 0 ? hauteur : HEIGHT;
 		}
 		public List<int[]> sieges = new ArrayList<>();
@@ -125,6 +126,13 @@ public final class MapStore {
 		return out;
 	}
 
+	/** La fiche de cette carte, relue sur le disque et contrôlée (voir checkDef) ; une GameException sinon. */
+	MapDef checkedDef(String id) {
+		MapDef d = def(id);
+		checkDef(d);
+		return d;
+	}
+
 	private MapDef def(String id) {
 		checkId(id); // jamais de chemin fabriqué avec un identifiant libre
 		try {
@@ -136,7 +144,7 @@ public final class MapStore {
 
 	private static final String ID = "[a-z0-9-]{2,30}";
 	/** Plus grande carte acceptée : demi-largeur en blocs, et nombre de repères. */
-	private static final int MAX_RADIUS = Village.MAX_EXTENT;
+	static final int MAX_RADIUS = Village.MAX_EXTENT;
 	private static final int MAX_MARKERS = 40;
 	/** Mémoire accordée à la lecture d'une structure (une archive piégée ne peut pas en demander plus). */
 	private static final long MAX_NBT = 256L * 1024 * 1024;
@@ -169,7 +177,7 @@ public final class MapStore {
 		}
 	}
 
-	private static void checkId(String id) {
+	static void checkId(String id) {
 		if (id == null || !id.matches(ID)) {
 			throw new GameException("Identifiant de carte : 2 à 30 lettres minuscules, chiffres ou tirets.");
 		}
@@ -257,12 +265,6 @@ public final class MapStore {
 		// d'un village, et ce qui ne serait pas enregistré ici serait perdu quand une autre carte la remplace.
 		int height = Math.max(HEIGHT, Math.min(MAX_HEIGHT, host.clearHeight(v)));
 		Clip clip = Clip.capture(level, corner, 2 * r + 1, height, 2 * r + 1);
-		// L'air au-dessus du sol n'est pas écrit : le terrain est rasé avant qu'une carte soit posée (fichier bien plus léger).
-		for (int i = (2 * r + 1) * (2 * r + 1) * (BELOW + 1); i < clip.cells.length; i++) {
-			if (clip.palette.get(clip.cells[i]).isAir()) {
-				clip.cells[i] = Clip.EMPTY;
-			}
-		}
 		MapDef d = new MapDef();
 		d.id = id;
 		d.nom = nom == null || nom.isBlank() ? id : nom.trim();
@@ -278,17 +280,63 @@ public final class MapStore {
 		d.logis = v.relHouses();
 		d.orientations = v.relSeatYaws();
 		d.convocation = v.relConvocation();
-		checkDef(d); // avant d'écrire : une carte qu'on ne pourrait pas recharger n'est pas enregistrée
+		checkDef(d); // avant de calculer l'aperçu : une carte qu'on ne pourrait pas recharger n'est pas enregistrée
+		return writeMap(d, clip, host.topView(v));
+	}
+
+	/**
+	 * Écrit une carte dans la bibliothèque : sa fiche d, ses blocs (le volume capturé autour de la place, coin le plus
+	 * bas BELOW blocs sous le centre) et son aperçu vu de dessus (png, ou null). Sert à l'enregistrement de la carte
+	 * du monde principal comme à la capture d'une carte posée dans un monde de Valcombe (voir MapPlacer). La fiche est
+	 * contrôlée avant toute écriture : une carte qu'on ne pourrait pas recharger n'est pas enregistrée.
+	 */
+	MapDef writeMap(MapDef d, Clip clip, byte[] png) {
+		checkDef(d);
+		int side = 2 * d.rayon + 1;
+		if (clip.width != side || clip.length != side || clip.height != d.height()) {
+			throw new IllegalArgumentException("Volume " + clip.dims() + " différent de l'emprise de la fiche");
+		}
+		stripAir(clip);
 		changed();
 		try {
 			Files.createDirectories(dir);
-			Files.write(dir.resolve(id + ".png"), host.topView(v)); // l'aperçu que l'Atelier met sous le plan
-			NbtIo.writeCompressed(clip.toStructure(), dir.resolve(id + ".nbt"));
-			Files.writeString(dir.resolve(id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
+			if (png != null) {
+				Files.write(dir.resolve(d.id + ".png"), png); // l'aperçu que l'Atelier met sous le plan
+			} else {
+				Files.deleteIfExists(dir.resolve(d.id + ".png"));
+			}
+			NbtIo.writeCompressed(clip.toStructure(), dir.resolve(d.id + ".nbt"));
+			Files.writeString(dir.resolve(d.id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new GameException("Enregistrement impossible : " + e.getMessage());
 		}
 		return d;
+	}
+
+	/**
+	 * L'air au-dessus du sol n'est pas écrit : le terrain est rasé avant qu'une carte soit posée (fichier bien plus
+	 * léger). Les BELOW rangées du sous-sol et celle de la place, elles, sont gardées entières.
+	 */
+	static void stripAir(Clip clip) {
+		for (int i = clip.width * clip.length * (BELOW + 1); i < clip.cells.length; i++) {
+			if (clip.cells[i] != Clip.EMPTY && clip.palette.get(clip.cells[i]).isAir()) {
+				clip.cells[i] = Clip.EMPTY;
+			}
+		}
+	}
+
+	/**
+	 * Les blocs d'une carte de la bibliothèque, relus case par case dans l'emprise que sa fiche annonce : un fichier
+	 * fabriqué ne peut ni poser un bloc hors de la carte, ni créer d'entités, ni glisser de commande dans un bloc
+	 * (voir Clip). Le coin le plus bas du volume se pose BELOW blocs sous le centre de la place, à -rayon en x et en z.
+	 */
+	Clip readClip(MapDef d) {
+		try {
+			CompoundTag tag = NbtIo.readCompressed(dir.resolve(d.id + ".nbt"), NbtAccounter.create(MAX_NBT));
+			return Clip.read(tag, server.registryAccess().lookupOrThrow(Registries.BLOCK), 2 * d.rayon + 1, d.height(), 2 * d.rayon + 1);
+		} catch (IOException | RuntimeException e) {
+			throw new GameException("Structure de la carte illisible : " + e.getMessage());
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -301,15 +349,7 @@ public final class MapStore {
 		MapDef d = def(id);
 		checkDef(d);
 		host.requireFree();
-		// La structure est relue case par case, dans l'emprise que la fiche annonce : un fichier fabriqué ne peut ni
-		// poser un bloc hors de la carte, ni créer d'entités, ni glisser de commande dans un bloc (voir Clip).
-		Clip clip;
-		try {
-			CompoundTag tag = NbtIo.readCompressed(dir.resolve(id + ".nbt"), NbtAccounter.create(MAX_NBT));
-			clip = Clip.read(tag, server.registryAccess().lookupOrThrow(Registries.BLOCK), 2 * d.rayon + 1, d.height(), 2 * d.rayon + 1);
-		} catch (IOException | RuntimeException e) {
-			throw new GameException("Structure de la carte illisible : " + e.getMessage());
-		}
+		Clip clip = readClip(d);
 		ServerLevel level = server.overworld();
 		BlockPos c = host.mapCenter();
 		BlockPos corner = c.offset(-d.rayon, -BELOW, -d.rayon);

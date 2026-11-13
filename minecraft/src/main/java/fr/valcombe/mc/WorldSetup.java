@@ -49,4 +49,10 @@ public final class WorldSetup {
 	static void run(MinecraftServer server, String command) {
 		server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), command);
 	}
+
+	/** Lance une commande dans ce monde-ci (ses blocs et ses entités), sans rien afficher : une carte posée hors du monde principal. */
+	static void run(ServerLevel level, String command) {
+		MinecraftServer server = level.getServer();
+		server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withLevel(level).withSuppressedOutput(), command);
+	}
 }
