@@ -1,6 +1,11 @@
 [
   {
     "date": "13 nov. 2026",
+    "title": "Version 0.13.1 : le launcher montre la version du jeu",
+    "text": "Le launcher se met à jour une fois (0.10.1). En bas de sa barre latérale, il affiche maintenant la version du jeu installé à côté de la sienne : le jeu change à chaque version publiée, le launcher seulement quand il change lui-même. Le jeu, lui, ne change pas."
+  },
+  {
+    "date": "13 nov. 2026",
     "title": "Version 0.13.0 : les groupes de rôles partout, et deux règles de notre feuille",
     "text": "Les groupes de rôles voyagent dans les fichiers .valcombe et apparaissent dans l'éditeur de script du jeu : ajoutez un groupe au script, retirez-le, ou ne gardez que lui. Deux règles de notre feuille arrivent, cochées dans « La Table de Valcombe » : la Femme écarlate (l'Héritière) prend la relève même à moins de 5 vivants, et le mal se connaît dès 5 joueurs. Un guide du joueur reprend toutes les règles de la table, rôle par rôle."
   },
