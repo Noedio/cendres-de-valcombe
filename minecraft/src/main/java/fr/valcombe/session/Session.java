@@ -41,8 +41,28 @@ public final class Session {
 	final Set<String> unbriefed = new LinkedHashSet<>();
 	/** Partie en pause : les minuteurs, la nuit et le vote attendent. */
 	boolean paused;
+	/**
+	 * Partie en suspens (voir {@link #suspend}) : son horloge est gelée et ses joueurs sont au hub. Elle est aussi en
+	 * pause (rien ne se joue d'une commande), et reprend en suspens après un redémarrage du serveur.
+	 */
+	boolean suspended;
+	/** La partie vient d'être reprise : elle attend, en pause, que chacun ait regagné sa place (voir {@link #tickGather}). */
+	private boolean gathering;
+	/** La pause d'avant la mise en suspens (le Conteur l'avait-il mise ?), rendue quand tout le monde est revenu. */
+	private boolean pausedBeforeSuspend;
+	/** Les joueurs envoyés au hub par la mise en suspens, et ceux de la table : rappelés à la reprise. */
+	private final Set<String> suspendedPlayers = new LinkedHashSet<>();
+	/** Secondes d'attente des retardataires qui restent, à la reprise ; jeton de cette attente (périmé : abandonnée). */
+	private int gatherLeft;
+	private int gatherToken;
 	/** Spectateurs : ils regardent la partie sans y jouer. */
 	final Set<String> spectators = new LinkedHashSet<>();
+	/**
+	 * Ceux qui regardent depuis le tableau des parties du hub (« Regarder ») : des spectateurs (ils sont aussi dans
+	 * {@link #spectators}) qui ne voient jamais le grimoire, quel que soit le réglage du Conteur, et que le vocal tient à
+	 * part des joueurs (ni entendus, ni entendant). Pas enregistrés : on cesse de regarder en quittant le monde.
+	 */
+	final Set<String> watchers = new LinkedHashSet<>();
 	/** Jetons de rappel posés par le Conteur sur les sièges (« ivre », « a choisi X »…). */
 	final Map<String, List<String>> reminders = new LinkedHashMap<>();
 	/** Partie d'entraînement : le joueur guidé, et les conseils déjà donnés. */
@@ -143,6 +163,47 @@ public final class Session {
 		return bots.contains(name);
 	}
 
+	// ------------------------------------------------------------------
+	// Plusieurs tables sur un même serveur (voir fr.valcombe.mc.games.Games)
+	// ------------------------------------------------------------------
+	/**
+	 * Consultée avant d'asseoir un vrai joueur à cette table (inscription, Conteur, spectateur, entraînement,
+	 * voyageur) : elle le libère des autres tables où il n'est qu'en attente, et renvoie pourquoi il ne peut pas venir
+	 * ici (il joue ou conte une partie en cours ailleurs), ou null. Null : une seule table (tests, simulation).
+	 */
+	public java.util.function.Function<String, String> admission;
+
+	/** Fait passer ce joueur par {@link #admission} ; une GameException s'il est retenu à une autre table. */
+	private void admit(String name) {
+		var a = admission;
+		if (a == null || bots.contains(name)) {
+			return;
+		}
+		String why = a.apply(name);
+		if (why != null) {
+			throw new GameException(why);
+		}
+	}
+
+	/**
+	 * Ce joueur appartient-il à cette table : inscrit, assis à la partie en cours (même mort), Conteur, élève de
+	 * l'entraînement ou spectateur ?
+	 */
+	public boolean belongs(String name) {
+		Game g = game;
+		return name != null && (lobby.contains(name) || name.equals(storyteller) || spectators.contains(name)
+			|| name.equals(trainee) || (g != null && g.seatOf(name) >= 0));
+	}
+
+	/**
+	 * Ce joueur est-il retenu par la partie en cours de cette table : il y est assis, ou il la conte, et elle n'est
+	 * pas finie ? Il ne peut alors s'asseoir à aucune autre table.
+	 */
+	public boolean holds(String name) {
+		Game g = game;
+		return name != null && g != null && g.winner() == null && (g.seatOf(name) >= 0 || name.equals(storyteller));
+	}
+
 	/** Micro coupé ? La nuit, pour tous les joueurs de la partie sauf le Conteur. */
 	public boolean isMuted(String name) {
 		Game g = game;
@@ -202,7 +263,7 @@ public final class Session {
 
 	/** Un vivant donne (ou reprend) la parole à un mort pour le Conseil. */
 	public String giveFloor(String name, String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int a = g.seatOf(name);
 		boolean st = name.equals(storyteller);
 		if (!st && (a < 0 || !g.player(a).alive())) {
@@ -356,8 +417,10 @@ public final class Session {
 	final Set<String> figures = new LinkedHashSet<>();
 	private long dayStartedAt;
 	private int sandToken;
-	/** Temps ajouté au Sablier par le Conteur (/vc prolonger). */
-	private int sandExtraTicks;
+	/** Secondes du Sablier avant la fin du jour (prolongées par /vc prolonger) ; enregistrées avec la partie. */
+	int sandLeft;
+	/** Le Sablier : dix minutes par jour. */
+	static final int SAND_SECONDS = 600;
 
 	public java.util.Set<String> figures() {
 		return java.util.Collections.unmodifiableSet(figures);
@@ -383,38 +446,45 @@ public final class Session {
 			announce("Le Doyen : les joueurs aguerris se taisent deux minutes.");
 		}
 		if (figures.contains("sablier")) {
-			int token = ++sandToken;
-			sandExtraTicks = 0;
-			int day = g.day();
-			host.schedule(20 * 60 * 9, () -> {
-				if (token == sandToken && game == g && g.day() == day && !g.dayOver() && sandExtraTicks == 0 && !paused) {
-					host.title(realNames(), "Le Sablier", "Plus qu'une minute avant la fin du jour");
-				}
-			});
-			host.schedule(20 * 60 * 10, () -> sandglass(token, g, day));
+			sandLeft = SAND_SECONDS;
+			tickSand(++sandToken, g, g.day());
 		}
 	}
 
-	private void sandglass(int token, Game g, int day) {
-		if (token != sandToken || game != g || g.day() != day || g.dayOver() || g.phase() != Game.Phase.DAY) {
-			return;
-		}
-		if (voteNom != null || paused) {
-			host.schedule(400, () -> sandglass(token, g, day)); // on laisse finir le vote en cours, ou la pause
-			return;
-		}
-		if (sandExtraTicks > 0) {
-			int extra = sandExtraTicks;
-			sandExtraTicks = 0;
-			host.schedule(extra, () -> sandglass(token, g, day));
-			return;
-		}
-		announce("Le Sablier est vide : la journée s'achève.");
-		try {
-			endDay();
-		} catch (GameException ignored) {
-			// la journée a été close entre-temps
-		}
+	/**
+	 * Le Sablier s'écoule seconde par seconde ; rien ne coule pendant la pause (ni pendant une mise en suspens, l'horloge
+	 * de la partie étant gelée). Vide, il clôt le jour, après le vote en cours.
+	 */
+	private void tickSand(int token, Game g, int day) {
+		host.schedule(20, () -> {
+			if (token != sandToken || game != g || g.day() != day || g.dayOver() || g.phase() != Game.Phase.DAY) {
+				return;
+			}
+			if (paused) {
+				tickSand(token, g, day);
+				return;
+			}
+			if (sandLeft > 0) {
+				sandLeft--;
+				if (sandLeft == 60) {
+					host.title(realNames(), "Le Sablier", "Plus qu'une minute avant la fin du jour");
+				}
+				if (sandLeft > 0) {
+					tickSand(token, g, day);
+					return;
+				}
+			}
+			if (voteNom != null) {
+				tickSand(token, g, day); // on laisse finir le vote en cours
+				return;
+			}
+			announce("Le Sablier est vide : la journée s'achève.");
+			try {
+				endDay();
+			} catch (GameException ignored) {
+				// la journée a été close entre-temps
+			}
+		});
 	}
 
 	/** Le Doyen : ce joueur est-il réduit au silence en ce moment ? */
@@ -433,7 +503,7 @@ public final class Session {
 	 * (Conteur automatique : le bien le plus souvent).
 	 */
 	public String addTraveller(String name, String camp) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.winner() != null) {
 			throw new GameException("La partie est terminée.");
 		}
@@ -443,10 +513,12 @@ public final class Session {
 		if (name.equals(storyteller)) {
 			throw new GameException("Le Conteur ne joue pas.");
 		}
+		admit(name);
 		fr.valcombe.rules.Team team = camp == null ? (rng.chance(0.25) ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD)
 			: camp.startsWith("m") ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD;
 		g.addTraveller(name, team);
 		spectators.remove(name);
+		watchers.remove(name);
 		host.spectator(name, false);
 		host.addSeat(name);
 		boolean evil = team == fr.valcombe.rules.Team.EVIL;
@@ -470,7 +542,7 @@ public final class Session {
 
 	/** Le voyageur repart. */
 	public String travellerLeaves(String name) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int s = g.seatOf(name);
 		if (s < 0 || !g.player(s).traveller()) {
 			throw new GameException("Tu n'es pas un voyageur.");
@@ -802,6 +874,26 @@ public final class Session {
 		return game;
 	}
 
+	/**
+	 * La partie en cours, pour un geste qui la change : refusé tant qu'elle est en suspens (on la reprend d'abord). Les
+	 * lectures (rôle, grimoire, journal, notes) restent permises.
+	 */
+	Game requireLive() {
+		Game g = requireGame();
+		requireAwake();
+		return g;
+	}
+
+	/**
+	 * Un geste de joueur qui fait avancer la partie (main levée, choix et réponse de nuit, décision du Conteur) : refusé
+	 * tant qu'elle est en suspens. Ses joueurs sont au hub, mais une commande lancée de là vise encore leur table.
+	 */
+	private void requireAwake() {
+		if (suspended) {
+			throw new GameException("La partie est en suspens : reprenez-la d'abord (/vc partie reprendre).");
+		}
+	}
+
 	int requireSeat(String name) {
 		int s = requireGame().seatOf(name);
 		if (s < 0) {
@@ -878,6 +970,7 @@ public final class Session {
 	/** Devenir spectateur (ou redevenir joueur). */
 	public String spectate(String name) {
 		if (spectators.remove(name)) {
+			watchers.remove(name);
 			host.spectator(name, false);
 			announce(name + " ne regarde plus la partie.");
 			return "Tu n'es plus spectateur.";
@@ -891,12 +984,90 @@ public final class Session {
 		if (name.equals(storyteller)) {
 			throw new GameException("Le Conteur ne peut pas être spectateur.");
 		}
+		admit(name);
 		spectators.add(name);
 		host.toTable(name); // on regarde la partie là où elle se joue
 		host.spectator(name, true);
 		announce(name + " regarde la partie en spectateur.");
 		return "Tu es spectateur : tu vois tout le monde, mais tu ne joues pas et ton micro ne porte pas jusqu'aux joueurs."
 			+ " /vc spectateur pour revenir.";
+	}
+
+	// ------------------------------------------------------------------
+	// Regarder depuis le tableau des parties du hub
+	// ------------------------------------------------------------------
+	/** Ce joueur regarde-t-il cette partie depuis le tableau des parties (voir {@link #watchers}) ? */
+	public boolean isWatcher(String name) {
+		return name != null && watchers.contains(name);
+	}
+
+	/** Ceux qui regardent cette partie depuis le tableau des parties, dans l'ordre d'arrivée. */
+	public List<String> watchers() {
+		return List.copyOf(watchers);
+	}
+
+	/**
+	 * Pourquoi ce joueur ne peut pas regarder cette partie, ou null s'il le peut. Il ne la regarde pas s'il y a déjà sa
+	 * place : inscrit, assis, Conteur ou élève. Sans effet : c'est la question que pose le tableau des parties avant
+	 * d'emmener le joueur.
+	 */
+	public String watchRefusal(String name) {
+		if (suspended) {
+			return "La partie est en suspens : elle reprendra où elle en est.";
+		}
+		if (lobby.contains(name)) {
+			return "Tu es inscrit à cette partie : tu y joueras, inutile de la regarder.";
+		}
+		if (game != null && game.seatOf(name) >= 0) {
+			return "Tu joues dans cette partie.";
+		}
+		if (name.equals(storyteller)) {
+			return "Tu contes cette partie.";
+		}
+		if (name.equals(trainee)) {
+			return "C'est ta partie d'entraînement.";
+		}
+		return null;
+	}
+
+	/**
+	 * Regarder la partie depuis le tableau des parties : spectateur (mode spectateur de Minecraft), sans jamais voir le
+	 * grimoire ni entendre le vocal des joueurs. Le joueur est d'abord libéré des autres tables où il attendait. Une
+	 * GameException avec la raison s'il ne le peut pas ({@link #watchRefusal}) ; rien ne change s'il regarde déjà.
+	 */
+	public String watch(String name) {
+		String why = watchRefusal(name);
+		if (why != null) {
+			throw new GameException(why);
+		}
+		if (watchers.contains(name)) {
+			host.toTable(name);
+			return "Tu regardes déjà cette partie.";
+		}
+		admit(name);
+		spectators.add(name);
+		watchers.add(name);
+		host.toTable(name); // on regarde la partie là où elle se joue
+		host.spectator(name, true);
+		announce(name + " regarde la partie depuis les gradins.");
+		return "Tu regardes la partie en spectateur : tu vas où tu veux, sans voir les rôles ni entendre les joueurs. "
+			+ "Pour revenir au hub : menu J, « Arrêter de regarder », ou /vc partie sortir.";
+	}
+
+	/**
+	 * Ce joueur cesse de regarder (il a quitté le monde de la partie, il s'est déconnecté, ou il le demande) : il n'est
+	 * plus spectateur et retrouve son mode de jeu. Faux s'il ne regardait pas. {@code quiet} : rien n'est annoncé à la table.
+	 */
+	public boolean stopWatching(String name, boolean quiet) {
+		if (!watchers.remove(name)) {
+			return false;
+		}
+		spectators.remove(name);
+		host.spectator(name, false);
+		if (!quiet) {
+			announce(name + " ne regarde plus la partie.");
+		}
+		return true;
 	}
 
 	// ------------------------------------------------------------------
@@ -911,10 +1082,12 @@ public final class Session {
 		if (game != null) {
 			throw new GameException("Une partie est déjà en cours.");
 		}
+		admit(name);
 		if (name.equals(storyteller)) {
 			storyteller = null;
 		}
 		spectators.remove(name);
+		watchers.remove(name);
 		lobby.removeIf(n -> !n.equals(name) && !bots.contains(n));
 		if (!lobby.contains(name)) {
 			lobby.add(name);
@@ -950,6 +1123,7 @@ public final class Session {
 		if (lobby.contains(name)) {
 			throw new GameException("Tu es déjà inscrit.");
 		}
+		admit(name);
 		lobby.add(name);
 		announce(name + " rejoint la partie (" + lobby.size() + " inscrits).");
 		host.toTable(name); // inscrit depuis le hub : il rejoint le monde de la partie
@@ -1031,6 +1205,7 @@ public final class Session {
 		if (lobby.contains(name)) {
 			throw new GameException("Désinscris-toi avant : le Conteur ne joue pas.");
 		}
+		admit(name);
 		storyteller = name;
 		announce(name + " est le Conteur.");
 		host.toTable(name);
@@ -1177,6 +1352,7 @@ public final class Session {
 	public String stop() {
 		trainee = null;
 		presets.keySet().retainAll(lobby);
+		dropSuspension(); // l'horloge repart d'abord : la fin de partie a ses propres étapes
 		paused = false;
 		standIns.clear();
 		if (game != null) {
@@ -1246,7 +1422,7 @@ public final class Session {
 
 	/** Le Conteur convoque un joueur dans la salle à l'écart ; à sa première venue, il y reçoit son rôle. */
 	public String summon(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (storyteller == null || mode != Mode.HUMAIN) {
 			throw new GameException("La convocation demande un Conteur humain.");
 		}
@@ -1296,7 +1472,7 @@ public final class Session {
 
 	/** Convoque le prochain joueur qui attend son rôle, dans l'ordre du cercle ; s'il n'en reste pas, tout le monde rentre. */
 	public String summonNext() {
-		Game g = requireGame();
+		Game g = requireLive();
 		for (Game.Seat p : g.players()) {
 			if (unbriefed.contains(p.name) && host.online(p.name)) {
 				return summon(p.name);
@@ -1501,7 +1677,7 @@ public final class Session {
 	}
 
 	public String startNight() {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (voteNom != null) {
 			throw new GameException("Un vote est en cours.");
 		}
@@ -1618,7 +1794,7 @@ public final class Session {
 
 	/** Réponse à une invite « prêter un rôle » : des paires joueur=rôle. */
 	public String guess(String name, List<String> pairs) {
-		Game g = requireGame();
+		Game g = requireLive();
 		Map<Integer, Role> map = new java.util.LinkedHashMap<>();
 		for (String pair : pairs) {
 			int eq = pair.indexOf('=');
@@ -1706,6 +1882,7 @@ public final class Session {
 
 	/** Bascule la sélection d'un joueur pendant un choix de nuit. */
 	public String choose(String name, String target) {
+		requireAwake();
 		if (desk.asking(name)) {
 			return desk.choose(name, target);
 		}
@@ -1729,6 +1906,7 @@ public final class Session {
 	}
 
 	public String validate(String name) {
+		requireAwake();
 		if (desk.asking(name)) {
 			return desk.validate(name);
 		}
@@ -1771,6 +1949,7 @@ public final class Session {
 
 	/** Réponse du Conteur à une décision en direct. */
 	public String decide(String name, int option) {
+		requireAwake();
 		if (pendingDecision == null || !name.equals(decisionAsked)) {
 			throw new GameException("Aucune décision en attente.");
 		}
@@ -1936,6 +2115,7 @@ public final class Session {
 	}
 
 	public String sleep(String name) {
+		requireAwake();
 		if (!name.equals(waitingAck)) {
 			throw new GameException("Tu n'es pas réveillé.");
 		}
@@ -1947,7 +2127,7 @@ public final class Session {
 
 	/** Le Conteur force l'étape suivante (joueur absent ou bloqué). */
 	public String skip() {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.NIGHT) {
 			throw new GameException("Ce n'est pas la nuit.");
 		}
@@ -2044,7 +2224,7 @@ public final class Session {
 
 	/** Le Conteur ouvre (ou ferme) les nominations de la journée. */
 	public String setNominations(boolean open) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("Les nominations n'ont lieu que de jour.");
 		}
@@ -2141,7 +2321,7 @@ public final class Session {
 
 	/** Clôt les accusations et lance les votes, un par accusé, dans l'ordre des accusations. */
 	public String startVotes() {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("Les votes n'ont lieu que de jour.");
 		}
@@ -2292,7 +2472,7 @@ public final class Session {
 
 	/** Discussion libre minutée : une barre décompte pour tous, la cloche sonne à la fin. */
 	public String discussion(int minutes) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("La discussion n'a lieu que de jour.");
 		}
@@ -2336,7 +2516,7 @@ public final class Session {
 
 	/** Le Conteur rassemble tout le monde à sa place sur la place du village. */
 	public String gather() {
-		requireGame();
+		requireLive();
 		social.endAllTalks();
 		host.gather(realNames());
 		host.sit(realNames(), false);
@@ -2346,7 +2526,7 @@ public final class Session {
 	}
 
 	public String nominate(String name, String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne nomine que de jour.");
 		}
@@ -2546,6 +2726,7 @@ public final class Session {
 
 	/** Lever ou baisser la main, tant que l'aiguille n'est pas passée. */
 	public String vote(String name, boolean yes) {
+		requireAwake();
 		if (voteNom == null) {
 			throw new GameException("Aucun vote en cours.");
 		}
@@ -2601,7 +2782,7 @@ public final class Session {
 	// Chuchotements : le contenu est privé, mais le fait de chuchoter est public
 	// ------------------------------------------------------------------
 	public String whisper(String from, String to, String text) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne chuchote que de jour.");
 		}
@@ -2624,7 +2805,7 @@ public final class Session {
 	// Pouvoirs du Conteur en cours de partie
 	// ------------------------------------------------------------------
 	public String stKill(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int s = seatByName(target);
 		if (!g.storytellerKill(s)) {
 			throw new GameException(target + " est déjà mort.");
@@ -2642,7 +2823,7 @@ public final class Session {
 	}
 
 	public String stRevive(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int s = seatByName(target);
 		g.revive(s);
 		announce(g.player(s).name + " revient parmi les vivants.");
@@ -2652,14 +2833,14 @@ public final class Session {
 	}
 
 	public String stPoison(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		g.setPoisoned(seatByName(target));
 		save();
 		return target + " est empoisonné jusqu'au prochain crépuscule.";
 	}
 
 	public String stSwap(String target, String roleId, String believedId) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int s = seatByName(target);
 		Role r = parseRole(roleId);
 		g.forceReassign(s, r, believedId == null ? null : parseRole(believedId));
@@ -2670,7 +2851,7 @@ public final class Session {
 	}
 
 	public String shoot(String name, String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int a = requireSeat(name);
 		int b = seatByName(target);
 		boolean hit = g.slayerShot(a, b);
@@ -2691,7 +2872,7 @@ public final class Session {
 	}
 
 	public String endDay() {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (voteNom != null) {
 			throw new GameException("Un vote est en cours.");
 		}
@@ -2758,6 +2939,7 @@ public final class Session {
 			return;
 		}
 		revealBoards(g); // avant endGame, qui oublie la place des sièges
+		dropSuspension();
 		host.endGame(realNames());
 		social.aside = null;
 		summoned = null;
@@ -2870,6 +3052,11 @@ public final class Session {
 		if (seat < 0 && !st) {
 			return;
 		}
+		if (suspended) {
+			host.tell(name, Msg.of("Ta partie est en suspens : elle reprendra où elle en est, et toi à ta place. Tu seras "
+				+ "rappelé à sa reprise."));
+			return;
+		}
 		if (standIns.remove(name)) {
 			announce(name + " est de retour et reprend sa place.");
 		}
@@ -2895,7 +3082,7 @@ public final class Session {
 
 	/** Un joueur fictif tient la place d'un joueur absent, jusqu'à son retour. */
 	public String standIn(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		int seat = seatByName(target);
 		String name = g.player(seat).name;
 		if (bots.contains(name)) {
@@ -2918,15 +3105,179 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
+	// Mise en suspens : la partie s'arrête là où elle en est, et reprend plus tard (même après un redémarrage)
+	// ------------------------------------------------------------------
+	/** Le temps laissé aux joueurs rappelés pour regagner leur place, à la reprise d'une partie en suspens. */
+	public static final int GATHER_SECONDS = 60;
+
+	/** La partie est-elle en suspens (horloge gelée, joueurs au hub) ? */
+	public boolean suspended() {
+		return suspended;
+	}
+
+	/** La partie vient-elle d'être reprise, et attend-elle que chacun ait regagné sa place ? */
+	public boolean gathering() {
+		return gathering;
+	}
+
+	/**
+	 * Met la partie en suspens : son horloge est gelée (minuteurs, étapes de la nuit, aiguille du vote, joueurs fictifs :
+	 * tout s'arrête là où il en est), elle est enregistrée, et tous ceux qui sont à la table s'en vont au hub, leur
+	 * position gardée. Elle reste ainsi, même après un redémarrage du serveur, jusqu'à ce qu'on la reprenne
+	 * ({@link #resumeSuspended}). Renvoie le message pour qui l'a demandée.
+	 */
+	public String suspend() {
+		Game g = requireGame();
+		if (g.winner() != null) {
+			throw new GameException("La partie est finie : il n'y a rien à mettre en suspens.");
+		}
+		if (suspended) {
+			throw new GameException("La partie est déjà en suspens. Pour la reprendre : /vc partie reprendre.");
+		}
+		// Reprise encore en cours (on attendait les retardataires) : la pause d'avant la mise en suspens est celle à garder.
+		boolean before = gathering ? pausedBeforeSuspend : paused;
+		gathering = false;
+		gatherToken++;
+		pausedBeforeSuspend = before;
+		paused = true;
+		suspended = true;
+		host.timer(realNames(), "", 0);
+		List<String> watchers = new ArrayList<>(realNames());
+		if (storyteller != null && !watchers.contains(storyteller)) {
+			watchers.add(storyteller);
+		}
+		host.title(watchers, "Partie en suspens", "Retour au hub : elle reprendra où elle en est");
+		announce("La partie est mise en suspens : chacun retourne au hub. Elle reprendra où elle en est.");
+		host.freeze(true);
+		suspendedPlayers.clear();
+		// Ceux qui la regardaient depuis le hub y retournent aussi, mais ne sont pas rappelés à la reprise.
+		List<String> gallery = List.copyOf(this.watchers);
+		suspendedPlayers.addAll(host.sendAway());
+		int sent = suspendedPlayers.size();
+		gallery.forEach(suspendedPlayers::remove);
+		gallery.forEach(n -> stopWatching(n, true));
+		suspendedPlayers.addAll(watchers); // les absents aussi : ils retrouveront leur place à la reprise
+		save();
+		return "Partie mise en suspens : horloge arrêtée, " + sent + " joueur(s) renvoyé(s) au hub. Pour la reprendre : "
+			+ "/vc partie reprendre.";
+	}
+
+	/**
+	 * Reprend une partie en suspens : son horloge repart, ses joueurs sont rappelés (un lien pour revenir, et chacun
+	 * retrouve sa place en arrivant). Elle reste en pause le temps que tout le monde soit revenu, une minute au plus
+	 * ({@value #GATHER_SECONDS} secondes), puis repart d'elle-même ; le Conteur peut la relancer plus tôt (/vc pause).
+	 */
+	public String resumeSuspended() {
+		requireGame();
+		if (!suspended) {
+			throw new GameException("La partie n'est pas en suspens.");
+		}
+		suspended = false;
+		host.freeze(false);
+		List<String> back = new ArrayList<>(suspendedPlayers);
+		List<String> table = new ArrayList<>(realNames());
+		if (storyteller != null) {
+			table.add(storyteller);
+		}
+		table.addAll(spectators);
+		for (String n : table) {
+			if (!back.contains(n)) {
+				back.add(n);
+			}
+		}
+		suspendedPlayers.clear();
+		host.recall(back);
+		gathering = true;
+		gatherLeft = GATHER_SECONDS;
+		int token = ++gatherToken;
+		save();
+		tickGather(token);
+		return "Partie reprise : les joueurs sont rappelés (lien [Y aller] dans le chat) et retrouvent leur place en arrivant. "
+			+ "Elle repart dès que tout le monde est là, une minute au plus.";
+	}
+
+	/** Chaque seconde de la reprise : la partie repart quand tous ceux de la table sont revenus, ou au bout du délai. */
+	private void tickGather(int token) {
+		host.schedule(20, () -> {
+			if (token != gatherToken || game == null || suspended) {
+				return;
+			}
+			boolean all = realNames().stream().allMatch(host::atTable)
+				&& (storyteller == null || mode != Mode.HUMAIN || host.atTable(storyteller));
+			if (!all && --gatherLeft > 0) {
+				tickGather(token);
+				return;
+			}
+			gathered();
+		});
+	}
+
+	/** Tout le monde est revenu (ou le délai est passé) : la partie repart, ou reste en pause si le Conteur l'y avait mise. */
+	private void gathered() {
+		gatherToken++;
+		gathering = false;
+		gatherLeft = 0;
+		paused = pausedBeforeSuspend;
+		pausedBeforeSuspend = false;
+		if (paused) {
+			announce("La partie est de retour. Elle reste en pause, comme avant la mise en suspens : le Conteur la relance.");
+		} else {
+			restoreTimer();
+			host.title(realNames(), "La partie reprend", "");
+			announce("La partie reprend là où elle s'était arrêtée.");
+		}
+		save();
+	}
+
+	/**
+	 * Un joueur rappelé par la reprise est revenu dans le monde de la partie : il retrouve sa place, son rôle et ses
+	 * invites (comme à une reconnexion), avec les noms de la partie et, s'il regardait, sa vue de spectateur.
+	 */
+	public void backAtTable(String name) {
+		if (game == null || suspended) {
+			return;
+		}
+		if (spectators.contains(name)) {
+			host.spectator(name, true);
+		}
+		onJoin(name);
+		refreshNameTags();
+		updateBoards();
+	}
+
+	/** La partie se termine ou s'arrête alors qu'elle était en suspens (ou en train de reprendre) : plus rien n'attend. */
+	private void dropSuspension() {
+		if (suspended) {
+			host.freeze(false);
+		}
+		suspended = false;
+		gathering = false;
+		gatherToken++;
+		pausedBeforeSuspend = false;
+		suspendedPlayers.clear();
+	}
+
+	// ------------------------------------------------------------------
 	// Le Conteur reprend la main : pause, vote annulé, grâce, victoire, étape précédente
 	// ------------------------------------------------------------------
 	public boolean paused() {
 		return paused;
 	}
 
-	/** Met la partie en pause, ou la reprend : minuteurs, nuit et vote attendent. */
+	/**
+	 * Met la partie en pause, ou la reprend : minuteurs, nuit et vote attendent. Pendant l'attente des retardataires qui
+	 * suit une reprise, la lever relance la partie aussitôt.
+	 */
 	public String togglePause() {
 		requireGame();
+		if (suspended) {
+			throw new GameException("La partie est en suspens : reprenez-la d'abord (/vc partie reprendre).");
+		}
+		if (gathering) {
+			gathering = false;
+			gatherToken++;
+			pausedBeforeSuspend = false;
+		}
 		paused = !paused;
 		if (paused) {
 			host.timer(realNames(), "", 0);
@@ -2949,6 +3300,8 @@ public final class Session {
 			host.timer(realNames(), "La parole est à " + desk.speaker, desk.speechLeft);
 		} else if (discussionLeft > 0) {
 			host.timer(realNames(), "Discussion libre", discussionLeft);
+		} else if (councilLeft > 0 && nominationsOpen) {
+			host.timer(realNames(), "Conseil", councilLeft);
 		} else {
 			host.timer(realNames(), "", 0);
 		}
@@ -3012,7 +3365,7 @@ public final class Session {
 
 	/** Ajoute du temps à la journée : discussion libre en cours, ou Sablier. */
 	public String extend(int minutes) {
-		Game g = requireGame();
+		Game g = requireLive();
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("On ne prolonge que la journée.");
 		}
@@ -3025,7 +3378,7 @@ public final class Session {
 			restoreTimer();
 		}
 		if (sand) {
-			sandExtraTicks += minutes * 1200;
+			sandLeft += minutes * 60;
 		}
 		announce("Le Conteur prolonge la journée de " + minutes + " minute(s).");
 		return "";
@@ -3037,7 +3390,7 @@ public final class Session {
 	 * (l'étape attend alors le Conteur).
 	 */
 	public String timerControl(String action, int seconds) {
-		Game g = requireGame();
+		Game g = requireLive();
 		String a = action.toLowerCase(java.util.Locale.ROOT).replace("ê", "e");
 		int add = Math.max(5, Math.min(1800, seconds));
 		if (voteNom != null && defense) {
@@ -3153,7 +3506,7 @@ public final class Session {
 
 	/** Annule le vote en cours : l'accusation est retirée, accusateur et accusé retrouvent leurs droits. */
 	public String cancelVote() {
-		requireGame();
+		requireLive();
 		if (voteNom == null) {
 			throw new GameException("Aucun vote en cours.");
 		}
@@ -3181,7 +3534,7 @@ public final class Session {
 
 	/** Gracie le joueur sur le billot. */
 	public String pardon() {
-		String name = requireGame().pardon();
+		String name = requireLive().pardon();
 		announce(name + " est gracié par le Conteur : personne n'est sur le billot.");
 		host.title(realNames(), name + " est gracié", "");
 		updateBoards();
@@ -3202,7 +3555,7 @@ public final class Session {
 
 	/** Revient à l'étape précédente de la nuit, pour la rejouer. */
 	public String previous() {
-		Game g = requireGame();
+		Game g = requireLive();
 		g.previousStep();
 		clearNight();
 		nextLater();
@@ -3257,7 +3610,7 @@ public final class Session {
 
 	/** Change le rôle d'un joueur avant la première nuit. */
 	public String assignRole(String target, String roleId, String believedId) {
-		Game g = requireGame();
+		Game g = requireLive();
 		Role r = parseRole(roleId);
 		Role believed = believedId == null ? null : parseRole(believedId);
 		g.reassign(seatByName(target), r, believed);
@@ -3266,7 +3619,7 @@ public final class Session {
 	}
 
 	public String setRedHerring(String target) {
-		Game g = requireGame();
+		Game g = requireLive();
 		g.setRedHerring(seatByName(target));
 		return target + " est le faux présage.";
 	}
@@ -3275,7 +3628,7 @@ public final class Session {
 		if (ids.size() != 3) {
 			throw new GameException("Il faut trois rôles.");
 		}
-		requireGame().setBluffs(ids.stream().map(Session::parseRole).toList());
+		requireLive().setBluffs(ids.stream().map(Session::parseRole).toList());
 		return "Bluffs du Démon modifiés.";
 	}
 
@@ -3543,6 +3896,17 @@ public final class Session {
 		Map<String, String> claims;
 		List<String> standIns;
 		List<String> unbriefed;
+		// Pause, suspens et minuteurs : la partie reprend où elle en était (voir resumeTimers).
+		boolean paused;
+		boolean suspended;
+		boolean gathering;
+		boolean pausedBeforeSuspend;
+		List<String> suspendedPlayers;
+		int discussionLeft;
+		int councilLeft;
+		String speaker;
+		int speechLeft;
+		int sandLeft;
 	}
 
 	private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
@@ -3580,6 +3944,16 @@ public final class Session {
 		social.claims.forEach((k, v) -> d.claims.put(k, v.name()));
 		d.standIns = List.copyOf(standIns);
 		d.unbriefed = List.copyOf(unbriefed);
+		d.paused = paused;
+		d.suspended = suspended;
+		d.gathering = gathering;
+		d.pausedBeforeSuspend = pausedBeforeSuspend;
+		d.suspendedPlayers = List.copyOf(suspendedPlayers);
+		d.discussionLeft = discussionLeft;
+		d.councilLeft = councilLeft;
+		d.speaker = desk.speaker;
+		d.speechLeft = desk.speechLeft;
+		d.sandLeft = sandLeft;
 		d.game = game.toJson();
 		host.persist(GSON.toJson(d));
 	}
@@ -3641,7 +4015,20 @@ public final class Session {
 			});
 		}
 		standIns.clear();
-		paused = false;
+		// Pause et suspens d'avant l'arrêt. Une reprise qui attendait encore ses retardataires repart directement (tout
+		// le monde arrive de la connexion) : la pause est celle d'avant la mise en suspens.
+		suspended = d.suspended;
+		gathering = false;
+		gatherToken++;
+		pausedBeforeSuspend = d.suspended && d.pausedBeforeSuspend;
+		paused = d.suspended || (d.gathering ? d.pausedBeforeSuspend : d.paused);
+		suspendedPlayers.clear();
+		if (d.suspendedPlayers != null) {
+			suspendedPlayers.addAll(d.suspendedPlayers);
+		}
+		if (suspended) {
+			host.freeze(true); // tout ce qui suit (nuit, minuteurs) attend la reprise, sur l'horloge gelée
+		}
 		if (d.standIns != null) {
 			standIns.addAll(d.standIns);
 		}
@@ -3661,7 +4048,9 @@ public final class Session {
 			case DAY -> "le jour " + game.day();
 			default -> "le début de partie";
 		};
-		announce("Partie reprise là où elle s'était arrêtée : " + where + ".");
+		if (!suspended) {
+			announce("Partie reprise là où elle s'était arrêtée : " + where + (paused ? " (en pause)." : "."));
+		}
 		if (mode == Mode.HUMAIN && storyteller != null) {
 			host.storytellerTools(storyteller, true);
 		}
@@ -3670,7 +4059,35 @@ public final class Session {
 			host.nightEffects(realNames(), true, settings);
 			nextLater(); // le réveil en cours au moment de l'arrêt est repris à l'étape suivante
 		}
+		resumeTimers(d);
 		return "";
+	}
+
+	/**
+	 * Les minuteurs du jour repartent où ils en étaient à l'arrêt du serveur : discussion libre, Conseil, temps de parole,
+	 * Sablier. En pause ou en suspens, ils attendent sans s'écouler.
+	 */
+	private void resumeTimers(SaveData d) {
+		Game g = game;
+		if (g == null || g.phase() != Game.Phase.DAY || g.dayOver()) {
+			return;
+		}
+		if (d.discussionLeft > 0) {
+			discussionLeft = d.discussionLeft;
+			tickDiscussion(++discussionToken);
+		}
+		if (d.councilLeft > 0 && nominationsOpen) {
+			councilLeft = d.councilLeft;
+			tickCouncil(++councilToken);
+		}
+		if (d.speaker != null && d.speechLeft > 0 && g.seatOf(d.speaker) >= 0) {
+			desk.resumeSpeech(d.speaker, d.speechLeft);
+		}
+		if (d.sandLeft > 0 && figures.contains("sablier")) {
+			sandLeft = d.sandLeft;
+			tickSand(++sandToken, g, g.day());
+		}
+		restoreTimer();
 	}
 
 	// ------------------------------------------------------------------

@@ -1,7 +1,8 @@
 package fr.valcombe.mc;
 
+import fr.valcombe.mc.games.GameRoom;
+import fr.valcombe.mc.games.Games;
 import fr.valcombe.net.ValcombeNet;
-import fr.valcombe.session.Session;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -16,14 +17,19 @@ import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Point d'entrée du mod « Les Cendres de Valcombe » (partie commune et serveur). */
+/**
+ * Point d'entrée du mod « Les Cendres de Valcombe » (partie commune et serveur).
+ * <p>
+ * Il n'y a plus de partie unique : chaque monde de partie porte la sienne (voir {@link Games}, qui les ouvre, les
+ * ferme et les retrouve). Ce qui reste ici est commun à toutes : la bibliothèque, l'Atelier, la tablette, l'API
+ * d'administration, les sauvegardes, les mondes, le hub, la vue envoyée aux joueurs et le vocal. Un geste de joueur
+ * (objet en main, clic, commande) vise toujours la partie du monde où il se trouve.
+ */
 public final class ValcombeMod implements ModInitializer {
 	public static final Logger LOG = LoggerFactory.getLogger("valcombe");
 
-	private static final McHost HOST = new McHost();
-	private static final Session SESSION = new Session(HOST);
-	private static final ValcombeUi UI = new ValcombeUi(SESSION, HOST);
-	private static final ViewSync SYNC = new ViewSync(SESSION);
+	/** La vue de chaque joueur, celle de sa partie (voir ViewSync). */
+	private static final ViewSync SYNC = new ViewSync();
 	/** Moment du dernier tick mené à son terme : un serveur vide, en veille, n'en fait plus. */
 	private static volatile long lastTick = System.nanoTime();
 	private static volatile boolean idleWork;
@@ -53,10 +59,13 @@ public final class ValcombeMod implements ModInitializer {
 					var w = worlds;
 					var pl = placer;
 					var ms = mapSender;
+					var g = Games.current();
 					idleWork = server.getPlayerCount() == 0
-						&& (HOST.hasWork() || (ms != null && ms.working()) || (w != null && w.working()));
+						&& (Games.anyWork() || (ms != null && ms.working()) || (w != null && w.working()));
 					if (idleWork && System.nanoTime() - lastTick >= 500_000_000L) {
-						guarded("le chantier", HOST::onTick);
+						if (g != null) {
+							guarded("les parties", g::tick);
+						}
 						if (w != null) {
 							guarded("les mondes", w::tick);
 						}
@@ -114,12 +123,11 @@ public final class ValcombeMod implements ModInitializer {
 	}
 
 	/**
-	 * Une partie est-elle en cours (joueurs assis, de la mise en place à la fin) ? Une sauvegarde automatique attend
-	 * alors la fin de la partie (réglage pendantPartie). Fil du serveur.
+	 * Une partie est-elle en cours, dans l'un quelconque des mondes de partie (joueurs assis, de la mise en place à la
+	 * fin) ? Une sauvegarde automatique attend alors la fin des parties (réglage pendantPartie). Fil du serveur.
 	 */
 	static boolean gameInProgress() {
-		var g = SESSION.game();
-		return g != null && g.phase() != fr.valcombe.rules.Game.Phase.SETUP && g.phase() != fr.valcombe.rules.Game.Phase.ENDED;
+		return Games.anyInProgress();
 	}
 
 	/** Le serveur est-il en veille (vide depuis une minute, il ne fait plus de tick) ? */
@@ -142,19 +150,38 @@ public final class ValcombeMod implements ModInitializer {
 		return tablet;
 	}
 
+	/** Ce joueur mène-t-il la partie qu'il voit (opérateur, Conteur de sa partie) ? */
 	static boolean isLeader(ServerPlayer p) {
-		return SYNC.isLeader(p);
+		return ViewSync.isLeader(p);
 	}
 
-	/** La table de jeu du serveur (utilisée par le plugin vocal). */
-	/** Bâton du Conteur : grimoire du joueur visé, aparté (accroupi), ou panneau du Conteur. */
+	/** La partie du monde où se trouve ce joueur, sinon celle qu'il vise depuis le hub (sa table, la principale). */
+	private static GameRoom roomOf(ServerPlayer p) {
+		GameRoom r = Games.of(p);
+		return r != null ? r : Games.forPlayer(p);
+	}
+
+	/** Une fiche du tableau des parties du hub, cliquée : l'écran « Parties » sur elle (sans le mod client, la fiche au chat). */
+	private static void openBoardCard(ServerPlayer sp, net.minecraft.world.entity.Entity card) {
+		String id = fr.valcombe.mc.hub.Hub.boardCard(card);
+		GameRoom room = id == null ? null : Games.byWorld(id);
+		if (room == null) {
+			sp.sendSystemMessage(Gui.plain("Cette partie n'existe plus : le tableau se met à jour.", net.minecraft.ChatFormatting.GRAY));
+			return;
+		}
+		guarded("le tableau des parties", () -> Games.showCard(sp, room));
+	}
+
+	/** Bâton du Conteur : grimoire du joueur visé, aparté (accroupi), ou panneau du Conteur, dans la partie de son monde. */
 	private static void useStaff(ServerPlayer sp, String target) {
-		if (!SYNC.isLeader(sp)) {
+		GameRoom room = roomOf(sp);
+		if (room == null || !room.isLeader(sp)) {
 			sp.sendSystemMessage(Gui.plain("Ce bâton est celui du Conteur.", net.minecraft.ChatFormatting.GRAY));
 			return;
 		}
-		var game = SESSION.game();
-		if (sp.isShiftKeyDown() && game != null && (game.phase() == fr.valcombe.rules.Game.Phase.READY || SESSION.summoned() != null)) {
+		var session = room.session();
+		var game = session.game();
+		if (sp.isShiftKeyDown() && game != null && (game.phase() == fr.valcombe.rules.Game.Phase.READY || session.summoned() != null)) {
 			// Avant la première nuit (ou pendant une convocation) : le bâton convoque dans la salle à l'écart.
 			String cmd = target != null ? "vc convoquer " + target : "vc convoquer fin";
 			sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(), cmd);
@@ -165,7 +192,7 @@ public final class ValcombeMod implements ModInitializer {
 			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(sp,
 				new fr.valcombe.net.ValcombeNet.OpenPayload("seat:" + target));
 		} else {
-			UI.openStoryteller(sp);
+			room.ui().openStoryteller(sp);
 		}
 	}
 
@@ -198,7 +225,7 @@ public final class ValcombeMod implements ModInitializer {
 
 	/**
 	 * Gestionnaire des mondes de Valcombe (hub, parties, ateliers) ; null avant le démarrage du serveur, ou si
-	 * les mondes n'ont pas pu être préparés (la partie, qui se joue dans un monde de partie, est alors indisponible).
+	 * les mondes n'ont pas pu être préparés (les parties, qui se jouent dans les mondes de partie, sont alors indisponibles).
 	 */
 	public static fr.valcombe.mc.worlds.WorldManager worlds() {
 		return worlds;
@@ -243,27 +270,21 @@ public final class ValcombeMod implements ModInitializer {
 
 	/**
 	 * Hub et voyages, branchés sur le gestionnaire de mondes : repli des mondes remis à neuf ou supprimés, arrivée
-	 * des joueurs, dalles d'inscription de la salle d'accueil. Sans hub, les voyages marchent quand même (le repli
-	 * se fait alors au village).
+	 * des joueurs, dalles d'inscription de la salle d'accueil. Les parties s'y relient à leur ouverture (Games.open).
 	 */
-	private static void setUpHub(net.minecraft.server.MinecraftServer server, fr.valcombe.mc.worlds.WorldManager manager) {
+	private static void setUpHub(net.minecraft.server.MinecraftServer server, fr.valcombe.mc.worlds.WorldManager manager,
+			String mainGame) {
 		var positions = new fr.valcombe.mc.hub.LastPositions(fr.valcombe.mc.hub.LastPositions.fileIn(
 			server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).normalize()));
 		positions.load();
-		var t = new fr.valcombe.mc.hub.Travel(server, manager, positions, HOST, SESSION);
+		var t = new fr.valcombe.mc.hub.Travel(server, manager, positions, () -> mainGame);
 		manager.setFallback(t);
 		manager.addListener(t);
 		travel = t;
-		// Les joueurs que la partie amène à sa table (inscription, Conteur, lancement) voyagent comme les autres : leur
-		// position dans le monde qu'ils quittent est gardée.
-		HOST.setLeaving(t::remember);
-		HOST.setBring(t::toGame);
 		try {
-			var h = new fr.valcombe.mc.hub.Hub(server, manager, t, SESSION);
+			var h = new fr.valcombe.mc.hub.Hub(server, manager, t);
 			h.start();
 			manager.addListener(h);
-			HOST.setHubPads(h::padAt);
-			HOST.setHubArrival(t::toHubArrival);
 			hub = h;
 		} catch (RuntimeException | LinkageError e) {
 			LOG.error("Hub de Valcombe indisponible : les joueurs arrivent au village", e);
@@ -293,7 +314,8 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			WorldEditLink link = WorldEditGate.loadLink();
 			link.start(server);
-			SharedUndo undo = new SharedUndo(link, HOST, editor);
+			// Les repères se défont dans la partie du monde de l'opérateur ; chacune garde les siens.
+			SharedUndo undo = new SharedUndo(link, Games::hostAt, Games::hosts, editor);
 			undo.setServer(server);
 			WorldEditGate.install(new WorldEditGate(server, access, link, undo));
 		} catch (RuntimeException | LinkageError e) {
@@ -321,8 +343,8 @@ public final class ValcombeMod implements ModInitializer {
 	private static String baseMotd;
 
 	/**
-	 * Description du serveur (liste des serveurs, launcher) : la prochaine soirée et le salon.
-	 * Le launcher la lit pour afficher « Prochaine soirée » sur son accueil.
+	 * Description du serveur (liste des serveurs, launcher) : la prochaine soirée, la partie principale et le nombre
+	 * de parties d'essai ouvertes. Le launcher la lit pour afficher « Prochaine soirée » sur son accueil.
 	 */
 	private static void updateMotd(net.minecraft.server.MinecraftServer server) {
 		if (community == null || baseMotd == null) {
@@ -330,27 +352,27 @@ public final class ValcombeMod implements ModInitializer {
 		}
 		String evening = community.nextEvening();
 		String state;
-		if (SESSION.game() != null) {
-			state = "Partie en cours (" + SESSION.game().size() + " joueurs)";
+		GameRoom main = Games.main();
+		var session = main == null ? null : main.session();
+		if (session == null) {
+			state = "Aucune partie ouverte";
+		} else if (session.game() != null) {
+			state = (session.suspended() ? "Partie en suspens (" : "Partie en cours (") + session.game().size() + " joueurs)";
 		} else {
-			int n = SESSION.lobby().size();
+			int n = session.lobby().size();
 			state = n == 0 ? "Salon ouvert" : n + " inscrit(s) au salon";
-			if (SESSION.scenario() != null) {
-				state += " · « " + SESSION.scenario().nom + " »";
+			if (session.scenario() != null) {
+				state += " · « " + session.scenario().nom + " »";
 			}
+		}
+		int others = Math.max(0, Games.all().size() - 1);
+		if (others > 0) {
+			state += " · " + others + (others == 1 ? " partie d'essai" : " parties d'essai");
 		}
 		String motd = (evening.isEmpty() ? community.welcomeShown() : "Prochaine soirée : " + evening) + "\n" + state;
 		if (!motd.equals(server.getMotd())) {
 			server.setMotd(motd);
 		}
-	}
-
-	public static McHost host() {
-		return HOST;
-	}
-
-	public static Session session() {
-		return SESSION;
 	}
 
 	@Override
@@ -366,53 +388,32 @@ public final class ValcombeMod implements ModInitializer {
 			BackupService.restoreAtStartup(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir(), modVersion());
 		}
 		ValcombeNet.registerPayloads();
-		HOST.setUi(UI);
-		// Dalles de la salle d'attente
-		HOST.setPadHandler((p, pad) -> {
-			String name = p.getScoreboardName();
-			try {
-				String msg = switch (pad) {
-					case JOIN -> SESSION.lobby().contains(name) ? "Tu es déjà inscrit." : SESSION.join(name);
-					case LEAVE -> SESSION.lobby().contains(name) ? SESSION.leave(name) : "Tu n'es pas inscrit.";
-					case STORYTELLER -> p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
-						? SESSION.toggleStoryteller(name) : "Seul un opérateur peut devenir Conteur.";
-				};
-				p.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
-			} catch (fr.valcombe.rules.GameException e) {
-				p.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
-			}
-		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-			HOST.setServer(server);
 			community = new Community(server.getServerDirectory().resolve("config"));
-			HOST.setCommunity(community);
-			tablet = new Tablet(SESSION, community);
+			tablet = new Tablet(community);
 			tablet.setServer(server);
-			// Créations de l'Atelier : chargées avant la reprise d'une partie (elles peuvent en contenir les rôles).
-			creations = new CreationStore(server.getServerDirectory().resolve("config"), SESSION);
-			maps = new MapStore(creations.dir(), HOST);
+			// Créations de l'Atelier : communes à toutes les parties, qui les reçoivent à leur ouverture (Games.open), donc
+			// avant la reprise de leur partie (elle peut en contenir les rôles).
+			creations = new CreationStore(server.getServerDirectory().resolve("config"), Games::sessions);
+			maps = new MapStore(creations.dir(), Games::hosts);
 			maps.setServer(server);
 			creations.setMaps(maps);
-			HOST.setMaps(maps);
 			structures = new StructureStore(creations.dir());
 			structures.setServer(server);
 			creations.setStructures(structures);
-			editor = new MapEditor(HOST, structures);
+			// L'éditeur pose ses blocs avec les chantiers de la partie du monde où il travaille (la principale ailleurs).
+			editor = new MapEditor(Games::editorHost, structures);
 			editor.setServer(server);
-			HOST.setEditor(editor);
 			creations.load();
-			SESSION.carnetSource = community::carnet;
-			SESSION.modVersion = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
-				.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
 			baseMotd = server.getMotd();
-			workshop = new Workshop(server, SESSION, creations, maps, HOST, structures, editor);
-			Atelier atelier = new Atelier(SESSION, creations, maps, HOST, structures, editor, workshop);
+			workshop = new Workshop(server, creations, maps, structures, editor);
+			Atelier atelier = new Atelier(creations, maps, structures, editor, workshop);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
 			setUpAdmin(server);
 			// Sauvegardes : réglages, archives interrompues effacées, sauvegardes automatiques (serveur dédié).
 			try {
-				BackupService b = new BackupService(server, modVersion(), SESSION::saveNow, ValcombeMod::gameInProgress);
+				BackupService b = new BackupService(server, modVersion(), Games::saveAll, ValcombeMod::gameInProgress);
 				b.start();
 				backups = b;
 			} catch (RuntimeException e) {
@@ -423,38 +424,29 @@ public final class ValcombeMod implements ModInitializer {
 				var manager = new fr.valcombe.mc.worlds.WorldManager(server, fr.valcombe.mc.worlds.WorldManager.defaultFile(server));
 				manager.start();
 				worlds = manager;
-				// La partie se joue dans son monde : « Partie principale », créé (plat) au premier démarrage. Ce monde-là
-				// ne se supprime pas, ne se remet pas à neuf pendant une partie, et la partie oublie sa carte quand il
-				// est remis à neuf.
-				var main = manager.ensureMainGame();
-				HOST.bindWorld(manager, main.entry().id());
-				manager.addGuard(HOST);
-				manager.addListener(HOST);
+				// La partie principale se joue dans son monde : « Partie principale », créé (plat) au premier démarrage. Ce
+				// monde-là ne se supprime pas ; les parties d'essai ont chacune le leur.
+				String mainGame = manager.ensureMainGame().entry().id();
 				placer = new MapPlacer(maps, manager, server);
 				// « Envoyer à la partie » : la seule façon de changer la carte d'un monde de partie (monde remis à neuf,
-				// carte posée dessus). Aujourd'hui une partie, celle du serveur ; l'hôte d'un monde est cherché par son identifiant.
-				var sender = new MapSender(server, manager, placer, maps, id -> id.equals(HOST.worldId()) ? HOST : null, HOST::worldId);
-				HOST.setSender(sender);
+				// carte posée dessus). L'hôte d'un monde est celui de sa partie ; sans monde nommé, la partie principale.
+				var sender = new MapSender(server, manager, placer, maps, id -> {
+					GameRoom r = Games.byWorld(id);
+					return r == null ? null : r.host();
+				}, () -> mainGame);
 				mapSender = sender;
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
-				setUpHub(server, manager);
+				setUpHub(server, manager, mainGame);
 				structureWorkshop = new StructureWorkshop(server, manager, structures);
 				manager.addListener(structureWorkshop);
+				// Les parties : une par monde de partie, la principale d'abord ; chacune reprend là où l'arrêt l'a laissée.
+				Games games = new Games(server, manager);
+				Games.install(games);
+				games.start(mainGame);
 			} catch (RuntimeException | LinkageError e) {
-				LOG.error("Mondes de Valcombe indisponibles : la partie ne pourra pas se jouer (elle se joue dans un monde de partie)", e);
+				LOG.error("Mondes de Valcombe indisponibles : aucune partie ne pourra se jouer (elles se jouent dans les mondes de partie)", e);
 			}
-			HOST.prepareWorld();
 			setUpBuilding(server);
-			String saved = HOST.savedGame();
-			if (saved != null) {
-				try {
-					SESSION.restore(saved);
-				} catch (RuntimeException e) {
-					LOG.error("Sauvegarde de partie illisible : ignorée", e);
-				}
-			}
-			HOST.resumeRestore(); // carte laissée en l'état par un arrêt en pleine partie ou en pleine remise en état
-			SESSION.setSavedScripts(ScriptStore.list(server));
 			tablet.openForHost(server.getServerDirectory().resolve("config").resolve("valcombe-hote.json"));
 			openAdmin(server);
 			startIdleClock(server);
@@ -468,12 +460,6 @@ public final class ValcombeMod implements ModInitializer {
 			if (backups != null) {
 				backups.stopping();
 			}
-			try {
-				SESSION.saveNow(); // la partie en cours reprendra au prochain démarrage
-			} catch (RuntimeException e) {
-				LOG.error("Sauvegarde de la partie impossible à l'arrêt", e);
-			}
-			HOST.setServer(null);
 			if (admin != null) {
 				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
 			}
@@ -486,7 +472,16 @@ public final class ValcombeMod implements ModInitializer {
 				mapSender.stop(); // un envoi coupé laisse sa marque dans le dossier du monde : le démarrage le signalera
 				mapSender = null;
 			}
-			HOST.setSender(null);
+			// Toutes les parties sont enregistrées (elles reprendront au prochain démarrage), puis détachées du serveur.
+			Games games = Games.current();
+			if (games != null) {
+				try {
+					games.stop();
+				} catch (RuntimeException e) {
+					LOG.error("Parties mal enregistrées à l'arrêt", e);
+				}
+				Games.install(null);
+			}
 			if (structureWorkshop != null) {
 				structureWorkshop.stop();
 				structureWorkshop = null;
@@ -498,10 +493,6 @@ public final class ValcombeMod implements ModInitializer {
 					LOG.error("Positions des joueurs non enregistrées à l'arrêt", e);
 				}
 			}
-			HOST.setHubPads(null);
-			HOST.setHubArrival(null);
-			HOST.setLeaving(null);
-			HOST.setBring(null);
 			hub = null;
 			travel = null;
 			WorldEditGate.install(null);
@@ -533,7 +524,14 @@ public final class ValcombeMod implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			lastTick = System.nanoTime();
 			// Chaque partie du tick est protégée : une erreur d'affichage ne doit pas arrêter le serveur ni la partie.
-			guarded("la partie", HOST::onTick);
+			Games games = Games.current();
+			if (games != null) {
+				guarded("les parties", games::tick); // chaque partie a son tick (protégé lui aussi)
+			}
+			var ed = editor;
+			if (ed != null) {
+				guarded("l'éditeur de carte", ed::tick); // commun à toutes les parties : un seul tick
+			}
 			guarded("la vue des joueurs", () -> SYNC.onTick(server));
 			var w = worlds;
 			if (w != null) {
@@ -560,33 +558,32 @@ public final class ValcombeMod implements ModInitializer {
 				guarded("les ateliers", gate::tick);
 			}
 			if (server.getTickCount() % 5 == 0) {
-				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village(), HOST.levelIfReady()));
+				guarded("le vocal", () -> VoiceRouter.update(server, Games.all()));
 			}
 			if (server.getTickCount() % 40 == 0) {
 				guarded("l'accueil", () -> {
 					updateMotd(server);
-					HOST.updateHall(SESSION);
+					for (GameRoom r : Games.all()) {
+						r.host().updateHall(r.session());
+					}
 				});
 			}
 			if (server.getTickCount() % 1200 == 600) {
-				guarded("la sauvegarde", SESSION::saveNow);
+				guarded("la sauvegarde", Games::saveAll);
 			}
 		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayer p = handler.getPlayer();
-			UI.giveMenuItem(p);
-			var g = SESSION.game();
-			boolean seated = g != null && g.seatOf(p.getScoreboardName()) >= 0;
-			// Arrivée au hub, sauf pour qui la partie en cours retient au village : sa place, ou le Conteur.
-			boolean stay = seated || (g != null && g.winner() == null && p.getScoreboardName().equals(SESSION.storyteller()));
-			HOST.onJoin(p, seated, stay);
+			ValcombeUi.giveMenuItem(p);
+			// Sa partie l'accueille : celle qui le retient à sa place (il y joue, il la conte), sinon le hub.
+			Games games = Games.current();
+			if (games != null) {
+				games.onJoin(p);
+			}
 			var gate = WorldEditGate.current();
 			if (gate != null) {
 				guarded("les ateliers", () -> gate.onJoin(p));
 			}
-			// Une seconde plus tard : le client a eu le temps de s'annoncer (écrans du mod ou menus coffre).
-			String joined = p.getScoreboardName();
-			HOST.schedule(20, () -> SESSION.onJoin(joined));
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			String name = handler.getPlayer().getScoreboardName();
@@ -602,7 +599,10 @@ public final class ValcombeMod implements ModInitializer {
 			if (workshop != null) {
 				workshop.forget(name);
 			}
-			SESSION.onDisconnect(name);
+			Games games = Games.current();
+			if (games != null) {
+				games.onDisconnect(name);
+			}
 		});
 		// Mort dans un monde de Valcombe : on réapparaît dans ce monde-là, pas au village.
 		net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.AFTER_RESPAWN.register((before, after, alive) -> {
@@ -663,6 +663,19 @@ public final class ValcombeMod implements ModInitializer {
 			if (g != null) {
 				guarded("les ateliers", () -> g.onLevelChange(player, from, to));
 			}
+			// Qui regardait la partie du monde qu'il quitte n'est plus dans ses gradins (son mode de jeu lui est rendu).
+			Games games = Games.current();
+			if (games != null) {
+				guarded("les spectateurs du hub", () -> games.onLevelChange(player, from));
+			}
+		});
+		// Tableau des parties du hub : un clic gauche sur une fiche l'ouvre aussi (sans rien frapper).
+		net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+			if (fr.valcombe.mc.hub.Hub.boardCard(entity) == null || !(player instanceof ServerPlayer sp)) {
+				return InteractionResult.PASS;
+			}
+			openBoardCard(sp, entity);
+			return InteractionResult.SUCCESS;
 		});
 		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
 		UseItemCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand) -> {
@@ -671,10 +684,11 @@ public final class ValcombeMod implements ModInitializer {
 				if (player instanceof ServerPlayer sp && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
 					String name = sp.getScoreboardName();
 					String cmd = null;
-					if (SESSION.voteOpen()) {
-						cmd = SESSION.handRaised(name) ? "vc vote non" : "vc vote oui";
+					GameRoom room = roomOf(sp);
+					if (room != null && room.session().voteOpen()) {
+						cmd = room.session().handRaised(name) ? "vc vote non" : "vc vote oui";
 					} else {
-						String target = HOST.aimedPlayer(sp);
+						String target = room == null ? null : room.host().aimedPlayer(sp);
 						if (target != null) {
 							cmd = "vc nominer " + target;
 						} else {
@@ -690,13 +704,17 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			if (ValcombeUi.isStaffItem(player.getItemInHand(hand))) {
 				if (player instanceof ServerPlayer sp && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
-					useStaff(sp, HOST.aimedPlayer(sp));
+					GameRoom room = roomOf(sp);
+					useStaff(sp, room == null ? null : room.host().aimedPlayer(sp));
 				}
 				return InteractionResult.SUCCESS;
 			}
 			if (ValcombeUi.isMenuItem(player.getItemInHand(hand))) {
 				if (player instanceof ServerPlayer sp) {
-					UI.openMain(sp);
+					GameRoom room = roomOf(sp);
+					if (room != null) {
+						room.ui().openMain(sp);
+					}
 				}
 				return InteractionResult.SUCCESS;
 			}
@@ -722,12 +740,21 @@ public final class ValcombeMod implements ModInitializer {
 				}
 				return InteractionResult.SUCCESS;
 			}
+			// Tableau des parties du hub : un clic sur la fiche d'une partie l'ouvre.
+			if (fr.valcombe.mc.hub.Hub.boardCard(entity) != null) {
+				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					openBoardCard(sp, entity);
+				}
+				return InteractionResult.SUCCESS;
+			}
 			if (!entity.entityTags().contains("vc_lutrin")) {
 				return InteractionResult.PASS;
 			}
 			if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
-				if (SYNC.isLeader(sp)) {
-					UI.openStoryteller(sp);
+				// Le lutrin d'une place est celui de la partie de ce monde.
+				GameRoom room = Games.of(entity.level());
+				if (room != null && room.isLeader(sp)) {
+					room.ui().openStoryteller(sp);
 				} else {
 					sp.sendSystemMessage(Gui.plain("Le grimoire est réservé au Conteur.", net.minecraft.ChatFormatting.GRAY));
 				}
@@ -757,16 +784,18 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == null) {
-				// Un bloc posé à la main sur la carte : elle ne sera plus remplacée sans sauvegarde.
-				if (player instanceof ServerPlayer builder
+				// Un bloc posé à la main sur la carte d'une partie : elle ne sera plus remplacée sans sauvegarde.
+				McHost here = Games.hostAt(level);
+				if (here != null && player instanceof ServerPlayer builder
 					&& player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem) {
-					HOST.noteEdit(builder, hit.getBlockPos());
+					here.noteEdit(builder, hit.getBlockPos());
 				}
-				// Trône : clic droit pour s'asseoir (les trônes du village, dans le monde de la partie)
-				if (player instanceof ServerPlayer sp && !player.isShiftKeyDown() && !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
-					&& HOST.village() != null && HOST.inGameWorld(sp) && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
+				// Trône : clic droit pour s'asseoir (les trônes du village, dans le monde de sa partie)
+				if (here != null && player instanceof ServerPlayer sp && !player.isShiftKeyDown()
+					&& !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
+					&& here.village() != null && here.inGameWorld(sp) && here.village().seatIndexAt(hit.getBlockPos()) >= 0) {
 					if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
-						HOST.sitAt(sp, hit.getBlockPos());
+						here.sitAt(sp, hit.getBlockPos());
 					}
 					return InteractionResult.SUCCESS;
 				}
@@ -787,7 +816,12 @@ public final class ValcombeMod implements ModInitializer {
 				}
 				var at = hit.getBlockPos().above();
 				try {
-					String msg = HOST.useTool(sp, tool, hit.getBlockPos(), sp.isShiftKeyDown());
+					// Les repères sont ceux du village de la partie de ce monde (ailleurs, l'hôte visé dit d'y aller).
+					GameRoom room = roomOf(sp);
+					if (room == null) {
+						throw new fr.valcombe.rules.GameException("Aucune partie sur ce serveur.");
+					}
+					String msg = room.host().useTool(sp, tool, hit.getBlockPos(), sp.isShiftKeyDown());
 					if (msg.isEmpty()) {
 						return InteractionResult.SUCCESS; // le menu de l'objet visé s'est ouvert
 					}
@@ -826,14 +860,15 @@ public final class ValcombeMod implements ModInitializer {
 			var access = fr.valcombe.mc.worlds.BuildAccess.current();
 			return !(player instanceof ServerPlayer sp) || access == null || access.entryOf(level) == null || access.canBuild(sp);
 		});
-		// Un bloc cassé à la main sur la carte, hors partie : même suivi que pour un bloc posé.
+		// Un bloc cassé à la main sur la carte d'une partie, hors partie : même suivi que pour un bloc posé.
 		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
-			if (player instanceof ServerPlayer sp) {
-				HOST.noteEdit(sp, pos);
+			McHost here = Games.hostAt(level);
+			if (here != null && player instanceof ServerPlayer sp) {
+				here.noteEdit(sp, pos);
 			}
 		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
-			ValcombeCommands.register(dispatcher, registry, SESSION, UI));
+			ValcombeCommands.register(dispatcher, registry));
 		LOG.info("Les Cendres de Valcombe : prêt.");
 	}
 

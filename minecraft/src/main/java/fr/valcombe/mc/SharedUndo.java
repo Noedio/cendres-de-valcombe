@@ -285,14 +285,25 @@ public final class SharedUndo {
 
 	private final Journal journal = new Journal();
 	private final WorldEditLink worldEdit;
-	private final McHost host;
+	/** L'hôte de la partie qui se joue dans un monde, ou null (hub, atelier) : les repères sont ceux de son village. */
+	private final java.util.function.Function<net.minecraft.world.level.Level, McHost> gameAt;
+	/** Les hôtes de toutes les parties, pour compter leurs repères à défaire. */
+	private final java.util.function.Supplier<java.util.List<McHost>> hosts;
 	private final MapEditor editor;
 	private MinecraftServer server;
 
-	SharedUndo(WorldEditLink worldEdit, McHost host, MapEditor editor) {
+	SharedUndo(WorldEditLink worldEdit, java.util.function.Function<net.minecraft.world.level.Level, McHost> gameAt,
+			java.util.function.Supplier<java.util.List<McHost>> hosts, MapEditor editor) {
 		this.worldEdit = worldEdit;
-		this.host = host;
+		this.gameAt = gameAt;
+		this.hosts = hosts;
 		this.editor = editor;
+	}
+
+	/** L'hôte de la partie du monde où se tient ce joueur, ou null. */
+	private McHost gameOf(ServerPlayer p) {
+		McHost h = gameAt.apply(p.level());
+		return h != null && h.isGameLevel(p.level()) ? h : null;
 	}
 
 	void setServer(MinecraftServer server) {
@@ -309,7 +320,13 @@ public final class SharedUndo {
 			journal.syncWorldEdit(p.getUUID(), worldEdit.history(p));
 		}
 		journal.syncCount(Stack.STRUCTURES, editor.undoable());
-		journal.syncCount(Stack.MARKERS, host.markerUndoDepth());
+		// Chaque partie a ses repères : le journal les compte ensemble, et chaque « annuler » ne défait que ceux de la
+		// partie où se tient l'opérateur (checkPlace, puis undoMarker de son hôte).
+		int markers = 0;
+		for (McHost h : hosts.get()) {
+			markers += h.markerUndoDepth();
+		}
+		journal.syncCount(Stack.MARKERS, markers);
 	}
 
 	private static boolean operator(ServerPlayer p) {
@@ -323,7 +340,7 @@ public final class SharedUndo {
 	 * joueur est bien là où elle travaille ({@link #checkPlace}).
 	 */
 	private boolean valcombeHere(ServerPlayer p) {
-		return operator(p) && server != null && (host.isGameLevel(p.level()) || editor.worksIn(p.level()));
+		return operator(p) && server != null && (gameOf(p) != null || editor.worksIn(p.level()));
 	}
 
 	/**
@@ -332,8 +349,8 @@ public final class SharedUndo {
 	 * retoucherait les repères de la partie à distance, ou l'éditeur oublierait son historique en changeant de monde.
 	 */
 	private void checkPlace(ServerPlayer p, Stack stack) {
-		if (stack == Stack.MARKERS && !host.isGameLevel(p.level())) {
-			throw new GameException("les repères se défont dans le monde de la partie (Menu J › Mondes).");
+		if (stack == Stack.MARKERS && (gameOf(p) == null || gameOf(p).markerUndoDepth() == 0)) {
+			throw new GameException("les repères se défont dans le monde de leur partie (Menu J › Mondes).");
 		}
 		if (stack == Stack.STRUCTURES && !editor.worksIn(p.level())) {
 			throw new GameException("les structures se défont dans le monde où elles ont été posées.");
@@ -398,7 +415,7 @@ public final class SharedUndo {
 				msg = switch (e.stack()) {
 					case WORLDEDIT -> worldEdit.undo(p);
 					case STRUCTURES -> editor.undo(p, n);
-					case MARKERS -> host.undoMarker();
+					case MARKERS -> gameOf(p).undoMarker();
 				};
 			} catch (GameException refused) {
 				if (said.isEmpty()) {

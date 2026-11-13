@@ -97,7 +97,7 @@ public class HdGameTest implements FabricClientGameTest {
 
 			// Un interrupteur envoie sa commande ; l'écran se reconstruit avec le nouvel état.
 			String label = "Chacun chez soi la nuit : ";
-			boolean before = world.getServer().computeOnServer(s -> ValcombeMod.session().settings.nightHouses);
+			boolean before = world.getServer().computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().settings.nightHouses);
 			// La vue envoyée par le serveur peut arriver un peu après l'ouverture de l'écran.
 			ctx.waitFor(mc -> findButton(mc, label + (before ? "oui" : "non")) != null, 200);
 			boolean pressed = ctx.computeOnClient(mc -> {
@@ -110,13 +110,13 @@ public class HdGameTest implements FabricClientGameTest {
 			});
 			check(pressed, "interrupteur « " + label + "» trouvé, dans l'état du serveur");
 			ctx.waitTicks(20);
-			check(world.getServer().computeOnServer(s -> ValcombeMod.session().settings.nightHouses) != before,
+			check(world.getServer().computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().settings.nightHouses) != before,
 				"le réglage a changé sur le serveur");
 			check(ctx.computeOnClient(mc -> findButton(mc, label + (before ? "non" : "oui")) != null),
 				"l'écran montre le nouvel état");
 			ctx.runOnClient(mc -> findButton(mc, label).press());
 			ctx.waitTicks(20);
-			check(world.getServer().computeOnServer(s -> ValcombeMod.session().settings.nightHouses) == before,
+			check(world.getServer().computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().settings.nightHouses) == before,
 				"le réglage est revenu");
 
 			// Infobulle haute résolution au survol.

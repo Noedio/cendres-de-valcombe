@@ -41,24 +41,72 @@ final class Atelier {
 		"e_epee", "e_bouclier", "e_couronne", "e_livre", "e_fiole", "e_rose", "e_cloche", "e_lanterne", "e_masque",
 		"e_ancre", "e_corbeau", "e_serpent", "e_main");
 
-	private final Session session;
 	private final CreationStore creations;
 	private final MapStore maps;
-	private final McHost host;
 	private final StructureStore structures;
 	private final MapEditor editor;
 	private final Workshop workshop;
 	private MinecraftServer server;
+	/** La partie choisie sur la page par chaque opérateur (identifiant de son monde), à la place de celle qu'on déduit. */
+	private final Map<String, String> chosen = new java.util.concurrent.ConcurrentHashMap<>();
 
-	Atelier(Session session, CreationStore creations, MapStore maps, McHost host, StructureStore structures, MapEditor editor,
-			Workshop workshop) {
-		this.session = session;
+	Atelier(CreationStore creations, MapStore maps, StructureStore structures, MapEditor editor, Workshop workshop) {
 		this.creations = creations;
 		this.maps = maps;
-		this.host = host;
 		this.structures = structures;
 		this.editor = editor;
 		this.workshop = workshop;
+	}
+
+	/**
+	 * La partie que vise la page de cet opérateur (fil du serveur) : celle qu'il a choisie sur la page (« partie »),
+	 * sinon celle du monde où il se tient, sa table d'attache, ou la partie principale. Null sans parties.
+	 */
+	private fr.valcombe.mc.games.GameRoom room(String owner) {
+		String id = chosen.get(owner);
+		fr.valcombe.mc.games.GameRoom r = id == null ? null : fr.valcombe.mc.games.Games.byWorld(id);
+		if (r != null) {
+			return r;
+		}
+		ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
+		if (p != null) {
+			return fr.valcombe.mc.games.Games.forPlayer(p);
+		}
+		r = fr.valcombe.mc.games.Games.home(owner);
+		return r != null ? r : fr.valcombe.mc.games.Games.main();
+	}
+
+	/** L'hôte de la partie que vise cet opérateur ; une GameException sans parties. */
+	private McHost host(String owner) {
+		fr.valcombe.mc.games.GameRoom r = room(owner);
+		if (r == null) {
+			throw new GameException("Aucune partie sur ce serveur : les mondes de Valcombe ne sont pas disponibles (voir son journal).");
+		}
+		return r.host();
+	}
+
+	/** La session de la partie que vise cet opérateur ; une GameException sans parties. */
+	private Session session(String owner) {
+		fr.valcombe.mc.games.GameRoom r = room(owner);
+		if (r == null) {
+			throw new GameException("Aucune partie sur ce serveur.");
+		}
+		return r.session();
+	}
+
+	/** La page choisit la partie qu'elle vise (identifiant de son monde) ; vide : on la déduit de nouveau. */
+	private String choose(String owner, String worldId) {
+		if (worldId == null || worldId.isBlank()) {
+			chosen.remove(owner);
+			fr.valcombe.mc.games.GameRoom r = room(owner);
+			return r == null ? "Aucune partie." : "Partie visée : « " + r.name() + " » (celle où vous êtes).";
+		}
+		fr.valcombe.mc.games.GameRoom r = fr.valcombe.mc.games.Games.byWorld(worldId.strip());
+		if (r == null) {
+			throw new GameException("Aucune partie dans « " + worldId.strip() + " ».");
+		}
+		chosen.put(owner, r.id());
+		return "Partie visée : « " + r.name() + " ».";
 	}
 
 	/** L'opérateur du lien, s'il est connecté au jeu : l'éditeur agit là où il se trouve. */
@@ -264,31 +312,33 @@ final class Atelier {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					byte[] data = java.util.Base64.getDecoder().decode(o.get("donnees").getAsString());
 					String file = o.get("fichier").getAsString();
-					text(ex, 200, logged(owner, onServer(() -> host.sender().sendImport(file, data, world(o), player(owner)), 180)));
+					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().sendImport(file, data, world(o, owner), player(owner)), 180)));
 				}
 				case "simuler" -> json(ex, simulate(body));
+				// La partie que vise la page (identifiant de son monde ; vide : celle où se tient l'opérateur).
+				case "partie" -> text(ex, 200, onServer(() -> choose(owner, body.trim()), 5));
 				case "jouer" -> text(ex, 200, logged(owner, onServer(() -> play(JsonParser.parseString(body).getAsJsonObject(), owner), 10)));
 				case "carte/enregistrer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
+					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(host(owner), o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
 				}
 				case "carte/nouvelle" -> {
 					JsonObject o = object(body);
-					text(ex, 200, logged(owner, onServer(() -> host.sender().sendBlank(world(o), player(owner)), 30)));
+					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().sendBlank(world(o, owner), player(owner)), 30)));
 				}
 				case "carte/vider" -> {
 					JsonObject o = object(body);
-					text(ex, 200, logged(owner, onServer(() -> host.sender().clear(world(o), player(owner)), 30)));
+					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().clear(world(o, owner), player(owner)), 30)));
 				}
-				case "carte/salle" -> text(ex, 200, logged(owner, onServer(host::buildHall, 30)));
+				case "carte/salle" -> text(ex, 200, logged(owner, onServer(() -> host(owner).buildHall(), 30)));
 				case "carte/batir" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, logged(owner, onServer(() -> host.buildAtMarker(o.get("type").getAsString(),
+					text(ex, 200, logged(owner, onServer(() -> host(owner).buildAtMarker(o.get("type").getAsString(),
 						o.has("index") ? o.get("index").getAsInt() : 0), 10)));
 				}
 				case "carte/envoyer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, logged(owner, onServer(() -> host.sender().sendMap(o.get("id").getAsString(), world(o), player(owner)), 120)));
+					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().sendMap(o.get("id").getAsString(), world(o, owner), player(owner)), 120)));
 				}
 				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
 				case "carte/renommer" -> {
@@ -301,12 +351,12 @@ final class Atelier {
 					text(ex, 200, logged(owner, onServer(() -> maps.duplicate(o.get("id").getAsString(),
 						o.has("nouvelId") ? o.get("nouvelId").getAsString() : "", o.has("nom") ? o.get("nom").getAsString() : ""), 30)));
 				}
-				case "carte/annuler" -> text(ex, 200, logged(owner, onServer(host::undoMarker, 5)));
-				case "carte/ordonner" -> text(ex, 200, logged(owner, onServer(host::sortMarkers, 5)));
+				case "carte/annuler" -> text(ex, 200, logged(owner, onServer(() -> host(owner).undoMarker(), 5)));
+				case "carte/ordonner" -> text(ex, 200, logged(owner, onServer(() -> host(owner).sortMarkers(), 5)));
 				case "carte/repere" -> {
 					// Un repère ajouté, déplacé ou retiré sur le plan : x et z sont comptés depuis le centre de la place.
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, logged(owner, onServer(() -> host.editMarker(o.get("action").getAsString(), o.get("type").getAsString(),
+					text(ex, 200, logged(owner, onServer(() -> host(owner).editMarker(o.get("action").getAsString(), o.get("type").getAsString(),
 						o.has("index") ? o.get("index").getAsInt() : 0, o.has("x") ? o.get("x").getAsInt() : 0,
 						o.has("z") ? o.get("z").getAsInt() : 0), 10)));
 				}
@@ -317,13 +367,13 @@ final class Atelier {
 						if (p == null) {
 							throw new GameException("Connectez-vous au jeu pour aller voir ce repère.");
 						}
-						return host.visitMarker(p, o.get("type").getAsString(), o.has("index") ? o.get("index").getAsInt() : 0);
+						return host(owner).visitMarker(p, o.get("type").getAsString(), o.has("index") ? o.get("index").getAsInt() : 0);
 					}, 5));
 				}
 				case "carte/vue" -> {
 					// Vue de dessus : la carte actuelle (corps vide) ou l'aperçu enregistré d'une carte de la bibliothèque.
 					String id = body.trim();
-					byte[] png = id.isEmpty() ? onServer(host::topView, 30) : maps.preview(id);
+					byte[] png = id.isEmpty() ? onServer(() -> host(owner).topView(), 30) : maps.preview(id);
 					if (png == null) {
 						text(ex, 404, "Pas d'aperçu pour cette carte : chargez-la puis enregistrez-la de nouveau.");
 					} else {
@@ -335,16 +385,16 @@ final class Atelier {
 					if (p == null) {
 						throw new GameException("Connectez-vous au jeu pour construire.");
 					}
-					return host.toggleConstruction(p);
+					return host(owner).toggleConstruction(p);
 				}, 5)));
 				case "carte/generer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					// Mêmes bornes que /vc carte generer : un champ vide ou hors bornes est refusé en clair, pas ramené en silence.
 					int seats = Workshop.number(o, "places", "Trônes", Village.MIN_SEATS, Village.MAX_SEATS);
 					int size = Workshop.number(o, "taille", "Taille", 0, 2);
-					text(ex, 200, logged(owner, onServer(() -> host.sender().sendVillage(seats, size,
+					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().sendVillage(seats, size,
 						o.has("theme") ? o.get("theme").getAsString() : "gothique", !o.has("maisons") || o.get("maisons").getAsBoolean(),
-						world(o), player(owner)), 120)));
+						world(o, owner), player(owner)), 120)));
 				}
 				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure) ; la sélection est
 				// celle de WorldEdit, et « annuler » est l'« annuler » commun (/vc annuler).
@@ -402,9 +452,16 @@ final class Atelier {
 		return body == null || body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
 	}
 
-	/** Le monde de partie choisi sur la page (champ « monde »), ou null : celui de la partie du serveur. */
-	private static String world(JsonObject o) {
-		return o.has("monde") && !o.get("monde").getAsString().isBlank() ? o.get("monde").getAsString() : null;
+	/**
+	 * Le monde de partie choisi sur la page (champ « monde »), sinon celui de la partie que vise l'opérateur (voir
+	 * {@link #room}). Fil du serveur.
+	 */
+	private String world(JsonObject o, String owner) {
+		if (o.has("monde") && !o.get("monde").getAsString().isBlank()) {
+			return o.get("monde").getAsString();
+		}
+		fr.valcombe.mc.games.GameRoom r = room(owner);
+		return r == null ? null : r.id();
 	}
 
 	/** L'opérateur dans le jeu (il suit la barre de l'envoi où qu'il soit), ou null s'il n'y est pas. */
@@ -468,15 +525,27 @@ final class Atelier {
 		out.put("scenarios", sc);
 		// Cartes et carte actuelle : la même description que pour l'écran en jeu (voir Workshop).
 		out.put("cartes", workshop.library(true));
-		Map<String, Object> current = workshop.current(true);
+		// La partie que vise la page : sa carte actuelle, son chantier, son scénario (choisie, ou déduite, voir room).
+		fr.valcombe.mc.games.GameRoom room = room(me);
+		McHost host = room == null ? null : room.host();
+		Session session = room == null ? null : room.session();
+		out.put("partie", room == null ? null : Map.of("id", room.id(), "nom", room.name(), "sorte", room.kind().code(),
+			"choisie", chosen.containsKey(me)));
+		List<Map<String, Object>> games = new ArrayList<>();
+		for (fr.valcombe.mc.games.GameRoom r : fr.valcombe.mc.games.Games.all()) {
+			games.add(Map.of("id", r.id(), "nom", r.name(), "sorte", r.kind().code(), "etat", r.state()));
+		}
+		out.put("parties", games);
+		Map<String, Object> current = workshop.current(host, true);
 		if (current != null) {
 			out.put("carteActuelle", current);
 		}
 		out.put("carteResume", Workshop.describe(current));
-		out.put("carteEnPlace", host.mapInPlace());
-		// Les mondes de partie où l'on peut envoyer une carte (le premier : celui de la partie du serveur).
+		out.put("carteEnPlace", host == null ? "" : host.mapInPlace());
+		// Les mondes de partie où l'on peut envoyer une carte (le premier : celui de la partie visée).
 		List<Map<String, Object>> targets = new ArrayList<>();
 		var worlds = ValcombeMod.worlds();
+		String here = room == null ? null : room.id();
 		if (worlds != null) {
 			for (var e : worlds.list()) {
 				if (!MapSender.accepts(e.sorte())) {
@@ -486,8 +555,8 @@ final class Atelier {
 				w.put("id", e.id());
 				w.put("nom", e.nom());
 				w.put("sorte", e.sorte().label());
-				w.put("partie", e.id().equals(host.worldId()));
-				if (e.id().equals(host.worldId())) {
+				w.put("partie", e.id().equals(here));
+				if (e.id().equals(here)) {
 					targets.add(0, w);
 				} else {
 					targets.add(w);
@@ -497,10 +566,10 @@ final class Atelier {
 		out.put("mondesPartie", targets);
 		out.put("structures", structures.list());
 		out.put("editeur", editor.state(me));
-		out.put("constructeur", host.isBuilder(me));
+		out.put("constructeur", McHost.isBuilder(me));
 		out.put("enJeu", server.getPlayerList().getPlayerByName(me) != null);
-		out.put("chantier", host.busy());
-		out.put("essaiEnAttente", session.trialPending());
+		out.put("chantier", host != null && host.busy());
+		out.put("essaiEnAttente", session != null && session.trialPending());
 		out.put("joueursMin", fr.valcombe.rules.Distribution.MIN_PLAYERS);
 		out.put("joueursMax", fr.valcombe.rules.Distribution.MAX_PLAYERS);
 		out.put("tronesMin", Village.MIN_SEATS);
@@ -521,9 +590,9 @@ final class Atelier {
 		Role.all().stream().filter(r -> !r.custom()).forEach(r -> emb.add(r.icon));
 		out.put("emblemes", emb);
 		out.put("themes", Village.THEMES);
-		out.put("partieEnCours", session.game() != null);
-		out.put("scenarioActuel", session.scenario() == null ? null : session.scenario().id);
-		out.put("scenarioActuelNom", session.scenario() == null ? null : session.scenario().nom);
+		out.put("partieEnCours", session != null && session.game() != null);
+		out.put("scenarioActuel", session == null || session.scenario() == null ? null : session.scenario().id);
+		out.put("scenarioActuelNom", session == null || session.scenario() == null ? null : session.scenario().nom);
 		return GSON.toJson(out);
 	}
 
@@ -571,10 +640,14 @@ final class Atelier {
 		return GSON.toJson(m);
 	}
 
-	/** Choisit le scénario pour la prochaine partie ; « essai » lance tout de suite une partie avec des joueurs fictifs. */
+	/**
+	 * Choisit le scénario pour la prochaine partie de la partie visée ; « essai » y lance tout de suite une partie avec
+	 * des joueurs fictifs.
+	 */
 	private String play(JsonObject o, String owner) {
 		String id = o.get("scenario").getAsString();
 		boolean trial = o.has("essai") && o.get("essai").getAsBoolean();
+		Session session = session(owner);
 		if (session.game() != null) {
 			throw new GameException("Une partie est en cours : arrêtez-la d'abord (/vc arreter).");
 		}

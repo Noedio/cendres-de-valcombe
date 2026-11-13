@@ -26,6 +26,8 @@ public sealed class AdminState
     public string? ProchaineSoiree { get; set; }
     public string Motd { get; set; } = "";
     public List<AdminWorld> Mondes { get; set; } = new();
+    /// <summary>Les parties du serveur, une par monde de partie, la principale d'abord.</summary>
+    public List<AdminGame> Parties { get; set; } = new();
     public bool RedemarrageNecessaire { get; set; }
 }
 
@@ -52,6 +54,8 @@ public sealed class AdminWorld
     /// <summary><c>charge</c>, <c>remise-a-neuf</c>, <c>decharge</c>.</summary>
     public string Etat { get; set; } = "";
     public int Joueurs { get; set; }
+    /// <summary>Un monde de partie : l'état de sa partie (null pour les autres mondes, ou un serveur plus ancien).</summary>
+    public AdminWorldGame? Partie { get; set; }
 
     /// <summary>La sorte, en mots.</summary>
     public string SorteTexte => Sorte switch
@@ -249,4 +253,107 @@ public sealed class AdminSettingsChange
             target[field] = new JsonArray(names.Select(n => (JsonNode?)JsonValue.Create(n)).ToArray());
         }
     }
+}
+
+/// <summary>L'état de la partie d'un monde de partie, dans GET /admin/etat (<c>mondes[].partie</c>).</summary>
+public sealed class AdminWorldGame
+{
+    /// <summary><c>ouverte</c>, <c>en-cours</c>, <c>en-pause</c>, <c>suspendue</c>.</summary>
+    public string Statut { get; set; } = "";
+    /// <summary>Ce qui s'y passe, en clair (« nuit 2 », « 3 inscrit(s) »).</summary>
+    public string Etat { get; set; } = "";
+}
+
+/// <summary>
+/// Une partie du serveur (GET /admin/parties, et <c>parties</c> de GET /admin/etat) : sa fiche telle que le tableau des
+/// parties du hub la montre.
+/// </summary>
+public class AdminGame
+{
+    public string Id { get; set; } = "";
+    public string Nom { get; set; } = "";
+    /// <summary><c>partie</c> ou <c>essai</c>.</summary>
+    public string Sorte { get; set; } = "";
+    public bool Principale { get; set; }
+    /// <summary>Ce qui s'y passe, en clair (« salon ouvert », « nuit 1 », « en suspens (jour 2) »).</summary>
+    public string Etat { get; set; } = "";
+    public bool EnCours { get; set; }
+    public bool EnPause { get; set; }
+    public bool Suspendue { get; set; }
+    /// <summary><c>setup</c>, <c>ready</c>, <c>night</c>, <c>day</c>, <c>ended</c>, ou null au salon.</summary>
+    public string? Phase { get; set; }
+    public int Inscrits { get; set; }
+    public int Assis { get; set; }
+    public string? Conteur { get; set; }
+    /// <summary>Joueurs présents dans son monde.</summary>
+    public int Joueurs { get; set; }
+    /// <summary><c>ouverte</c>, <c>en-cours</c>, <c>en-pause</c>, <c>suspendue</c> (vide : serveur plus ancien, voir <see cref="Status"/>).</summary>
+    public string Statut { get; set; } = "";
+    public string StatutTexte { get; set; } = "";
+    public string PhaseTexte { get; set; } = "";
+    public int Numero { get; set; }
+    /// <summary>Assis si la partie est lancée, sinon inscrits.</summary>
+    public int Participants { get; set; }
+    public int Places { get; set; }
+    public int Spectateurs { get; set; }
+
+    /// <summary>Le statut, déduit des anciens champs pour un serveur qui ne l'envoie pas encore.</summary>
+    public string Status => Statut.Length > 0 ? Statut
+        : Suspendue ? "suspendue" : EnCours ? (EnPause ? "en-pause" : "en-cours") : "ouverte";
+
+    /// <summary>Le statut, en mots.</summary>
+    public string StatusText => StatutTexte.Length > 0 ? StatutTexte : Status switch
+    {
+        "suspendue" => "En suspens",
+        "en-pause" => "En pause",
+        "en-cours" => "En cours",
+        _ => "Ouverte",
+    };
+
+    /// <summary>« Partie principale », « Partie d'essai ».</summary>
+    public string SorteTexte => Principale ? "Partie principale" : Sorte == "essai" ? "Partie d'essai" : "Partie";
+
+    /// <summary>Une partie lancée (en suspens comprise) : elle ne se supprime pas.</summary>
+    public bool Lancee => Status != "ouverte";
+
+    /// <summary>« 7 joueurs sur 12 places », « 3 inscrits sur 16 places », « Personne d'inscrit, 16 places ».</summary>
+    public string JoueursTexte
+    {
+        get
+        {
+            int n = Participants > 0 || Statut.Length > 0 ? Participants : EnCours ? Assis : Inscrits;
+            string places = Places > 0 ? $"{Places} place{(Places > 1 ? "s" : "")}" : "";
+            if (Lancee)
+            {
+                return $"{n} joueur{(n > 1 ? "s" : "")}" + (places.Length > 0 ? " sur " + places : "");
+            }
+            if (n == 0)
+            {
+                return "Personne d'inscrit" + (places.Length > 0 ? ", " + places : "");
+            }
+            return $"{n} inscrit{(n > 1 ? "s" : "")}" + (places.Length > 0 ? " sur " + places : "");
+        }
+    }
+}
+
+/// <summary>GET /admin/parties.</summary>
+public sealed class AdminGames
+{
+    public List<AdminGame> Parties { get; set; } = new();
+    public int EnCours { get; set; }
+    public string? Principale { get; set; }
+    public bool Disponible { get; set; } = true;
+}
+
+/// <summary>Réponse de POST /admin/parties/suspendre et /reprendre : la partie après le geste, et le message du serveur.</summary>
+public sealed class AdminGameChanged : AdminGame
+{
+    public string Message { get; set; } = "";
+}
+
+/// <summary>Réponse de POST /admin/parties : la partie d'essai créée, et le message du serveur.</summary>
+public sealed class AdminGameCreated
+{
+    public AdminGame? Partie { get; set; }
+    public string Message { get; set; } = "";
 }

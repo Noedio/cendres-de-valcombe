@@ -20,6 +20,9 @@
 			"fr.valcombe.gametest.EnvoiPartieGameTest",
 			"fr.valcombe.gametest.BuildWorkshopGameTest",
 			"fr.valcombe.gametest.StructuresWorkshopGameTest",
+			"fr.valcombe.gametest.MultiPartiesGameTest",
+			"fr.valcombe.gametest.SuspensGameTest",
+			"fr.valcombe.gametest.PartiesGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

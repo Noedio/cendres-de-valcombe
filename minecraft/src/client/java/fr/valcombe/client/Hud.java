@@ -634,8 +634,13 @@ public final class Hud {
 			String t = "Absents : " + names + " (fiche du joueur : le faire relayer)";
 			centered(hd, t, w, hd.px(42), 0xFFE05A4A, false);
 		}
-		// Partie en pause : tout le monde le voit
-		if (ClientState.bool(v, "paused") && mc.gui.screen() == null) {
+		// Partie en pause, ou en suspens (ses joueurs l'attendent au hub) : tout le monde le voit
+		if (ClientState.bool(v, "suspended") && mc.gui.screen() == null) {
+			JsonObject game = ClientState.obj(v, "partie");
+			String name = game == null ? null : ClientState.str(game, "nom");
+			centered(hd, "⏸ Partie" + (name == null || name.isEmpty() ? "" : " « " + name + " »")
+				+ " en suspens : elle reprendra où elle en est", w, hd.px(54), 0xFFE8C36A, true);
+		} else if (ClientState.bool(v, "paused") && mc.gui.screen() == null) {
 			centered(hd, "⏸ Partie en pause", w, hd.px(54), 0xFFE8C36A, true);
 		}
 		// Nuit d'attente : ceux qui dorment savent quoi faire

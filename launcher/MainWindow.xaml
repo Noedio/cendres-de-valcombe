@@ -355,6 +355,7 @@
               <RadioButton GroupName="srvtab" Tag="apercu" Content="Vue d'ensemble" IsChecked="True" Checked="SrvTabChanged"/>
               <RadioButton GroupName="srvtab" Tag="console" Content="Console" Checked="SrvTabChanged"/>
               <RadioButton GroupName="srvtab" Tag="reglages" Content="Réglages" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="parties" Content="Parties" Checked="SrvTabChanged"/>
               <RadioButton GroupName="srvtab" Tag="sauvegardes" Content="Sauvegardes" Checked="SrvTabChanged"/>
             </WrapPanel>
 
@@ -504,6 +505,82 @@
                         <Button x:Name="SrvSaveButton" Style="{StaticResource Wax}" Content="Enregistrer" Click="SrvSaveSettings" Margin="0,0,10,0"/>
                         <Button Style="{StaticResource Ghost}" Content="Annuler les changements" Click="SrvResetSettings"/>
                       </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Parties : le tableau des parties du serveur, leur mise en suspens, la création et la suppression des parties d'essai (MainWindow.Parties.cs) -->
+            <ScrollViewer x:Name="SrvGamesPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <!-- Ce qui vient de se passer (partie créée, mise en suspens, refus...) -->
+                <Border x:Name="GmNotice" Style="{StaticResource CardBox}" Padding="18,10" Visibility="Collapsed">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="10" Background="Transparent"
+                            Foreground="{StaticResource ParchDark}" BorderThickness="0" Cursor="Hand" Width="28" VerticalAlignment="Top"
+                            Click="GmHideNotice" ToolTip="Masquer"/>
+                    <TextBlock x:Name="GmNoticeIcon" DockPanel.Dock="Left" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,2,12,0" VerticalAlignment="Top"/>
+                    <TextBlock x:Name="GmNoticeText" Style="{StaticResource Hint}" Margin="0,1,0,0" Foreground="{StaticResource Parch}"/>
+                  </DockPanel>
+                </Border>
+
+                <!-- Confirmation d'une suppression -->
+                <Border x:Name="GmConfirm" Style="{StaticResource CardBox}" BorderBrush="#99D8605A" Visibility="Collapsed">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                      <TextBlock DockPanel.Dock="Left" Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="20" Foreground="{StaticResource Bad}"
+                                 Margin="0,3,12,0" VerticalAlignment="Top"/>
+                      <TextBlock x:Name="GmConfirmTitle" FontFamily="{StaticResource Title}" FontSize="19" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <TextBlock x:Name="GmConfirmText" Style="{StaticResource Hint}" Margin="32,4,0,4"/>
+                    <WrapPanel Margin="32,8,0,0">
+                      <Button Style="{StaticResource Wax}" Click="GmConfirmDelete" Margin="0,0,10,8">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Supprimer la partie et son monde"/>
+                        </StackPanel>
+                      </Button>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler" Click="GmCancelDelete" Margin="0,0,10,8"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="272"/>
+                  </Grid.ColumnDefinitions>
+
+                  <!-- Le tableau des parties -->
+                  <Border Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Parties" Margin="0,0,0,2"/>
+                      <TextBlock x:Name="GmSummary" Style="{StaticResource Hint}" Margin="0,0,12,0"/>
+                      <StackPanel x:Name="GmList" Margin="0,8,0,0"/>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Nouvelle partie d'essai -->
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}" Padding="20,14" VerticalAlignment="Top">
+                    <StackPanel x:Name="GmCreateBox">
+                      <TextBlock Style="{StaticResource H2}" Text="Nouvelle partie d'essai" Margin="0,0,0,2"/>
+                      <TextBlock Style="{StaticResource Hint}"
+                                 Text="Un monde neuf où le village de Valcombe se pose en une à deux minutes. Les joueurs la rejoignent au tableau des parties du hub."/>
+                      <TextBlock Style="{StaticResource Label}" Text="Nom"/>
+                      <TextBox x:Name="GmNameBox" MaxLength="40" KeyDown="GmNameKey" ToolTip="Par exemple : Essai du mardi (40 caractères au plus)"/>
+                      <WrapPanel Margin="0,10,0,0">
+                        <Button x:Name="GmCreateButton" Style="{StaticResource Wax}" Click="GmCreate" Padding="14,7">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="GmCreateText" Text="Créer la partie"/>
+                          </StackPanel>
+                        </Button>
+                      </WrapPanel>
+                      <TextBlock Style="{StaticResource Label}" Text="Bon à savoir" Margin="0,16,0,2"/>
+                      <TextBlock Style="{StaticResource Hint}"
+                                 Text="Chaque partie a ses joueurs, son Conteur, son vocal et sa sauvegarde. En suspens, elle reprend où elle en est, même après un redémarrage. Une partie lancée ne se supprime pas : /vc arreter dans son monde d'abord."/>
                     </StackPanel>
                   </Border>
                 </Grid>

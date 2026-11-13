@@ -106,8 +106,11 @@ final class MapPlacerCommands {
 
 	private static String place(CommandSourceStack src, MapPlacer placer, WorldManager worlds, String mapId, String world) {
 		WorldEntry e = WorldLookup.resolve(worlds.list(), world);
-		if (e.id().equals(ValcombeMod.host().worldId())) {
-			// La partie y joue sur sa carte : la changer, c'est remettre ce monde à neuf et la lui donner (MapSender).
+		var game = fr.valcombe.mc.games.Games.byWorld(e.id());
+		if (game != null && game.main()) {
+			// La partie principale y joue sur sa carte : la changer, c'est remettre ce monde à neuf et la lui donner (MapSender).
+			// Dans une partie d'essai, on peut encore poser une carte à la main pour la travailler (sans que la partie
+			// l'adopte : pour y jouer dessus, on l'envoie).
 			throw new GameException("« " + e.nom() + " » est le monde de la partie : une carte s'y envoie, sur un monde remis à neuf, "
 				+ "avec /vc carte envoyer " + mapId + ".");
 		}

@@ -320,7 +320,7 @@ public final class MapSender {
 		Village current = host == null ? null : host.village();
 		if (current != null && current.modified()) {
 			try {
-				saved = " L'ancienne carte, retouchée à la main, est sauvegardée dans la bibliothèque : « " + maps.backup(current) + " ».";
+				saved = " L'ancienne carte, retouchée à la main, est sauvegardée dans la bibliothèque : « " + maps.backup(host, current) + " ».";
 				host.mapSaved(current);
 			} catch (GameException ex) {
 				throw new GameException("Rien n'est envoyé : la carte actuelle de « " + e.nom() + " » a été retouchée à la main et sa "

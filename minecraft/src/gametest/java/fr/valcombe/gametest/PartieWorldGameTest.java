@@ -85,7 +85,7 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 	/** La session survit d'une classe de test à l'autre : on repart d'un salon vide, sans partie ni Conteur. */
 	private static void cleanSession(TestSingleplayerContext world, String me) {
 		world.getServer().runOnServer(s -> {
-			var session = ValcombeMod.session();
+			var session = fr.valcombe.mc.games.Games.main().session();
 			if (session.game() != null) {
 				session.stop();
 			}
@@ -110,23 +110,23 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			cleanSession(world, me);
 
 			// 1. Le monde de la partie existe dès le démarrage : « Partie principale », plat, son village au centre.
-			String gameId = server.computeOnServer(s -> ValcombeMod.host().worldId());
+			String gameId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().worldId());
 			check(WorldManager.MAIN_GAME_ID.equals(gameId), "la partie est liée au monde " + gameId);
 			String gameDim = "valcombe:" + gameId;
 			check(server.computeOnServer(s -> {
 				WorldEntry e = ValcombeMod.worlds().find(gameId);
 				return e != null && e.sorte() == WorldKind.PARTIE && e.nom().equals(WorldManager.MAIN_GAME_NAME);
 			}), "monde de partie « Partie principale » dans le registre");
-			check(server.computeOnServer(s -> ValcombeMod.host().level() == s.getLevel(WorldManager.key(gameId))),
+			check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().level() == s.getLevel(WorldManager.key(gameId))),
 				"le monde de la partie est un monde de Valcombe, pas le monde principal");
-			check(server.computeOnServer(s -> ValcombeMod.host().village() != null
-				&& ValcombeMod.host().village().center().equals(new BlockPos(0, WorldManager.SURFACE_Y, 0))),
+			check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().village() != null
+				&& fr.valcombe.mc.games.Games.main().host().village().center().equals(new BlockPos(0, WorldManager.SURFACE_Y, 0))),
 				"village bâti au centre du sol plat");
 			check(server.computeOnServer(s -> {
-				Path fiche = ValcombeMod.host().villageFile();
+				Path fiche = fr.valcombe.mc.games.Games.main().host().villageFile();
 				return fiche != null && Files.exists(fiche) && fiche.startsWith(ValcombeMod.worlds().folder(gameId));
 			}), "fiche du village rangée dans le dossier du monde de la partie");
-			check(server.computeOnServer(s -> !ValcombeMod.host().level().getBlockState(ValcombeMod.host().village().center())
+			check(server.computeOnServer(s -> !fr.valcombe.mc.games.Games.main().host().level().getBlockState(fr.valcombe.mc.games.Games.main().host().village().center())
 				.is(Blocks.GRASS_BLOCK)), "la place est bâtie dans le monde de la partie");
 			String hubId = server.computeOnServer(s -> ValcombeMod.hub().id());
 			String hubDim = "valcombe:" + hubId;
@@ -144,10 +144,10 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 
 			// 3. Inscription depuis le hub : on est emmené au village de la partie ; on peut encore repartir.
 			send(ctx, "vc rejoindre");
-			check(waitFor(ctx, world, 100, s -> ValcombeMod.session().lobby().contains(me) && dimensionOf(s, me).equals(gameDim)),
+			check(waitFor(ctx, world, 100, s -> fr.valcombe.mc.games.Games.main().session().lobby().contains(me) && dimensionOf(s, me).equals(gameDim)),
 				"inscrit depuis le hub, emmené dans le monde de la partie");
 			check(server.computeOnServer(s -> {
-				BlockPos spawn = ValcombeMod.host().villageSpawn();
+				BlockPos spawn = fr.valcombe.mc.games.Games.main().host().villageSpawn();
 				ServerPlayer p = player(s, me);
 				return spawn != null && Math.abs(p.getX() - (spawn.getX() + 0.5)) < 0.6 && Math.abs(p.getZ() - (spawn.getZ() + 0.5)) < 0.6;
 			}), "à la salle d'attente du village");
@@ -160,16 +160,16 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			server.runCommand("vc bots 6");
 			ctx.waitTicks(10);
 			server.runCommand("vc lancer auto");
-			check(waitFor(ctx, world, 100, s -> ValcombeMod.session().game() != null && dimensionOf(s, me).equals(gameDim)),
+			check(waitFor(ctx, world, 100, s -> fr.valcombe.mc.games.Games.main().session().game() != null && dimensionOf(s, me).equals(gameDim)),
 				"partie lancée : le joueur est amené dans le monde de la partie");
 			check(waitFor(ctx, world, 60, s -> {
-				double[] seat = ValcombeMod.host().seatPosition(me);
+				double[] seat = fr.valcombe.mc.games.Games.main().host().seatPosition(me);
 				ServerPlayer p = player(s, me);
 				return seat != null && Math.abs(p.getX() - seat[0]) < 1.5 && Math.abs(p.getZ() - seat[2]) < 1.5;
 			}), "assis sur son trône");
 			check(server.computeOnServer(s -> ValcombeMod.travel().positions().get(uuid, hubId) != null),
 				"sa place au hub est gardée pour son retour");
-			check(waitFor(ctx, world, 60, s -> decor(ValcombeMod.host().level()) > 0), "scène montée dans le monde de la partie");
+			check(waitFor(ctx, world, 60, s -> decor(fr.valcombe.mc.games.Games.main().host().level()) > 0), "scène montée dans le monde de la partie");
 			check(server.computeOnServer(s -> decor(ValcombeMod.worlds().level(hubId)) == 0 && decor(s.overworld()) == 0),
 				"rien dans le hub ni dans le monde principal");
 			ctx.runOnClient(mc -> mc.player.setXRot(8));
@@ -193,14 +193,16 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			long hubTime = server.computeOnServer(s -> ValcombeMod.worlds().level(hubId).getDefaultClockTime());
 			server.runCommand("vc nuit");
 			check(waitFor(ctx, world, 100, s -> {
-				long t = ValcombeMod.host().level().getDefaultClockTime() % 24000;
+				long t = fr.valcombe.mc.games.Games.main().host().level().getDefaultClockTime() % 24000;
 				return t >= 13000 && t <= 23000;
-			}), "nuit dans le monde de la partie (heure " + server.computeOnServer(s -> ValcombeMod.host().level().getDefaultClockTime() % 24000) + ")");
+			}), "nuit dans le monde de la partie (heure " + server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().level().getDefaultClockTime() % 24000) + ")");
 			check(server.computeOnServer(s -> ValcombeMod.worlds().level(hubId).getDefaultClockTime() == hubTime), "le hub garde son heure");
 
-			// 7. La sauvegarde de partie porte le monde où elle se joue.
-			server.runOnServer(s -> ValcombeMod.session().saveNow());
-			Path save = server.computeOnServer(s -> s.getServerDirectory().resolve("config").resolve("valcombe-partie.json"));
+			// 7. La fiche de la partie (une par partie, config/valcombe/parties/<monde>.json) porte le monde où elle se joue.
+			server.runOnServer(s -> fr.valcombe.mc.games.Games.main().session().saveNow());
+			Path save = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().saveFile());
+			check(save.equals(server.computeOnServer(s -> GameSave.file(s.getServerDirectory().resolve("config"), gameId))),
+				"fiche de la partie principale : " + save);
 			check(server.computeOnServer(s -> {
 				try {
 					return GameSave.read(Files.readString(save, StandardCharsets.UTF_8), gameId).verdict() == GameSave.Verdict.OK;
@@ -211,10 +213,10 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 
 			// 8. Fin de partie : la carte est remise en état, chacun reste au village de la partie, la scène est retirée.
 			server.runCommand("vc arreter");
-			check(waitFor(ctx, world, 1200, s -> ValcombeMod.session().game() == null && !ValcombeMod.host().busy()),
+			check(waitFor(ctx, world, 1200, s -> fr.valcombe.mc.games.Games.main().session().game() == null && !fr.valcombe.mc.games.Games.main().host().busy()),
 				"partie arrêtée, carte remise en état");
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals(gameDim)), "après la partie, au village de la partie");
-			check(waitFor(ctx, world, 100, s -> decor(ValcombeMod.host().level()) == 0), "scène retirée");
+			check(waitFor(ctx, world, 100, s -> decor(fr.valcombe.mc.games.Games.main().host().level()) == 0), "scène retirée");
 			check(server.computeOnServer(s -> !Files.exists(save)), "plus de sauvegarde de partie");
 
 			// 9. Une sauvegarde d'avant les mondes de Valcombe (sans monde) ne reprend pas : elle est mise de côté.
@@ -222,7 +224,7 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			check(server.computeOnServer(s -> {
 				try {
 					Files.writeString(save, "{\"mode\":\"AUTO\",\"lobby\":[\"Alice\"]}", StandardCharsets.UTF_8);
-					boolean ignored = ValcombeMod.host().savedGame() == null;
+					boolean ignored = fr.valcombe.mc.games.Games.main().host().savedGame() == null;
 					boolean aside = Files.exists(old) && !Files.exists(save);
 					Files.deleteIfExists(old);
 					return ignored && aside;
@@ -234,7 +236,7 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			// 10. Remis à neuf après la partie : le monde est plat et vide, et la partie n'a plus de carte.
 			// La carte a été retouchée à la main : remise à neuf directe ou pas, elle part d'abord dans la bibliothèque.
 			java.util.Set<String> before = server.computeOnServer(s -> {
-				ValcombeMod.host().village().setModified(true);
+				fr.valcombe.mc.games.Games.main().host().village().setModified(true);
 				return ValcombeMod.maps().list().stream().map(d -> d.id).collect(java.util.stream.Collectors.toSet());
 			});
 			AtomicReference<CompletableFuture<ServerLevel>> fresh = new AtomicReference<>();
@@ -245,10 +247,10 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			server.runOnServer(s -> ValcombeMod.maps().delete(backup));
 			check(waitFor(ctx, world, 1200, s -> fresh.get().isDone()), "monde de la partie remis à neuf");
 			check(!fresh.get().isCompletedExceptionally(), "remise à neuf sans erreur");
-			check(server.computeOnServer(s -> ValcombeMod.host().village() == null
-				&& !Files.exists(ValcombeMod.host().villageFile())), "plus de carte en service, plus de fiche");
-			check(server.computeOnServer(s -> ValcombeMod.host().level().getBlockState(new BlockPos(0, WorldManager.SURFACE_Y, 0))
-				.is(Blocks.GRASS_BLOCK) && decor(ValcombeMod.host().level()) == 0), "sol plat, aucun reste de l'ancienne carte");
+			check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().village() == null
+				&& !Files.exists(fr.valcombe.mc.games.Games.main().host().villageFile())), "plus de carte en service, plus de fiche");
+			check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().level().getBlockState(new BlockPos(0, WorldManager.SURFACE_Y, 0))
+				.is(Blocks.GRASS_BLOCK) && decor(fr.valcombe.mc.games.Games.main().host().level()) == 0), "sol plat, aucun reste de l'ancienne carte");
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals(hubDim)), "les joueurs du monde remis à neuf vont au hub");
 
 			cleanSession(world, me);

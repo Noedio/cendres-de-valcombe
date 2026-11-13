@@ -31,17 +31,18 @@ import net.minecraft.world.phys.Vec3;
  *   |     R        [ O ]        C     |      O : dalle dorée (s'inscrire), R : rouge (se désinscrire),
  *  [P]          coupole vitrée       [P]         C : obsidienne (devenir Conteur)
  *   |                                 |
+ *   |  [TTTTTTTTT]       [TTTTTTTTT]  |      T : tableau des parties (deux panneaux, trois fiches chacun)
  *  [P]              A                [P]     A : point d'arrivée, face au mur des rôles
  *   +------------- porte -------------+
  *                    |  allée et lanternes
  * </pre>
  * Les dalles sont les mêmes que dans la salle d'attente du village ({@link Village.Pad}) : mêmes blocs, mêmes
- * effets. Les textes flottants, les jetons du mur et l'effet des portes sont des entités d'affichage posées par
- * {@link Hub} : ici, seulement les blocs.
+ * effets. Les textes flottants, les jetons du mur, les fiches du tableau et l'effet des portes sont des entités
+ * d'affichage posées par {@link Hub} : ici, seulement les blocs.
  */
 public final class HubHall {
-	/** Version du plan : la monter quand la salle change, elle sera rebâtie au prochain démarrage. */
-	public static final int LAYOUT = 1;
+	/** Version du plan : la monter quand la salle change, elle sera rebâtie au prochain démarrage. 2 : le tableau des parties. */
+	public static final int LAYOUT = 2;
 
 	/** Le sol (dernier bloc d'herbe des mondes plats) : on marche sur {@code FLOOR + 1}. */
 	public static final int FLOOR = WorldManager.SURFACE_Y;
@@ -66,6 +67,37 @@ public final class HubHall {
 
 	/** Le mur des rôles : la face intérieure du mur nord. */
 	public static final double ROLE_WALL_Z = -HALF_Z + 1.15;
+
+	/**
+	 * Le tableau des parties : deux panneaux d'affichage couverts, de part et d'autre de l'allée, entre les dalles et le
+	 * point d'arrivée. Leur face sud (vers l'entrée) porte une fiche par partie ; leur dos, une fiche abrégée, lisible
+	 * depuis les dalles. Chaque panneau va de {@code ±BOARD_INNER} à {@code ±BOARD_OUTER} (les poteaux), sur la rangée
+	 * {@code BOARD_Z}.
+	 */
+	public static final int BOARD_Z = 3;
+	public static final int BOARD_INNER = 2;
+	public static final int BOARD_OUTER = 12;
+	/** La largeur d'une fiche, en blocs : trois fiches par panneau. */
+	public static final int CARD_WIDTH = 3;
+	/** Les fiches du tableau : trois par panneau. Au-delà, les autres parties sont dans le menu J, « Parties ». */
+	public static final int SLOTS = 6;
+
+	/**
+	 * Le milieu (x) de la fiche {@code slot}, de gauche à droite pour qui regarde le nord depuis l'entrée : les trois du
+	 * panneau ouest, puis les trois du panneau est.
+	 */
+	public static double cardX(int slot) {
+		int perBoard = SLOTS / 2;
+		int inBoard = slot % perBoard;
+		double west = -BOARD_OUTER + 1 + CARD_WIDTH * (inBoard + 0.5);
+		double east = BOARD_INNER + 1 + CARD_WIDTH * (inBoard + 0.5);
+		return slot < perBoard ? west : east;
+	}
+
+	/** La face sud des panneaux (où l'on lit les fiches en venant de l'entrée). */
+	public static final double BOARD_FRONT = BOARD_Z + 1;
+	/** La face nord des panneaux (vue depuis les dalles). */
+	public static final double BOARD_BACK = BOARD_Z;
 
 	/**
 	 * Une porte vers un monde, dans le mur ouest ({@code west}) ou est, centrée en {@code z}. L'ouverture fait 3 blocs
@@ -197,6 +229,7 @@ public final class HubHall {
 		h.roleWall();
 		h.ceiling();
 		h.furniture();
+		h.boards();
 		h.connect();
 	}
 
@@ -425,6 +458,40 @@ public final class HubHall {
 		// Pupitre du Conteur derrière son obsidienne.
 		set(STORYTELLER_X + 2, FEET, 0, Blocks.LECTERN.defaultBlockState()
 			.setValue(net.minecraft.world.level.block.LecternBlock.FACING, Direction.WEST));
+	}
+
+	/**
+	 * Le tableau des parties : deux panneaux d'affichage de part et d'autre de l'allée. Chacun a un socle et une poutre de
+	 * chêne noir, deux poteaux, un fond d'épicéa où se plaquent les fiches, un petit toit d'ardoise et quatre lanternes
+	 * pendues sous l'avant-toit, devant et derrière.
+	 */
+	private void boards() {
+		int z = BOARD_Z;
+		for (int side : new int[] {-1, 1}) {
+			int inner = side * BOARD_INNER;
+			int outer = side * BOARD_OUTER;
+			for (int x = Math.min(inner, outer); x <= Math.max(inner, outer); x++) {
+				boolean post = x == inner || x == outer;
+				set(x, FEET, z, post ? log(Blocks.STRIPPED_DARK_OAK_LOG, Direction.Axis.Y) : log(Blocks.STRIPPED_DARK_OAK_LOG, Direction.Axis.X));
+				for (int y = FEET + 1; y <= FEET + 3; y++) {
+					set(x, y, z, post ? log(Blocks.STRIPPED_DARK_OAK_LOG, Direction.Axis.Y) : Blocks.SPRUCE_PLANKS.defaultBlockState());
+				}
+				set(x, FEET + 4, z, log(Blocks.DARK_OAK_LOG, Direction.Axis.X));
+				// Le toit : faîte en dalle, pans en escaliers qui débordent devant et derrière.
+				set(x, FEET + 5, z, Blocks.DEEPSLATE_TILE_SLAB);
+				set(x, FEET + 5, z - 1, stairs(Blocks.DEEPSLATE_TILE_STAIRS, Direction.SOUTH, false));
+				set(x, FEET + 5, z + 1, stairs(Blocks.DEEPSLATE_TILE_STAIRS, Direction.NORTH, false));
+			}
+			for (int x : new int[] {inner, outer}) {
+				set(x, FEET + 4, z - 1, hanging());
+				set(x, FEET + 4, z + 1, hanging());
+			}
+			// Le seuil devant chaque panneau : une bande d'ardoise polie, comme une estrade où l'on s'arrête pour lire.
+			for (int x = Math.min(inner, outer) + 1; x < Math.max(inner, outer); x++) {
+				set(x, FLOOR, z + 1, Blocks.POLISHED_DEEPSLATE);
+				set(x, FLOOR, z - 1, Blocks.POLISHED_DEEPSLATE);
+			}
+		}
 	}
 
 	/** Dehors : une allée vers le sud bordée de lanternes, et le pourtour de la salle dallé. */

@@ -176,6 +176,26 @@ final class AdminApi {
 			workshops(ex, path, method, from);
 			return;
 		}
+		if (path.equals("parties/suspendre") || path.equals("parties/reprendre")) {
+			only(ex, method, "POST");
+			suspendGame(ex, path.endsWith("suspendre"), from);
+			return;
+		}
+		if (path.equals("parties")) {
+			if (method.equals("GET")) {
+				json(ex, 200, onServer(this::gamesBoard, 5));
+			} else if (method.equals("POST")) {
+				createGame(ex, from);
+			} else {
+				throw notAllowed(ex, method, "GET, POST");
+			}
+			return;
+		}
+		if (path.equals("parties/supprimer")) {
+			only(ex, method, "POST");
+			deleteGame(ex, from);
+			return;
+		}
 		switch (path) {
 			case "etat" -> {
 				only(ex, method, "GET");
@@ -286,6 +306,95 @@ final class AdminApi {
 		}
 	}
 
+	// ------------------------------------------------------------------
+	// POST /admin/parties/suspendre et /admin/parties/reprendre
+	// ------------------------------------------------------------------
+	/**
+	 * Met une partie en suspens (ses joueurs au hub, son horloge gelée, elle reprendra où elle en est), ou la reprend (ses
+	 * joueurs rappelés). Corps : {@code {"partie": "<id du monde de la partie>"}}. Réponse : la partie après le geste, et le
+	 * message du serveur.
+	 */
+	private void suspendGame(HttpExchange ex, boolean suspend, InetAddress from) throws IOException {
+		String id = text(readJson(ex), "partie", true);
+		ValcombeMod.LOG.info("API d'administration ({}) : {} la partie {}", from.getHostAddress(),
+			suspend ? "met en suspens" : "reprend", id);
+		json(ex, 200, onServer(() -> {
+			fr.valcombe.mc.games.GameRoom r = fr.valcombe.mc.games.Games.byWorld(id);
+			if (r == null) {
+				throw new AdminException(404, "Aucune partie dans le monde « " + id + " ».");
+			}
+			String said = suspend ? r.suspend() : r.resume();
+			Map<String, Object> m = new LinkedHashMap<>(game(r));
+			m.put("message", said);
+			return m;
+		}, 10));
+	}
+
+	// ------------------------------------------------------------------
+	// GET et POST /admin/parties, POST /admin/parties/supprimer
+	// ------------------------------------------------------------------
+	/** Le tableau des parties : toutes les parties du serveur (la principale d'abord), et le nombre en cours. Fil du serveur. */
+	private Map<String, Object> gamesBoard() {
+		Map<String, Object> m = new LinkedHashMap<>();
+		List<Map<String, Object>> list = games();
+		m.put("parties", list);
+		m.put("enCours", list.stream().filter(g -> Boolean.TRUE.equals(g.get("enCours"))).count());
+		var main = fr.valcombe.mc.games.Games.main();
+		m.put("principale", main == null ? null : main.id());
+		m.put("disponible", fr.valcombe.mc.games.Games.current() != null);
+		return m;
+	}
+
+	/** Le plus long nom de partie accepté (celui d'un monde). */
+	private static final int MAX_GAME_NAME = 40;
+
+	/**
+	 * Crée une partie d'essai : son monde plat, sa partie, et le village de Valcombe qui s'y pose par petits lots (comme
+	 * {@code /vc partie creer}). Corps : {@code {"nom": "Essai du mardi"}}. Réponse : la partie créée, et le message du
+	 * serveur.
+	 */
+	private void createGame(HttpExchange ex, InetAddress from) throws IOException {
+		String name = text(readJson(ex), "nom", true);
+		if (name.length() > MAX_GAME_NAME) {
+			throw new AdminException(400, "Nom trop long : " + MAX_GAME_NAME + " caractères au plus.");
+		}
+		ValcombeMod.LOG.info("API d'administration ({}) : crée la partie d'essai « {} »", from.getHostAddress(), name);
+		json(ex, 200, onServer(() -> {
+			fr.valcombe.mc.games.Games g = fr.valcombe.mc.games.Games.current();
+			if (g == null) {
+				throw new GameException("Les parties ne sont pas disponibles sur ce serveur : les mondes de Valcombe manquent (voir son journal).");
+			}
+			java.util.Set<String> before = new java.util.HashSet<>();
+			fr.valcombe.mc.games.Games.all().forEach(r -> before.add(r.id()));
+			String said = g.create(name, null);
+			fr.valcombe.mc.games.GameRoom created = fr.valcombe.mc.games.Games.all().stream()
+				.filter(r -> !before.contains(r.id())).findFirst().orElse(null);
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("partie", created == null ? null : game(created));
+			m.put("message", said);
+			return m;
+		}, 15));
+	}
+
+	/**
+	 * Supprime une partie d'essai et son monde (jamais la partie principale, ni une partie en cours). Corps :
+	 * {@code {"partie": "<id>"}}. La suppression du monde finit un peu après la réponse.
+	 */
+	private void deleteGame(HttpExchange ex, InetAddress from) throws IOException {
+		String id = text(readJson(ex), "partie", true);
+		ValcombeMod.LOG.info("API d'administration ({}) : supprime la partie {}", from.getHostAddress(), id);
+		json(ex, 200, onServer(() -> {
+			fr.valcombe.mc.games.Games g = fr.valcombe.mc.games.Games.current();
+			if (g == null || fr.valcombe.mc.games.Games.byWorld(id) == null) {
+				throw new AdminException(404, "Aucune partie dans le monde « " + id + " ».");
+			}
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("ok", true);
+			m.put("message", g.delete(id));
+			return m;
+		}, 10));
+	}
+
 	private static void only(HttpExchange ex, String method, String expected) {
 		if (!method.equals(expected)) {
 			throw notAllowed(ex, method, expected);
@@ -370,7 +479,56 @@ final class AdminApi {
 		m.put("prochaineSoiree", community.nextEvening());
 		m.put("motd", s.getMotd());
 		m.put("mondes", worlds());
+		m.put("parties", games());
 		m.put("redemarrageNecessaire", !pendingRestart(s).isEmpty());
+		return m;
+	}
+
+	/**
+	 * Les parties du serveur, une par monde de partie (la principale d'abord) : ce qui s'y passe, qui y est inscrit,
+	 * assis, qui la conte, et combien de joueurs se trouvent dans son monde. Fil du serveur.
+	 */
+	private static List<Map<String, Object>> games() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		try {
+			for (fr.valcombe.mc.games.GameRoom r : fr.valcombe.mc.games.Games.all()) {
+				out.add(game(r));
+			}
+		} catch (RuntimeException e) {
+			ValcombeMod.LOG.warn("API d'administration : liste des parties illisible", e);
+		}
+		return out;
+	}
+
+	/** Une partie telle que l'API la décrit (voir docs/ADMIN-API.md). Fil du serveur. */
+	private static Map<String, Object> game(fr.valcombe.mc.games.GameRoom r) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		var session = r.session();
+		var g = session.game();
+		m.put("id", r.id());
+		m.put("nom", r.name());
+		m.put("sorte", r.kind().code());
+		m.put("principale", r.main());
+		m.put("etat", r.state());
+		m.put("enCours", r.inProgress());
+		m.put("enPause", r.paused());
+		m.put("suspendue", r.suspended());
+		m.put("phase", g == null ? null : g.phase().name().toLowerCase(java.util.Locale.ROOT));
+		m.put("inscrits", session.lobby().size());
+		m.put("assis", g == null ? 0 : g.size());
+		m.put("conteur", session.storyteller());
+		var level = r.levelIfReady();
+		m.put("joueurs", level == null ? 0 : level.players().size());
+		// La fiche du tableau des parties (hub, écran « Parties », launcher) : l'état en code et en clair, où elle en est, ses
+		// participants et ses places, ceux qui la regardent.
+		fr.valcombe.mc.games.GameCard card = r.card();
+		m.put("statut", card.status().code);
+		m.put("statutTexte", card.status().label);
+		m.put("phaseTexte", card.phaseLine());
+		m.put("numero", card.number());
+		m.put("participants", card.players());
+		m.put("places", card.places());
+		m.put("spectateurs", card.watchers());
 		return m;
 	}
 
@@ -388,6 +546,15 @@ final class AdminApi {
 				var kind = fr.valcombe.mc.worlds.WorldKind.parse(w.kind());
 				if (access != null && kind != null && kind.workshop()) {
 					m.put("invites", access.invitations().guests(w.id())); // qui y construit, en plus des opérateurs
+				}
+				var room = fr.valcombe.mc.games.Games.byWorld(w.id());
+				if (room != null) {
+					// Un monde de partie : l'état de sa partie, en code et en clair (le détail est dans « parties »).
+					fr.valcombe.mc.games.GameCard card = room.card();
+					Map<String, Object> g = new LinkedHashMap<>();
+					g.put("statut", card.status().code);
+					g.put("etat", room.state());
+					m.put("partie", g);
 				}
 				out.add(m);
 			}

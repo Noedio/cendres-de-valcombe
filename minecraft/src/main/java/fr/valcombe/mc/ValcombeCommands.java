@@ -7,6 +7,8 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
+import fr.valcombe.mc.games.GameRoom;
+import fr.valcombe.mc.games.Games;
 import fr.valcombe.rules.Game;
 import fr.valcombe.rules.GameException;
 import fr.valcombe.session.Session;
@@ -112,18 +114,19 @@ public final class ValcombeCommands {
 		if (size < 0) {
 			throw new GameException("Taille : petite, normale ou grande.");
 		}
-		return ValcombeMod.host().sender().sendVillage(number(ctx, "places"), size, arg(ctx, "theme"),
-			!arg(ctx, "maisons").equals("non"), world, ctx.getSource().getPlayer());
+		return sender(ctx).sendVillage(number(ctx, "places"), size, arg(ctx, "theme"),
+			!arg(ctx, "maisons").equals("non"), world != null ? world : here(ctx), ctx.getSource().getPlayer());
 	}
 
-	/** Envoie à l'écran en jeu l'aperçu vu de dessus d'une carte (id vide : la carte actuelle). */
+	/** Envoie à l'écran en jeu l'aperçu vu de dessus d'une carte (id vide : la carte actuelle de la partie du joueur). */
 	private static String preview(CommandContext<CommandSourceStack> ctx, String id) throws Exception {
 		ServerPlayer p = player(ctx);
 		if (!ViewSync.hasClientMod(p)) {
 			throw new GameException("L'aperçu s'affiche dans l'écran de l'Atelier, qui demande le mod de Valcombe sur votre jeu.");
 		}
+		GameRoom r = Games.forSource(ctx.getSource());
 		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p,
-			new fr.valcombe.net.ValcombeNet.PreviewPayload(ValcombeMod.workshop().preview(id)));
+			new fr.valcombe.net.ValcombeNet.PreviewPayload(ValcombeMod.workshop().preview(r == null ? null : r.host(), id)));
 		return "";
 	}
 
@@ -197,7 +200,7 @@ public final class ValcombeCommands {
 					.then(Commands.argument("action", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(
 							List.of("deplacer", "gauche", "droite", "centre", "tourner", "retourner", "retirer"), b))
-						.executes(c -> exec(c, x -> ValcombeMod.host().objectAction(player(x), arg(x, "sorte"),
+						.executes(c -> exec(c, x -> host(x).objectAction(player(x), arg(x, "sorte"),
 							IntegerArgumentType.getInteger(x, "numero"), arg(x, "action"))))))));
 		root.then(Commands.literal("structure").requires(admin)
 			.then(Commands.literal("liste").executes(c -> exec(c, x -> lines(x, catalog()))))
@@ -245,6 +248,125 @@ public final class ValcombeCommands {
 				ValcombeMod.structures().reload();
 				return "Catalogue relu : " + ValcombeMod.structures().list().size() + " structures.";
 			}))));
+	}
+
+	// ------------------------------------------------------------------
+	// /vc partie : les parties du serveur
+	// ------------------------------------------------------------------
+	/** Les parties du serveur, ou une GameException sans les mondes de Valcombe. */
+	private static Games games() {
+		Games g = Games.current();
+		if (g == null) {
+			throw new GameException("Les parties ne sont pas disponibles sur ce serveur : les mondes de Valcombe manquent (voir son journal).");
+		}
+		return g;
+	}
+
+	/** Une ligne par partie : nom, sorte, ce qui s'y passe, qui y est ; la partie de la commande est marquée. */
+	private static List<String> gamesList(CommandSourceStack src) {
+		games();
+		GameRoom mine = Games.forSource(src);
+		List<String> out = new ArrayList<>();
+		out.add("Parties du serveur :");
+		for (GameRoom r : Games.all()) {
+			var level = r.levelIfReady();
+			int here = level == null ? 0 : level.players().size();
+			String st = r.session().storyteller();
+			out.add((r == mine ? "▶ " : "  ") + "« " + r.name() + " » (" + r.id() + ", " + (r.main() ? "partie principale" : r.kind().label())
+				+ ") : " + r.state() + ", " + (here == 0 ? "personne sur place" : here + " sur place")
+				+ (st == null ? "" : ", Conteur " + st) + ".");
+		}
+		out.add("Y aller : /vc partie aller <id>. Créer une partie d'essai : /vc partie creer <nom> (opérateurs).");
+		out.add("La rejoindre : /vc partie rejoindre <id> ; la regarder en spectateur : /vc partie regarder <id> (en sortir : "
+			+ "/vc partie sortir). Au hub, le tableau des parties et le menu J, « Parties », font de même.");
+		out.add("Mettre une partie en suspens (ses joueurs au hub, elle reprendra où elle en est) : /vc partie suspendre [id] ; "
+			+ "la reprendre : /vc partie reprendre [id] (son Conteur ou un opérateur).");
+		return out;
+	}
+
+	/**
+	 * /vc partie (liste), creer, supprimer, aller : plusieurs parties séparées en même temps, chacune dans son monde.
+	 * On commande toujours la partie du monde où l'on se trouve : pour en mener une autre, on y va.
+	 */
+	private static void registerGames(LiteralArgumentBuilder<CommandSourceStack> root, Predicate<CommandSourceStack> admin) {
+		SuggestionProvider<CommandSourceStack> ids = (c, b) -> SharedSuggestionProvider.suggest(
+			Games.all().stream().map(GameRoom::id).toList(), b);
+		SuggestionProvider<CommandSourceStack> trials = (c, b) -> SharedSuggestionProvider.suggest(
+			Games.all().stream().filter(r -> !r.main()).map(GameRoom::id).toList(), b);
+		root.then(Commands.literal("partie")
+			.executes(c -> exec(c, x -> lines(x, gamesList(x.getSource()))))
+			.then(Commands.literal("liste").executes(c -> exec(c, x -> lines(x, gamesList(x.getSource())))))
+			.then(Commands.literal("creer").requires(admin)
+				.then(Commands.argument("nom", StringArgumentType.greedyString())
+					.executes(c -> exec(c, x -> games().create(arg(x, "nom"), x.getSource().getPlayer())))))
+			.then(Commands.literal("supprimer").requires(admin)
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(trials)
+					.executes(c -> exec(c, x -> games().delete(arg(x, "id"))))))
+			.then(Commands.literal("aller")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> {
+						GameRoom r = Games.byWorld(arg(x, "id"));
+						if (r == null) {
+							throw new GameException("Aucune partie dans « " + arg(x, "id") + " » (/vc partie liste).");
+						}
+						var travel = ValcombeMod.travel();
+						if (travel == null) {
+							throw new GameException("Les voyages entre les mondes ne sont pas disponibles sur ce serveur.");
+						}
+						return travel.toGame(player(x), r.id());
+					}))))
+			// Tableau des parties du hub : la fiche d'une partie, la rejoindre (s'inscrire, ou retrouver sa place), la regarder
+			// en spectateur (sans les rôles ni le vocal des joueurs), et sortir des gradins.
+			.then(Commands.literal("voir")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> {
+						Games.tellCard(player(x), namedRoom(arg(x, "id")));
+						return "";
+					}))))
+			.then(Commands.literal("rejoindre")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> Games.join(player(x), namedRoom(arg(x, "id")))))))
+			.then(Commands.literal("regarder")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> Games.watch(player(x), namedRoom(arg(x, "id")))))))
+			.then(Commands.literal("sortir").executes(c -> exec(c, x -> Games.stopWatching(player(x)))))
+			// Mise en suspens et reprise : la partie du monde d'où part la commande (au hub : sa table d'attache), ou celle
+			// qu'on nomme. Le Conteur de la partie ou un opérateur.
+			.then(Commands.literal("suspendre")
+				.executes(c -> exec(c, x -> suspendGame(x.getSource(), null, true)))
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> suspendGame(x.getSource(), arg(x, "id"), true)))))
+			.then(Commands.literal("reprendre")
+				.executes(c -> exec(c, x -> suspendGame(x.getSource(), null, false)))
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> suspendGame(x.getSource(), arg(x, "id"), false))))));
+	}
+
+	/** La partie de ce monde, nommée par son identifiant ; une GameException si elle n'existe pas. */
+	private static GameRoom namedRoom(String id) {
+		games();
+		GameRoom r = Games.byWorld(id);
+		if (r == null) {
+			throw new GameException("Aucune partie dans « " + id + " » (/vc partie liste).");
+		}
+		return r;
+	}
+
+	/**
+	 * /vc partie suspendre|reprendre [id] : la partie nommée, sinon celle que vise la commande (son monde, ou la table
+	 * d'attache de qui la lance depuis le hub). Seuls son Conteur (ou son élève) et les opérateurs la mènent.
+	 */
+	private static String suspendGame(CommandSourceStack src, String id, boolean suspend) {
+		GameRoom r = id == null ? Games.require(src) : Games.byWorld(id);
+		if (r == null) {
+			throw new GameException("Aucune partie dans « " + id + " » (/vc partie liste).");
+		}
+		ServerPlayer p = src.getPlayer();
+		if (p != null && !r.isLeader(p)) {
+			throw new GameException("Seuls le Conteur de « " + r.name() + " » et les opérateurs peuvent la "
+				+ (suspend ? "mettre en suspens." : "reprendre."));
+		}
+		return suspend ? r.suspend() : r.resume();
 	}
 
 	/** /vc structure enregistrer : la sélection WorldEdit du joueur devient une structure du catalogue. */
@@ -302,25 +424,73 @@ public final class ValcombeCommands {
 			+ (renew ? " Donnez la nouvelle au launcher qui pilote ce serveur." : " Pour en changer : /vc admin nouvellecle");
 	}
 
-	public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext registry, Session session,
-			ValcombeUi ui) {
+	// ------------------------------------------------------------------
+	// La partie d'une commande
+	// ------------------------------------------------------------------
+	/**
+	 * La partie que vise cette commande (voir {@link Games#forSource}) : celle du monde d'où elle part ; hors d'un monde
+	 * de partie (hub, atelier, console), la table d'attache du joueur, sinon la partie principale. Une GameException s'il
+	 * n'y a aucune partie sur le serveur. On ne commande jamais une autre partie que celle du monde où l'on se trouve.
+	 */
+	private static GameRoom room(CommandContext<CommandSourceStack> ctx) {
+		return Games.require(ctx.getSource());
+	}
+
+	private static Session ses(CommandContext<CommandSourceStack> ctx) {
+		return room(ctx).session();
+	}
+
+	private static ValcombeUi ui(CommandContext<CommandSourceStack> ctx) {
+		return room(ctx).ui();
+	}
+
+	private static McHost host(CommandContext<CommandSourceStack> ctx) {
+		return room(ctx).host();
+	}
+
+	private static MapSender sender(CommandContext<CommandSourceStack> ctx) {
+		return host(ctx).sender();
+	}
+
+	/** Le monde de la partie de cette commande : là où va une carte envoyée sans nommer de monde. */
+	private static String here(CommandContext<CommandSourceStack> ctx) {
+		return room(ctx).id();
+	}
+
+	/** La session de la partie de cette source pour les suggestions et les droits : null sans parties (jamais d'erreur). */
+	private static Session sesOrNull(CommandSourceStack src) {
+		GameRoom r = Games.forSource(src);
+		return r == null ? null : r.session();
+	}
+
+	public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext registry) {
 		Predicate<CommandSourceStack> admin = src -> src.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
-		// Le Conteur (même sans être opérateur) ou un opérateur mène la partie.
-		Predicate<CommandSourceStack> leader = src -> admin.test(src)
-			|| (src.getPlayer() != null && (src.getPlayer().getScoreboardName().equals(session.storyteller())
-				|| session.isTrainee(src.getPlayer().getScoreboardName())));
+		// Le Conteur (même sans être opérateur) ou un opérateur mène la partie : le Conteur de la partie de la commande.
+		Predicate<CommandSourceStack> leader = src -> {
+			if (admin.test(src)) {
+				return true;
+			}
+			Session s = src.getPlayer() == null ? null : sesOrNull(src);
+			return s != null && (src.getPlayer().getScoreboardName().equals(s.storyteller())
+				|| s.isTrainee(src.getPlayer().getScoreboardName()));
+		};
 
 		SuggestionProvider<CommandSourceStack> playerNames = (ctx, builder) -> {
 			List<String> names = new ArrayList<>();
-			Game g = session.game();
+			Session s = sesOrNull(ctx.getSource());
+			Game g = s == null ? null : s.game();
 			if (g != null) {
-				for (Game.Seat s : g.players()) {
-					names.add(s.name);
+				for (Game.Seat seat : g.players()) {
+					names.add(seat.name);
 				}
-			} else {
-				names.addAll(session.lobby());
+			} else if (s != null) {
+				names.addAll(s.lobby());
 			}
 			return SharedSuggestionProvider.suggest(names, builder);
+		};
+		SuggestionProvider<CommandSourceStack> scenarioIds = (ctx, builder) -> {
+			Session s = sesOrNull(ctx.getSource());
+			return SharedSuggestionProvider.suggest(s == null ? List.<String>of() : s.scenarios().stream().map(d -> d.id).toList(), builder);
 		};
 
 		SuggestionProvider<CommandSourceStack> roleNames = (ctx, builder) -> SharedSuggestionProvider.suggest(
@@ -328,76 +498,77 @@ public final class ValcombeCommands {
 
 		LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("vc")
 			.executes(c -> exec(c, x -> {
-				ui.openMain(x.getSource().getPlayerOrException());
+				ui(x).openMain(x.getSource().getPlayerOrException());
 				return "";
 			}))
 			.then(Commands.literal("menu").executes(c -> exec(c, x -> {
 				ServerPlayer p = x.getSource().getPlayerOrException();
-				ui.giveMenuItem(p);
-				ui.openMain(p);
+				ValcombeUi.giveMenuItem(p);
+				ui(x).openMain(p);
 				return "";
 			})))
 			.then(Commands.literal("conteurpanneau").requires(leader).executes(c -> exec(c, x -> {
-				ui.openStoryteller(x.getSource().getPlayerOrException());
+				ui(x).openStoryteller(x.getSource().getPlayerOrException());
 				return "";
 			})))
 			.then(Commands.literal("imposer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
-						.executes(c -> exec(c, x -> session.presetRole(arg(x, "joueur"), arg(x, "role"), null)))
+						.executes(c -> exec(c, x -> ses(x).presetRole(arg(x, "joueur"), arg(x, "role"), null)))
 						.then(Commands.argument("cru", StringArgumentType.word()).suggests(roleNames)
-							.executes(c -> exec(c, x -> session.presetRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
+							.executes(c -> exec(c, x -> ses(x).presetRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
 			.then(Commands.literal("attribuer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
-						.executes(c -> exec(c, x -> session.assignRole(arg(x, "joueur"), arg(x, "role"), null)))
+						.executes(c -> exec(c, x -> ses(x).assignRole(arg(x, "joueur"), arg(x, "role"), null)))
 						.then(Commands.argument("cru", StringArgumentType.word()).suggests(roleNames)
-							.executes(c -> exec(c, x -> session.assignRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
+							.executes(c -> exec(c, x -> ses(x).assignRole(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
 			.then(Commands.literal("presage").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.setRedHerring(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).setRedHerring(arg(x, "joueur"))))))
 			.then(Commands.literal("bluffs").requires(leader)
 				.then(Commands.argument("r1", StringArgumentType.word()).suggests(roleNames)
 					.then(Commands.argument("r2", StringArgumentType.word()).suggests(roleNames)
 						.then(Commands.argument("r3", StringArgumentType.word()).suggests(roleNames)
-							.executes(c -> exec(c, x -> session.setBluffs(List.of(arg(x, "r1"), arg(x, "r2"), arg(x, "r3")))))))))
+							.executes(c -> exec(c, x -> ses(x).setBluffs(List.of(arg(x, "r1"), arg(x, "r2"), arg(x, "r3")))))))))
 			.then(Commands.literal("note").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.note(arg(x, "joueur"), null)))
+					.executes(c -> exec(c, x -> ses(x).note(arg(x, "joueur"), null)))
 					.then(Commands.argument("texte", StringArgumentType.greedyString())
-						.executes(c -> exec(c, x -> session.note(arg(x, "joueur"), arg(x, "texte")))))))
+						.executes(c -> exec(c, x -> ses(x).note(arg(x, "joueur"), arg(x, "texte")))))))
 			.then(Commands.literal("consigne").requires(leader)
 				.then(Commands.argument("cle", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("enregistrement", "chatelain", "successeur"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
-						.executes(c -> exec(c, x -> session.policy(arg(x, "cle"), arg(x, "valeur")))))))
+						.executes(c -> exec(c, x -> ses(x).policy(arg(x, "cle"), arg(x, "valeur")))))))
 			.then(Commands.literal("script").requires(leader)
 				.then(Commands.literal("basculer")
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
-						.executes(c -> exec(c, x -> session.toggleScriptRole(arg(x, "role"))))))
-				.then(Commands.literal("complet").executes(c -> exec(c, x -> session.useScript("Les Cendres de Valcombe",
+						.executes(c -> exec(c, x -> ses(x).toggleScriptRole(arg(x, "role"))))))
+				.then(Commands.literal("complet").executes(c -> exec(c, x -> ses(x).useScript("Les Cendres de Valcombe",
 					fr.valcombe.rules.Role.classic()))))
-				.then(Commands.literal("brumes").executes(c -> exec(c, x -> session.useScript("Les Brumes de Valcombe",
+				.then(Commands.literal("brumes").executes(c -> exec(c, x -> ses(x).useScript("Les Brumes de Valcombe",
 					fr.valcombe.rules.Role.brumes()))))
-				.then(Commands.literal("table").executes(c -> exec(c, x -> session.useScript("La Table de Valcombe",
+				.then(Commands.literal("table").executes(c -> exec(c, x -> ses(x).useScript("La Table de Valcombe",
 					fr.valcombe.rules.Role.table()))))
 				.then(Commands.literal("groupe")
 					.then(Commands.argument("action", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("ajouter", "retirer", "seulement", "ranger", "supprimer"), b))
 						.then(Commands.argument("nom", StringArgumentType.greedyString())
 							.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.creations().groups().keySet(), b))
-							.executes(c -> exec(c, x -> scriptGroup(session, arg(x, "action"), arg(x, "nom")))))))
+							.executes(c -> exec(c, x -> scriptGroup(ses(x), arg(x, "action"), arg(x, "nom")))))))
 				.then(Commands.literal("sauver")
 					.then(Commands.argument("nom", StringArgumentType.greedyString()).executes(c -> exec(c, x -> {
 						var server = x.getSource().getServer();
-						ScriptStore.save(server, arg(x, "nom"), session.script());
-						session.setSavedScripts(ScriptStore.list(server));
+						ScriptStore.save(server, arg(x, "nom"), ses(x).script());
+						var saved = ScriptStore.list(server);
+						Games.sessions().forEach(s -> s.setSavedScripts(saved)); // les scripts enregistrés sont communs
 						return "Script enregistré.";
 					}))))
 				.then(Commands.literal("charger")
 					.then(Commands.argument("nom", StringArgumentType.greedyString())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ScriptStore.list(c.getSource().getServer()), b))
-						.executes(c -> exec(c, x -> session.useScript(arg(x, "nom"),
+						.executes(c -> exec(c, x -> ses(x).useScript(arg(x, "nom"),
 							ScriptStore.load(x.getSource().getServer(), arg(x, "nom")))))))
 				.then(Commands.literal("supprimer")
 					.then(Commands.argument("nom", StringArgumentType.greedyString())
@@ -405,58 +576,62 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> {
 							var server = x.getSource().getServer();
 							ScriptStore.delete(server, arg(x, "nom"));
-							session.setSavedScripts(ScriptStore.list(server));
+							var saved = ScriptStore.list(server);
+							Games.sessions().forEach(s -> s.setSavedScripts(saved));
 							return "Script supprimé.";
 						})))))
 			.then(Commands.literal("carte").requires(admin)
 				// Tout ce qui change la carte d'un monde de partie passe par « Envoyer à la partie » (MapSender) : le monde
-				// est remis à neuf, plat et vide, puis la carte y est posée. Sans monde nommé, celui de la partie du serveur.
+				// est remis à neuf, plat et vide, puis la carte y est posée. Sans monde nommé, celui de la partie de la commande.
 				.then(Commands.literal("envoyer")
 					.then(Commands.argument("id", StringArgumentType.word()).suggests(MAP_IDS)
-						.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), null, x.getSource().getPlayer())))
+						.executes(c -> exec(c, x -> sender(x).sendMap(arg(x, "id"), here(x), x.getSource().getPlayer())))
 						.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
-							.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), arg(x, "monde"),
+							.executes(c -> exec(c, x -> sender(x).sendMap(arg(x, "id"), arg(x, "monde"),
 								x.getSource().getPlayer()))))))
 				.then(Commands.literal("construire")
-					.executes(c -> exec(c, x -> ui.host().sender().sendVillage(Village.SEATS, 1, "gothique", true, null,
+					.executes(c -> exec(c, x -> sender(x).sendVillage(Village.SEATS, 1, "gothique", true, here(x),
 						x.getSource().getPlayer())))
 					.then(Commands.argument("theme", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
-						.executes(c -> exec(c, x -> ui.host().sender().sendVillage(Village.SEATS, 1, arg(x, "theme"), true, null,
+						.executes(c -> exec(c, x -> sender(x).sendVillage(Village.SEATS, 1, arg(x, "theme"), true, here(x),
 							x.getSource().getPlayer())))))
 				.then(Commands.literal("importer")
 					.then(Commands.argument("structure", StringArgumentType.greedyString())
-						.suggests((c, b) -> SharedSuggestionProvider.suggest(ui.host().structures(), b))
-						.executes(c -> exec(c, x -> ui.host().sender().sendStructure(arg(x, "structure"), null,
+						.suggests((c, b) -> {
+							GameRoom r = Games.forSource(c.getSource());
+							return SharedSuggestionProvider.suggest(r == null ? List.<String>of() : r.host().structures(), b);
+						})
+						.executes(c -> exec(c, x -> sender(x).sendStructure(arg(x, "structure"), here(x),
 							x.getSource().getPlayer())))))
 				.then(Commands.literal("outils").executes(c -> exec(c, x -> mapTools(x))))
 				.then(Commands.literal("baguette").executes(c -> exec(c, x -> mapTools(x)))) // ancien nom de « outils »
 				.then(Commands.literal("vider")
-					.executes(c -> exec(c, x -> ui.host().sender().clear(null, x.getSource().getPlayer())))
+					.executes(c -> exec(c, x -> sender(x).clear(here(x), x.getSource().getPlayer())))
 					.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
-						.executes(c -> exec(c, x -> ui.host().sender().clear(arg(x, "monde"), x.getSource().getPlayer())))))
+						.executes(c -> exec(c, x -> sender(x).clear(arg(x, "monde"), x.getSource().getPlayer())))))
 				.then(Commands.literal("nouvelle")
-					.executes(c -> exec(c, x -> ui.host().sender().sendBlank(null, x.getSource().getPlayer())))
+					.executes(c -> exec(c, x -> sender(x).sendBlank(here(x), x.getSource().getPlayer())))
 					.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
-						.executes(c -> exec(c, x -> ui.host().sender().sendBlank(arg(x, "monde"), x.getSource().getPlayer())))))
+						.executes(c -> exec(c, x -> sender(x).sendBlank(arg(x, "monde"), x.getSource().getPlayer())))))
 				.then(Commands.literal("trone")
-					.executes(c -> exec(c, x -> ui.host().addSeat(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> host(x).addSeat(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("siege") // ancien nom de « trone »
-					.executes(c -> exec(c, x -> ui.host().addSeat(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> host(x).addSeat(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("maison")
-					.executes(c -> exec(c, x -> ui.host().addHouse(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> host(x).addHouse(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("retirer")
-					.then(Commands.literal("trone").executes(c -> exec(c, x -> ui.host().removeSeat())))
-					.then(Commands.literal("siege").executes(c -> exec(c, x -> ui.host().removeSeat())))
-					.then(Commands.literal("maison").executes(c -> exec(c, x -> ui.host().removeHouse()))))
+					.then(Commands.literal("trone").executes(c -> exec(c, x -> host(x).removeSeat())))
+					.then(Commands.literal("siege").executes(c -> exec(c, x -> host(x).removeSeat())))
+					.then(Commands.literal("maison").executes(c -> exec(c, x -> host(x).removeHouse()))))
 				.then(Commands.literal("apercu")
 					.executes(c -> exec(c, x -> preview(x, "")))
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
 						.executes(c -> exec(c, x -> preview(x, arg(x, "id"))))))
-				.then(Commands.literal("infos").executes(c -> exec(c, x -> ui.host().mapInfo())))
-				.then(Commands.literal("annuler").executes(c -> exec(c, x -> ui.host().undoMarker())))
-				.then(Commands.literal("ordonner").executes(c -> exec(c, x -> ui.host().sortMarkers())))
+				.then(Commands.literal("infos").executes(c -> exec(c, x -> host(x).mapInfo())))
+				.then(Commands.literal("annuler").executes(c -> exec(c, x -> host(x).undoMarker())))
+				.then(Commands.literal("ordonner").executes(c -> exec(c, x -> host(x).sortMarkers())))
 				.then(Commands.literal("renommer")
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
@@ -465,9 +640,9 @@ public final class ValcombeCommands {
 				.then(copyMap("copier"))
 				.then(copyMap("dupliquer"))
 				.then(Commands.literal("construction")
-					.executes(c -> exec(c, x -> ui.host().toggleConstruction(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> host(x).toggleConstruction(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("centre")
-					.executes(c -> exec(c, x -> ui.host().setMapCenter(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> host(x).setMapCenter(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("liste").executes(c -> exec(c, x -> {
 					var list = ValcombeMod.maps().list();
 					return list.isEmpty() ? "Aucune carte enregistrée : /vc carte enregistrer <identifiant> <nom>."
@@ -476,13 +651,13 @@ public final class ValcombeCommands {
 				})))
 				.then(Commands.literal("enregistrer")
 					.then(Commands.argument("id", StringArgumentType.word())
-						.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "id"))))
+						.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(host(x), arg(x, "id"), arg(x, "id"))))
 						.then(Commands.argument("nom", StringArgumentType.greedyString())
-							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "nom")))))))
+							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(host(x), arg(x, "id"), arg(x, "nom")))))))
 				// Ancien nom de « envoyer », vers le monde de la partie du serveur.
 				.then(Commands.literal("charger")
 					.then(Commands.argument("id", StringArgumentType.word()).suggests(MAP_IDS)
-						.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), null, x.getSource().getPlayer())))))
+						.executes(c -> exec(c, x -> sender(x).sendMap(arg(x, "id"), here(x), x.getSource().getPlayer())))))
 				// Une carte de la bibliothèque dans un monde de Valcombe, et l'inverse (voir MapPlacer).
 				.then(MapPlacerCommands.place())
 				.then(MapPlacerCommands.capture())
@@ -492,8 +667,8 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ValcombeMod.maps().delete(arg(x, "id"))))))
 				.then(Commands.literal("generer")
 					.then(Commands.argument("places", IntegerArgumentType.integer(Village.MIN_SEATS, Village.MAX_SEATS))
-						.executes(c -> exec(c, x -> ui.host().sender().sendVillage(IntegerArgumentType.getInteger(x, "places"), 1,
-							"gothique", true, null, x.getSource().getPlayer())))
+						.executes(c -> exec(c, x -> sender(x).sendVillage(IntegerArgumentType.getInteger(x, "places"), 1,
+							"gothique", true, here(x), x.getSource().getPlayer())))
 						.then(Commands.argument("taille", StringArgumentType.word())
 							.suggests((c, b) -> SharedSuggestionProvider.suggest(SIZES, b))
 							.then(Commands.argument("theme", StringArgumentType.word())
@@ -503,184 +678,184 @@ public final class ValcombeCommands {
 									.executes(c -> exec(c, x -> generate(x, null)))
 									.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
 										.executes(c -> exec(c, x -> generate(x, arg(x, "monde"))))))))))
-				.then(Commands.literal("salle").executes(c -> exec(c, x -> ui.host().buildHall()))))
+				.then(Commands.literal("salle").executes(c -> exec(c, x -> host(x).buildHall()))))
 			.then(Commands.literal("bots").requires(leader)
-				.then(Commands.literal("retirer").executes(c -> exec(c, x -> session.removeBots())))
+				.then(Commands.literal("retirer").executes(c -> exec(c, x -> ses(x).removeBots())))
 				.then(Commands.argument("nombre", IntegerArgumentType.integer(1, 15))
-					.executes(c -> exec(c, x -> session.addBots(IntegerArgumentType.getInteger(x, "nombre"))))))
-			.then(Commands.literal("rejoindre").executes(c -> exec(c, x -> session.join(name(x)))))
-			.then(Commands.literal("quitter").executes(c -> exec(c, x -> session.leave(name(x)))))
-			.then(Commands.literal("joueurs").executes(c -> exec(c, x -> session.listPlayers())))
+					.executes(c -> exec(c, x -> ses(x).addBots(IntegerArgumentType.getInteger(x, "nombre"))))))
+			.then(Commands.literal("rejoindre").executes(c -> exec(c, x -> ses(x).join(name(x)))))
+			.then(Commands.literal("quitter").executes(c -> exec(c, x -> ses(x).leave(name(x)))))
+			.then(Commands.literal("joueurs").executes(c -> exec(c, x -> ses(x).listPlayers())))
 			.then(Commands.literal("conteur").requires(admin)
-				.executes(c -> exec(c, x -> session.toggleStoryteller(name(x)))))
+				.executes(c -> exec(c, x -> ses(x).toggleStoryteller(name(x)))))
 			.then(Commands.literal("lancer").requires(leader)
-				.executes(c -> exec(c, x -> session.start(x.getSource().getTextName(), Session.Mode.AUTO)))
+				.executes(c -> exec(c, x -> ses(x).start(x.getSource().getTextName(), Session.Mode.AUTO)))
 				.then(Commands.literal("auto")
-					.executes(c -> exec(c, x -> session.start(x.getSource().getTextName(), Session.Mode.AUTO))))
+					.executes(c -> exec(c, x -> ses(x).start(x.getSource().getTextName(), Session.Mode.AUTO))))
 				.then(Commands.literal("humain")
-					.executes(c -> exec(c, x -> session.start(x.getSource().getTextName(), Session.Mode.HUMAIN)))))
-			.then(Commands.literal("arreter").requires(leader).executes(c -> exec(c, x -> session.stop())))
-			.then(Commands.literal("nuit").requires(leader).executes(c -> exec(c, x -> session.startNight())))
-			.then(Commands.literal("finjour").requires(leader).executes(c -> exec(c, x -> session.endDay())))
-			.then(Commands.literal("suivant").requires(leader).executes(c -> exec(c, x -> session.skip())))
-			.then(Commands.literal("precedent").requires(leader).executes(c -> exec(c, x -> session.previous())))
-			.then(Commands.literal("pause").requires(leader).executes(c -> exec(c, x -> session.togglePause())))
+					.executes(c -> exec(c, x -> ses(x).start(x.getSource().getTextName(), Session.Mode.HUMAIN)))))
+			.then(Commands.literal("arreter").requires(leader).executes(c -> exec(c, x -> ses(x).stop())))
+			.then(Commands.literal("nuit").requires(leader).executes(c -> exec(c, x -> ses(x).startNight())))
+			.then(Commands.literal("finjour").requires(leader).executes(c -> exec(c, x -> ses(x).endDay())))
+			.then(Commands.literal("suivant").requires(leader).executes(c -> exec(c, x -> ses(x).skip())))
+			.then(Commands.literal("precedent").requires(leader).executes(c -> exec(c, x -> ses(x).previous())))
+			.then(Commands.literal("pause").requires(leader).executes(c -> exec(c, x -> ses(x).togglePause())))
 			.then(Commands.literal("minuteur").requires(leader)
-				.then(Commands.literal("passer").executes(c -> exec(c, x -> session.timerControl("passer", 0))))
-				.then(Commands.literal("arreter").executes(c -> exec(c, x -> session.timerControl("arreter", 0))))
+				.then(Commands.literal("passer").executes(c -> exec(c, x -> ses(x).timerControl("passer", 0))))
+				.then(Commands.literal("arreter").executes(c -> exec(c, x -> ses(x).timerControl("arreter", 0))))
 				.then(Commands.literal("prolonger")
-					.executes(c -> exec(c, x -> session.timerControl("prolonger", 30)))
+					.executes(c -> exec(c, x -> ses(x).timerControl("prolonger", 30)))
 					.then(Commands.argument("secondes", IntegerArgumentType.integer(5, 1800))
-						.executes(c -> exec(c, x -> session.timerControl("prolonger", IntegerArgumentType.getInteger(x, "secondes")))))))
+						.executes(c -> exec(c, x -> ses(x).timerControl("prolonger", IntegerArgumentType.getInteger(x, "secondes")))))))
 			.then(Commands.literal("ordre").requires(leader)
 				.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
 					.then(Commands.argument("sens", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("haut", "bas"), b))
-						.executes(c -> exec(c, x -> session.moveInOrder(arg(x, "role"), arg(x, "sens")))))))
+						.executes(c -> exec(c, x -> ses(x).moveInOrder(arg(x, "role"), arg(x, "sens")))))))
 			.then(Commands.literal("prolonger").requires(leader)
-				.executes(c -> exec(c, x -> session.extend(1)))
+				.executes(c -> exec(c, x -> ses(x).extend(1)))
 				.then(Commands.argument("minutes", IntegerArgumentType.integer(1, 15))
-					.executes(c -> exec(c, x -> session.extend(IntegerArgumentType.getInteger(x, "minutes"))))))
-			.then(Commands.literal("gracier").requires(leader).executes(c -> exec(c, x -> session.pardon())))
+					.executes(c -> exec(c, x -> ses(x).extend(IntegerArgumentType.getInteger(x, "minutes"))))))
+			.then(Commands.literal("gracier").requires(leader).executes(c -> exec(c, x -> ses(x).pardon())))
 			.then(Commands.literal("victoire").requires(leader)
-				.then(Commands.literal("bien").executes(c -> exec(c, x -> session.declareWinner("bien"))))
-				.then(Commands.literal("mal").executes(c -> exec(c, x -> session.declareWinner("mal")))))
+				.then(Commands.literal("bien").executes(c -> exec(c, x -> ses(x).declareWinner("bien"))))
+				.then(Commands.literal("mal").executes(c -> exec(c, x -> ses(x).declareWinner("mal")))))
 			.then(Commands.literal("reveiller").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.wake(arg(x, "joueur"), true)))))
+					.executes(c -> exec(c, x -> ses(x).wake(arg(x, "joueur"), true)))))
 			.then(Commands.literal("rendormir").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.wake(arg(x, "joueur"), false)))))
+					.executes(c -> exec(c, x -> ses(x).wake(arg(x, "joueur"), false)))))
 			.then(Commands.literal("demander").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.ask(arg(x, "joueur"), 1)))
+					.executes(c -> exec(c, x -> ses(x).ask(arg(x, "joueur"), 1)))
 					.then(Commands.argument("nombre", IntegerArgumentType.integer(1, 3))
-						.executes(c -> exec(c, x -> session.ask(arg(x, "joueur"), IntegerArgumentType.getInteger(x, "nombre")))))))
+						.executes(c -> exec(c, x -> ses(x).ask(arg(x, "joueur"), IntegerArgumentType.getInteger(x, "nombre")))))))
 			.then(Commands.literal("montrer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("texte", StringArgumentType.greedyString())
-						.executes(c -> exec(c, x -> session.show(arg(x, "joueur"), arg(x, "texte")))))))
-			.then(Commands.literal("diffusion").requires(leader).executes(c -> exec(c, x -> session.toggleBroadcast())))
-			.then(Commands.literal("journal").requires(leader).executes(c -> exec(c, x -> session.journal(name(x)))))
-			.then(Commands.literal("melanger").requires(leader).executes(c -> exec(c, x -> session.shuffleLobby())))
+						.executes(c -> exec(c, x -> ses(x).show(arg(x, "joueur"), arg(x, "texte")))))))
+			.then(Commands.literal("diffusion").requires(leader).executes(c -> exec(c, x -> ses(x).toggleBroadcast())))
+			.then(Commands.literal("journal").requires(leader).executes(c -> exec(c, x -> ses(x).journal(name(x)))))
+			.then(Commands.literal("melanger").requires(leader).executes(c -> exec(c, x -> ses(x).shuffleLobby())))
 			.then(Commands.literal("exclure").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.kick(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).kick(arg(x, "joueur"))))))
 			.then(Commands.literal("parole")
-				.executes(c -> exec(c, x -> session.speechRequest(name(x))))
-				.then(Commands.literal("suivant").requires(leader).executes(c -> exec(c, x -> session.speechNext())))
-				.then(Commands.literal("stop").requires(leader).executes(c -> exec(c, x -> session.speechStop())))
+				.executes(c -> exec(c, x -> ses(x).speechRequest(name(x))))
+				.then(Commands.literal("suivant").requires(leader).executes(c -> exec(c, x -> ses(x).speechNext())))
+				.then(Commands.literal("stop").requires(leader).executes(c -> exec(c, x -> ses(x).speechStop())))
 				.then(Commands.literal("tour").requires(leader)
-					.executes(c -> exec(c, x -> session.speechRound(0)))
+					.executes(c -> exec(c, x -> ses(x).speechRound(0)))
 					.then(Commands.argument("secondes", IntegerArgumentType.integer(15, 180))
-						.executes(c -> exec(c, x -> session.speechRound(IntegerArgumentType.getInteger(x, "secondes"))))))
+						.executes(c -> exec(c, x -> ses(x).speechRound(IntegerArgumentType.getInteger(x, "secondes"))))))
 				.then(Commands.literal("duree").requires(leader)
 					.then(Commands.argument("secondes", IntegerArgumentType.integer(15, 180))
-						.executes(c -> exec(c, x -> session.speechSeconds(IntegerArgumentType.getInteger(x, "secondes"))))))
+						.executes(c -> exec(c, x -> ses(x).speechSeconds(IntegerArgumentType.getInteger(x, "secondes"))))))
 				.then(Commands.literal("donner").requires(leader)
 					.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-						.executes(c -> exec(c, x -> session.speechGive(arg(x, "joueur")))))))
+						.executes(c -> exec(c, x -> ses(x).speechGive(arg(x, "joueur")))))))
 			.then(Commands.literal("relayer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.standIn(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).standIn(arg(x, "joueur"))))))
 			.then(Commands.literal("nominer")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.nominate(name(x), arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).nominate(name(x), arg(x, "joueur"))))))
 			.then(Commands.literal("deviner")
 				.then(Commands.argument("hypotheses", StringArgumentType.greedyString())
-					.executes(c -> exec(c, x -> session.guess(name(x), List.of(arg(x, "hypotheses").trim().split("\\s+")))))))
+					.executes(c -> exec(c, x -> ses(x).guess(name(x), List.of(arg(x, "hypotheses").trim().split("\\s+")))))))
 			.then(Commands.literal("voix")
 				.then(Commands.argument("niveau", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("chuchoter", "parler", "crier", "suivant"), b))
-					.executes(c -> exec(c, x -> session.setVoiceLevel(name(x), arg(x, "niveau"))))))
+					.executes(c -> exec(c, x -> ses(x).setVoiceLevel(name(x), arg(x, "niveau"))))))
 			.then(Commands.literal("donnerparole")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.giveFloor(name(x), arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).giveFloor(name(x), arg(x, "joueur"))))))
 			.then(Commands.literal("chuchoter")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("message", StringArgumentType.greedyString())
-						.executes(c -> exec(c, x -> session.whisper(name(x), arg(x, "joueur"), arg(x, "message")))))))
+						.executes(c -> exec(c, x -> ses(x).whisper(name(x), arg(x, "joueur"), arg(x, "message")))))))
 			.then(Commands.literal("nominations").requires(leader)
-				.then(Commands.literal("ouvrir").executes(c -> exec(c, x -> session.setNominations(true))))
-				.then(Commands.literal("fermer").executes(c -> exec(c, x -> session.setNominations(false)))))
-			.then(Commands.literal("rassembler").requires(leader).executes(c -> exec(c, x -> session.gather())))
+				.then(Commands.literal("ouvrir").executes(c -> exec(c, x -> ses(x).setNominations(true))))
+				.then(Commands.literal("fermer").executes(c -> exec(c, x -> ses(x).setNominations(false)))))
+			.then(Commands.literal("rassembler").requires(leader).executes(c -> exec(c, x -> ses(x).gather())))
 			.then(Commands.literal("convoquer").requires(leader)
-				.then(Commands.literal("suivant").executes(c -> exec(c, x -> session.summonNext())))
-				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.endSummon())))
+				.then(Commands.literal("suivant").executes(c -> exec(c, x -> ses(x).summonNext())))
+				.then(Commands.literal("fin").executes(c -> exec(c, x -> ses(x).endSummon())))
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.summon(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).summon(arg(x, "joueur"))))))
 			.then(Commands.literal("aparte").requires(leader)
-				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.setAside(null))))
+				.then(Commands.literal("fin").executes(c -> exec(c, x -> ses(x).setAside(null))))
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.setAside(arg(x, "joueur"))))))
-			.then(Commands.literal("appeler").executes(c -> exec(c, x -> session.callStoryteller(name(x)))))
+					.executes(c -> exec(c, x -> ses(x).setAside(arg(x, "joueur"))))))
+			.then(Commands.literal("appeler").executes(c -> exec(c, x -> ses(x).callStoryteller(name(x)))))
 			.then(Commands.literal("annoncer")
 				.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
-					.executes(c -> exec(c, x -> session.claim(name(x), arg(x, "role"))))))
+					.executes(c -> exec(c, x -> ses(x).claim(name(x), arg(x, "role"))))))
 			.then(Commands.literal("signe")
 				.then(Commands.argument("signe", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
 						List.of("oui", "non", "question", "attention", "reflexion", "accord"), b))
-					.executes(c -> exec(c, x -> session.sign(name(x), arg(x, "signe"))))))
+					.executes(c -> exec(c, x -> ses(x).sign(name(x), arg(x, "signe"))))))
 			.then(Commands.literal("parler")
-				.then(Commands.literal("accepter").executes(c -> exec(c, x -> session.answerTalk(name(x), true))))
-				.then(Commands.literal("refuser").executes(c -> exec(c, x -> session.answerTalk(name(x), false))))
-				.then(Commands.literal("fin").executes(c -> exec(c, x -> session.endTalk(name(x)))))
+				.then(Commands.literal("accepter").executes(c -> exec(c, x -> ses(x).answerTalk(name(x), true))))
+				.then(Commands.literal("refuser").executes(c -> exec(c, x -> ses(x).answerTalk(name(x), false))))
+				.then(Commands.literal("fin").executes(c -> exec(c, x -> ses(x).endTalk(name(x)))))
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.inviteTalk(name(x), arg(x, "joueur"))))))
-			.then(Commands.literal("voter").requires(leader).executes(c -> exec(c, x -> session.startVoteNow())))
+					.executes(c -> exec(c, x -> ses(x).inviteTalk(name(x), arg(x, "joueur"))))))
+			.then(Commands.literal("voter").requires(leader).executes(c -> exec(c, x -> ses(x).startVoteNow())))
 			.then(Commands.literal("tuer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.stKill(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).stKill(arg(x, "joueur"))))))
 			.then(Commands.literal("ressusciter").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.stRevive(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).stRevive(arg(x, "joueur"))))))
 			.then(Commands.literal("empoisonner").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.stPoison(arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).stPoison(arg(x, "joueur"))))))
 			.then(Commands.literal("changer").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("role", StringArgumentType.word()).suggests(roleNames)
-						.executes(c -> exec(c, x -> session.stSwap(arg(x, "joueur"), arg(x, "role"), null)))
+						.executes(c -> exec(c, x -> ses(x).stSwap(arg(x, "joueur"), arg(x, "role"), null)))
 						.then(Commands.argument("cru", StringArgumentType.word()).suggests(roleNames)
-							.executes(c -> exec(c, x -> session.stSwap(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
+							.executes(c -> exec(c, x -> ses(x).stSwap(arg(x, "joueur"), arg(x, "role"), arg(x, "cru"))))))))
 			.then(Commands.literal("tirer")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.shoot(name(x), arg(x, "joueur"))))))
+					.executes(c -> exec(c, x -> ses(x).shoot(name(x), arg(x, "joueur"))))))
 			.then(Commands.literal("choisir")
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
-					.executes(c -> exec(c, x -> session.choose(name(x), arg(x, "joueur"))))))
-			.then(Commands.literal("valider").executes(c -> exec(c, x -> session.validate(name(x)))))
+					.executes(c -> exec(c, x -> ses(x).choose(name(x), arg(x, "joueur"))))))
+			.then(Commands.literal("valider").executes(c -> exec(c, x -> ses(x).validate(name(x)))))
 			.then(Commands.literal("decider")
 				.then(Commands.argument("choix", IntegerArgumentType.integer(0, 30))
-					.executes(c -> exec(c, x -> session.decide(name(x), IntegerArgumentType.getInteger(x, "choix"))))))
-			.then(Commands.literal("dormir").executes(c -> exec(c, x -> session.sleep(name(x)))))
+					.executes(c -> exec(c, x -> ses(x).decide(name(x), IntegerArgumentType.getInteger(x, "choix"))))))
+			.then(Commands.literal("dormir").executes(c -> exec(c, x -> ses(x).sleep(name(x)))))
 			.then(Commands.literal("envoyer")
-				.executes(c -> exec(c, x -> session.storytellerSend(name(x), null)))
+				.executes(c -> exec(c, x -> ses(x).storytellerSend(name(x), null)))
 				.then(Commands.argument("texte", StringArgumentType.greedyString())
-					.executes(c -> exec(c, x -> session.storytellerSend(name(x), arg(x, "texte"))))))
+					.executes(c -> exec(c, x -> ses(x).storytellerSend(name(x), arg(x, "texte"))))))
 			.then(Commands.literal("vote")
-				.then(Commands.literal("oui").executes(c -> exec(c, x -> session.vote(name(x), true))))
-				.then(Commands.literal("non").executes(c -> exec(c, x -> session.vote(name(x), false))))
-				.then(Commands.literal("annuler").requires(leader).executes(c -> exec(c, x -> session.cancelVote()))))
-			.then(Commands.literal("role").executes(c -> exec(c, x -> session.role(name(x)))))
-			.then(Commands.literal("grimoire").executes(c -> exec(c, x -> session.grimoire(name(x)))))
-			.then(Commands.literal("fiches").executes(c -> exec(c, x -> session.sheets(name(x)))))
-			.then(Commands.literal("historique").executes(c -> exec(c, x -> session.history(name(x)))))
+				.then(Commands.literal("oui").executes(c -> exec(c, x -> ses(x).vote(name(x), true))))
+				.then(Commands.literal("non").executes(c -> exec(c, x -> ses(x).vote(name(x), false))))
+				.then(Commands.literal("annuler").requires(leader).executes(c -> exec(c, x -> ses(x).cancelVote()))))
+			.then(Commands.literal("role").executes(c -> exec(c, x -> ses(x).role(name(x)))))
+			.then(Commands.literal("grimoire").executes(c -> exec(c, x -> ses(x).grimoire(name(x)))))
+			.then(Commands.literal("fiches").executes(c -> exec(c, x -> ses(x).sheets(name(x)))))
+			.then(Commands.literal("historique").executes(c -> exec(c, x -> ses(x).history(name(x)))))
 			.then(Commands.literal("mp")
 				.then(Commands.argument("message", StringArgumentType.greedyString())
-					.executes(c -> exec(c, x -> session.messageStoryteller(name(x), arg(x, "message"))))))
+					.executes(c -> exec(c, x -> ses(x).messageStoryteller(name(x), arg(x, "message"))))))
 			.then(Commands.literal("rappel").requires(leader)
 				.then(Commands.argument("joueur", StringArgumentType.word()).suggests(playerNames)
 					.then(Commands.argument("texte", StringArgumentType.greedyString())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(
 							List.of("ivre", "empoisonné", "protégé", "fausse piste", "a choisi", "effacer"), b))
-						.executes(c -> exec(c, x -> session.reminder(arg(x, "joueur"), arg(x, "texte")))))))
+						.executes(c -> exec(c, x -> ses(x).reminder(arg(x, "joueur"), arg(x, "texte")))))))
 			.then(Commands.literal("discussion").requires(leader)
 				.then(Commands.argument("minutes", IntegerArgumentType.integer(0, 30))
-					.executes(c -> exec(c, x -> session.discussion(IntegerArgumentType.getInteger(x, "minutes"))))))
-			.then(Commands.literal("spectateur").executes(c -> exec(c, x -> session.spectate(name(x)))))
-			.then(Commands.literal("entrainement").executes(c -> exec(c, x -> session.training(name(x)))))
+					.executes(c -> exec(c, x -> ses(x).discussion(IntegerArgumentType.getInteger(x, "minutes"))))))
+			.then(Commands.literal("spectateur").executes(c -> exec(c, x -> ses(x).spectate(name(x)))))
+			.then(Commands.literal("entrainement").executes(c -> exec(c, x -> ses(x).training(name(x)))))
 			.then(Commands.literal("stats")
 				.executes(c -> exec(c, x -> lines(x, ValcombeMod.community().statsLines(null))))
 				.then(Commands.argument("joueur", StringArgumentType.word())
@@ -711,11 +886,11 @@ public final class ValcombeCommands {
 				})))
 				.then(Commands.literal("essai")
 					.then(Commands.argument("scenario", StringArgumentType.word())
-						.suggests((c, b) -> SharedSuggestionProvider.suggest(session.scenarios().stream().map(d -> d.id), b))
-						.executes(c -> exec(c, x -> session.trial(name(x), arg(x, "scenario"), 8)))
+						.suggests(scenarioIds)
+						.executes(c -> exec(c, x -> ses(x).trial(name(x), arg(x, "scenario"), 8)))
 						.then(Commands.argument("joueurs", IntegerArgumentType.integer(fr.valcombe.rules.Distribution.MIN_PLAYERS,
 								fr.valcombe.rules.Distribution.MAX_PLAYERS))
-							.executes(c -> exec(c, x -> session.trial(name(x), arg(x, "scenario"), number(x, "joueurs")))))))
+							.executes(c -> exec(c, x -> ses(x).trial(name(x), arg(x, "scenario"), number(x, "joueurs")))))))
 				.then(Commands.literal("supprimer")
 					.then(Commands.literal("role")
 						.then(Commands.argument("id", StringArgumentType.word())
@@ -723,29 +898,29 @@ public final class ValcombeCommands {
 							.executes(c -> exec(c, x -> ValcombeMod.creations().deleteRole(arg(x, "id"))))))
 					.then(Commands.literal("scenario")
 						.then(Commands.argument("id", StringArgumentType.word())
-							.suggests((c, b) -> SharedSuggestionProvider.suggest(session.scenarios().stream().map(d -> d.id), b))
+							.suggests(scenarioIds)
 							.executes(c -> exec(c, x -> ValcombeMod.creations().deleteScenario(arg(x, "id"))))))))
 			.then(Commands.literal("figure").requires(leader)
 				.then(Commands.argument("id", StringArgumentType.word())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(Session.FIGURES.keySet(), b))
 					.then(Commands.argument("actif", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("oui", "non"), b))
-						.executes(c -> exec(c, x -> session.setFigure(arg(x, "id"), !arg(x, "actif").equals("non")))))))
+						.executes(c -> exec(c, x -> ses(x).setFigure(arg(x, "id"), !arg(x, "actif").equals("non")))))))
 			.then(Commands.literal("voyager")
 				.executes(c -> exec(c, x -> {
-					if (session.mode() != Session.Mode.AUTO && session.storyteller() != null) {
+					if (ses(x).mode() != Session.Mode.AUTO && ses(x).storyteller() != null) {
 						throw new fr.valcombe.rules.GameException("Demandez au Conteur : il vous accueille avec /vc voyageur <nom> bien|mal.");
 					}
-					return session.addTraveller(name(x), null);
+					return ses(x).addTraveller(name(x), null);
 				})))
 			.then(Commands.literal("voyageur")
-				.then(Commands.literal("partir").executes(c -> exec(c, x -> session.travellerLeaves(name(x)))))
+				.then(Commands.literal("partir").executes(c -> exec(c, x -> ses(x).travellerLeaves(name(x)))))
 				.then(Commands.argument("joueur", StringArgumentType.word()).requires(leader)
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(
 						c.getSource().getServer().getPlayerList().getPlayers().stream().map(p -> p.getScoreboardName()), b))
 					.then(Commands.argument("camp", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("bien", "mal"), b))
-						.executes(c -> exec(c, x -> session.addTraveller(arg(x, "joueur"), arg(x, "camp")))))))
+						.executes(c -> exec(c, x -> ses(x).addTraveller(arg(x, "joueur"), arg(x, "camp")))))))
 			// Clé de l'API d'administration : la console, ou un opérateur de plein droit (niveau 4, celui de /stop et /op).
 			.then(Commands.literal("admin").requires(src -> src.permissions().hasPermission(Permissions.COMMANDS_OWNER))
 				.executes(c -> exec(c, x -> adminStatus()))
@@ -757,10 +932,12 @@ public final class ValcombeCommands {
 					.executes(c -> exec(c, x -> ValcombeMod.community().setNextEvening(arg(x, "quand"))))))
 			.then(Commands.literal("scenario").requires(leader)
 				.then(Commands.argument("id", StringArgumentType.word())
-					.suggests((c, b) -> SharedSuggestionProvider.suggest(
-						java.util.stream.Stream.concat(java.util.stream.Stream.of("aucun"),
-							session.scenarios().stream().map(d -> d.id)), b))
-					.executes(c -> exec(c, x -> session.useScenario(arg(x, "id"))))))
+					.suggests((c, b) -> {
+						Session s = sesOrNull(c.getSource());
+						return SharedSuggestionProvider.suggest(java.util.stream.Stream.concat(java.util.stream.Stream.of("aucun"),
+							s == null ? java.util.stream.Stream.<String>empty() : s.scenarios().stream().map(d -> d.id)), b);
+					})
+					.executes(c -> exec(c, x -> ses(x).useScenario(arg(x, "id"))))))
 			.then(Commands.literal("tablette").requires(leader)
 				.executes(c -> exec(c, x -> {
 					ServerPlayer p = x.getSource().getPlayerOrException();
@@ -769,7 +946,7 @@ public final class ValcombeCommands {
 					p.sendSystemMessage(Component.literal("Grimoire sur tablette ouvert. Ouvrez ce lien sur votre tablette ou téléphone "
 						+ "(même réseau, ou port " + ValcombeMod.community().tabletPort() + " ouvert), sans le partager :")
 						.withStyle(net.minecraft.ChatFormatting.GOLD));
-					for (String link : t.links()) {
+					for (String link : t.links(p.getScoreboardName())) {
 						p.sendSystemMessage(Component.literal("  " + link).withStyle(st -> st
 							.withColor(net.minecraft.ChatFormatting.AQUA).withUnderlined(true)
 							.withClickEvent(new net.minecraft.network.chat.ClickEvent.OpenUrl(java.net.URI.create(link)))));
@@ -777,8 +954,8 @@ public final class ValcombeCommands {
 					return "Fermer : /vc tablette fermer. Nouveau lien (l'ancien ne marche plus) : /vc tablette";
 				}))
 				.then(Commands.literal("fermer").executes(c -> exec(c, x -> {
-					// Seule la tablette du Conteur est fermée : les liens de l'Atelier restent valables.
-					ValcombeMod.tablet().closeTablet();
+					// Seule la tablette de ce Conteur est fermée : celles des autres parties et les liens de l'Atelier restent valables.
+					ValcombeMod.tablet().closeTablet(x.getSource().getTextName());
 					return "Tablette fermée : son lien ne fonctionne plus."
 						+ (ValcombeMod.tablet().atelierOpen() ? " L'Atelier reste ouvert (/vc atelier fermer pour le vôtre)." : "");
 				})))
@@ -795,8 +972,9 @@ public final class ValcombeCommands {
 							"effets", "spectateurs_grimoire", "coiffe", "majorite_absolue", "victoire_majorite", "heritiere_sans_seuil",
 							"infos_mal_des_5"), b))
 					.then(Commands.argument("valeur", StringArgumentType.word())
-						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
+						.executes(c -> exec(c, x -> ses(x).setting(arg(x, "cle"), arg(x, "valeur")))))));
 
+		registerGames(root, admin);
 		registerEditor(root, registry, admin);
 		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds, ValcombeMod::travel);
 		// Construction : invitations aux ateliers, « annuler » commun, baguette, sélection vers structure.
