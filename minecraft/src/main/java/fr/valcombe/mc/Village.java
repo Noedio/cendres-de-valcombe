@@ -1400,6 +1400,17 @@ public final class Village {
 		}
 	}
 
+	/** Comme placeThrones(server), dans ce monde-ci : un village généré posé dans un monde de Valcombe (voir MapPlacer). */
+	public void placeThrones(ServerLevel level) {
+		if (!generated) {
+			return;
+		}
+		decorGen++;
+		for (int k = 0; k < seats.size(); k++) {
+			WorldSetup.run(level, throneDisplay(feet(seats.get(k)), seatYaw(k)));
+		}
+	}
+
 	// ------------------------------------------------------------------
 	// Recoins : niches murées entre deux maisons, ouvertes vers les champs, à l'abri des regards de la place
 	// ------------------------------------------------------------------

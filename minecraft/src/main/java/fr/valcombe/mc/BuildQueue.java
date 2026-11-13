@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.Predicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -95,6 +96,12 @@ final class BuildQueue {
 		final String label;
 		final Plan plan;
 		final Runnable done;
+		/** Monde du chantier, ou null : le monde principal (les chantiers de la carte actuelle). */
+		final ServerLevel level;
+		/** Joueurs qui voient la barre d'avancement. */
+		final Predicate<ServerPlayer> audience;
+		/** Appelé si le chantier est abandonné avant la fin (monde fermé, recréé ou supprimé, arrêt du serveur), ou null. */
+		final Runnable cancelled;
 		final ServerBossEvent bar;
 		final long total;
 		final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -103,10 +110,13 @@ final class BuildQueue {
 		int part;
 		int inPart;
 
-		Job(String label, Plan plan, Runnable done) {
+		Job(String label, ServerLevel level, Plan plan, Runnable done, Predicate<ServerPlayer> audience, Runnable cancelled) {
 			this.label = label;
+			this.level = level;
 			this.plan = plan;
 			this.done = done;
+			this.audience = audience;
+			this.cancelled = cancelled;
 			this.total = plan.total();
 			this.bar = new ServerBossEvent(java.util.UUID.randomUUID(), Component.literal(label), BossEvent.BossBarColor.GREEN,
 				BossEvent.BossBarOverlay.PROGRESS);
@@ -120,17 +130,54 @@ final class BuildQueue {
 		return !jobs.isEmpty();
 	}
 
-	/** Met un chantier en file ; done est appelé quand tout est posé. */
+	/** Met un chantier en file dans le monde principal ; done est appelé quand tout est posé. Tous les joueurs voient la barre. */
 	void add(String label, Plan plan, Runnable done) {
-		jobs.add(new Job(label, plan, done));
+		jobs.add(new Job(label, null, plan, done, p -> true, null));
+	}
+
+	/**
+	 * Met un chantier en file dans ce monde ; done est appelé quand tout est posé. Seuls les joueurs que retient
+	 * audience voient la barre. Si le monde quitte le serveur avant la fin (recréé, supprimé), ou si le serveur
+	 * s'arrête, le chantier est abandonné et cancelled appelé (s'il n'est pas null).
+	 */
+	void add(String label, ServerLevel level, Plan plan, Runnable done, Predicate<ServerPlayer> audience, Runnable cancelled) {
+		jobs.add(new Job(label, level, plan, done, audience, cancelled));
+	}
+
+	/** Un chantier est-il en cours ou en attente dans ce monde ? */
+	boolean busy(ServerLevel level) {
+		return jobs.stream().anyMatch(j -> j.level == level);
+	}
+
+	/** Abandonne les chantiers de ce monde (il va être remis à neuf ou supprimé) ; renvoie s'il y en avait. */
+	boolean cancel(ServerLevel level) {
+		List<Job> gone = jobs.stream().filter(j -> j.level == level).toList();
+		jobs.removeAll(gone);
+		for (Job j : gone) {
+			drop(j);
+		}
+		return !gone.isEmpty();
 	}
 
 	/** Abandonne les chantiers en cours (arrêt du serveur). */
 	void clear() {
-		for (Job j : jobs) {
-			j.bar.removeAllPlayers();
-		}
+		List<Job> gone = new ArrayList<>(jobs);
 		jobs.clear();
+		for (Job j : gone) {
+			drop(j);
+		}
+	}
+
+	/** Retire la barre d'un chantier abandonné et prévient qui l'attendait. */
+	private static void drop(Job j) {
+		j.bar.removeAllPlayers();
+		if (j.cancelled != null) {
+			try {
+				j.cancelled.run();
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.error("Erreur à l'abandon du chantier « " + j.label + " »", e);
+			}
+		}
 	}
 
 	/** À chaque tick : pose un lot de blocs du chantier en cours. */
@@ -139,7 +186,13 @@ final class BuildQueue {
 		if (job == null || server == null) {
 			return;
 		}
-		ServerLevel level = server.overworld();
+		if (job.level != null && server.getLevel(job.level.dimension()) != job.level) {
+			// Le monde a quitté le serveur (remis à neuf, supprimé) : on n'écrit pas dans un monde fermé.
+			jobs.poll();
+			drop(job);
+			return;
+		}
+		ServerLevel level = job.level != null ? job.level : server.overworld();
 		long start = System.nanoTime();
 		int changed = 0;
 		long total = job.total;
@@ -176,7 +229,11 @@ final class BuildQueue {
 		if (server.getTickCount() % 20 == 0 || job.cursor >= total) {
 			job.bar.setName(Component.literal(job.label + " : " + (total == 0 ? 100 : 100L * job.cursor / total) + " %"));
 			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-				job.bar.addPlayer(p);
+				if (job.audience.test(p)) {
+					job.bar.addPlayer(p);
+				} else {
+					job.bar.removePlayer(p); // parti dans un autre monde en cours de chantier
+				}
 			}
 		}
 		if (job.cursor < total) {
@@ -192,6 +249,9 @@ final class BuildQueue {
 		} catch (RuntimeException e) {
 			ValcombeMod.LOG.error("Erreur à la fin du chantier « " + job.label + " »", e);
 			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+				if (!job.audience.test(p)) {
+					continue;
+				}
 				p.sendSystemMessage(Component.literal("[Valcombe] Le chantier « " + job.label + " » s'est terminé sur une erreur : "
 					+ e.getMessage()));
 			}

@@ -1327,11 +1327,13 @@ public final class McHost implements Host {
 	}
 
 	byte[] topView(Village v) {
-		ServerLevel level = server.overworld();
-		int r = Math.min(200, v.extent());
+		return topView(server.overworld(), v.center(), Math.min(200, v.extent()));
+	}
+
+	/** Vue de dessus du carré de rayon r autour de c dans ce monde (voir topView()) : la carte du monde principal, ou d'un autre monde. */
+	static byte[] topView(ServerLevel level, BlockPos c, int r) {
 		int n = 2 * r + 1;
 		var img = new java.awt.image.BufferedImage(n, n, java.awt.image.BufferedImage.TYPE_INT_RGB);
-		BlockPos c = v.center();
 		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
 		int[] north = new int[n];
 		for (int z = 0; z < n; z++) {

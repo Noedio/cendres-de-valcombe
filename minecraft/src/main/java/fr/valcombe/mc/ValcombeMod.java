@@ -170,6 +170,16 @@ public final class ValcombeMod implements ModInitializer {
 		return worlds;
 	}
 
+	private static MapPlacer placer;
+
+	/**
+	 * Pose des cartes de la bibliothèque dans les mondes de Valcombe, et capture inverse ; null tant que les mondes
+	 * ne sont pas prêts (voir worlds()).
+	 */
+	public static MapPlacer placer() {
+		return placer;
+	}
+
 	/** Ce que l'Atelier montre des cartes et des structures, pour la page web et l'écran en jeu ; null avant le démarrage du serveur. */
 	public static Workshop workshop() {
 		return workshop;
@@ -279,6 +289,7 @@ public final class ValcombeMod implements ModInitializer {
 				var manager = new fr.valcombe.mc.worlds.WorldManager(server, fr.valcombe.mc.worlds.WorldManager.defaultFile(server));
 				manager.start();
 				worlds = manager;
+				placer = new MapPlacer(maps, manager, server);
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
 			} catch (RuntimeException | LinkageError e) {
 				LOG.error("Mondes de Valcombe indisponibles : le jeu continue dans le monde principal", e);
@@ -312,6 +323,10 @@ public final class ValcombeMod implements ModInitializer {
 				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
 			}
 			workshop = null;
+			if (placer != null) {
+				placer.stop(); // les poses en cours sont abandonnées avant que les mondes ne se ferment
+				placer = null;
+			}
 			if (worlds != null) {
 				setWorldsView(null);
 				worlds.stop();
@@ -332,6 +347,10 @@ public final class ValcombeMod implements ModInitializer {
 			var w = worlds;
 			if (w != null) {
 				guarded("les mondes", w::tick);
+			}
+			var pl = placer;
+			if (pl != null) {
+				guarded("les cartes des mondes", pl::tick);
 			}
 			if (server.getTickCount() % 5 == 0) {
 				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village()));

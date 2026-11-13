@@ -69,5 +69,7 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | `/vc carte nouvelle`, `/vc carte siege`, `/vc carte maison` | Opérateur | Carte personnalisée : la place ici, puis chaque siège et chaque maison à sa position |
 | `/vc carte retirer siege\|maison`, `/vc carte annuler`, `/vc carte infos` | Opérateur | Retirer le dernier emplacement, annuler la dernière pose, résumé de la carte |
 | `/vc carte renommer <id> <nom>`, `/vc carte copier <id> <nouvel_id>` | Opérateur | Renommer ou dupliquer une carte de la bibliothèque |
+| `/vc carte poser <id> <monde>` | Opérateur | Poser une carte de la bibliothèque au centre d'un monde de Valcombe, sur le sol plat (l'ancienne carte du monde est retirée) ; le monde se donne par son identifiant ou son nom, même approché |
+| `/vc carte capturer <monde> <id> [nom]` | Opérateur | Ranger dans la bibliothèque la carte que porte un monde de Valcombe : toute la zone bâtie autour de sa place, et ses repères |
 | `/vc reglage <clé> <valeur>` | Meneur | `nuit_maisons`, `nuit_immobile`, `nuit_sombre`, `nuit_muette` (oui\|non), `temps_vote` |
 | `/vc grimoire`, `/vc role`, `/vc fiches`, `/vc historique`, `/vc mp <message>` | Selon le cas | Consultation, message au Conteur |
