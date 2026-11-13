@@ -222,7 +222,8 @@ public class BackupsGameTest implements FabricClientGameTest {
 				status(post(ctx, "/admin/sauvegardes/restaurer", "{\"nom\": \"../admin.json\"}"), 400, "nom de sauvegarde invalide");
 				status(post(ctx, "/admin/sauvegardes/restaurer", "{}"), 400, "nom manquant");
 				var solo = post(ctx, "/admin/commande", "{\"commande\": \"vc sauvegarde restaurer " + o.name() + "\"}");
-				check(!json(solo).get("ok").getAsBoolean() && solo.body().contains("serveur dédié"), "commande restaurer refusée en solo : " + solo.body());
+				// « ok » dit que la commande a été exécutée ; son refus se lit dans « resultat » (0) et dans la sortie.
+				check(json(solo).get("resultat").getAsInt() == 0 && solo.body().contains("serveur dédié"), "commande restaurer refusée en solo : " + solo.body());
 				status(delete(ctx, "/admin/sauvegardes/restaurer"), 200, "annuler sans restauration prévue");
 				status(fetch(ctx, request("/admin/sauvegardes").PUT(HttpRequest.BodyPublishers.noBody()).build(),
 					HttpResponse.BodyHandlers.ofString()), 405, "méthode refusée");
