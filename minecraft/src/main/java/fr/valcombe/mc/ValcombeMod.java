@@ -330,8 +330,11 @@ public final class ValcombeMod implements ModInitializer {
 				w.reply(p.getScoreboardName(), out.toString(), failed[0]);
 			}
 		});
+		// Les objets et outils de Valcombe passent avant les autres mods (WorldEdit réagit aussi à la hache en bois
+		// et à la boussole) : les trois écouteurs de clic ci-dessous sont inscrits dans la phase ToolPriority.PHASE.
+		ToolPriority.install();
 		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
-		UseItemCallback.EVENT.register((player, level, hand) -> {
+		UseItemCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand) -> {
 			// Plume d'accusation : pendant un vote, lever ou baisser la main ; sinon accuser le joueur visé, même de loin.
 			if (ValcombeUi.isAccuseItem(player.getItemInHand(hand))) {
 				if (player instanceof ServerPlayer sp && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
@@ -400,7 +403,7 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			return InteractionResult.SUCCESS;
 		});
-		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, hit) -> {
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == null) {
 				// Un bloc posé à la main sur la carte : elle ne sera plus remplacée sans sauvegarde.
@@ -449,7 +452,7 @@ public final class ValcombeMod implements ModInitializer {
 		});
 		// Clic gauche avec un outil de l'éditeur : premier coin de la sélection, ou miroir de la structure en main.
 		// Le bloc visé n'est pas cassé (des deux côtés : le client n'a pas à le voir disparaître puis revenir).
-		net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
+		net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, pos, direction) -> {
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == ValcombeUi.MapTool.HAND) {
 				return InteractionResult.SUCCESS; // la main ne casse rien : elle ne fait que prendre

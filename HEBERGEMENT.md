@@ -9,7 +9,9 @@ Deux façons d'accueillir vos amis :
 
 - Un VPS sous **Debian 12/13 ou Ubuntu 24.04**, avec **2 cœurs et 4 Go de mémoire** au minimum (8 Go au-delà de 12 joueurs). Les offres d'entrée de gamme des hébergeurs français suffisent.
 - Un accès SSH (l'hébergeur vous donne l'adresse et l'identifiant).
-- Sur votre PC : le dossier `minecraft/dist/serveur-valcombe/`, produit par `python tools/make_modpack.py`.
+- Sur votre PC : le dossier `minecraft/dist/serveur-valcombe/`, produit par `python tools/make_modpack.py`. Son dossier
+  `mods/` contient tout ce que le serveur charge : Fabric API, Simple Voice Chat, WorldEdit (la construction dans les
+  ateliers, réservée aux opérateurs) et le mod Valcombe. Rien d'autre à installer.
 
 ## 1. Installer Java 25
 

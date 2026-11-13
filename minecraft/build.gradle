@@ -32,12 +32,34 @@ repositories {
 			includeGroup 'maven.modrinth'
 		}
 	}
+	// WorldEdit : dépôt officiel d'EngineHub, consulté seulement pour ses propres bibliothèques
+	// (les autres dépendances de WorldEdit, comme ANTLR, viennent de Maven Central).
+	maven {
+		name = 'EngineHub (WorldEdit)'
+		url = 'https://maven.enginehub.org/repo/'
+		content {
+			includeGroupAndSubgroups 'com.sk89q'
+			includeGroupAndSubgroups 'org.enginehub'
+		}
+	}
 }
 
 dependencies {
 	// Vocal de proximité : API pour compiler, mod complet pour les lancements de développement.
 	compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
 	localRuntime "maven.modrinth:simple-voice-chat:${project.voicechat_version}"
+
+	// Construction : WorldEdit fait partie du modpack et du serveur. Son API (le cœur et l'adaptateur Fabric)
+	// sert à compiler l'intégration aux ateliers, sans être incluse dans le jar ; le mod publié sur Modrinth
+	// (le même fichier que celui des joueurs) est chargé par les lancements de développement et les tests en jeu.
+	// Minecraft garde ses propres versions de Log4j : on n'importe pas celles que WorldEdit déclare.
+	compileOnly("com.sk89q.worldedit:worldedit-core:${project.worldedit_version}") {
+		exclude group: 'org.apache.logging.log4j'
+	}
+	compileOnly("com.sk89q.worldedit:worldedit-fabric-mc${project.minecraft_version}:${project.worldedit_version}") {
+		exclude group: 'org.apache.logging.log4j'
+	}
+	localRuntime "maven.modrinth:worldedit:${project.worldedit_version}"
 
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
