@@ -76,6 +76,16 @@ public final class ValcombeCommands {
 		return IntegerArgumentType.getInteger(ctx, key);
 	}
 
+	/** Groupes de rôles dans l'éditeur de script : appliquer au script, ou ranger le script dans un groupe. */
+	private static String scriptGroup(Session session, String action, String name) {
+		return switch (action) {
+			case "ranger" -> ValcombeMod.creations().putGroup(name,
+				session.script().stream().map(r -> r.custom() ? r.customId : r.name().toLowerCase(java.util.Locale.ROOT)).toList());
+			case "supprimer" -> ValcombeMod.creations().deleteGroup(name);
+			default -> session.scriptGroup(name.strip(), action);
+		};
+	}
+
 	private static String mapTools(CommandContext<CommandSourceStack> ctx) throws Exception {
 		ValcombeUi.mapTools(player(ctx), true);
 		return "Outils de carte : trône, maison, centre, salle de convocation et gomme (clic droit sur un bloc pour poser, "
@@ -353,6 +363,12 @@ public final class ValcombeCommands {
 					fr.valcombe.rules.Role.brumes()))))
 				.then(Commands.literal("table").executes(c -> exec(c, x -> session.useScript("La Table de Valcombe",
 					fr.valcombe.rules.Role.table()))))
+				.then(Commands.literal("groupe")
+					.then(Commands.argument("action", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("ajouter", "retirer", "seulement", "ranger", "supprimer"), b))
+						.then(Commands.argument("nom", StringArgumentType.greedyString())
+							.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.creations().groups().keySet(), b))
+							.executes(c -> exec(c, x -> scriptGroup(session, arg(x, "action"), arg(x, "nom")))))))
 				.then(Commands.literal("sauver")
 					.then(Commands.argument("nom", StringArgumentType.greedyString()).executes(c -> exec(c, x -> {
 						var server = x.getSource().getServer();

@@ -97,6 +97,7 @@ public final class CreationStore {
 				parseGroups(o).forEach(groups::put);
 			}
 		}
+		session.setRoleGroups(groups);
 		apply();
 		LOG.info("Atelier : {} rôle(s) et {} scénario(s) créés", roles.size(), scenarios.size());
 	}
@@ -169,6 +170,43 @@ public final class CreationStore {
 			throw new GameException("Groupes illisibles.");
 		}
 		java.util.Map<String, List<String>> next = parseGroups(e.getAsJsonObject());
+		storeGroups(next);
+		return "Groupes enregistrés (" + next.size() + ").";
+	}
+
+	/** Range des rôles dans un groupe (le crée ou le remplace) : depuis l'éditeur de script en jeu. */
+	public synchronized String putGroup(String name, java.util.Collection<String> ids) {
+		String n = name == null ? "" : name.strip();
+		if (n.isEmpty() || n.length() > 40) {
+			throw new GameException("Nom de groupe : 1 à 40 caractères.");
+		}
+		if (ids.isEmpty()) {
+			throw new GameException("Le script est vide : rien à ranger dans le groupe.");
+		}
+		java.util.Map<String, List<String>> next = new java.util.LinkedHashMap<>(groups);
+		boolean replaced = next.containsKey(n);
+		if (!replaced && next.size() >= 50) {
+			throw new GameException("50 groupes au plus : supprimez-en un.");
+		}
+		JsonObject o = GSON.toJsonTree(next).getAsJsonObject();
+		o.add(n, GSON.toJsonTree(List.copyOf(ids)));
+		next = parseGroups(o);
+		storeGroups(next);
+		return "Groupe « " + n + " » " + (replaced ? "remplacé" : "créé") + " : " + next.get(n).size() + " rôles.";
+	}
+
+	public synchronized String deleteGroup(String name) {
+		String n = name == null ? "" : name.strip();
+		if (!groups.containsKey(n)) {
+			throw new GameException("Groupe inconnu : " + n);
+		}
+		java.util.Map<String, List<String>> next = new java.util.LinkedHashMap<>(groups);
+		next.remove(n);
+		storeGroups(next);
+		return "Groupe « " + n + " » supprimé. Les rôles, eux, restent.";
+	}
+
+	private void storeGroups(java.util.Map<String, List<String>> next) {
 		try {
 			Files.createDirectories(dir);
 			Files.writeString(dir.resolve("groupes.json"), GSON.toJson(next), StandardCharsets.UTF_8);
@@ -177,7 +215,7 @@ public final class CreationStore {
 		}
 		groups.clear();
 		groups.putAll(next);
-		return "Groupes enregistrés (" + next.size() + ").";
+		session.setRoleGroups(groups);
 	}
 
 	/** Groupes valides : 50 au plus, noms de 1 à 40 caractères, 60 rôles au plus par groupe, sans doublon. */
@@ -337,7 +375,21 @@ public final class CreationStore {
 	/** Comme ci-dessus, avec des structures du catalogue (celles de l'utilisateur : les fournies, chacun les a). */
 	public synchronized String exportPack(List<String> roleIds, List<String> scenarioIds, List<String> mapIds,
 			List<String> structureIds) {
+		return exportPack(roleIds, scenarioIds, mapIds, structureIds, List.of());
+	}
+
+	/** Avec des groupes de rôles : un groupe emporte ses rôles créés, pour qu'il soit complet chez l'autre. */
+	public synchronized String exportPack(List<String> roleIds, List<String> scenarioIds, List<String> mapIds,
+			List<String> structureIds, List<String> groupNames) {
 		Set<String> r = new HashSet<>(roleIds);
+		JsonObject groupes = new JsonObject();
+		for (String n : new java.util.LinkedHashSet<>(groupNames)) {
+			List<String> ids = groups.get(n);
+			if (ids != null) {
+				groupes.add(n, GSON.toJsonTree(ids));
+				ids.stream().filter(id -> roles.stream().anyMatch(d -> d.id.equals(id))).forEach(r::add);
+			}
+		}
 		Set<String> m = new HashSet<>(mapIds);
 		List<ScenarioDef> sc = scenarios.stream().filter(s -> scenarioIds.contains(s.id)).toList();
 		for (ScenarioDef s : sc) {
@@ -371,6 +423,7 @@ public final class CreationStore {
 			}
 		}
 		pack.add("structures", built);
+		pack.add("groupes", groupes);
 		return GSON.toJson(pack);
 	}
 
@@ -426,6 +479,26 @@ public final class CreationStore {
 					done.add("scénario « " + d.nom + " »");
 				} catch (GameException ex) {
 					refused.add((d == null ? "?" : d.id) + " : " + ex.getMessage());
+				}
+			}
+		}
+		// Groupes après les rôles : ceux du fichier remplacent ceux de même nom, les autres restent.
+		if (pack.has("groupes") && pack.get("groupes").isJsonObject()) {
+			java.util.Map<String, List<String>> incoming = parseGroups(pack.getAsJsonObject("groupes"));
+			java.util.Map<String, List<String>> next = new java.util.LinkedHashMap<>(groups);
+			for (var e : incoming.entrySet()) {
+				if (next.containsKey(e.getKey()) || next.size() < 50) {
+					next.put(e.getKey(), e.getValue());
+					done.add("groupe « " + e.getKey() + " »");
+				} else {
+					refused.add("groupe « " + e.getKey() + " » : 50 groupes au plus");
+				}
+			}
+			if (!incoming.isEmpty()) {
+				try {
+					storeGroups(next);
+				} catch (GameException ex) {
+					refused.add(ex.getMessage());
 				}
 			}
 		}

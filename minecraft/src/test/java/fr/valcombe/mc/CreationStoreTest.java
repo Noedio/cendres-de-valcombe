@@ -164,6 +164,51 @@ class CreationStoreTest {
 	}
 
 	@Test
+	void groupesPartagesEtAppliques() {
+		Session ses = session();
+		CreationStore store = new CreationStore(tmp, ses);
+		store.load();
+		store.saveRole(role("passeur", "CITADIN", "voisins", "fin"));
+		store.saveGroups("{\"Nuit calme\":[\"greffier\",\"passeur\",\"inconnu\"],\"Autre\":[\"goule\"]}");
+		// Le script en jeu : ajouter, retirer, ne garder que le groupe
+		int before = ses.script().size();
+		ses.scriptGroup("Nuit calme", "ajouter");
+		assertTrue(ses.script().contains(Role.parse("passeur")), "un rôle créé du groupe entre dans le script");
+		assertEquals(before + 1, ses.script().size(), "le Greffier y était déjà, « inconnu » est ignoré");
+		ses.scriptGroup("Nuit calme", "retirer");
+		assertTrue(!ses.script().contains(Role.GREFFIER) && !ses.script().contains(Role.parse("passeur")));
+		ses.scriptGroup("Nuit calme", "seulement");
+		assertEquals(2, ses.script().size());
+		assertThrows(GameException.class, () -> ses.scriptGroup("Nuit calme", "retirer"), "jamais de script vide");
+		assertThrows(GameException.class, () -> ses.scriptGroup("Absent", "ajouter"));
+		// Ranger le script dans un groupe, puis le supprimer
+		store.putGroup("Mon script", List.of("goule", "greffier"));
+		assertEquals(List.of("goule", "greffier"), store.groups().get("Mon script"));
+		store.deleteGroup("Mon script");
+		assertNull(store.groups().get("Mon script"));
+		// Partage : le groupe emporte ses rôles créés ; à l'import, il remplace celui de même nom
+		String pack = store.exportPack(List.of(), List.of(), List.of(), List.of(), List.of("Nuit calme"));
+		assertTrue(pack.contains("\"groupes\"") && pack.contains("Nuit calme") && pack.contains("\"nom\": \"Le passeur\""), pack);
+		assertTrue(!pack.contains("\"Autre\""), "seuls les groupes choisis partent");
+		Role.defineCustom(List.of());
+		Session ses2 = session();
+		CreationStore store2 = new CreationStore(tmp.resolve("autre"), ses2);
+		store2.load();
+		store2.saveGroups("{\"Nuit calme\":[\"goule\"],\"Le mien\":[\"goule\"]}");
+		String result = store2.importPack(pack);
+		assertTrue(result.contains("groupe « Nuit calme »"), result);
+		assertEquals(List.of("greffier", "passeur", "inconnu"), store2.groups().get("Nuit calme"));
+		assertNotNull(store2.groups().get("Le mien"), "les autres groupes restent");
+		assertNotNull(Role.parse("passeur"), "le rôle créé est arrivé avec le groupe");
+		// Relu depuis le disque, et connu de la session pour l'éditeur de script
+		CreationStore reread = new CreationStore(tmp.resolve("autre"), ses2);
+		reread.load();
+		assertEquals(2, reread.groups().size());
+		ses2.scriptGroup("Nuit calme", "seulement");
+		assertEquals(2, ses2.script().size());
+	}
+
+	@Test
 	void simulationDEquilibre() {
 		Simulation.Result r = Simulation.run(Role.classic(), 8, 30, 1);
 		assertNull(r.problem());

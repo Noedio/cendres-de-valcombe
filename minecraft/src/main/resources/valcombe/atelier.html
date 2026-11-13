@@ -465,13 +465,13 @@
 	<div class="cols">
 		<div class="card">
 			<h2>Exporter</h2>
-			<p class="hint">Un fichier <code>.valcombe</code> à envoyer à un autre hôte. Un scénario emporte ses rôles créés et sa carte ; vos structures voyagent aussi.</p>
+			<p class="hint">Un fichier <code>.valcombe</code> à envoyer à un autre hôte. Un scénario emporte ses rôles créés et sa carte, un groupe ses rôles créés ; vos structures voyagent aussi.</p>
 			<div id="expList"></div>
 			<div class="bar"><button class="main" id="export">Télécharger le fichier</button></div>
 		</div>
 		<div class="card">
 			<h2>Importer</h2>
-			<p class="hint">Les créations de même identifiant sont remplacées.</p>
+			<p class="hint">Les créations de même identifiant sont remplacées, comme les groupes de même nom.</p>
 			<input type="file" id="impFile" accept=".valcombe,.json">
 			<div class="bar"><button class="main" id="import">Importer</button></div>
 			<div class="msg" id="shareMsg"></div>
@@ -1064,6 +1064,7 @@ async function saveGroups(g, okText) {
 		await api("groupes", g);
 		data.groupes = g;
 		renderGroupSelect();
+		renderShare();
 		if (pickerBy === "groupe") renderRolePicker(currentPicked());
 		msg("scMsg", okText, true);
 	} catch (e) {
@@ -1934,7 +1935,8 @@ function renderShare() {
 	const box = $("expList");
 	box.innerHTML = "";
 	const groups = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes],
-		["structures", "Structures", data.structures.filter(x => !x.fournie)]];
+		["structures", "Structures", data.structures.filter(x => !x.fournie)],
+		["groupes", "Groupes de rôles", Object.keys(groups()).map(n => ({ id: n, nom: n + " (" + groups()[n].length + " rôles)" }))]];
 	for (const [key, title, items] of groups) {
 		const h = document.createElement("div");
 		h.className = "camp";
@@ -1962,7 +1964,9 @@ function renderShare() {
 $("export").onclick = async () => {
 	const pick = k => [...document.querySelectorAll("#expList input:checked")].filter(i => i.dataset.kind === k).map(i => i.value).join(",");
 	const q = "roles=" + encodeURIComponent(pick("roles")) + "&scenarios=" + encodeURIComponent(pick("scenarios"))
-		+ "&cartes=" + encodeURIComponent(pick("cartes")) + "&structures=" + encodeURIComponent(pick("structures"));
+		+ "&cartes=" + encodeURIComponent(pick("cartes")) + "&structures=" + encodeURIComponent(pick("structures"))
+		+ "&groupes=" + encodeURIComponent([...document.querySelectorAll("#expList input:checked")]
+			.filter(i => i.dataset.kind === "groupes").map(i => encodeURIComponent(i.value)).join(","));
 	try {
 		const r = await api("exporter?" + q, undefined, true);
 		const blob = await r.blob();

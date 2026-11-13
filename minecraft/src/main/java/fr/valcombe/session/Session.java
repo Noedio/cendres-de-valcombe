@@ -58,6 +58,8 @@ public final class Session {
 	java.util.EnumSet<Role> script = Role.classic();
 	String scriptName = "Les Cendres de Valcombe";
 	List<String> savedScripts = List.of();
+	/** Groupes de rôles de l'Atelier (nom → identifiants), proposés dans l'éditeur de script. */
+	Map<String, List<String>> roleGroups = Map.of();
 	Game game;
 	Game lastGame;
 
@@ -3341,6 +3343,61 @@ public final class Session {
 	/** Noms des scripts enregistrés (fournis par le serveur). */
 	public void setSavedScripts(List<String> names) {
 		savedScripts = List.copyOf(names);
+	}
+
+	public void setRoleGroups(Map<String, List<String>> groups) {
+		Map<String, List<String>> copy = new LinkedHashMap<>();
+		groups.forEach((k, v) -> copy.put(k, List.copyOf(v)));
+		roleGroups = java.util.Collections.unmodifiableMap(copy);
+	}
+
+	/** Rôles d'un groupe encore existants (un rôle créé puis supprimé est ignoré). */
+	java.util.Set<Role> groupRoles(String name) {
+		List<String> ids = roleGroups.get(name);
+		if (ids == null) {
+			throw new GameException("Groupe inconnu : " + name);
+		}
+		java.util.Set<Role> out = new java.util.LinkedHashSet<>();
+		for (String id : ids) {
+			Role r = Role.parse(id);
+			if (r != null) {
+				out.add(r);
+			}
+		}
+		return out;
+	}
+
+	/** Applique un groupe au script : ajouter ses rôles, les retirer, ou ne garder que lui. */
+	public String scriptGroup(String name, String action) {
+		if (game != null) {
+			throw new GameException("Le script se modifie entre deux parties.");
+		}
+		java.util.Set<Role> roles = groupRoles(name);
+		if (roles.isEmpty()) {
+			throw new GameException("Le groupe « " + name + " » ne contient aucun rôle disponible.");
+		}
+		String done;
+		switch (action) {
+			case "ajouter" -> {
+				script.addAll(roles);
+				done = "Groupe « " + name + " » ajouté au script";
+			}
+			case "retirer" -> {
+				if (script.size() - script.stream().filter(roles::contains).count() == 0) {
+					throw new GameException("Le script serait vide.");
+				}
+				script.removeAll(roles);
+				done = "Groupe « " + name + " » retiré du script";
+			}
+			case "seulement" -> {
+				script = java.util.EnumSet.copyOf(roles);
+				done = "Script réduit au groupe « " + name + " »";
+			}
+			default -> throw new GameException("Groupe : ajouter, retirer ou seulement.");
+		}
+		scriptName = "Script personnalisé";
+		String problem = fr.valcombe.rules.Setup.check(script, Math.max(5, lobby.size()));
+		return done + " (" + script.size() + " rôles)." + (problem != null ? " Attention : " + problem : "");
 	}
 
 	// ------------------------------------------------------------------

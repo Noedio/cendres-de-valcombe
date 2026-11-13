@@ -536,7 +536,9 @@ final class Atelier {
 	private void exportPack(HttpExchange ex) throws IOException {
 		Map<String, List<String>> q = query(ex.getRequestURI().getRawQuery());
 		String pack = onServer(() -> creations.exportPack(q.getOrDefault("roles", List.of()),
-			q.getOrDefault("scenarios", List.of()), q.getOrDefault("cartes", List.of()), q.getOrDefault("structures", List.of())), 60);
+			q.getOrDefault("scenarios", List.of()), q.getOrDefault("cartes", List.of()), q.getOrDefault("structures", List.of()),
+			// Un nom de groupe peut contenir une virgule : chaque nom arrive encodé une seconde fois.
+			q.getOrDefault("groupes", List.<String>of()).stream().map(n -> URLDecoder.decode(n, StandardCharsets.UTF_8)).toList()), 60);
 		ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"creations.valcombe\"");
 		send(ex, 200, "application/octet-stream", pack.getBytes(StandardCharsets.UTF_8));
 	}

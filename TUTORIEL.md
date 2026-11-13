@@ -2,6 +2,8 @@
 
 Du serveur à la dernière nuit : installer, héberger, préparer une soirée, jouer, mener la partie en Conteur, et chaque rôle expliqué.
 
+Pour les joueurs, le [guide du joueur](GUIDE-JOUEUR.md) reprend les règles de la table, rôle par rôle, et ce que le jeu en fait.
+
 Sommaire :
 
 1. [Ce qu'il faut](#1-ce-quil-faut)
@@ -280,6 +282,7 @@ La page web :
 - **Liens de l'Atelier** : chaque `/vc atelier` donne un nouveau lien (l'ancien ne marche plus) ; un lien cesse de fonctionner au bout de douze heures, ou dès que son propriétaire n'est plus opérateur. `/vc atelier fermer` ferme le vôtre. `/vc tablette fermer` ne ferme que la tablette du Conteur : l'Atelier des opérateurs reste ouvert.
 - **Mots des commandes** : `/vc carte trone` (ancien nom : `siege`), `/vc carte outils` (ancien nom : `baguette`), `/vc carte copier <id> [nouvel_id] [nom]` (ou `dupliquer`) ; les anciens noms marchent toujours. `/vc carte importer <fichier>` prend un fichier du dossier d'import, avec les mêmes contrôles que l'import de la page web.
 - **Partage** : un fichier `.valcombe` à envoyer à un autre hôte. Il emporte rôles, scénarios et cartes ; vos structures du catalogue y voyagent aussi, avec les mêmes contrôles de taille à l'arrivée.
+- **Groupes de rôles** : sur la page Scénarios, « Ranger la sélection dans un groupe… » range les rôles cochés sous un nom, et « Ranger par : groupe » les présente ainsi. Les groupes partent dans le fichier `.valcombe` (cochez-les dans l'onglet Partage) avec leurs rôles créés ; à l'import, un groupe remplace celui de même nom. Dans le jeu, l'éditeur de script (Pupitre du Conteur › Éditer le script) propose les groupes dans sa colonne de droite : cliquer sur le nom passe au groupe suivant (ses jetons sont soulignés d'or), puis « + » l'ajoute au script, « − » l'en retire, « Seul » ne garde que lui ; « Ranger… » enregistre le script en cours comme groupe. En commande : `/vc script groupe <ajouter|retirer|seulement|ranger|supprimer> <nom>`.
 
 ## 9. En cas de souci
 

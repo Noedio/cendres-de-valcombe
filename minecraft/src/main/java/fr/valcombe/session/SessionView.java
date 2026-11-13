@@ -63,6 +63,13 @@ final class SessionView {
 		sc.put("name", ses.scriptName);
 		sc.put("roles", ses.script.stream().map(Role::name).toList());
 		sc.put("saved", ses.savedScripts);
+		if (leader) {
+			// Groupes en noms de rôles (comme « roles ») ; les rôles disparus sont ignorés.
+			Map<String, Object> groups = new LinkedHashMap<>();
+			ses.roleGroups.forEach((n, ids) -> groups.put(n, ids.stream().map(Role::parse)
+				.filter(java.util.Objects::nonNull).map(Role::name).toList()));
+			sc.put("groups", groups);
+		}
 		sc.put("problem", fr.valcombe.rules.Setup.check(ses.script, Math.max(5, ses.lobby.size())));
 		v.put("script", sc);
 		// Rôles créés dans l'Atelier : le client remplit ses emplacements avec ces fiches.

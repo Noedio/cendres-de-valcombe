@@ -929,6 +929,24 @@ public class ScreensGameTest implements FabricClientGameTest {
 			world.getServer().runCommand("vc script basculer margrave");
 			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
 			shot(ctx, "3b-script");
+			// Groupes de rôles : ranger le script dans un groupe, le réduire au groupe, l'agrandir de nouveau.
+			send(ctx, "vc script basculer goule");
+			send(ctx, "vc script basculer margrave");
+			send(ctx, "vc script groupe ranger Sans la Goule");
+			send(ctx, "vc script complet");
+			ctx.waitTicks(10);
+			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
+			ctx.waitTicks(10);
+			shot(ctx, "3b2-script-groupe");
+			send(ctx, "vc script groupe seulement Sans la Goule");
+			ctx.waitTicks(5);
+			int inGroup = world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.creations().groups()
+				.getOrDefault("Sans la Goule", java.util.List.of()).size());
+			int scripted = world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.session().script().size());
+			check(inGroup > 10 && scripted == inGroup, "groupe rangé puis appliqué : " + inGroup + " / " + scripted);
+			send(ctx, "vc script groupe supprimer Sans la Goule");
+			ctx.waitTicks(5);
+			check(world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.creations().groups().isEmpty()), "groupe supprimé");
 			world.getServer().runCommand("vc script complet");
 			ctx.setScreen(fr.valcombe.client.screen.SettingsScreen::new);
 			shot(ctx, "3c-reglages");
