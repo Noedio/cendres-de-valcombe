@@ -220,6 +220,8 @@ final class Grimoire {
 				ClientState.str(role, "id"), ClientState.str(role, "team"), ClientState.bool(s, "alive"), false,
 				onClick == null ? null : () -> onClick.accept(name));
 			t.labelOutward(angle);
+			// La plaque montre le nom raccourci ; la narration (et le message du widget) garde le nom entier.
+			t.setMessage(Component.literal(name));
 			if (ClientState.bool(row, "poisoned")) {
 				t.marker("poison");
 			}
