@@ -6,6 +6,7 @@ import fr.valcombe.client.ClientState;
 import fr.valcombe.client.Vignettes;
 import fr.valcombe.client.hd.Hd;
 import fr.valcombe.client.hd.HdButton;
+import fr.valcombe.client.hd.HdFonts;
 import fr.valcombe.client.hd.HdStyle;
 import fr.valcombe.client.screen.PartiesScreen;
 
@@ -147,8 +148,46 @@ public class AtelierHome extends AtelierPage {
 	// Une entrée
 	// ------------------------------------------------------------------
 
+	/** Le nom d'une entrée mis en page : son style (taille adaptée) et ses lignes (une ou deux, jamais coupées). */
+	public record TitleFit(HdStyle style, List<String> lines) {
+	}
+
+	/** Tailles du nom d'une entrée, de la plus grande à la plus petite. */
+	private static final float[] TITLE_SIZES = {12, 11, 10.5f, 10, 9.5f, 9};
+
+	/**
+	 * Le nom d'une entrée dans cette largeur (pixels réels, à cette échelle), sans jamais le couper : sur une ligne à la
+	 * plus grande taille qui tient (jusqu'à 10) ; sinon sur deux lignes, à la plus grande taille où chacune tient ; en
+	 * dernier recours, à la plus petite taille, sur autant de lignes qu'il faut. narrow : une entrée étroite commence
+	 * à 10.
+	 */
+	public static TitleFit titleFit(String title, int width, int scale, boolean narrow) {
+		float start = narrow ? 10 : 12;
+		for (float size : TITLE_SIZES) {
+			if (size > start || size < 10) {
+				continue;
+			}
+			HdStyle st = HdStyle.SECTION.size(size);
+			if (HdFonts.width(st, scale, title) <= width) {
+				return new TitleFit(st, List.of(title));
+			}
+		}
+		for (float size : TITLE_SIZES) {
+			if (size > start) {
+				continue;
+			}
+			HdStyle st = HdStyle.SECTION.size(size);
+			List<String> lines = HdFonts.wrap(st, scale, title, width);
+			if (lines.size() <= 2 && lines.stream().allMatch(l -> HdFonts.width(st, scale, l) <= width)) {
+				return new TitleFit(st, lines);
+			}
+		}
+		HdStyle st = HdStyle.SECTION.size(TITLE_SIZES[TITLE_SIZES.length - 1]);
+		return new TitleFit(st, HdFonts.wrap(st, scale, title, width));
+	}
+
 	/** Une grande entrée de l'accueil : illustration, nom, ce qu'elle contient ; dorée au survol. */
-	static final class Tile extends HdButton {
+	public static final class Tile extends HdButton {
 		private final String line;
 		private final int art;
 
@@ -156,6 +195,13 @@ public class AtelierHome extends AtelierPage {
 			super(x, y, w, h, title, action);
 			this.line = line;
 			this.art = art;
+		}
+
+		/** Le nom de l'entrée tel qu'il est dessiné à cette échelle (pour les tests en jeu). */
+		public TitleFit titleAt(int scale) {
+			int w = getWidth() * scale;
+			int pad = 4 * scale;
+			return titleFit(getMessage().getString(), w - 2 * pad - 4 * scale, scale, w < 110 * scale);
 		}
 
 		@Override
@@ -168,10 +214,13 @@ public class AtelierHome extends AtelierPage {
 				boolean hot = isHoveredOrFocused();
 				// Le carton de l'entrée, puis son illustration en haut, son nom et sa ligne en bas.
 				hd.inset(x, y, w, h);
-				HdStyle titleStyle = HdStyle.SECTION.size(w < hd.u(110) ? 10 : 12);
-				HdStyle lineStyle = HdStyle.PETIT;
-				int textH = hd.lineHeight(titleStyle) + hd.lineHeight(lineStyle) * (w < hd.u(110) ? 2 : 1) + hd.u(8);
 				int pad = hd.u(4);
+				// Le nom n'est jamais coupé : plus petit, ou sur deux lignes (voir titleFit).
+				TitleFit fit = titleFit(getMessage().getString(), w - 2 * pad - hd.u(4), hd.scale(), w < hd.u(110));
+				HdStyle titleStyle = fit.style();
+				HdStyle lineStyle = HdStyle.PETIT;
+				int titleH = hd.lineHeight(titleStyle) * fit.lines().size();
+				int textH = titleH + hd.lineHeight(lineStyle) * (w < hd.u(110) ? 2 : 1) + hd.u(8);
 				int ax = x + pad;
 				int ay = y + pad;
 				int aw = w - 2 * pad;
@@ -183,9 +232,10 @@ public class AtelierHome extends AtelierPage {
 					AtelierArt.frameArt(hd, ax, ay, aw, ah);
 				}
 				int ty = y + h - textH + hd.u(2);
-				String title = hd.ellipsize(titleStyle, getMessage().getString(), w - 2 * pad - hd.u(4));
-				hd.text(titleStyle, title, x + pad + hd.u(2), ty, hot ? Hd.WINE : Hd.INK);
-				int ly = ty + hd.lineHeight(titleStyle) + hd.u(1);
+				for (int i = 0; i < fit.lines().size(); i++) {
+					hd.text(titleStyle, fit.lines().get(i), x + pad + hd.u(2), ty + i * hd.lineHeight(titleStyle), hot ? Hd.WINE : Hd.INK);
+				}
+				int ly = ty + titleH + hd.u(1);
 				hd.paragraph(lineStyle, line, x + pad + hd.u(2), ly, w - 2 * pad - hd.u(4), Hd.INK_SOFT, y + h - pad - ly);
 				if (hot) {
 					hd.frame(x, y, w, h, Math.max(1, hd.u(1)), 0xFFD9B45A);

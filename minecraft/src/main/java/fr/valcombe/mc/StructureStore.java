@@ -407,6 +407,18 @@ public final class StructureStore {
 		return clip;
 	}
 
+	/** Nombre de blocs d'une structure du catalogue qui ne sont pas de l'air (fiches, tests en jeu). */
+	public int solidCount(String id) {
+		Clip c = clip(id);
+		int n = 0;
+		for (int k : c.cells) {
+			if (k != Clip.EMPTY && !c.palette.get(k).isAir()) {
+				n++;
+			}
+		}
+		return n;
+	}
+
 	/** Les blocs d'origine d'une structure fournie, même modifiée. */
 	Clip originalClip(String id) {
 		originalDef(id);

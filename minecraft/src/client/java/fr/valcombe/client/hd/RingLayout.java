@@ -7,19 +7,24 @@ import java.util.List;
  * Mise en page d'un cercle de sièges : les jetons sur une ellipse qui épouse une zone, et le nom de chaque joueur
  * sur une plaque qui ne touche ni une autre plaque, ni un autre jeton, ni le bord de la zone.
  *
+ * <p>Les plaques sont toujours à l'extérieur du cercle, du côté de leur jeton selon son angle (à droite d'un jeton de
+ * droite, au-dessus d'un jeton du haut...), et chacune est plus près de son jeton que de tout autre : on lit d'un coup
+ * d'œil à qui est le nom. Le centre du cercle reste libre (texte, aiguille du vote).
+ *
  * <p>Pour chaque taille de jeton (de la plus grande à la plus petite) et chaque façon de poser les noms, le calcul :
  * <ol>
  * <li>pose les sièges également espacés le long du bord de l'ellipse (spread), le premier en haut ;</li>
  * <li>pose chaque plaque le long de la normale à l'ellipse, collée à son jeton, vers l'extérieur (ou, une fois sur
- * deux, vers l'intérieur, ou un rang plus loin) ;</li>
+ * deux, un rang plus loin vers l'extérieur) ;</li>
  * <li>rétrécit et recentre l'ellipse jusqu'à ce que jetons et plaques tiennent dans la zone ; si les noms entiers ne
  * laissent plus assez de place aux jetons, il les raccourcit tous à une même largeur ;</li>
  * <li>raccourcit (« … ») la plus large de deux plaques qui se touchent, ou une plaque qui touche un autre jeton, un
- * caractère à la fois, puis rend des caractères à celles qui ont de nouveau la place. En dernier recours seulement,
+ * caractère à la fois (de même une plaque plus près d'un autre jeton que du sien), puis rend des caractères à celles
+ * qui ont de nouveau la place. En dernier recours seulement,
  * un nom est caché (il reste dans l'infobulle du jeton) : rien ne se chevauche jamais.</li>
  * </ol>
  * La meilleure mise en page est celle qui montre le plus de lettres, puis les plus grands jetons, puis les noms à
- * l'extérieur. Calcul pur, en unités d'interface (fractionnaires pour les plaques), sans Minecraft : la largeur des
+ * plus près. Calcul pur, en unités d'interface (fractionnaires pour les plaques), sans Minecraft : la largeur des
  * textes est donnée par la fonction de mesure (vérifié par RingLayoutTest).
  */
 public final class RingLayout {
@@ -80,14 +85,12 @@ public final class RingLayout {
 
 	/** Façon de poser les noms. */
 	public enum Labels {
-		/** Tous vers l'extérieur. */
+		/** Tous vers l'extérieur, contre leur jeton. */
 		OUTSIDE(0),
-		/** Un sur deux vers l'intérieur du cercle (les voisins du haut et du bas ne se disputent plus la place). */
-		ALTERNATE_INSIDE(3),
-		/** Un sur deux un rang plus loin vers l'extérieur. */
+		/** Un sur deux un rang plus loin vers l'extérieur (les voisins serrés ne se disputent plus la place). */
 		ALTERNATE_FAR(4);
 
-		/** Préférence (retirée du score) : à place égale, les noms vont dehors. */
+		/** Préférence (retirée du score) : à place égale, les noms restent contre leur jeton. */
 		final double penalty;
 
 		Labels(double penalty) {
@@ -131,12 +134,13 @@ public final class RingLayout {
 		double pad = 3;
 		/** Écart entre un jeton et sa plaque. */
 		double labelGap = 1.5;
-		/** Écart minimal entre deux plaques. */
-		double plateGap = 1;
-		/** Écart minimal entre une plaque et un autre jeton (les marqueurs dépassent du disque d'une unité et demie). */
-		double tokenClear = 2;
-		/** Noms vers l'intérieur permis (le centre du cercle ne porte rien d'autre). */
-		boolean inside = true;
+		/** Écart minimal entre deux plaques : deux noms voisins se lisent séparément. */
+		double plateGap = 2;
+		/**
+		 * Écart minimal entre une plaque et un autre jeton : les marqueurs dépassent du disque d'une unité et demie, et
+		 * il reste un jour visible au-delà.
+		 */
+		double tokenClear = 3;
 		/** Rapport largeur / hauteur de l'ellipse : un ovale franc, qui garde l'allure d'une table. */
 		double maxWide = 1.8;
 		double maxTall = 1.25;
@@ -163,12 +167,6 @@ public final class RingLayout {
 		public Spec aspect(double wide, double tall) {
 			this.maxWide = wide;
 			this.maxTall = tall;
-			return this;
-		}
-
-		/** Interdit les noms vers l'intérieur (le centre du cercle porte un texte, une aiguille...). */
-		public Spec outsideOnly() {
-			this.inside = false;
 			return this;
 		}
 
@@ -275,8 +273,11 @@ public final class RingLayout {
 		final int[] tx;
 		final int[] ty;
 		final Box[] plates;
+		/** Rapport largeur / hauteur permis à l'ellipse (celui de la demande, ou plus allongé). */
+		double wide;
 
 		Attempt(Spec spec, Variants[] names, int size, Labels labels) {
+			this.wide = spec.maxWide;
 			this.spec = spec;
 			this.names = names;
 			this.n = names.length;
@@ -290,34 +291,64 @@ public final class RingLayout {
 			this.ty = new int[n];
 			this.plates = new Box[n];
 			this.side = new int[n];
+		}
+
+		/** Les places des plaques ont-elles été choisies (au premier placement, quand les angles sont connus) ? */
+		private boolean sidesChosen;
+
+		/**
+		 * Choisit la place de chaque plaque. En ALTERNATE_FAR, seules les plaques du haut et du bas du cercle alternent
+		 * (contre le jeton, un rang plus loin, contre le jeton...) : c'est là que des noms voisins se posent côte à côte ;
+		 * sur les côtés, ils sont l'un au-dessus de l'autre et restent contre leur jeton.
+		 */
+		private void chooseSides() {
+			sidesChosen = true;
+			java.util.Arrays.fill(side, OUT);
+			if (labels != Labels.ALTERNATE_FAR) {
+				return;
+			}
+			boolean[] vertical = new boolean[n];
+			int start = -1;
 			for (int i = 0; i < n; i++) {
-				side[i] = i % 2 == 0 ? OUT : labels == Labels.ALTERNATE_INSIDE ? IN : labels == Labels.ALTERNATE_FAR ? FAR : OUT;
+				vertical[i] = Math.abs(Math.sin(angles[i])) > VERTICAL;
+				if (!vertical[i] && start < 0) {
+					start = i;
+				}
+			}
+			if (start < 0) {
+				for (int i = 0; i < n; i++) {
+					side[i] = i % 2 == 1 ? FAR : OUT;
+				}
+				return;
+			}
+			// Chaque suite de sièges du haut (ou du bas) alterne en partant d'une plaque contre son jeton.
+			int run = 0;
+			for (int k = 1; k <= n; k++) {
+				int i = (start + k) % n;
+				run = vertical[i] ? run + 1 : 0;
+				side[i] = vertical[i] && run % 2 == 0 ? FAR : OUT;
 			}
 		}
 
-		/** Côté de chaque plaque : dehors, dedans, ou dehors un rang plus loin. */
+		/** Place de chaque plaque : contre son jeton, ou un rang plus loin, toujours à l'extérieur. */
 		static final int OUT = 0;
-		static final int IN = 1;
 		static final int FAR = 2;
+		/** Au-delà de ce sinus de l'angle, un siège est en haut ou en bas du cercle. */
+		static final double VERTICAL = 0.55;
 		final int[] side;
-
-		/** Le nom du siège i va-t-il vers l'intérieur ? */
-		boolean inward(int i) {
-			return side[i] == IN;
-		}
 
 		boolean far(int i) {
 			return side[i] == FAR;
 		}
 
 		/**
-		 * Essaie de poser la plaque i (à sa forme en cours) d'un autre côté que le sien, où elle ne touche rien. Vrai si
-		 * elle y est restée ; sinon tout est remis comme avant.
+		 * Essaie de poser la plaque i (à sa forme en cours) à l'autre place (contre son jeton ou un rang plus loin), où
+		 * elle ne touche rien. Vrai si elle y est restée ; sinon tout est remis comme avant.
 		 */
 		boolean flip(int i) {
 			int was = side[i];
-			for (int s : new int[] {OUT, IN, FAR}) {
-				if (s == was || s == IN && !spec.inside || level[i] < 0) {
+			for (int s : new int[] {OUT, FAR}) {
+				if (s == was || level[i] < 0) {
 					continue;
 				}
 				side[i] = s;
@@ -340,6 +371,9 @@ public final class RingLayout {
 				tx[i] = (int) Math.round(cx + rx * Math.cos(angles[i]));
 				ty[i] = (int) Math.round(cy + ry * Math.sin(angles[i]));
 			}
+			if (!sidesChosen) {
+				chooseSides();
+			}
 			for (int i = 0; i < n; i++) {
 				plates[i] = plate(i);
 			}
@@ -361,10 +395,6 @@ public final class RingLayout {
 			double norm = Math.hypot(nx, ny);
 			nx /= norm;
 			ny /= norm;
-			if (inward(i)) {
-				nx = -nx;
-				ny = -ny;
-			}
 			double clear = size / 2.0 + spec.labelGap + (far(i) ? h + spec.plateGap : 0);
 			double px = tx[i];
 			double py = ty[i];
@@ -397,7 +427,7 @@ public final class RingLayout {
 
 		/** Garde un ovale franc (on ne fait que réduire un des rayons). */
 		void clampAspect() {
-			rx = Math.min(rx, ry * spec.maxWide);
+			rx = Math.min(rx, ry * wide);
 			ry = Math.min(ry, rx * spec.maxTall);
 		}
 
@@ -477,9 +507,12 @@ public final class RingLayout {
 		static final int NONE = -1;
 		/** La plaque sort de la zone. */
 		static final int ZONE = -2;
+		/** Une plaque est plus près de son jeton que de tout autre d'au moins cet écart (unités). */
+		static final double OWN_MARGIN = 1;
 
 		/**
-		 * Ce que touche la plaque i : NONE, ZONE, j (le jeton du siège j) ou -3 - j (la plaque du siège j).
+		 * Ce que touche la plaque i : NONE, ZONE, j (le jeton du siège j, trop près ou plus près que celui de i) ou -3 - j
+		 * (la plaque du siège j).
 		 */
 		int conflict(int i) {
 			Box p = plates[i];
@@ -489,11 +522,13 @@ public final class RingLayout {
 			if (!p.inside(spec.zone)) {
 				return ZONE;
 			}
+			double own = p.distanceTo(tx[i], ty[i]);
 			for (int j = 0; j < n; j++) {
 				if (j == i) {
 					continue;
 				}
-				if (p.distanceTo(tx[j], ty[j]) < size / 2.0 + spec.tokenClear) {
+				double d = p.distanceTo(tx[j], ty[j]);
+				if (d < size / 2.0 + spec.tokenClear || d < own + OWN_MARGIN) {
 					return j;
 				}
 				Box q = plates[j];
@@ -674,6 +709,12 @@ public final class RingLayout {
 	private static final double SIZE_WEIGHT = 1.5;
 	/** Largeurs imposées d'emblée aux noms, en part du plus large : aucune, puis de plus en plus courtes. */
 	private static final double[] CAPS = {1, 0.75, 0.55};
+	/** Allongements essayés de l'ovale (part du rapport largeur / hauteur demandé). */
+	private static final double[] STRETCH = {1, 1.5};
+	/** L'ovale allongé n'est essayé que si moins de cette part des lettres se lit, ou si un nom est caché. */
+	private static final double STRETCH_BELOW = 0.9;
+	/** Préférence (retirée du score) pour l'ovale demandé, à lettres égales. */
+	private static final double STRETCH_PENALTY = 3;
 
 	/** Note d'une mise en page : les lettres montrées, puis la taille des jetons, puis les noms dehors. */
 	private static double score(Result r) {
@@ -697,31 +738,36 @@ public final class RingLayout {
 		}
 		Result best = null;
 		double bestScore = -Double.MAX_VALUE;
-		List<Labels> ways = new ArrayList<>(List.of(Labels.OUTSIDE, Labels.ALTERNATE_FAR));
-		if (spec.inside && n >= 4) {
-			ways.add(1, Labels.ALTERNATE_INSIDE);
-		}
+		List<Labels> ways = List.of(Labels.OUTSIDE, Labels.ALTERNATE_FAR);
 		double widest = 0;
 		for (Variants v : vs) {
 			widest = Math.max(widest, v.widths()[v.full()]);
 		}
-		for (int size = spec.sizeMax; size >= spec.sizeMin; size -= 2) {
-			// Une taille plus petite ne peut pas faire mieux que tous les noms entiers à cette taille.
-			if (best != null && bestScore >= 100 + SIZE_WEIGHT * size) {
+		// D'abord l'ovale de table demandé ; si des noms y restent trop coupés, un ovale plus allongé (la place des côtés
+		// sert alors aux noms au lieu de rester vide).
+		for (double stretch : STRETCH) {
+			if (best != null && (stretch > 1 && best.hidden() == 0 && best.shownRatio() >= STRETCH_BELOW)) {
 				break;
 			}
-			for (Labels way : ways) {
-				for (double c : CAPS) {
-					Attempt a = new Attempt(spec, vs, size, way);
-					if (c < 1) {
-						a.cap(widest * c);
-					}
-					if (a.run()) {
-						Result r = a.result();
-						double s = score(r);
-						if (s > bestScore) {
-							best = r;
-							bestScore = s;
+			for (int size = spec.sizeMax; size >= spec.sizeMin; size -= 2) {
+				// Une taille plus petite ne peut pas faire mieux que tous les noms entiers à cette taille.
+				if (best != null && bestScore >= 100 + SIZE_WEIGHT * size) {
+					break;
+				}
+				for (Labels way : ways) {
+					for (double c : CAPS) {
+						Attempt a = new Attempt(spec, vs, size, way);
+						a.wide = spec.maxWide * stretch;
+						if (c < 1) {
+							a.cap(widest * c);
+						}
+						if (a.run()) {
+							Result r = a.result();
+							double s = score(r) - (stretch > 1 ? STRETCH_PENALTY : 0);
+							if (s > bestScore) {
+								best = r;
+								bestScore = s;
+							}
 						}
 					}
 				}

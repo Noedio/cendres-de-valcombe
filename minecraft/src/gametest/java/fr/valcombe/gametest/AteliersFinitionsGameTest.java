@@ -24,7 +24,10 @@ import net.minecraft.world.level.gamerules.GameRules;
  * <li>plus aucune notification de progrès Minecraft dans un monde de Valcombe : la règle announceAdvancements est à
  * faux (monde et serveur), et un progrès obtenu dans un atelier ne fait apparaître aucune bulle ;</li>
  * <li>les étiquettes de la sélection 3D (plaques à fond sombre, lettres cernées) lisibles de près comme de loin :
- * captures à 6 et à 45 blocs.</li>
+ * aucune ne touche une autre à l'écran (vérifié par le calcul de leurs rectangles), captures à 6 et à 45 blocs ;</li>
+ * <li>les réponses de WorldEdit en français, même avec un client réglé dans une autre langue (celui des tests est en
+ * anglais) ;</li>
+ * <li>les captures de vues du monde se font chat effacé.</li>
  * </ol>
  */
 public class AteliersFinitionsGameTest implements FabricClientGameTest {
@@ -33,6 +36,15 @@ public class AteliersFinitionsGameTest implements FabricClientGameTest {
 			throw new AssertionError("Échec : " + what);
 		}
 		System.out.println("[valcombe-test] finitions des ateliers : " + what);
+	}
+
+	/** Les messages du serveur reçus par le client pendant le test. */
+	private static final java.util.List<String> RECEIVED = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private static boolean listening;
+
+	/** Efface le chat avant une capture d'une vue du monde : ses lignes cachaient ce qu'on voulait voir. */
+	static void clearChat(ClientGameTestContext ctx) {
+		ctx.runOnClient(mc -> mc.gui.hud.getChat().clearMessages(false));
 	}
 
 	private static void shot(ClientGameTestContext ctx, String name) {
@@ -84,9 +96,25 @@ public class AteliersFinitionsGameTest implements FabricClientGameTest {
 				"aucune bulle « Progrès réalisé ! » à l'écran");
 			shot(ctx, "finitions-sans-bulle-de-progres");
 
-			// 2. Les étiquettes de la sélection 3D, de près puis de loin.
+			// 2. Les étiquettes de la sélection 3D, de près puis de loin ; WorldEdit répond en français.
+			if (!listening) {
+				listening = true;
+				net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+					if (!overlay) {
+						RECEIVED.add(message.getString());
+					}
+				});
+			}
+			RECEIVED.clear();
+			String lang = ctx.computeOnClient(mc -> mc.options.languageCode);
 			type(ctx, String.format(Locale.ROOT, "/pos1 %d,%d,%d", 3, 65, 3));
 			type(ctx, String.format(Locale.ROOT, "/pos2 %d,%d,%d", 10, 70, 14));
+			for (int i = 0; i < 40 && RECEIVED.stream().noneMatch(m -> m.contains("position")); i += 5) {
+				ctx.waitTicks(5);
+			}
+			check(RECEIVED.stream().anyMatch(m -> m.startsWith("Première position définie"))
+				&& RECEIVED.stream().noneMatch(m -> m.startsWith("First position") || m.startsWith("Second position")),
+				"WorldEdit répond en français (client en « " + lang + " ») : " + RECEIVED);
 			for (int i = 0; i < 100 && !ctx.computeOnClient(mc -> BuildSelection.shown()); i += 5) {
 				ctx.waitTicks(5);
 			}
@@ -98,9 +126,19 @@ public class AteliersFinitionsGameTest implements FabricClientGameTest {
 				p.teleportTo(ValcombeMod.worlds().level(atelier), 6.5, 69, -3.5, Set.of(), -15f, 25f, false);
 			});
 			ctx.waitTicks(30);
+			clearChat(ctx);
+			ctx.waitTicks(4);
+			String near = ctx.computeOnClient(mc -> BuildSelection.layoutProblem());
+			check(near == null, "de près, les plaques de la sélection ne se touchent pas : " + near);
 			shot(ctx, "finitions-selection-de-pres");
 			server.runOnServer(s -> player(s, me).teleportTo(ValcombeMod.worlds().level(atelier), 38.5, 88, -26.5, Set.of(), 45f, 28f, false));
 			ctx.waitTicks(30);
+			clearChat(ctx);
+			ctx.waitTicks(4);
+			String far = ctx.computeOnClient(mc -> BuildSelection.layoutProblem());
+			check(far == null, "de loin, les plaques de la sélection ne se touchent pas : " + far);
+			check(ctx.computeOnClient(mc -> BuildSelection.shownTexts().stream().anyMatch(s -> s.startsWith("L 8 × l 12 × h 6"))),
+				"de loin, le cartouche dit les trois côtés en entier : " + ctx.computeOnClient(mc -> BuildSelection.shownTexts()));
 			shot(ctx, "finitions-selection-de-loin");
 
 			// Ménage : l'atelier d'essai ne reste pas dans « Ateliers ouverts » pour les tests suivants.

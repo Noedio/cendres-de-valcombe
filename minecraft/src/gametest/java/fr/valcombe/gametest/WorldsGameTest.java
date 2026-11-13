@@ -110,6 +110,7 @@ public class WorldsGameTest implements FabricClientGameTest {
 				mc.player.setXRot(20);
 			});
 			ctx.waitTicks(20);
+			WorldView.clearChat(ctx);
 			System.out.println("[valcombe-test] capture : " + ctx.takeScreenshot("valcombe-monde-plat"));
 
 			// Un bloc posé au-dessus du sol, enregistré sur le disque.

@@ -43,7 +43,8 @@ import org.slf4j.LoggerFactory;
  * <li>Mur des rôles : le script de la prochaine partie, ses rôles en jetons, les inscrits et le Conteur.</li>
  * <li>Tableau des parties : deux panneaux de part et d'autre de l'allée, une fiche par partie (nom, état, jour ou nuit,
  * joueurs et places, Conteur, spectateurs), mise à jour en direct. Un clic sur une fiche ouvre l'écran « Parties » sur
- * elle (sans le mod client : la fiche au chat, avec ses liens [Rejoindre] [Regarder]).</li>
+ * elle (sans le mod client : la fiche au chat, avec ses liens [Rejoindre] [Regarder]). Six fiches par page : au-delà,
+ * des flèches aux bouts du tableau (un clic) passent d'une page à l'autre.</li>
  * <li>Portes : six portes portent le nom d'un monde (le monde de la partie, puis les autres mondes de partie) ; on y entre
  * pour y aller. Le menu J, entrée « Mondes », donne la liste complète.</li>
  * </ul>
@@ -87,6 +88,8 @@ public final class Hub implements WorldManager.Listener {
 	/** Les destinations des six portes, refaites avec les noms. */
 	private final String[] doors = new String[HubHall.PORTALS.size()];
 	private int tick;
+	/** La page du tableau des parties montrée (six fiches par page), la même pour tous. */
+	private int page;
 
 	/**
 	 * Le mur des rôles montre la partie principale ; chaque porte qui mène à un monde de partie dit ce qui s'y passe
@@ -340,8 +343,13 @@ public final class Hub implements WorldManager.Listener {
 		}
 		update(level, Group.NOMS, names.toString(), () -> doorNames(level, labels));
 		update(level, Group.VOILES, open.toString(), () -> veils(level));
-		List<GameCard> cards = Games.all().stream().map(GameRoom::card).toList();
-		update(level, Group.TABLEAU, cards.toString(), () -> board(level, cards));
+		List<GameCard> all = Games.all().stream().map(GameRoom::card).toList();
+		int pages = pages(all.size());
+		page = Math.min(page, pages - 1);
+		int shownPage = page;
+		List<GameCard> cards = all.subList(page * HubHall.SLOTS, Math.min(all.size(), (page + 1) * HubHall.SLOTS));
+		update(level, Group.TABLEAU, (pages > 1 ? "page " + (page + 1) + "/" + pages + " " : "") + cards,
+			() -> board(level, cards, shownPage, pages));
 		GameRoom main = Games.main();
 		if (main != null) {
 			Session session = main.session();
@@ -449,6 +457,41 @@ public final class Hub implements WorldManager.Listener {
 
 	/** L'étiquette qui porte l'identifiant de la partie d'une fiche du tableau (sa zone cliquable). */
 	static final String CARD_TAG = "vc_partie_";
+	/** Les étiquettes des flèches du tableau (zones cliquables) : page précédente, page suivante. */
+	static final String PREVIOUS_TAG = "vc_page_precedente";
+	static final String NEXT_TAG = "vc_page_suivante";
+
+	/** Nombre de pages du tableau pour ce nombre de parties (six fiches par page, une page au moins). */
+	public static int pages(int games) {
+		return Math.max(1, (games + HubHall.SLOTS - 1) / HubHall.SLOTS);
+	}
+
+	/** La page du tableau montrée (0 : la première). */
+	public int page() {
+		return page;
+	}
+
+	/**
+	 * Tourne le tableau des parties d'une page (delta -1 ou 1 ; de la dernière, on revient à la première) et le refait
+	 * aussitôt. Renvoie le message pour celui qui a cliqué.
+	 */
+	public String turnPage(int delta) {
+		int pages = pages(Games.all().size());
+		page = Math.floorMod(page + delta, pages);
+		ServerLevel level = levelIfOpen();
+		if (level != null) {
+			refresh(level);
+		}
+		return "Tableau des parties : page " + (page + 1) + " sur " + pages + ".";
+	}
+
+	/** -1 ou 1 si cette entité est une flèche du tableau des parties (page précédente, suivante), sinon 0. */
+	public static int boardArrow(net.minecraft.world.entity.Entity e) {
+		if (e == null || !e.entityTags().contains(Group.TABLEAU.tag())) {
+			return 0;
+		}
+		return e.entityTags().contains(PREVIOUS_TAG) ? -1 : e.entityTags().contains(NEXT_TAG) ? 1 : 0;
+	}
 
 	/**
 	 * La partie dont cette entité est la fiche cliquable sur le tableau des parties du hub, ou null (ce n'est pas une
@@ -514,23 +557,27 @@ public final class Hub implements WorldManager.Listener {
 	}
 
 	/**
-	 * Le tableau des parties : l'en-tête de chaque panneau, puis une fiche par partie (six au plus ; au-delà, l'en-tête
-	 * renvoie au menu J), devant en entier, derrière en abrégé, chacune avec sa zone cliquable.
+	 * Le tableau des parties : l'en-tête de chaque panneau, puis une fiche par partie de la page montrée (six par page),
+	 * devant en entier, derrière en abrégé, chacune avec sa zone cliquable ; s'il y a plusieurs pages, une flèche à
+	 * chaque bout du tableau, des deux côtés, pour passer à la page d'avant ou d'après.
 	 */
-	private void board(ServerLevel level, List<GameCard> cards) {
+	private void board(ServerLevel level, List<GameCard> cards, int page, int pages) {
 		double feet = HubHall.FEET;
 		double front = HubHall.BOARD_FRONT + 0.04;
 		double back = HubHall.BOARD_BACK - 0.04;
 		double westMid = -(HubHall.BOARD_INNER + HubHall.BOARD_OUTER) / 2.0 + 0.5;
 		double eastMid = (HubHall.BOARD_INNER + HubHall.BOARD_OUTER) / 2.0 + 0.5;
-		int more = cards.size() - HubHall.SLOTS;
-		// En-têtes, sur les poutres : le titre à l'ouest, le mode d'emploi (ou les parties en plus) à l'est.
+		// En-têtes, sur les poutres : le titre à l'ouest, le mode d'emploi (et la page) à l'est.
 		text(level, Group.TABLEAU, westMid, feet + 4.2, front, 0f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
-		String hint = more > 0 ? "Et " + more + (more > 1 ? " autres parties" : " autre partie") + " : menu J, « Parties »"
+		String hint = pages > 1 ? "Page " + (page + 1) + " sur " + pages + " · les flèches aux bouts du tableau tournent les pages"
 			: "Clique une fiche : rejoindre ou regarder";
 		text(level, Group.TABLEAU, eastMid, feet + 4.25, front, 0f, 300, 0.6, comp(hint, "#F2E6C9", false), 0);
 		text(level, Group.TABLEAU, westMid, feet + 4.2, back, 180f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
-		text(level, Group.TABLEAU, eastMid, feet + 4.2, back, 180f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
+		text(level, Group.TABLEAU, eastMid, feet + 4.2, back, 180f, 300, 0.75, comp(pages > 1 ? "TABLEAU DES PARTIES · "
+			+ (page + 1) + "/" + pages : "TABLEAU DES PARTIES", "#F2C14E", true), 0);
+		if (pages > 1) {
+			arrows(level, page, pages);
+		}
 		for (int slot = 0; slot < HubHall.SLOTS; slot++) {
 			double cx = HubHall.cardX(slot);
 			if (slot >= cards.size()) {
@@ -546,6 +593,36 @@ public final class Hub implements WorldManager.Listener {
 				"summon minecraft:interaction %.3f %.3f %.3f {width:%.1ff,height:3.0f,response:1b,Tags:[\"vc_hub\",\"%s\",\"%s_%d\",\"%s\"]}",
 				cx, feet + 1.0, HubHall.BOARD_Z + 0.5, HubHall.CARD_WIDTH - 0.1, Group.TABLEAU.tag(), Group.TABLEAU.tag(),
 				gens.get(Group.TABLEAU), esc(CARD_TAG + c.id())));
+		}
+	}
+
+	/**
+	 * Les flèches du tableau, sur les poteaux des bouts, de chaque côté du panneau : à gauche de celui qui regarde, la
+	 * page d'avant (◀), à droite la page d'après (▶). Chaque face a ses propres zones cliquables (vue de dos, la gauche
+	 * et la droite s'échangent).
+	 */
+	private void arrows(ServerLevel level, int page, int pages) {
+		double feet = HubHall.FEET;
+		double west = -HubHall.BOARD_OUTER + 0.5;
+		double east = HubHall.BOARD_OUTER + 0.5;
+		String where = (page + 1) + " / " + pages;
+		// Face avant (vue de l'entrée, vers le nord) : l'ouest est à gauche. Face arrière : l'est est à gauche.
+		for (boolean front : new boolean[] {true, false}) {
+			double z = front ? HubHall.BOARD_FRONT + 0.06 : HubHall.BOARD_BACK - 0.06;
+			double zone = front ? HubHall.BOARD_FRONT + 0.45 : HubHall.BOARD_BACK - 0.45;
+			float yaw = front ? 0f : 180f;
+			double left = front ? west : east;
+			double right = front ? east : west;
+			text(level, Group.TABLEAU, left, feet + 2.0, z, yaw, 60, 1.6, comp("◀", "#F2C14E", true), 0x90201814);
+			text(level, Group.TABLEAU, left, feet + 1.55, z, yaw, 90, 0.45, comp("Page d'avant\n" + where, "#F2E6C9", false), 0);
+			text(level, Group.TABLEAU, right, feet + 2.0, z, yaw, 60, 1.6, comp("▶", "#F2C14E", true), 0x90201814);
+			text(level, Group.TABLEAU, right, feet + 1.55, z, yaw, 90, 0.45, comp("Page d'après\n" + where, "#F2E6C9", false), 0);
+			for (boolean previous : new boolean[] {true, false}) {
+				run(level, String.format(Locale.ROOT,
+					"summon minecraft:interaction %.3f %.3f %.3f {width:0.9f,height:1.6f,response:1b,Tags:[\"vc_hub\",\"%s\",\"%s_%d\",\"%s\"]}",
+					previous ? left : right, feet + 1.4, zone, Group.TABLEAU.tag(), Group.TABLEAU.tag(), gens.get(Group.TABLEAU),
+					previous ? PREVIOUS_TAG : NEXT_TAG));
+			}
 		}
 	}
 

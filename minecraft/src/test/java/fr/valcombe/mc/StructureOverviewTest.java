@@ -52,6 +52,22 @@ class StructureOverviewTest {
 				double off = offAxis(v, corner[0], corner[1]);
 				assertTrue(Math.abs(off) <= 52, what + " : la parcelle " + p.id + " sort du champ (" + Math.round(off) + "°)");
 			}
+			// Et de haut en bas, comme Minecraft projette l'image (champ vertical de 70°, écran 16:9) : le centre de chaque
+			// parcelle, au sol, est dans l'image (vérifié aussi en jeu, par StructuresWorkshopGameTest).
+			double[] eye = {v.x(), v.height() + 1.62, v.z()};
+			double yaw = Math.toRadians(v.yaw());
+			double pitch = Math.toRadians(v.pitch());
+			double[] f = {-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)};
+			double[] r = {-Math.cos(yaw), 0, -Math.sin(yaw)};
+			double[] u = {r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]};
+			double[] c = {p.x + 0.5 - eye[0], -eye[1], p.z + 0.5 - eye[2]};
+			double ahead = c[0] * f[0] + c[1] * f[1] + c[2] * f[2];
+			double side = c[0] * r[0] + c[1] * r[1] + c[2] * r[2];
+			double high = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
+			double tanV = Math.tan(Math.toRadians(35));
+			assertTrue(ahead > 0 && Math.abs(high) / ahead <= tanV && Math.abs(side) / ahead <= tanV * 16 / 9,
+				what + " : le centre de la parcelle " + p.id + " sort de l'image (" + Math.round(Math.toDegrees(Math.atan2(high, ahead)))
+					+ "° en hauteur, " + Math.round(Math.toDegrees(Math.atan2(side, ahead))) + "° de côté)");
 		}
 	}
 

@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 class TexturesTest {
 	private static final Path ASSETS = Path.of("src/client/resources/assets/valcombe");
 	private static final Path GUI = ASSETS.resolve("textures/gui");
+	/** Les emblèmes des rôles : dans les ressources communes (le serveur les sert à la page web de l'Atelier). */
+	private static final Path ROLES = Path.of("src/main/resources/assets/valcombe/textures/gui/roles");
 
 	/** Largeur, hauteur, profondeur et type de couleur lus dans l'en-tête IHDR du PNG. */
 	private static int[] header(Path png) throws IOException {
@@ -86,9 +88,9 @@ class TexturesTest {
 			}
 		}
 		for (String icon : icons) {
-			assertHd(GUI.resolve("roles/" + icon + ".png"), 128);
+			assertHd(ROLES.resolve(icon + ".png"), 128);
 		}
-		for (Path p : list(GUI.resolve("roles"), "*.png")) {
+		for (Path p : list(ROLES, "*.png")) {
 			assertHd(p, 128);
 		}
 	}

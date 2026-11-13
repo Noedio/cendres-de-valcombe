@@ -343,6 +343,7 @@ public final class WorldEditGate {
 	void tick() {
 		ticks++;
 		undo.sync();
+		SharedUndo.tickEnded();
 		if (ticks % 4 == 0) {
 			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 				sendSelection(p);

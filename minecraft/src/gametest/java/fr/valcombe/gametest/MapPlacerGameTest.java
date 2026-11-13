@@ -261,6 +261,7 @@ public class MapPlacerGameTest implements FabricClientGameTest {
 				mc.player.setXRot(-15);
 			});
 			ctx.waitTicks(40);
+			WorldView.clearChat(ctx);
 			System.out.println("[valcombe-test] capture : " + ctx.takeScreenshot("valcombe-carte-posee"));
 
 			// B retouché (un bloc ajouté, le bloc lointain retiré), puis capturé par la commande.

@@ -1,0 +1,9 @@
+{
+	"required": false,
+	"package": "fr.valcombe.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": ["WorldEditLocaleMixin"],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}

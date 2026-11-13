@@ -1095,6 +1095,7 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 	private void markersChanged(WorldEntry e, Draft d, Village.Marks before) {
 		if (before != null) {
 			d.undo.push(before);
+			SharedUndo.recorded(SharedUndo.Stack.MARKERS, e.id()); // à l'invité ou à l'opérateur dont l'action est en cours
 			while (d.undo.size() > 40) {
 				d.undo.removeLast();
 			}
@@ -1490,6 +1491,13 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 			n += d.undo.size();
 		}
 		return n;
+	}
+
+	/** Combien de modifications des repères on peut annuler, atelier par atelier (clé : l'identifiant de son monde). */
+	Map<String, Integer> markerUndoDepths() {
+		Map<String, Integer> out = new HashMap<>();
+		drafts.forEach((id, d) -> out.put(id, d.undo.size()));
+		return out;
 	}
 
 	/** Combien de modifications des repères on peut annuler dans l'atelier de ce niveau. */

@@ -1,7 +1,6 @@
 package fr.valcombe.client.hd;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Font;
@@ -46,8 +45,7 @@ class RingLayoutTest {
 	/** Zones des cercles dans une interface de 427 x 240 (unités), comme les écrans les calculent. */
 	private record Zone(String name, double x, double y, double w, double h, int max, int min, boolean inside, double wide) {
 		RingLayout.Spec spec(RingLayout.Measure m) {
-			RingLayout.Spec s = new RingLayout.Spec(x, y, w, h, LABEL_H, m).tokens(max, min).aspect(wide, 1.25);
-			return inside ? s : s.outsideOnly();
+			return new RingLayout.Spec(x, y, w, h, LABEL_H, m).tokens(max, min).aspect(wide, 1.25);
 		}
 	}
 
@@ -96,9 +94,6 @@ class RingLayoutTest {
 		RingLayout.Box zone = new RingLayout.Box(z.x(), z.y(), z.w(), z.h());
 		double half = r.size() / 2.0;
 		assertTrue(r.size() >= z.min() && r.size() <= z.max(), where + " : taille de jeton " + r.size());
-		if (!z.inside()) {
-			assertNotEquals(RingLayout.Labels.ALTERNATE_INSIDE, r.labels(), where + " : noms dedans alors que le centre est pris");
-		}
 		for (int i = 0; i < seats.size(); i++) {
 			RingLayout.Seat s = seats.get(i);
 			String at = where + ", siège " + i + " (" + s.name() + ")";
@@ -117,20 +112,51 @@ class RingLayoutTest {
 			assertTrue(s.shown().equals(s.name()) || s.shown().endsWith("…")
 				&& s.name().startsWith(s.shown().substring(0, s.shown().length() - 1).stripTrailing()), at + " : « " + s.shown() + " »");
 			assertTrue(m.width(s.shown()) + 6 <= p.w() + 1e-6, at + " : le texte déborde de sa plaque");
-			assertTrue(p.distanceTo(s.cx(), s.cy()) >= half, at + " : la plaque recouvre son jeton");
+			double own = p.distanceTo(s.cx(), s.cy());
+			assertTrue(own >= half, at + " : la plaque recouvre son jeton");
+			assertTrue(outsideRing(p, seats), at + " : plaque à l'intérieur du cercle " + p);
 			for (int j = 0; j < seats.size(); j++) {
 				if (j == i) {
 					continue;
 				}
 				RingLayout.Seat o = seats.get(j);
-				assertTrue(p.distanceTo(o.cx(), o.cy()) >= half + 0.99, at + " : plaque sur le jeton du siège " + j);
+				double d = p.distanceTo(o.cx(), o.cy());
+				// Un jour d'au moins trois unités avec les autres jetons (marqueurs compris), et la plaque plus près du sien.
+				assertTrue(d >= half + 2.99, at + " : plaque contre le jeton du siège " + j);
+				assertTrue(d >= own + 0.99, at + " : plaque plus près du jeton du siège " + j + " que du sien");
 				if (o.plate() != null) {
 					RingLayout.Box q = o.plate();
-					boolean overlap = p.x() < q.right() && q.x() < p.right() && p.y() < q.bottom() && q.y() < p.bottom();
-					assertTrue(!overlap, at + " : plaque sur celle du siège " + j + " (" + p + " / " + q + ")");
+					assertTrue(!p.near(q, 1.99), at + " : plaque contre celle du siège " + j + " (" + p + " / " + q + ")");
 				}
 			}
 		}
+	}
+
+	/**
+	 * La plaque est-elle hors du cercle ? Aucun de ses coins ni son centre n'est dans le polygone des centres des jetons
+	 * (convexe, sièges dans l'ordre).
+	 */
+	static boolean outsideRing(RingLayout.Box p, List<RingLayout.Seat> seats) {
+		if (seats.size() < 3) {
+			return true;
+		}
+		double[][] pts = {{p.x(), p.y()}, {p.right(), p.y()}, {p.x(), p.bottom()}, {p.right(), p.bottom()},
+			{p.x() + p.w() / 2, p.y() + p.h() / 2}};
+		for (double[] pt : pts) {
+			boolean in = true;
+			int n = seats.size();
+			for (int k = 0; k < n && in; k++) {
+				RingLayout.Seat a = seats.get(k);
+				RingLayout.Seat b = seats.get((k + 1) % n);
+				// Sens horaire à l'écran (y vers le bas) : l'intérieur est à droite de chaque côté.
+				double cross = (b.cx() - a.cx()) * (pt[1] - a.cy()) - (b.cy() - a.cy()) * (pt[0] - a.cx());
+				in = cross > 0.01;
+			}
+			if (in) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Test
@@ -196,17 +222,22 @@ class RingLayoutTest {
 	void lesNomsOrdinairesSeLisent() {
 		RingLayout.Measure m = measure(2);
 		for (Zone z : ZONES) {
-			// Jusqu'à 8 joueurs, tous les noms ordinaires se lisent en entier ; à 13, presque tous ; à 20, aucun n'est caché.
+			// Les noms sont tous à l'extérieur du cercle. Jusqu'à 8 joueurs, tous les noms ordinaires se lisent en entier ;
+			// à 13, la plupart, et aucun n'est caché ; à 20, aucun n'est caché dans les grandes zones (dans le menu J et le
+			// pupitre, quelques-uns peuvent l'être : ils restent dans l'infobulle du jeton).
 			for (int n : new int[] {5, 8}) {
 				RingLayout.Result r = RingLayout.layout(names(NAMES, n), z.spec(m));
 				assertTrue(r.shownRatio() > 0.9, z.name() + ", " + n + " joueurs : " + Math.round(100 * r.shownRatio()) + " % des lettres");
 				assertEquals(0, r.hidden(), z.name() + ", " + n + " joueurs : noms cachés");
 			}
 			RingLayout.Result r13 = RingLayout.layout(names(NAMES, 13), z.spec(m));
-			assertTrue(r13.shownRatio() > 0.8, z.name() + ", 13 joueurs : " + Math.round(100 * r13.shownRatio()) + " % des lettres");
+			assertTrue(r13.shownRatio() > 0.6, z.name() + ", 13 joueurs : " + Math.round(100 * r13.shownRatio()) + " % des lettres");
 			assertEquals(0, r13.hidden(), z.name() + ", 13 joueurs : noms cachés");
 			RingLayout.Result r20 = RingLayout.layout(names(NAMES, 20), z.spec(m));
-			assertTrue(r20.shownRatio() > 0.6, z.name() + ", 20 joueurs : " + Math.round(100 * r20.shownRatio()) + " % des lettres");
+			assertTrue(r20.shownRatio() > 0.4, z.name() + ", 20 joueurs : " + Math.round(100 * r20.shownRatio()) + " % des lettres");
+			if (z.w() > 250) {
+				assertEquals(0, r20.hidden(), z.name() + ", 20 joueurs : noms cachés");
+			}
 		}
 	}
 

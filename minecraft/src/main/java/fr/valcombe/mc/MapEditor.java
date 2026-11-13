@@ -251,6 +251,7 @@ public final class MapEditor {
 	/** Lance une opération : elle entre dans l'historique, puis ses blocs sont posés par petits lots. */
 	private void commit(String label, Box zone, Clip before, BuildQueue.Plan plan, Marker marker) {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
+		SharedUndo.recorded(SharedUndo.Stack.STRUCTURES); // le geste est au joueur dont l'action est en cours
 		// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée. Dans un atelier
 		// carte : elle a changé depuis son dernier enregistrement.
 		edited();

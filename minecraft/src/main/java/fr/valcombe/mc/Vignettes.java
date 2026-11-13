@@ -44,8 +44,9 @@ import net.minecraft.world.level.block.state.BlockState;
  * dorés, maisons vertes, salle de convocation violette, centre de la place.</li>
  * <li>{@code village:<thème>:<trônes>:<taille>:<maisons>} : l'aperçu d'un village généré avant de le bâtir (plan de la
  * place, des trônes et des maisons, aux couleurs du thème).</li>
- * <li>{@code partie:<monde>} : la carte en place dans un monde de partie, vue de dessus dans le monde lui-même
- * (refaite au plus une fois par minute).</li>
+ * <li>{@code partie:<monde>} : la carte en place dans un monde de partie. Sans y avoir touché depuis, c'est l'image de
+ * la carte de la bibliothèque qu'elle porte ; sinon la vue de dessus du monde lui-même, faite seulement de ce qui est
+ * déjà chargé (aucun tronçon lu ni généré sur le fil du serveur), et refaite au plus une fois par minute.</li>
  * <li>{@code structure:<id>} : une structure du catalogue vue de trois quarts (perspective isométrique, faces éclairées
  * comme sous un soleil du sud-est), aux couleurs de carte de ses blocs ; refaite quand elle est enregistrée, modifiée
  * ou rendue à l'originale (son empreinte est celle de ses fichiers).</li>
@@ -163,8 +164,19 @@ public final class Vignettes {
 		who.add(p.getUUID());
 		waiting.put(key, who);
 		if (key.startsWith("partie:")) {
-			// Le monde se lit sur son fil.
-			finish(key, stamp, safely(() -> gameImage(key.substring("partie:".length()))));
+			// Ce qu'il faut du monde se lit sur son fil (ce qui est déjà chargé, rien de plus) ; l'image se fait à côté.
+			Maker maker;
+			try {
+				maker = gameMaker(key.substring("partie:".length()));
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Vignette de partie impossible : {}", e.toString());
+				maker = () -> null;
+			}
+			Maker job = maker;
+			pool.submit(() -> {
+				byte[] png = safely(job);
+				server.execute(() -> finish(key, stamp, png));
+			});
 			return;
 		}
 		if (key.startsWith("structure:")) {
@@ -199,7 +211,7 @@ public final class Vignettes {
 	 * telle quelle. Null si la carte ou la structure n'existe pas (ou sans vignettes sur ce serveur) ; le Supplier rend
 	 * null si l'image n'a pas pu se faire.
 	 */
-	static java.util.function.Supplier<byte[]> job(String key) {
+	public static java.util.function.Supplier<byte[]> job(String key) {
 		Vignettes v = current;
 		if (v == null || key == null || !(key.startsWith("carte:") || key.startsWith("structure:"))) {
 			return null;
@@ -718,17 +730,33 @@ public final class Vignettes {
 		return Integer.toHexString(java.util.Objects.hash(v.libraryId(), v.seatCount(), v.houseCount(), v.modified(), v.center(), minute));
 	}
 
-	private static byte[] gameImage(String worldId) throws IOException {
+	/**
+	 * Comment faire la vignette d'une partie (sur le fil du serveur) : la carte de la bibliothèque qu'elle porte, si
+	 * personne n'y a touché depuis (l'image enregistrée avec elle) ; sinon la vue de dessus de son monde, lue dans les
+	 * tronçons déjà chargés. Si des tronçons manquent et que la partie porte une carte de la bibliothèque, c'est elle
+	 * qu'on montre (plus juste qu'un monde à moitié vu) ; sans carte, les tronçons absents sont du sol plat.
+	 */
+	private Maker gameMaker(String worldId) {
 		fr.valcombe.mc.games.GameRoom room = fr.valcombe.mc.games.Games.byWorld(worldId);
 		if (room == null || room.host().village() == null || room.host().busy()) {
-			return null;
+			return () -> null;
 		}
 		McHost host = room.host();
 		Village v = host.village();
-		int r = Math.min(128, Math.max(8, v.extent())); // lu sur le fil du serveur : la place et ses abords suffisent
-		byte[] png = McHost.topView(host.level(), v.center(), r);
-		BufferedImage top = javax.imageio.ImageIO.read(new ByteArrayInputStream(png));
+		String lib = v.libraryId();
+		boolean fromLibrary = !lib.isEmpty() && maps.exists(lib);
+		if (fromLibrary && !v.modified()) {
+			return () -> mapImage(lib);
+		}
+		int r = Math.min(128, Math.max(8, v.extent())); // la place et ses abords suffisent
+		int[] missing = {0};
+		byte[] png = McHost.topView(host.level(), v.center(), r, missing);
+		if (missing[0] > 0 && fromLibrary) {
+			return () -> mapImage(lib);
+		}
 		List<int[]> seats = new ArrayList<>(v.relSeats());
-		return encode(compose(top, seats, v.relHouses(), v.relConvocation(), r));
+		List<int[]> houses = new ArrayList<>(v.relHouses());
+		int[] room0 = v.relConvocation();
+		return () -> encode(compose(javax.imageio.ImageIO.read(new ByteArrayInputStream(png)), seats, houses, room0, r));
 	}
 }

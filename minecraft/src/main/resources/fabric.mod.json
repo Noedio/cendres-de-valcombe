@@ -14,6 +14,7 @@
 	},
 	"mixins": [
 		"valcombe.mixins.json",
+		"valcombe.worldedit.mixins.json",
 		{"config": "valcombe.client.mixins.json", "environment": "client"}
 	],
 	"depends": {

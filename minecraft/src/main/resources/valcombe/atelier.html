@@ -156,6 +156,13 @@
 	/* L'image remplit le cadre sans le déborder : les vignettes du serveur sont carrées (512 × 512), le cadre ne l'est pas. */
 	.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; }
 	.thumb.carte img { object-fit: cover; }
+	/* Une structure est peinte par le serveur sur sa scène : un dégradé rond, clair à 42 % de la hauteur, de rayon trois
+	   quarts de la hauteur (Vignettes.isometric). Le cadre prolonge exactement ce dégradé de chaque côté de l'image
+	   carrée : plus de bandes. Les rayons de l'ellipse sont en part de la largeur et de la hauteur du cadre, pour que ce
+	   soit un cercle de 0,75 fois la hauteur : 0,75 × 10 / 16 = 46,875 % de la largeur en 16:10. */
+	.thumb.structure { background: radial-gradient(ellipse 46.875% 75% at 50% 42%, #4a3e4c, #1e1820); }
+	.thumb.structure::before { display: none; }
+	.detail-top .thumb.structure { background: radial-gradient(ellipse 56.25% 75% at 50% 42%, #4a3e4c, #1e1820); }
 	.thumb img.pixel { image-rendering: pixelated; }
 	.thumb.ready img { opacity: 1; }
 	.thumb .wait { position: absolute; width: 34px; height: 34px; color: var(--line-2); }
@@ -280,6 +287,7 @@
 		.cols { grid-template-columns: 1fr; }
 		.detail-top { grid-template-columns: 1fr; }
 		.detail-top .thumb { aspect-ratio: 16 / 9; }
+		.detail-top .thumb.structure { background: radial-gradient(ellipse 42.1875% 75% at 50% 42%, #4a3e4c, #1e1820); }
 	}
 	@media (max-width: 560px) {
 		.brand h1 { font-size: 1.2rem; }

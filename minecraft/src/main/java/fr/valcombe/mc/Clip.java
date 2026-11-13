@@ -149,7 +149,7 @@ final class Clip {
 		List<BlockState> palette = new ArrayList<>();
 		boolean voids = false;
 		for (int i = 0; i < raw.palette().size(); i++) {
-			BlockState s = NbtUtils.readBlockState(lookup, raw.palette().getCompoundOrEmpty(i));
+			BlockState s = NbtUtils.readBlockState(lookup, paletteEntry(raw.palette().getCompoundOrEmpty(i)));
 			voids |= s.is(Blocks.STRUCTURE_VOID);
 			palette.add(s);
 		}
@@ -171,9 +171,43 @@ final class Clip {
 		return new Clip(raw.width(), raw.height(), raw.length(), palette, cells, data);
 	}
 
-	/** Lit et traduit une structure Minecraft (voir parse). */
+	/**
+	 * Une entrée de palette au format de cette version de Minecraft ({@code id}, {@code properties}). Les fichiers
+	 * d'avant (et ceux des outils qui écrivent encore l'ancien format) disent {@code Name} et {@code Properties} :
+	 * lus tels quels, tous leurs blocs devenaient de l'air (une structure importée sans un bloc, une vignette vide).
+	 */
+	static CompoundTag paletteEntry(CompoundTag e) {
+		if (e.contains("id") || !e.contains("Name")) {
+			return e;
+		}
+		CompoundTag out = e.copy();
+		out.putString("id", e.getStringOr("Name", "minecraft:air"));
+		out.remove("Name");
+		if (e.contains("Properties")) {
+			out.put("properties", e.getCompoundOrEmpty("Properties"));
+			out.remove("Properties");
+		}
+		return out;
+	}
+
+	/**
+	 * Une structure écrite par une version plus ancienne de Minecraft (ou sans numéro de version : un fichier d'un autre
+	 * outil), mise au format de celle-ci par les convertisseurs du jeu, comme le fait Minecraft pour ses propres
+	 * structures : noms de blocs changés depuis, propriétés renommées, format de la palette.
+	 */
+	static CompoundTag upgrade(CompoundTag tag) {
+		int version = NbtUtils.getDataVersion(tag, 500);
+		try {
+			return net.minecraft.util.datafix.DataFixTypes.STRUCTURE.updateToCurrentVersion(
+				net.minecraft.util.datafix.DataFixers.getDataFixer(), tag, version);
+		} catch (RuntimeException e) {
+			return tag; // un fichier que les convertisseurs ne comprennent pas : lu tel quel, entrée par entrée (paletteEntry)
+		}
+	}
+
+	/** Lit et traduit une structure Minecraft (voir parse), d'abord mise au format de cette version (upgrade). */
 	static Clip read(CompoundTag tag, HolderGetter<Block> lookup, int maxWidth, int maxHeight, int maxLength) {
-		return of(parse(tag, maxWidth, maxHeight, maxLength), lookup);
+		return of(parse(upgrade(tag), maxWidth, maxHeight, maxLength), lookup);
 	}
 
 	/**

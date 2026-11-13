@@ -207,10 +207,50 @@ public class StructuresWorkshopGameTest implements FabricClientGameTest {
 			System.out.println("[valcombe-test] atelier structures : tronçons pas tous dessinés à temps (" + e.getMessage() + ")");
 		}
 		ctx.waitTicks(40);
+		// La vue montre les parcelles : le centre de chacune (au sol) est dans le champ de la caméra du joueur, calculé comme
+		// Minecraft le projette (champ vertical des réglages, champ horizontal selon la largeur de la fenêtre).
+		List<double[]> centers = server.computeOnServer(s -> workshop().parcels().stream()
+			.map(p -> new double[] {p.x() + 0.5, S + 0.5, p.z() + 0.5}).toList());
+		List<String> ids = server.computeOnServer(s -> workshop().parcels().stream().map(StructureWorkshop.ParcelInfo::id).toList());
+		String unseen = ctx.computeOnClient(mc -> {
+			var cam = mc.gameRenderer.mainCamera();
+			var eye = cam.position();
+			double tanV = Math.tan(Math.toRadians(mc.options.fov().get() / 2.0)) * 1.02;
+			double tanH = tanV * mc.getWindow().getWidth() / (double) mc.getWindow().getHeight();
+			List<String> out = new ArrayList<>();
+			for (int i = 0; i < centers.size(); i++) {
+				double[] c = centers.get(i);
+				double vx = c[0] - eye.x;
+				double vy = c[1] - eye.y;
+				double vz = c[2] - eye.z;
+				double ahead = vx * cam.forwardVector().x() + vy * cam.forwardVector().y() + vz * cam.forwardVector().z();
+				double right = -(vx * cam.leftVector().x() + vy * cam.leftVector().y() + vz * cam.leftVector().z());
+				double up = vx * cam.upVector().x() + vy * cam.upVector().y() + vz * cam.upVector().z();
+				if (ahead <= 0 || Math.abs(right) / ahead > tanH || Math.abs(up) / ahead > tanV) {
+					out.add(ids.get(i));
+				}
+			}
+			return out.isEmpty() ? "" : out.size() + "/" + centers.size() + " " + out;
+		});
+		check(unseen.isEmpty(), "la vue d'arrivée montre toutes les parcelles (hors champ : " + unseen + ")");
+		// Vue du monde : chat effacé et interface masquée (le chat cachait les parcelles).
+		ctx.runOnClient(mc -> {
+			mc.gui.hud.getChat().clearMessages(false);
+			if (!mc.gui.hud.isHidden()) {
+				mc.gui.hud.toggle();
+			}
+		});
+		ctx.waitTicks(4);
 		shot(ctx, "ensemble");
 		server.runOnServer(s -> player(s, me).teleportTo(atelier(), puits.x() + 0.5, S + 4, puits.lecternZ() - 4.5, Set.of(), 0f, 25f, false));
 		ctx.waitTicks(60);
+		ctx.runOnClient(mc -> mc.gui.hud.getChat().clearMessages(false));
 		shot(ctx, "parcelle");
+		ctx.runOnClient(mc -> {
+			if (mc.gui.hud.isHidden()) {
+				mc.gui.hud.toggle();
+			}
+		});
 
 		// 4. Le pupitre ouvre l'écran de l'atelier sur la parcelle.
 		server.runOnServer(s -> workshop().onUse(player(s, me), atelier(), new BlockPos(puits.x(), S + 1, puits.lecternZ()), true));

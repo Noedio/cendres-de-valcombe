@@ -38,9 +38,17 @@ public class PartiesScreen extends HdScreen {
 	private static final int ROW_H = 38;
 
 	private HdList<JsonObject> list;
+	/** L'écran où mène « Retour » : le menu J, ou la page Parties de l'Atelier quand on en vient. */
+	private java.util.function.Supplier<net.minecraft.client.gui.screens.Screen> back = MainScreen::new;
 
 	public PartiesScreen() {
 		super("Parties");
+	}
+
+	/** Ouvert depuis un autre écran (Atelier › Parties) : « Retour » y ramène. */
+	public PartiesScreen(java.util.function.Supplier<net.minecraft.client.gui.screens.Screen> back) {
+		this();
+		this.back = back;
 	}
 
 	/** Ouvre l'écran sur cette partie (fiche cliquée sur le tableau du hub, tests). */
@@ -395,7 +403,7 @@ public class PartiesScreen extends HdScreen {
 		}
 		// Bas de l'écran : retour, et pour un opérateur, la création d'une partie d'essai.
 		int by = py + ph - 26;
-		button(px + 10, by, 64, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
+		button(px + 10, by, 64, "Retour", () -> minecraft.gui.setScreen(back.get()));
 		if (operator()) {
 			int fw = pw - 10 - 64 - 6 - 6 - 132 - 10;
 			HdTextField field = addRenderableWidget(new HdTextField(px + 80, by, fw, 18, "Nom de la partie d'essai")

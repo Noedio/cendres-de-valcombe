@@ -46,7 +46,7 @@ final class SelectionToStructure {
 		BuildAccess access = BuildAccess.current();
 		if (access == null || !access.canUseWorldEdit(p)) {
 			throw new GameException(access == null ? "La construction n'est pas disponible sur ce serveur."
-				: "On enregistre une sélection là où on se sert de WorldEdit. " + access.refusal(p));
+				: "Sélection non enregistrée. " + access.refusal(p));
 		}
 		String cat = categorie == null || categorie.isBlank() ? "perso" : categorie.strip().toLowerCase(Locale.ROOT);
 		if (!CATEGORIES.contains(cat)) {

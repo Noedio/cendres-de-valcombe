@@ -215,6 +215,28 @@ public class SeatRingGameTest implements FabricClientGameTest {
 		return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
 	}
 
+	/** Un coin ou le centre de la plaque est-il dans le polygone convexe (sommets dans l'ordre des angles) ? */
+	private static boolean insidePolygon(RingLayout.Box p, List<double[]> poly) {
+		if (poly.size() < 3) {
+			return false;
+		}
+		double[][] pts = {{p.x(), p.y()}, {p.right(), p.y()}, {p.x(), p.bottom()}, {p.right(), p.bottom()},
+			{p.x() + p.w() / 2, p.y() + p.h() / 2}};
+		for (double[] pt : pts) {
+			boolean in = true;
+			for (int k = 0; k < poly.size() && in; k++) {
+				double[] a = poly.get(k);
+				double[] b = poly.get((k + 1) % poly.size());
+				// Angles croissants, y vers le bas : sens horaire à l'écran, l'intérieur est à droite de chaque côté.
+				in = (b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0]) > 0.01;
+			}
+			if (in) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** Ce qui ne va pas dans le cercle de l'écran ouvert (null si rien) ; seats : jetons du cercle attendus. */
 	private static String ringProblem(Minecraft mc, int seats) {
 		Screen s = mc.gui.screen();
@@ -263,6 +285,14 @@ public class SeatRingGameTest implements FabricClientGameTest {
 				}
 			}
 		}
+		// Le polygone des centres des jetons, dans l'ordre autour du cercle : aucune plaque n'y entre (noms dehors).
+		double gx = ring.stream().mapToDouble(t -> t.getX() + t.getWidth() / 2.0).average().orElse(0);
+		double gy = ring.stream().mapToDouble(t -> t.getY() + t.getWidth() / 2.0).average().orElse(0);
+		List<double[]> poly = new ArrayList<>();
+		for (HdToken t : ring) {
+			poly.add(new double[] {t.getX() + t.getWidth() / 2.0, t.getY() + t.getWidth() / 2.0});
+		}
+		poly.sort(java.util.Comparator.comparingDouble(c -> Math.atan2(c[1] - gy, c[0] - gx)));
 		for (HdToken t : ring) {
 			String name = t.getMessage().getString();
 			RingLayout.Box p = t.plateBounds();
@@ -275,18 +305,29 @@ public class SeatRingGameTest implements FabricClientGameTest {
 			if (p.x() < px + 2 || p.y() < py + 2 || p.right() > px + pw - 2 || p.bottom() > py + ph - 2) {
 				return "la plaque de " + name + " sort du panneau " + p;
 			}
+			if (insidePolygon(p, poly)) {
+				return "la plaque de " + name + " est à l'intérieur du cercle " + p;
+			}
+			double rOwn = t.getWidth() / 2.0;
+			double own = p.distanceTo(t.getX() + rOwn, t.getY() + rOwn);
 			for (AbstractWidget w : widgets) {
 				if (w == t) {
 					continue;
 				}
 				if (w instanceof HdToken o) {
 					double r = o.getWidth() / 2.0;
-					if (p.distanceTo(o.getX() + r, o.getY() + r) < r) {
-						return "la plaque de " + name + " mord sur le jeton de " + o.getMessage().getString();
+					double d = p.distanceTo(o.getX() + r, o.getY() + r);
+					// Calcul des rectangles : un jour d'au moins trois unités entre une plaque et un autre jeton (ses marqueurs
+					// dépassent d'une unité et demie), et la plaque toujours plus près de son jeton que de tout autre.
+					if (d < r + 2.99) {
+						return "la plaque de " + name + " touche le jeton de " + o.getMessage().getString() + " (écart " + (d - r) + ")";
+					}
+					if (o.onRing() && d < own + 0.99) {
+						return "la plaque de " + name + " est plus près du jeton de " + o.getMessage().getString() + " que du sien";
 					}
 					RingLayout.Box q = o.plateBounds();
-					if (q != null && overlap(p.x(), p.y(), p.w(), p.h(), q.x(), q.y(), q.w(), q.h())) {
-						return "les plaques de " + name + " et de " + o.getMessage().getString() + " se recouvrent";
+					if (q != null && p.near(q, 1.99)) {
+						return "les plaques de " + name + " et de " + o.getMessage().getString() + " se touchent";
 					}
 				} else if (overlap(p.x(), p.y(), p.w(), p.h(), w.getX(), w.getY(), w.getWidth(), w.getHeight())) {
 					return "la plaque de " + name + " recouvre « " + w.getMessage().getString() + " »";

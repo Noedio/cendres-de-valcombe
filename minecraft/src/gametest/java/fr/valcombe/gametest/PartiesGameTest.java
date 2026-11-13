@@ -348,18 +348,34 @@ public class PartiesGameTest implements FabricClientGameTest {
 			}), "le tableau montre la principale en cours et l'essai ouvert : "
 				+ server.computeOnServer(s -> ValcombeMod.hub().boardShown()));
 
+			// La vignette de la partie d'essai, demandée du hub : faite sans charger un seul tronçon de son monde (ce qui y est
+			// déjà chargé, ou la carte de la bibliothèque qu'elle porte).
+			int chunksBefore = server.computeOnServer(s -> ValcombeMod.worlds().level(essai).getChunkSource().getLoadedChunksCount());
+			String essaiStamp = server.computeOnServer(s -> fr.valcombe.mc.Vignettes.stampOf("partie:" + essai));
+			check(!essaiStamp.isEmpty(), "la partie d'essai a une vignette");
+			check(waitClient(ctx, 200, mc -> {
+				fr.valcombe.client.Vignettes.get("partie:" + essai, essaiStamp);
+				return fr.valcombe.client.Vignettes.ready("partie:" + essai, "");
+			}), "vignette de la partie d'essai reçue");
+			int chunksAfter = server.computeOnServer(s -> ValcombeMod.worlds().level(essai).getChunkSource().getLoadedChunksCount());
+			check(chunksAfter <= chunksBefore, "la vignette n'a chargé aucun tronçon : " + chunksBefore + " puis " + chunksAfter);
+
 			// Captures : de l'entrée, de près à l'ouest et à l'est, et de dos depuis les dalles.
 			place(world, me, hubId, HubHall.ARRIVAL.x, HubHall.ARRIVAL.y, HubHall.ARRIVAL.z, HubHall.ARRIVAL_YAW, 8f);
 			ctx.waitTicks(60);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties");
 			place(world, me, hubId, -6.5, HubHall.FEET, HubHall.BOARD_FRONT + 3.2, 180f, 4f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-ouest");
 			place(world, me, hubId, 7.5, HubHall.FEET, HubHall.BOARD_FRONT + 3.2, 180f, 4f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-est");
 			place(world, me, hubId, 0.5, HubHall.FEET, -3.5, 0f, 6f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-dos");
 
 			// 3. En direct : trois inscrits arrivent au salon de la partie d'essai, sa fiche les compte au passage suivant.
@@ -548,6 +564,72 @@ public class PartiesGameTest implements FabricClientGameTest {
 				mc.options.guiScale().set(initialScale);
 				mc.resizeGui();
 			});
+
+			// 9 bis. Huit parties : le tableau du hub en montre six par page ; les flèches aux bouts tournent les pages.
+			send(ctx, "vc hub");
+			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(hubDim)), "au hub pour le tableau à pages");
+			List<String> extra = new ArrayList<>();
+			int target = 8;
+			int have = server.computeOnServer(s -> Games.all().size());
+			for (int i = have; i < target; i++) {
+				int n = i;
+				extra.add(server.computeOnServer(s -> ValcombeMod.worlds().create(fr.valcombe.mc.worlds.WorldKind.ESSAI,
+					"Page " + stamp + " " + n).id()));
+			}
+			int total = server.computeOnServer(s -> Games.all().size());
+			check(total >= 8, "au moins huit parties : " + total);
+			check(waitFor(ctx, world, 200, s -> {
+				String shown = ValcombeMod.hub().boardShown();
+				return shown != null && shown.startsWith("page 1/" + Hub.pages(total) + " ");
+			}), "le tableau est en pages : " + server.computeOnServer(s -> ValcombeMod.hub().boardShown()));
+			List<String> firstPage = server.computeOnServer(s -> Games.all().stream().limit(HubHall.SLOTS).map(r -> r.id()).toList());
+			List<String> secondPage = server.computeOnServer(s -> Games.all().stream().skip(HubHall.SLOTS).limit(HubHall.SLOTS)
+				.map(r -> r.id()).toList());
+			check(server.computeOnServer(s -> firstPage.stream().allMatch(id -> cardOf(s, hubId, id) != null)
+				&& secondPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 1 : les six premières fiches seulement");
+			place(world, me, hubId, 0.5, HubHall.FEET, HubHall.BOARD_FRONT + 9.5, 180f, 8f);
+			ctx.waitTicks(40);
+			WorldView.clearChat(ctx);
+			shot(ctx, "tableau-des-parties-page-1");
+			// Un clic sur la flèche de droite (vue de l'entrée) : la page suivante, aussitôt.
+			boolean turned = server.computeOnServer(s -> {
+				ServerLevel hub = ValcombeMod.worlds().level(hubId);
+				ServerPlayer p = player(s, me);
+				for (Entity e : hub.getEntities(net.minecraft.world.entity.EntityTypes.INTERACTION,
+					e -> Hub.boardArrow(e) == 1 && e.getZ() > HubHall.BOARD_FRONT)) {
+					var r = net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.invoker()
+						.interact(p, p.level(), net.minecraft.world.InteractionHand.MAIN_HAND, e, null);
+					return r.consumesAction() && ValcombeMod.hub().page() == 1;
+				}
+				return false;
+			});
+			check(turned, "la flèche de droite tourne la page");
+			check(waitFor(ctx, world, 60, s -> secondPage.stream().allMatch(id -> cardOf(s, hubId, id) != null)
+				&& firstPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 2 : les fiches suivantes");
+			check(server.computeOnServer(s -> ValcombeMod.hub().boardShown().startsWith("page 2/")), "le tableau dit sa page");
+			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
+			shot(ctx, "tableau-des-parties-page-2");
+			// La flèche de gauche, frappée (clic gauche) : retour à la première page.
+			boolean back = server.computeOnServer(s -> {
+				ServerLevel hub = ValcombeMod.worlds().level(hubId);
+				ServerPlayer p = player(s, me);
+				for (Entity e : hub.getEntities(net.minecraft.world.entity.EntityTypes.INTERACTION,
+					e -> Hub.boardArrow(e) == -1 && e.getZ() > HubHall.BOARD_FRONT)) {
+					var r = net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.invoker()
+						.interact(p, p.level(), net.minecraft.world.InteractionHand.MAIN_HAND, e, null);
+					return r.consumesAction() && ValcombeMod.hub().page() == 0;
+				}
+				return false;
+			});
+			check(back, "la flèche de gauche revient à la page d'avant");
+			server.runOnServer(s -> extra.forEach(id -> ValcombeMod.worlds().delete(id)));
+			check(waitFor(ctx, world, 600, s -> extra.stream().allMatch(id -> ValcombeMod.worlds().find(id) == null)),
+				"parties du tableau à pages supprimées");
+			check(waitFor(ctx, world, 200, s -> {
+				String shown = ValcombeMod.hub().boardShown();
+				return shown != null && !shown.startsWith("page ");
+			}), "une seule page de nouveau, sans flèches");
 
 			// 10. Ménage : la principale arrêtée, la partie d'essai supprimée.
 			server.runCommand("execute in " + mainDim + " run vc arreter");

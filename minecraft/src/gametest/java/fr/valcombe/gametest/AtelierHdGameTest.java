@@ -297,6 +297,23 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			ctx.setScreen(page::get);
 			ctx.waitTicks(6);
 			String problem = ctx.computeOnClient(AtelierHdGameTest::layoutProblem);
+			if (problem == null && i == 0) {
+				// Accueil : aucun nom d'entrée coupé, à aucune taille (plus petit, ou sur deux lignes).
+				problem = ctx.computeOnClient(mc -> {
+					int sc = mc.getWindow().getGuiScale();
+					for (var w : mc.gui.screen().children()) {
+						if (w instanceof AtelierHome.Tile t) {
+							var fit = t.titleAt(sc);
+							String title = t.getMessage().getString();
+							if (fit.lines().size() > 2 || !String.join(" ", fit.lines()).equals(title)
+								|| fit.lines().stream().anyMatch(l -> l.endsWith("…"))) {
+								return "nom d'entrée coupé : « " + title + " » → " + fit.lines();
+							}
+						}
+					}
+					return null;
+				});
+			}
 			if (problem == null) {
 				System.out.println("[valcombe-test] atelier hd : mise en page « " + names[i] + " » (" + suffix + ") : bonne");
 			} else {
@@ -562,6 +579,22 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		shot(ctx, "4-copie-mise-en-avant");
 		check(ctx.computeOnClient(mc -> grid(mc).open(name + " (copie)")), "fiche de la copie");
 		ctx.waitTicks(10);
+		// Le message appartient à la page qui l'a provoqué : il s'efface en changeant de page, et ne revient pas au retour.
+		check(ctx.computeOnClient(mc -> AtelierPage.reply() == null), "le message de la bibliothèque s'efface sur la fiche");
+		// Un long message passe sur deux lignes (plus petit au besoin), sans être coupé ; un très long finit par « … » et
+		// se lit en entier au survol.
+		String longText = "Sélection non enregistrée. WorldEdit ne sert que dans les ateliers, pas dans un monde de partie : une "
+			+ "carte se prépare dans un atelier carte. Menu J › Mondes pour y aller.";
+		check(ctx.computeOnClient(mc -> {
+			int sc = mc.getWindow().getGuiScale();
+			var ft = AtelierPage.footerText(longText, AtelierPage.current().footerTextWidth(sc), sc);
+			return ft.lines().size() == 2 && !ft.cut() && String.join(" ", ft.lines()).replace("  ", " ").length() >= longText.length() - 2;
+		}), "un long message tient en entier sur deux lignes");
+		check(ctx.computeOnClient(mc -> {
+			int sc = mc.getWindow().getGuiScale();
+			var ft = AtelierPage.footerText(longText.repeat(3), AtelierPage.current().footerTextWidth(sc), sc);
+			return ft.lines().size() == 2 && ft.cut() && ft.lines().get(1).endsWith("…");
+		}), "un très long message : deux lignes, « … », le texte entier au survol");
 		press(ctx, MapSheetPage.DELETE);
 		check(server.computeOnServer(s -> ValcombeMod.maps().exists(copy)), "un seul clic ne supprime rien");
 		check(ctx.computeOnClient(mc -> find(mc, MapSheetPage.DELETE_CONFIRM) != null && find(mc, MapSheetPage.CANCEL) != null
@@ -595,8 +628,17 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		press(ctx, NewMapPage.PREVIOUS);
 		press(ctx, NewMapPage.BLANK);
 		press(ctx, NewMapPage.NEXT);
-		check(greyed(ctx, NewMapPage.NEXT), "carte vierge : « Suivant » grisé sans nom");
+		// Le nom d'une carte vierge est facultatif : envoyée directement à une partie, elle n'en demande pas.
+		check(primary(ctx, NewMapPage.NEXT), "carte vierge : « Suivant » sans nom");
 		shot(ctx, "10-nouvelle-vierge-sans-nom");
+		press(ctx, NewMapPage.NEXT);
+		chooseTab(ctx, NewMapPage.IN_GAME);
+		check(ctx.computeOnClient(mc -> find(mc, "Envoyer une carte vierge") != null), "carte vierge vers une partie, sans nom demandé");
+		shot(ctx, "10b-nouvelle-vierge-vers-une-partie");
+		chooseTab(ctx, NewMapPage.IN_WORKSHOP);
+		check(ctx.computeOnClient(mc -> find(mc, "Créer dans un atelier") != null && find(mc, "Créer dans un atelier").active),
+			"carte vierge dans un atelier : un nom est proposé (« Carte vierge »)");
+		press(ctx, NewMapPage.PREVIOUS);
 
 		// Import : un fichier .nbt déposé dans le dossier d'import, importé dans un atelier.
 		writeStructure(dropped);
@@ -772,6 +814,35 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			"la structure paraît dans le catalogue");
 		chooseTab(ctx, "À vous");
 		check(waitClient(ctx, 300, mc -> Vignettes.ready("structure:" + sid, "")), "sa vignette est faite");
+		// Sa vignette montre ses blocs, pas seulement la scène et l'ombre : le dallage de pierre (gris) et le pilier de
+		// planches (brun) y sont peints. Un fichier à l'ancien format de palette (« Name ») ne donne plus de l'air.
+		check(server.computeOnServer(s -> ValcombeMod.structures().solidCount(sid) == 52),
+			"structure importée avec ses vrais blocs (pierre et planches, pas de l'air) : "
+				+ server.computeOnServer(s -> ValcombeMod.structures().solidCount(sid)));
+		var job = server.computeOnServer(s -> fr.valcombe.mc.Vignettes.job("structure:" + sid));
+		check(job != null, "vignette de la structure demandée au serveur");
+		byte[] png = job.get();
+		check(png != null && png.length > 0, "vignette de la structure faite");
+		int[] painted = new int[2];
+		try {
+			java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+			for (int y = 0; y < img.getHeight(); y += 2) {
+				for (int x = 0; x < img.getWidth(); x += 2) {
+					int c = img.getRGB(x, y);
+					int r = c >> 16 & 255;
+					int g = c >> 8 & 255;
+					int b = c & 255;
+					if (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 60) {
+						painted[0]++; // gris de la pierre (la scène, elle, tire sur le violet et reste sombre)
+					} else if (r > g + 10 && g > b + 10 && r > 80) {
+						painted[1]++; // brun des planches
+					}
+				}
+			}
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+		check(painted[0] > 400 && painted[1] > 40, "vignette avec des pixels de blocs : pierre " + painted[0] + ", planches " + painted[1]);
 		shot(ctx, "17-structures-a-vous");
 		check(openInGrid(ctx, sname), "case de la structure");
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage p && p.structureId().equals(sid)), "fiche de la structure");
@@ -820,6 +891,21 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			"la partie principale est dans la liste");
 		ctx.waitTicks(30);
 		shot(ctx, "20-parties");
+		// L'écran Parties ouvert depuis l'Atelier : « Retour » ramène à Atelier › Parties ; ouvert du menu J, au menu J.
+		press(ctx, PartiesPage.JOIN);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.PartiesScreen), "écran Parties depuis l'Atelier");
+		press(ctx, "Retour");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof PartiesPage), "« Retour » ramène à Atelier › Parties");
+		ctx.setScreen(MainScreen::new);
+		ctx.waitTicks(5);
+		if (ctx.computeOnClient(mc -> find(mc, "Parties") != null)) {
+			press(ctx, "Parties");
+			check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.PartiesScreen), "écran Parties du menu J");
+			press(ctx, "Retour");
+			check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof MainScreen), "« Retour » ramène au menu J");
+		}
+		ctx.setScreen(PartiesPage::new);
+		ctx.waitTicks(5);
 		String mainName = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().name());
 		check(openInGrid(ctx, mainName), "case de la partie principale");
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof PartySheetPage p && p.gameId().equals(mainId)), "fiche de la partie");

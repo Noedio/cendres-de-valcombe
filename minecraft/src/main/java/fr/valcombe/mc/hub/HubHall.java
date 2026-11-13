@@ -79,7 +79,7 @@ public final class HubHall {
 	public static final int BOARD_OUTER = 12;
 	/** La largeur d'une fiche, en blocs : trois fiches par panneau. */
 	public static final int CARD_WIDTH = 3;
-	/** Les fiches du tableau : trois par panneau. Au-delà, les autres parties sont dans le menu J, « Parties ». */
+	/** Les fiches d'une page du tableau : trois par panneau. Au-delà, le tableau a des pages (flèches aux bouts, voir Hub). */
 	public static final int SLOTS = 6;
 
 	/**

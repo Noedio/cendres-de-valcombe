@@ -29,7 +29,9 @@ import net.minecraft.util.Util;
  * à droite, l'avancement de la pose de carte en cours, s'il y en a une.</li>
  * <li><b>Au milieu</b>, la page ({@link #buildPage()}, {@link #drawPage(Hd)}), entre {@link #top()} et {@link #bottom()}.</li>
  * <li><b>En bas</b>, « Retour » (la page d'avant dans le fil), et le retour du serveur à la dernière action : en cours
- * (« Envoi au serveur… »), réussie (coche verte) ou refusée (croix rouge, le texte du refus).</li>
+ * (« Envoi au serveur… »), réussie (coche verte) ou refusée (croix rouge, le texte du refus). Ce message appartient à
+ * la page qui a lancé l'action (ou à celle où il est arrivé) : il s'efface quand on change de page. Un long message
+ * passe sur deux lignes, en plus petit au besoin ; s'il dépasse encore, il se lit en entier au survol.</li>
  * </ul>
  * Chaque action passe par {@link #run(String, String)} : une commande {@code /vc}, vérifiée par le serveur comme si
  * elle était tapée, dont la réponse revient dans la vue ({@code atelier.reponse}). L'Atelier est réservé aux
@@ -55,6 +57,20 @@ public abstract class AtelierPage extends HdScreen {
 	private static int pendingFrom = -1;
 	private static long pendingSince;
 	private static String pendingWhat;
+	/** La page (clé, voir pageKey()) qui a lancé l'action en attente : sa réponse lui revient. */
+	private static String pendingOwner;
+	/** La page à qui revient la dernière réponse reçue, et le numéro de cette réponse. */
+	private static String replyOwner;
+	private static int noted = Integer.MIN_VALUE;
+	/** La dernière page de l'Atelier construite : en changer efface le message du pied de page. */
+	private static String shownPage;
+	/**
+	 * Une action vient d'être lancée par un clic (jusqu'au prochain tick) : si ce même clic mène à une autre page
+	 * (copier une carte, puis revenir à la bibliothèque), la réponse suit vers cette page.
+	 */
+	private static boolean justRan;
+	/** Tailles essayées pour le message du pied de page, de la plus grande à la plus petite. */
+	private static final float[] FOOT_SIZES = {9.5f, 9f, 8.5f, 8f};
 
 	/** Une étape du fil d'Ariane : son nom, et la page où elle mène (null : la page en cours). */
 	public record Crumb(String label, Supplier<Screen> go) {
@@ -74,6 +90,52 @@ public abstract class AtelierPage extends HdScreen {
 	public static void opening() {
 		seenReply = replyNumber();
 		pendingFrom = -1;
+		pendingOwner = null;
+		replyOwner = null;
+		noted = seenReply;
+		shownPage = null;
+		justRan = false;
+	}
+
+	/**
+	 * Ce qui distingue cette page des autres pour le message du pied de page : sa classe et le chemin qui y mène (sans
+	 * son propre nom, qui peut changer : une carte renommée reste la même page).
+	 */
+	protected String pageKey() {
+		StringBuilder k = new StringBuilder(getClass().getName());
+		try {
+			List<Crumb> t = trail();
+			for (int i = 0; i < t.size() - 1; i++) {
+				k.append('|').append(t.get(i).label());
+			}
+		} catch (RuntimeException e) {
+			// Page pas encore prête (vue incomplète) : sa classe suffit.
+		}
+		return k.toString();
+	}
+
+	/** La clé de la page de l'Atelier ouverte, ou null. */
+	private static String currentKey() {
+		AtelierPage p = current();
+		return p == null ? null : p.pageKey();
+	}
+
+	/**
+	 * Attribue une réponse du serveur tout juste reçue : à la page qui a lancé l'action attendue, sinon à la page
+	 * ouverte quand elle arrive.
+	 */
+	private static void attribute() {
+		int n = replyNumber();
+		if (n == noted) {
+			return;
+		}
+		noted = n;
+		if (pendingOwner != null && pendingFrom >= 0 && n > pendingFrom) {
+			replyOwner = pendingOwner;
+			pendingOwner = null;
+		} else {
+			replyOwner = currentKey();
+		}
 	}
 
 	@Override
@@ -170,7 +232,18 @@ public abstract class AtelierPage extends HdScreen {
 	}
 
 	protected void go(Screen s) {
+		if (justRan && s instanceof AtelierPage p) {
+			// Le clic qui a lancé l'action mène aussi à cette page : la réponse s'y affichera.
+			pendingOwner = p.pageKey();
+		}
 		minecraft.gui.setScreen(s);
+	}
+
+	@Override
+	public void tick() {
+		super.tick();
+		justRan = false;
+		attribute();
 	}
 
 	/**
@@ -178,25 +251,63 @@ public abstract class AtelierPage extends HdScreen {
 	 * la remplace dans le pied de page.
 	 */
 	protected void run(String command, String what) {
+		attribute();
 		pendingFrom = replyNumber();
 		pendingSince = Util.getMillis();
 		pendingWhat = what;
+		pendingOwner = pageKey();
+		justRan = true;
 		send(command);
 	}
 
-	/** Une action attend-elle encore la réponse du serveur ? */
+	/** Une action lancée depuis la page ouverte attend-elle encore la réponse du serveur ? */
 	protected static boolean pending() {
-		return pendingFrom >= 0 && replyNumber() <= pendingFrom && Util.getMillis() - pendingSince < 8000;
+		return pendingFrom >= 0 && replyNumber() <= pendingFrom && Util.getMillis() - pendingSince < 8000
+			&& pendingOwner != null && pendingOwner.equals(currentKey());
 	}
 
 	private static int replyNumber() {
 		return ClientState.num(ClientState.obj(data(), "reponse"), "n", 0);
 	}
 
-	/** La dernière réponse du serveur à montrer (reçue depuis l'ouverture de l'Atelier), ou null. */
+	/**
+	 * La dernière réponse du serveur à montrer sur la page ouverte (reçue depuis qu'on y est, et qui lui revient), ou
+	 * null.
+	 */
 	public static JsonObject reply() {
+		attribute();
 		JsonObject r = ClientState.obj(data(), "reponse");
-		return r != null && ClientState.num(r, "n", 0) > seenReply ? r : null;
+		return r != null && ClientState.num(r, "n", 0) > seenReply && replyOwner != null && replyOwner.equals(currentKey()) ? r : null;
+	}
+
+	/** Le message du pied de page mis en forme : sa taille de texte, ses lignes (deux au plus), raccourci ou non. */
+	public record FooterText(HdStyle style, List<String> lines, boolean cut) {
+	}
+
+	/**
+	 * Met un message sur deux lignes au plus dans cette largeur (pixels réels, à cette échelle) : à la taille normale,
+	 * sinon un peu plus petit ; en dernier recours, la deuxième ligne finit par « … » (le texte entier est alors au
+	 * survol).
+	 */
+	public static FooterText footerText(String text, int width, int scale) {
+		HdStyle st = HdStyle.PETIT;
+		List<String> lines = List.of();
+		for (float size : FOOT_SIZES) {
+			st = HdStyle.PETIT.size(size);
+			lines = HdFonts.wrap(st, scale, text, width);
+			if (lines.size() <= 2) {
+				return new FooterText(st, lines, false);
+			}
+		}
+		String last = HdFonts.ellipsize(st, scale, lines.get(1) + "…", width);
+		return new FooterText(st, List.of(lines.get(0), last), true);
+	}
+
+	/** Largeur (pixels réels) laissée au texte du message dans le pied de page de cette page, à cette échelle. */
+	public int footerTextWidth(int scale) {
+		int x = (px + SIDE + 74 + 10) * scale;
+		int xe = (px + pw - SIDE - footerReserve()) * scale - (footerReserve() > 0 ? 8 * scale : 0);
+		return xe - x - 8 * scale - 6 * scale;
 	}
 
 	/** Mesure d'un texte en unités d'interface (pour placer les widgets dans build()). */
@@ -211,6 +322,16 @@ public abstract class AtelierPage extends HdScreen {
 
 	@Override
 	protected final void build() {
+		String key = pageKey();
+		if (!key.equals(shownPage)) {
+			// Une autre page : le message de la page d'avant s'efface (celui d'une action lancée par le clic qui mène ici
+			// arrivera après, et s'affichera).
+			attribute();
+			if (shownPage != null) {
+				seenReply = Math.max(seenReply, replyNumber());
+			}
+			shownPage = key;
+		}
 		buildTrail();
 		button(px + SIDE, py + ph - 24, 74, "Retour", () -> go(parent()));
 		if (data() == null) {
@@ -349,19 +470,18 @@ public abstract class AtelierPage extends HdScreen {
 			HdGlyphs.check(hd, x, iy, s, color);
 		}
 		String text = str(r, "texte");
-		List<String> lines = hd.wrap(st, text, w - icon - hd.u(6));
-		int lh = hd.lineHeight(st);
-		int shown = Math.min(2, lines.size());
-		int ty = y + (h - shown * lh) / 2;
+		FooterText ft = footerText(text, w - icon - hd.u(6), hd.scale());
+		int lh = hd.lineHeight(ft.style());
+		int shown = ft.lines().size();
+		// Deux lignes débordent un peu de la hauteur d'un bouton : elles se centrent sur le pied de page entier.
+		int area = shown > 1 ? hd.px(FOOT - 4) : h;
+		int top = shown > 1 ? hd.px(py + ph - FOOT + 2) : y;
+		int ty = top + (area - shown * lh) / 2;
 		for (int i = 0; i < shown; i++) {
-			String line = lines.get(i);
-			if (i == shown - 1 && lines.size() > shown) {
-				line = hd.ellipsize(st, line + "…", w - icon - hd.u(6));
-			}
-			hd.text(st, line, x + icon + hd.u(6), ty + i * lh, error ? 0xFF7A1E24 : Hd.INK);
+			hd.text(ft.style(), ft.lines().get(i), x + icon + hd.u(6), ty + i * lh, error ? 0xFF7A1E24 : Hd.INK);
 		}
 		// Le texte entier au survol, s'il a été raccourci.
-		if (lines.size() > shown && hd.hovered(x, y, w, h)) {
+		if (ft.cut() && hd.hovered(x, top, w, area)) {
 			pendingTooltip = text;
 		}
 	}

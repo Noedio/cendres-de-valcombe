@@ -1058,6 +1058,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Une modification des repères est faite : on garde l'état d'avant, puis on enregistre. */
 	private void markersChanged(Village.Marks before) {
 		markerUndo.push(before);
+		SharedUndo.recorded(SharedUndo.Stack.MARKERS, worldId);
 		while (markerUndo.size() > MARKER_UNDO) {
 			markerUndo.removeLast();
 		}
@@ -1705,6 +1706,15 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	/** Vue de dessus du carré de rayon r autour de c dans ce monde (voir topView()) : la carte du monde de la partie, ou d'un autre monde. */
 	static byte[] topView(ServerLevel level, BlockPos c, int r) {
+		return topView(level, c, r, null);
+	}
+
+	/**
+	 * Vue de dessus, avec ce qui est déjà chargé seulement (missing non null) : aucun tronçon n'est lu du disque ni
+	 * généré sur le fil du serveur. Une colonne d'un tronçon qui n'est pas en mémoire est peinte comme le sol plat
+	 * des mondes de Valcombe (de l'herbe), et comptée dans missing[0]. Pour les vignettes des parties.
+	 */
+	static byte[] topView(ServerLevel level, BlockPos c, int r, int[] missing) {
 		int n = 2 * r + 1;
 		var img = new java.awt.image.BufferedImage(n, n, java.awt.image.BufferedImage.TYPE_INT_RGB);
 		BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
@@ -1713,8 +1723,18 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			for (int x = 0; x < n; x++) {
 				int wx = c.getX() + x - r;
 				int wz = c.getZ() + z - r;
-				// La zone est chargée au besoin : sans joueur à proximité, elle ne l'est pas, et la vue sortirait noire.
-				int y = level.getChunk(wx >> 4, wz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, wx & 15, wz & 15);
+				// La zone est chargée au besoin : sans joueur à proximité, elle ne l'est pas, et la vue sortirait noire. Sauf
+				// pour une vignette (missing) : on n'y lit que ce qui est déjà en mémoire.
+				net.minecraft.world.level.chunk.ChunkAccess chunk = missing == null ? level.getChunk(wx >> 4, wz >> 4)
+					: level.getChunkSource().getChunkNow(wx >> 4, wz >> 4);
+				if (chunk == null) {
+					missing[0]++;
+					int grass = 0x5C7A3A; // le sol plat : de l'herbe, comme Vignettes.fromBlocks
+					img.setRGB(x, z, scaleRgb(grass, 0.86));
+					north[x] = fr.valcombe.mc.worlds.WorldManager.SURFACE_Y;
+					continue;
+				}
+				int y = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, wx & 15, wz & 15);
 				int rgb = 0;
 				for (int k = 0; k < 12 && rgb == 0; k++, y--) {
 					m.set(wx, y, wz);
@@ -1737,6 +1757,10 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		} catch (java.io.IOException e) {
 			throw new fr.valcombe.rules.GameException("Vue de dessus impossible : " + e.getMessage());
 		}
+	}
+
+	private static int scaleRgb(int rgb, double k) {
+		return (int) ((rgb >> 16 & 255) * k) << 16 | (int) ((rgb >> 8 & 255) * k) << 8 | (int) ((rgb & 255) * k);
 	}
 
 	public String mapInfo() {

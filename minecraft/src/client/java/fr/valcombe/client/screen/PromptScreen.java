@@ -54,7 +54,7 @@ public class PromptScreen extends HdScreen {
 	 * centre porte la consigne ou l'aiguille du vote.
 	 */
 	private RingLayout.Result ringOf(List<String> names, int x, int y, int w, int h) {
-		return SeatRing.layout(names, SeatRing.spec(x, y, w, h).tokens(26, 14).outsideOnly());
+		return SeatRing.layout(names, SeatRing.spec(x, y, w, h).tokens(26, 14));
 	}
 
 	/**
