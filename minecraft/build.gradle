@@ -128,6 +128,8 @@ test {
 	useJUnitPlatform()
 	// TexturesTest lit les textures du client : rejouer les tests quand elles sont redessinées
 	inputs.dir("src/client/resources/assets/valcombe/textures")
+	inputs.dir("src/main/resources/assets/valcombe/textures")
+	inputs.file("src/main/resources/valcombe/atelier.html")
 	testLogging {
 		events "failed"
 		exceptionFormat "full"

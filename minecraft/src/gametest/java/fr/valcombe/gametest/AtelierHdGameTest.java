@@ -797,6 +797,35 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			"la structure paraît dans le catalogue");
 		chooseTab(ctx, "À vous");
 		check(waitClient(ctx, 300, mc -> Vignettes.ready("structure:" + sid, "")), "sa vignette est faite");
+		// Sa vignette montre ses blocs, pas seulement la scène et l'ombre : le dallage de pierre (gris) et le pilier de
+		// planches (brun) y sont peints. Un fichier à l'ancien format de palette (« Name ») ne donne plus de l'air.
+		check(server.computeOnServer(s -> ValcombeMod.structures().solidCount(sid) == 52),
+			"structure importée avec ses vrais blocs (pierre et planches, pas de l'air) : "
+				+ server.computeOnServer(s -> ValcombeMod.structures().solidCount(sid)));
+		var job = server.computeOnServer(s -> fr.valcombe.mc.Vignettes.job("structure:" + sid));
+		check(job != null, "vignette de la structure demandée au serveur");
+		byte[] png = job.get();
+		check(png != null && png.length > 0, "vignette de la structure faite");
+		int[] painted = new int[2];
+		try {
+			java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+			for (int y = 0; y < img.getHeight(); y += 2) {
+				for (int x = 0; x < img.getWidth(); x += 2) {
+					int c = img.getRGB(x, y);
+					int r = c >> 16 & 255;
+					int g = c >> 8 & 255;
+					int b = c & 255;
+					if (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 60) {
+						painted[0]++; // gris de la pierre (la scène, elle, tire sur le violet et reste sombre)
+					} else if (r > g + 10 && g > b + 10 && r > 80) {
+						painted[1]++; // brun des planches
+					}
+				}
+			}
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+		check(painted[0] > 400 && painted[1] > 40, "vignette avec des pixels de blocs : pierre " + painted[0] + ", planches " + painted[1]);
 		shot(ctx, "17-structures-a-vous");
 		check(openInGrid(ctx, sname), "case de la structure");
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage p && p.structureId().equals(sid)), "fiche de la structure");

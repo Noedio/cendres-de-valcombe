@@ -199,7 +199,7 @@ public final class Vignettes {
 	 * telle quelle. Null si la carte ou la structure n'existe pas (ou sans vignettes sur ce serveur) ; le Supplier rend
 	 * null si l'image n'a pas pu se faire.
 	 */
-	static java.util.function.Supplier<byte[]> job(String key) {
+	public static java.util.function.Supplier<byte[]> job(String key) {
 		Vignettes v = current;
 		if (v == null || key == null || !(key.startsWith("carte:") || key.startsWith("structure:"))) {
 			return null;

@@ -25,7 +25,8 @@ import make_assets as A  # noqa: E402  (palette et emblèmes)
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "src/client/resources/assets/valcombe"
 TEX = ASSETS / "textures/item/scene"
-ROLE_ICONS = ASSETS / "textures/gui/roles"
+# Les emblèmes des rôles sont dans les ressources communes : le serveur les sert aussi à la page web de l'Atelier.
+ROLE_ICONS = ROOT / "src/main/resources/assets/valcombe/textures/gui/roles"
 ROLE_JAVA = ROOT / "src/main/java/fr/valcombe/rules/Role.java"
 
 GREY = (120, 116, 118)

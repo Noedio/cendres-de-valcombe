@@ -110,4 +110,54 @@ class AtelierWebTest {
 		}
 		assertTrue(n >= 25, "routes trouvées dans la page : " + n);
 	}
+
+	/**
+	 * Le logo et les emblèmes de la page viennent des ressources communes du mod : un serveur les sert, qu'il soit lancé
+	 * avec le jar publié ou en développement (runServer n'a pas les ressources du client sur son chemin). Chaque emblème
+	 * nommé dans la page, et celui de chaque rôle, est là.
+	 */
+	@Test
+	void lesEmblemesDeLaPageSontDansLesRessourcesCommunes() throws IOException {
+		java.nio.file.Path common = java.nio.file.Path.of("src/main/resources/assets/valcombe/textures/gui/roles");
+		Matcher m = Pattern.compile("/atelier/embleme/([a-z_0-9]+)\\.png").matcher(page());
+		int n = 0;
+		while (m.find()) {
+			n++;
+			assertTrue(java.nio.file.Files.exists(common.resolve(m.group(1) + ".png")), "emblème absent des ressources communes : " + m.group(1));
+		}
+		assertTrue(n >= 2, "emblèmes nommés dans la page (logo compris) : " + n);
+		for (fr.valcombe.rules.Role r : fr.valcombe.rules.Role.all()) {
+			assertTrue(java.nio.file.Files.exists(common.resolve(r.icon + ".png")), "emblème du rôle " + r.name() + " : " + r.icon);
+		}
+		assertFalse(java.nio.file.Files.exists(java.nio.file.Path.of("src/client/resources/assets/valcombe/textures/gui/roles")),
+			"les emblèmes ne sont plus en double dans les ressources du client");
+	}
+
+	/** La vignette d'une structure se fond dans son cadre : le cadre prolonge la scène peinte par le serveur. */
+	@Test
+	void leCadreDUneStructureProlongeSaScene() throws IOException {
+		String html = page();
+		assertTrue(html.contains(".thumb.structure { background: radial-gradient(ellipse 46.875% 75% at 50% 42%, #4a3e4c, #1e1820); }"),
+			"dégradé du cadre 16:10 accordé à Vignettes.isometric");
+		String server = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/fr/valcombe/mc/Vignettes.java"));
+		assertTrue(server.contains("new Color[] {new Color(0x4A3E4C), new Color(0x1E1820)}") && server.contains("SIZE * 0.42f, SIZE * 0.75f"),
+			"la scène des vignettes de structure n'a pas changé (sinon, accorder le cadre de la page web)");
+	}
+
+	/** Une entrée de palette à l'ancien format (« Name », « Properties ») est lue au format de cette version. */
+	@Test
+	void anciennePaletteLueAuFormatActuel() {
+		net.minecraft.nbt.CompoundTag old = new net.minecraft.nbt.CompoundTag();
+		old.putString("Name", "minecraft:oak_log");
+		net.minecraft.nbt.CompoundTag props = new net.minecraft.nbt.CompoundTag();
+		props.putString("axis", "y");
+		old.put("Properties", props);
+		net.minecraft.nbt.CompoundTag now = Clip.paletteEntry(old);
+		assertEquals("minecraft:oak_log", now.getStringOr("id", ""));
+		assertEquals("y", now.getCompoundOrEmpty("properties").getStringOr("axis", ""));
+		assertFalse(now.contains("Name") || now.contains("Properties"));
+		net.minecraft.nbt.CompoundTag current = new net.minecraft.nbt.CompoundTag();
+		current.putString("id", "minecraft:stone");
+		assertTrue(Clip.paletteEntry(current) == current, "une entrée déjà au bon format reste telle quelle");
+	}
 }
