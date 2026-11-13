@@ -102,6 +102,10 @@ public class AteliersFinitionsGameTest implements FabricClientGameTest {
 			server.runOnServer(s -> player(s, me).teleportTo(ValcombeMod.worlds().level(atelier), 38.5, 88, -26.5, Set.of(), 45f, 28f, false));
 			ctx.waitTicks(30);
 			shot(ctx, "finitions-selection-de-loin");
+
+			// Ménage : l'atelier d'essai ne reste pas dans « Ateliers ouverts » pour les tests suivants.
+			server.runOnServer(s -> ValcombeMod.worlds().delete(atelier));
+			check(waitFor(ctx, world, 600, s -> ValcombeMod.worlds().find(atelier) == null), "atelier d'essai supprimé");
 		}
 	}
 

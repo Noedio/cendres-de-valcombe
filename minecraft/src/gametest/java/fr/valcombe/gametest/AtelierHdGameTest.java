@@ -622,17 +622,42 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		ctx.waitTicks(6);
 		shot(ctx, "11-nouvelle-import");
 		press(ctx, NewMapPage.NEXT);
-		press(ctx, "Importer dans un atelier");
+		// Vu dans le même instant que le clic : un petit fichier est posé aussitôt et le joueur est alors conduit dans
+		// l'atelier, ce qui ferme l'écran.
+		check(ctx.computeOnClient(mc -> {
+			HdButton b = find(mc, "Importer dans un atelier");
+			if (b == null || !b.active) {
+				return false;
+			}
+			b.press();
+			return mc.gui.screen() instanceof MapsPage && MapsPage.tab() == 1;
+		}), "« Importer dans un atelier » ouvre « Ateliers ouverts »");
 		check(waitFor(ctx, world, 200, s -> mw().ateliers().stream().anyMatch(e -> e.nom().equals("atelier-hd-essai"))),
 			"atelier créé pour l'import");
 		String imported = server.computeOnServer(s -> mw().ateliers().stream().filter(e -> e.nom().equals("atelier-hd-essai"))
 			.findFirst().orElseThrow().id());
 		maps.add(server.computeOnServer(s -> ValcombeMod.worlds().find(imported).carte()));
-		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof MapsPage) && MapsPage.tab() == 1, "« Ateliers ouverts » montre le nouvel atelier");
+		ctx.setScreen(() -> new MapsPage(1));
+		ctx.waitTicks(20);
 		shot(ctx, "12-ateliers-ouverts");
 		check(waitFor(ctx, world, 3000, s -> mw().idle(imported)), "construction importée posée dans l'atelier");
 		ctx.setScreen(() -> new MapsPage(1));
 		ctx.waitTicks(30);
+		// D'autres ateliers peuvent être ouverts : on choisit celui de l'import dans la liste.
+		check(waitClient(ctx, 60, mc -> {
+			for (var w : mc.gui.screen().children()) {
+				if (w instanceof fr.valcombe.client.hd.HdList<?> l) {
+					for (int i = 0; i < l.items().size(); i++) {
+						if (l.items().get(i) instanceof JsonObject o && imported.equals(ClientState.str(o, "monde"))) {
+							l.choose(i);
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}), "l'atelier d'import est dans « Ateliers ouverts »");
+		ctx.waitTicks(6);
 		press(ctx, "Fermer l'atelier");
 		press(ctx, "Confirmer la fermeture");
 		check(waitFor(ctx, world, 600, s -> ValcombeMod.worlds().find(imported) == null), "atelier d'import fermé depuis la liste");

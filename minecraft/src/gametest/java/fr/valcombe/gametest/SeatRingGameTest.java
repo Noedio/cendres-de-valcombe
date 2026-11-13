@@ -299,12 +299,23 @@ public class SeatRingGameTest implements FabricClientGameTest {
 	/** Applique la vue, ouvre l'écran, le vérifie et le capture. */
 	private static void show(ClientGameTestContext ctx, JsonObject view, Supplier<Screen> screen, int seats, String name) {
 		String json = view.toString();
-		ctx.runOnClient(mc -> {
-			ClientState.apply(json);
-			mc.gui.setScreen(screen.get());
-		});
-		ctx.waitTicks(3);
-		String problem = ctx.computeOnClient(mc -> ringProblem(mc, seats));
+		String problem = null;
+		// Une vue du serveur peut arriver entre-temps et remplacer celle du test : une invite (vote, grimoire) sans objet se
+		// ferme alors d'elle-même. On réapplique la vue du test, sans rien changer à ce qui est jugé.
+		for (int attempt = 0; attempt < 5; attempt++) {
+			String applied = ctx.computeOnClient(mc -> {
+				ClientState.apply(json);
+				mc.gui.setScreen(screen.get());
+				return ClientState.view().toString();
+			});
+			ctx.waitTicks(3);
+			String[] seen = ctx.computeOnClient(mc -> new String[] {ringProblem(mc, seats), ClientState.view().toString()});
+			problem = seen[0];
+			boolean replaced = !applied.equals(seen[1]);
+			if (problem == null || !(replaced || problem.startsWith("pas un écran"))) {
+				break;
+			}
+		}
 		check(problem == null, name + " : " + problem);
 		shot(ctx, name);
 	}
