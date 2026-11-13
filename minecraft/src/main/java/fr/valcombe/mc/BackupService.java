@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -393,7 +394,8 @@ public final class BackupService {
 			job.phase = "rotation";
 			List<String> deleted = List.of();
 			try {
-				deleted = store.rotate(settings.get().garder());
+				// L'archive dont la restauration est prévue reste là jusqu'au redémarrage, même si elle est la plus ancienne.
+				deleted = store.rotate(settings.get().garder(), pendingRestore().map(p -> Set.of(p.nom())).orElse(Set.of()));
 			} catch (IOException e) {
 				ValcombeMod.LOG.warn("Rotation des sauvegardes impossible : {}", e.getMessage());
 			}
@@ -617,8 +619,15 @@ public final class BackupService {
 		return w;
 	}
 
-	/** Efface une sauvegarde ; faux si elle n'existait pas. */
+	/**
+	 * Efface une sauvegarde ; faux si elle n'existait pas. Refusé (GameException) pour l'archive dont la restauration
+	 * est prévue au prochain démarrage : il faut d'abord annuler cette restauration.
+	 */
 	public boolean delete(String name, String by) throws IOException {
+		if (pendingRestore().map(r -> r.nom().equals(name)).orElse(false)) {
+			throw new GameException("La sauvegarde « " + name + " » doit être restaurée au prochain démarrage : annulez d'abord "
+				+ "cette restauration (/vc sauvegarde restaurer annuler, ou DELETE /admin/sauvegardes/restaurer).");
+		}
 		try {
 			boolean done = store.delete(name);
 			if (done) {

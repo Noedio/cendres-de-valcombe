@@ -88,6 +88,20 @@ class BackupStoreTest {
 	}
 
 	@Test
+	void rotationSparesTheArchiveWaitingToBeRestored() throws Exception {
+		String oldest = touch(BackupKind.AUTO, T);
+		String middle = touch(BackupKind.AUTO, T.plusHours(6));
+		String newest = touch(BackupKind.AUTO, T.plusHours(12));
+		BackupStore store = new BackupStore(dir);
+		// Garder 1 : la plus ancienne, dont la restauration est prévue, reste ; elle compte toujours dans le nombre gardé.
+		assertEquals(List.of(middle), names(BackupStore.toDelete(store.list(), 1, java.util.Set.of(oldest))));
+		assertEquals(List.of(middle), store.rotate(1, java.util.Set.of(oldest)));
+		assertEquals(List.of(newest, oldest), names(store.list()));
+		// La restauration faite (ou annulée), la rotation suivante l'efface comme les autres.
+		assertEquals(List.of(oldest), store.rotate(1));
+	}
+
+	@Test
 	void deletionAndResolutionRefuseForeignNames() throws Exception {
 		BackupStore store = new BackupStore(dir);
 		String a = touch(BackupKind.MANUELLE, T);

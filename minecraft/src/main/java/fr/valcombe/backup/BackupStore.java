@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -132,6 +133,15 @@ public final class BackupStore {
 	 * @param all les sauvegardes, dans n'importe quel ordre
 	 */
 	public static List<Backup> toDelete(List<Backup> all, int keep) {
+		return toDelete(all, keep, Set.of());
+	}
+
+	/**
+	 * Comme {@link #toDelete(List, int)}, mais les archives nommées dans {@code spared} ne sont jamais effacées (elles
+	 * comptent toujours parmi les {@code keep}) : c'est le cas de l'archive dont la restauration est prévue au
+	 * prochain démarrage, qui doit encore être là quand le serveur redémarre.
+	 */
+	public static List<Backup> toDelete(List<Backup> all, int keep, Set<String> spared) {
 		List<Backup> rotated = new ArrayList<>();
 		for (Backup b : all) {
 			if (b.kind().rotated()) {
@@ -139,13 +149,27 @@ public final class BackupStore {
 			}
 		}
 		rotated.sort(Comparator.comparing(Backup::parsed).reversed());
-		return rotated.size() <= keep ? List.of() : List.copyOf(rotated.subList(Math.max(keep, 0), rotated.size()));
+		if (rotated.size() <= keep) {
+			return List.of();
+		}
+		List<Backup> out = new ArrayList<>();
+		for (Backup b : rotated.subList(Math.max(keep, 0), rotated.size())) {
+			if (!spared.contains(b.name())) {
+				out.add(b);
+			}
+		}
+		return List.copyOf(out);
 	}
 
 	/** Efface les plus anciennes sauvegardes automatiques au-delà de {@code keep} ; renvoie les noms effacés. */
 	public synchronized List<String> rotate(int keep) throws IOException {
+		return rotate(keep, Set.of());
+	}
+
+	/** Comme {@link #rotate(int)}, sans jamais effacer les archives nommées dans {@code spared}. */
+	public synchronized List<String> rotate(int keep, Set<String> spared) throws IOException {
 		List<String> deleted = new ArrayList<>();
-		for (Backup b : toDelete(list(), keep)) {
+		for (Backup b : toDelete(list(), keep, spared)) {
 			if (Files.deleteIfExists(dir.resolve(b.name()))) {
 				deleted.add(b.name());
 			}

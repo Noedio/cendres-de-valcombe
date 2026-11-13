@@ -93,10 +93,10 @@ Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo u
 
 ## 6. Sauvegardes automatiques
 
-**Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières, jamais au milieu d'une partie en cours. Le jeu continue pendant la copie. Rien à installer :
+**Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières ; celle qui tombe pendant une partie attend la fin de la partie (24 heures au plus). Le jeu continue pendant la copie. Rien à installer :
 
 - `/vc sauvegarde` dit où elles en sont, `/vc sauvegarde maintenant` en fait une tout de suite, `/vc sauvegarde liste` les montre ;
-- **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. Le launcher fait tout cela d'un clic, par l'API d'administration ;
+- **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. L'API d'administration le fait d'un clic (restauration puis redémarrage), et c'est par elle que le launcher le fera ;
 - les réglages (intervalle, nombre gardé...) : `/vc sauvegarde reglages`, ou `config/valcombe/sauvegardes.json`.
 
 Les archives ne contiennent ni la clé d'administration, ni le webhook Discord, ni `server.properties` et les listes de joueurs. Le détail (contenu, rotation, restauration) est dans [docs/ADMIN-API.md](docs/ADMIN-API.md#les-sauvegardes). L'arrêt du serveur attend la fin de la sauvegarde d'arrêt : le service systemd lui laisse 10 minutes.
@@ -115,7 +115,7 @@ Ajoutez la ligne :
 0 5 * * * /opt/valcombe/sauvegarder.sh
 ```
 
-Pour restaurer une archive brute : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC (le launcher sait télécharger celles du mod) : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
+Pour restaurer une archive brute : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC (celles du mod se téléchargent par l'API d'administration) : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
 
 ## 7. Mettre à jour
 

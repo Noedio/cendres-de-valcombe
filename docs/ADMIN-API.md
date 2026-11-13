@@ -506,7 +506,7 @@ Télécharge l'archive : `200`, `Content-Type: application/zip`, `Content-Dispos
 
 ### DELETE /admin/sauvegardes/&lt;nom&gt;
 
-Efface une sauvegarde (de n'importe quelle sorte). `200` : `{"ok": true, "message": "Sauvegarde « ... » effacée."}`, `404` si elle n'existe pas.
+Efface une sauvegarde (de n'importe quelle sorte). `200` : `{"ok": true, "message": "Sauvegarde « ... » effacée."}`, `404` si elle n'existe pas, `409` si sa restauration est prévue au prochain démarrage (annulez-la d'abord). La rotation, elle non plus, n'efface jamais l'archive dont la restauration est prévue.
 
 ### En jeu et à la console
 
