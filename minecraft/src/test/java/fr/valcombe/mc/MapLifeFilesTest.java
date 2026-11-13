@@ -62,9 +62,9 @@ class MapLifeFilesTest {
 		Path f = tmp.resolve("valcombe-village.json");
 		Village v = Village.custom(new BlockPos(10, 64, -20));
 		v.addSeat(new BlockPos(14, 65, -20));
-		v.save(f, false);
+		v.save(f);
 		v.addSeat(new BlockPos(6, 65, -20));
-		v.save(f, false);
+		v.save(f);
 		Files.writeString(f, "{\"center\":[10,64"); // coupure en pleine écriture
 		Village.Loaded back = Village.load(f);
 		assertEquals(Village.Fiche.READY, back.state(), "la copie de secours est relue");
@@ -82,14 +82,21 @@ class MapLifeFilesTest {
 	}
 
 	@Test
-	void carteOublieeGardeSonEmprise() {
+	void laFicheNeRetientPlusDeQuoiRaserUneAncienneCarte() throws IOException {
+		// Chaque monde de partie porte sa carte, remis à neuf avant d'en recevoir une autre : plus de carte « oubliée »
+		// ni de zone « bâtie » à raser. Une fiche écrite avant reste lisible : ces champs sont simplement ignorés.
 		Path f = tmp.resolve("valcombe-village.json");
 		Village v = Village.custom(new BlockPos(0, 70, 0));
 		v.addSeat(new BlockPos(30, 71, 0));
-		v.save(f, true);
+		v.save(f);
+		String json = Files.readString(f);
+		assertFalse(json.contains("forgotten") || json.contains("built"), json);
+		Files.writeString(f, json.replaceFirst("\\{", "{\"forgotten\": true, \"built\": [-150, 60, 5, 20, 90, 12],"));
+		Files.deleteIfExists(SafeFile.backup(f));
 		Village.Loaded back = Village.load(f);
-		assertEquals(Village.Fiche.FORGOTTEN, back.state());
-		assertEquals(38, back.village().extent(), "de quoi la retirer du monde quand une autre carte sera bâtie");
+		assertEquals(Village.Fiche.READY, back.state());
+		assertEquals(1, back.village().seatCount());
+		assertEquals(38, back.village().extent());
 	}
 
 	@Test
@@ -98,10 +105,10 @@ class MapLifeFilesTest {
 		Village custom = Village.custom(new BlockPos(0, 70, 0));
 		assertTrue(custom.modified());
 		custom.setModified(false); // enregistrée dans la bibliothèque
-		custom.save(f, false);
+		custom.save(f);
 		assertFalse(Village.load(f).village().modified());
 		custom.setModified(true);
-		custom.save(f, false);
+		custom.save(f);
 		assertTrue(Village.load(f).village().modified());
 	}
 
@@ -110,7 +117,7 @@ class MapLifeFilesTest {
 		// Fiche écrite par une version d'avant : on ignore ce qui a été bâti à la main sur ce village, il est donc à protéger.
 		Path f = tmp.resolve("valcombe-village.json");
 		Village v = Village.generated(new BlockPos(0, 70, 0), "gothique");
-		v.save(f, false);
+		v.save(f);
 		String old = java.nio.file.Files.readString(f).replaceAll("\"modified\"\s*:\s*(true|false),?", "");
 		assertFalse(old.contains("modified"));
 		java.nio.file.Files.writeString(f, old);
@@ -199,7 +206,7 @@ class MapLifeFilesTest {
 
 	@Test
 	void planCompteLesSuitesCalculeesSansLesGarderEnMemoire() {
-		BuildQueue.Plan clear = new BuildQueue.Plan().first(part(401 * 401 * 28)); // la plus grande carte à raser
+		BuildQueue.Plan clear = new BuildQueue.Plan().first(part(401 * 401 * 28)); // la plus grande carte à remettre à plat
 		BuildQueue.Plan build = new BuildQueue.Plan();
 		build.set(new BlockPos(0, 0, 0), null);
 		build.set(new BlockPos(1, 0, 0), null);
@@ -213,7 +220,7 @@ class MapLifeFilesTest {
 		BuildQueue.Plan build = new BuildQueue.Plan();
 		build.set(new BlockPos(0, 0, 0), null);
 		BuildQueue.Plan clear = new BuildQueue.Plan().first(part(10));
-		// Raser après avoir bâti détruirait ce qu'on vient de poser : le plan le refuse.
+		// Remettre à plat après avoir bâti détruirait ce qu'on vient de poser : le plan le refuse.
 		assertThrows(IllegalStateException.class, () -> build.then(clear));
 	}
 

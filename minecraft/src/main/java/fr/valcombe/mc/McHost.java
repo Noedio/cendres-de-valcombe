@@ -1,5 +1,7 @@
 package fr.valcombe.mc;
 
+import fr.valcombe.mc.worlds.WorldEntry;
+import fr.valcombe.mc.worlds.WorldManager;
 import fr.valcombe.session.Host;
 import fr.valcombe.session.Msg;
 import fr.valcombe.session.Prompt;
@@ -37,8 +39,16 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
-/** Pont entre la session de jeu et le serveur Minecraft. */
-public final class McHost implements Host {
+/**
+ * Pont entre la session de jeu et le serveur Minecraft.
+ * <p>
+ * La partie se joue dans <b>son monde</b> : un monde de partie de Valcombe (« Partie principale »), lié au démarrage
+ * ({@link #bindWorld}) et résolu par le gestionnaire de mondes ({@link #level()}). Le village, la scène, les trônes,
+ * les décors, les ménages, l'heure et les chantiers ne touchent qu'à ce monde ; la fiche du village, l'instantané de la
+ * carte et la marque de chantier sont rangés dans son dossier et disparaissent avec lui quand il est remis à neuf. Le
+ * monde principal de Minecraft ne sert plus au jeu : les joueurs arrivent au hub.
+ */
+public final class McHost implements Host, WorldManager.Listener, WorldManager.Guard {
 	private record Task(long due, Runnable run) {
 	}
 
@@ -80,71 +90,330 @@ public final class McHost implements Host {
 		}
 	}
 
-	/**
-	 * Carte oubliée (/vc carte oublier) : on ne joue plus dessus, mais ses blocs sont encore dans le
-	 * monde. Elle est gardée pour que la prochaine carte bâtie la retire, où qu'elle soit posée.
-	 */
-	private Village abandoned;
 	/** Avertissement du démarrage (fiche du village illisible…), redit à chaque opérateur qui se connecte. */
 	private String startupWarning;
 
 	public void setServer(MinecraftServer server) {
 		if (server == null) {
 			if (this.server != null) {
-				stage.clear(this.server); // la scène ne reste pas dans le monde enregistré : elle est remontée à la reprise
+				stage.clear(levelIfReady()); // la scène ne reste pas dans le monde enregistré : elle est remontée à la reprise
 			}
 			builds.clear();
 			// L'instantané reste sur le disque : une remise en état coupée par l'arrêt reprend au démarrage.
 			restoreAt = -1;
 			restoring = false;
-			holdCenter = null;
+			sending = null;
+			worlds = null;
+			worldId = null;
 		}
 		this.server = server;
 		village = null;
-		abandoned = null;
 		startupWarning = null;
-		firstStart = false;
-		if (server != null) {
-			Village.Loaded fiche = Village.load(server);
-			switch (fiche.state()) {
-				case READY -> village = fiche.village();
-				case FORGOTTEN -> abandoned = fiche.village();
-				case ABSENT -> firstStart = true;
-				case UNREADABLE -> startupWarning = "La fiche du village (config/valcombe-village.json) est illisible : aucune carte "
-					+ "n'est en service et rien n'a été rebâti. Rechargez une carte (/vc carte charger <id>) ou bâtissez-en une "
-					+ "(/vc carte construire) à l'endroit voulu.";
+		noMap = false;
+	}
+
+	// ------------------------------------------------------------------
+	// Le monde de la partie
+	// ------------------------------------------------------------------
+	/** Les mondes de Valcombe, qui ouvrent le monde de la partie ; null avant le démarrage (ou s'ils manquent). */
+	private WorldManager worlds;
+	/**
+	 * L'identifiant du monde de Valcombe où se joue cette partie (voir {@link #bindWorld}). C'est une donnée de
+	 * l'hôte, jamais le monde principal de Minecraft : un hôte par monde de partie, et plusieurs parties à la fois.
+	 */
+	private String worldId;
+	/**
+	 * Le monde de la partie ne porte aucune carte : ni fiche de village dans son dossier, ni carte de la bibliothèque
+	 * posée (MapPlacer), et il n'a pas été vidé exprès (MapSender.EMPTY). Il est plat et vide (monde neuf, ou remis à
+	 * neuf par /vc monde recreer) : le village de Valcombe y est bâti au démarrage, pour que la partie ait toujours où
+	 * se jouer.
+	 */
+	private boolean noMap;
+
+	/**
+	 * Lie cette partie à son monde (fil du serveur, au démarrage, avant {@link #prepareWorld()}) et relit ce que le
+	 * dossier de ce monde garde d'elle : la fiche du village, la marque d'un chantier coupé par l'arrêt du serveur.
+	 */
+	public void bindWorld(WorldManager worlds, String worldId) {
+		this.worlds = worlds;
+		this.worldId = worldId;
+		noMap = false;
+		village = null;
+		sending = null;
+		startupWarning = null;
+		Village.Loaded fiche = Village.load(worldFile(Village.FILE));
+		switch (fiche.state()) {
+			case READY -> village = fiche.village();
+			case ABSENT -> {
+				// Pas de fiche : le monde est neuf (le registre des mondes est commun à toutes les sauvegardes d'un même
+				// dossier de jeu, ses fichiers non), ou remis à neuf. Une carte de la bibliothèque posée là sans passer
+				// par la partie (/vc carte poser) n'est pas recouverte, ni un monde vidé exprès (/vc carte vider).
+				noMap = !java.nio.file.Files.exists(worldFile(MapPlacer.FILE))
+					&& !java.nio.file.Files.exists(worldFile(MapSender.EMPTY));
 			}
-			try {
-				java.nio.file.Path mark = buildMarker();
-				if (java.nio.file.Files.exists(mark)) {
-					String cut = "Le chantier « " + java.nio.file.Files.readString(mark).trim() + " » a été interrompu par l'arrêt du "
-						+ "serveur : la carte est peut-être incomplète. Relancez-le, ou chargez une carte de la bibliothèque.";
-					startupWarning = startupWarning == null ? cut : startupWarning + " " + cut;
+			case UNREADABLE -> startupWarning = "La fiche du village du monde « " + worldName() + " » (" + Village.FILE
+				+ ") est illisible : aucune carte n'est en service et rien n'a été rebâti. Envoyez-y une carte "
+				+ "(/vc carte envoyer <id>) ou un village généré (/vc carte construire).";
+		}
+		try {
+			java.nio.file.Path mark = buildMarker();
+			if (mark != null && java.nio.file.Files.exists(mark)) {
+				String cut = "Un chantier a été interrompu par l'arrêt du serveur (" + java.nio.file.Files.readString(mark).trim()
+					+ ") : la carte du monde « " + worldName() + " » est peut-être incomplète. Envoyez-y de nouveau une carte "
+					+ "(/vc carte envoyer <id>) ou un village généré (/vc carte construire).";
+				startupWarning = startupWarning == null ? cut : startupWarning + " " + cut;
+			}
+		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Marque de chantier illisible", e);
+		}
+		if (server != null) {
+			// Avant les mondes de Valcombe, la partie se jouait dans le monde principal : ses fichiers sont laissés là
+			// (ils décrivent des blocs du monde principal), mais ils ne servent plus.
+			java.nio.file.Path config = server.getServerDirectory().resolve("config");
+			for (String old : List.of("valcombe-village.json", "valcombe-instantane.nbt", "valcombe-chantier.txt")) {
+				if (java.nio.file.Files.exists(config.resolve(old))) {
+					ValcombeMod.LOG.info("config/{} (monde principal, avant les mondes de Valcombe) ignoré : la partie se joue "
+						+ "dans le monde « {} ».", old, worldName());
 				}
-			} catch (java.io.IOException e) {
-				ValcombeMod.LOG.warn("Marque de chantier illisible", e);
 			}
 		}
 	}
 
-	/** Aucune fiche de village n'a jamais existé : c'est le seul cas où un village est bâti d'office. */
-	private boolean firstStart;
+	/** L'identifiant du monde de la partie, ou null tant qu'elle n'est liée à aucun monde. */
+	public String worldId() {
+		return worldId;
+	}
 
-	/** Au démarrage : règles du monde, et village construit au point d'apparition au tout premier lancement. */
-	public void prepareWorld() {
-		WorldSetup.apply(server);
-		ServerLevel level = server.overworld();
-		if (village == null && firstStart) {
-			BlockPos spawn = level.getRespawnData().pos();
-			int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ()) - 1;
-			Village v = Village.generated(new BlockPos(spawn.getX(), y, spawn.getZ()));
-			v.build(level);
-			v.save(server);
-			village = v;
-			ValcombeMod.LOG.info("Village de Valcombe construit en {}", v.center());
+	/** Le nom affiché du monde de la partie (« Partie principale »), ou son identifiant. */
+	public String worldName() {
+		WorldEntry e = worlds == null || worldId == null ? null : worlds.find(worldId);
+		return e != null ? e.nom() : worldId == null ? "?" : worldId;
+	}
+
+	/**
+	 * Le monde de la partie, ouvert au besoin (fil du serveur). Une GameException (message pour le joueur) s'il n'est
+	 * pas disponible : mondes de Valcombe absents, ou monde en cours de remise à neuf.
+	 */
+	public ServerLevel level() {
+		if (server == null || worlds == null || worldId == null) {
+			throw new fr.valcombe.rules.GameException("Le monde de la partie n'est pas disponible sur ce serveur (voir son journal).");
 		}
+		return worlds.level(worldId);
+	}
+
+	/**
+	 * Le monde de la partie s'il est ouvert et prêt, sinon null, sans jamais l'ouvrir : pour ce qui se fait à chaque
+	 * tick ou en passant (affichages, ménages), qui attend simplement qu'il revienne.
+	 */
+	public ServerLevel levelIfReady() {
+		if (server == null || worlds == null || worldId == null || !worlds.isOpen(worldId)) {
+			return null;
+		}
+		return server.getLevel(WorldManager.key(worldId));
+	}
+
+	/** Ce monde est-il celui de la partie ? */
+	public boolean isGameLevel(net.minecraft.world.level.Level level) {
+		return level != null && level == levelIfReady();
+	}
+
+	/** Ce joueur est-il dans le monde de la partie ? Ailleurs (hub, atelier), il n'est pas dans la partie. */
+	public boolean inGameWorld(ServerPlayer p) {
+		return p != null && isGameLevel(p.level());
+	}
+
+	/** Un fichier du dossier du monde de la partie (il disparaît avec le monde), ou null sans monde. */
+	private java.nio.file.Path worldFile(String name) {
+		return worlds == null || worldId == null ? null : worlds.folder(worldId).resolve(name);
+	}
+
+	/** La fiche du village dans le dossier du monde de la partie : la carte en service (pour les tests en jeu aussi). */
+	public java.nio.file.Path villageFile() {
+		return worldFile(Village.FILE);
+	}
+
+	/** Enregistre la fiche de cette carte, celle du monde de la partie (rien pendant sa remise à neuf : elle part avec lui). */
+	private void saveVillage(Village v) {
+		java.nio.file.Path f = worldFile(Village.FILE);
+		if (f != null && !worlds.busy(worldId)) {
+			v.save(f);
+		}
+	}
+
+	/** Enregistre la fiche de la carte en service (son nom a changé dans la bibliothèque, par exemple). */
+	void saveVillage() {
+		if (village != null) {
+			saveVillage(village);
+		}
+	}
+
+	/** Lance une commande dans le monde de la partie (rien s'il n'est pas prêt). */
+	private void run(String command) {
+		ServerLevel level = levelIfReady();
+		if (level != null) {
+			WorldSetup.run(level, command);
+		}
+	}
+
+	/**
+	 * Le monde de la partie ne se supprime pas, et ne se remet pas à neuf pendant une partie (ses joueurs y sont
+	 * assis). Branché sur le gestionnaire de mondes.
+	 */
+	@Override
+	public String refuse(WorldEntry e, boolean recreate) {
+		if (worldId == null || !worldId.equals(e.id())) {
+			return null;
+		}
+		if (!recreate) {
+			return "« " + e.nom() + " » est le monde de la partie : il ne se supprime pas. /vc monde recreer " + e.id()
+				+ " le remet à neuf, plat et vide.";
+		}
+		if (gameRunning()) {
+			return "Une partie se joue dans « " + e.nom() + " » : arrêtez-la d'abord (/vc arreter), puis remettez ce monde à neuf.";
+		}
+		Village v = village;
+		if (sending == null && v != null && v.modified()) {
+			// Une remise à neuf directe (/vc monde recreer, API d'administration) ne passe pas par MapSender : la carte
+			// retouchée à la main est rangée dans la bibliothèque d'abord, comme pour un envoi. Si c'est impossible,
+			// rien ne bouge (elle partirait avec le monde).
+			try {
+				if (maps == null) {
+					throw new fr.valcombe.rules.GameException("bibliothèque de cartes indisponible");
+				}
+				String saved = maps.backup(v);
+				mapSaved(v);
+				ValcombeMod.LOG.info("Monde de la partie « {} » remis à neuf : sa carte retouchée à la main est sauvegardée dans la "
+					+ "bibliothèque (« {} »).", e.nom(), saved);
+				tellOperators("La carte de « " + e.nom() + " », retouchée à la main, est sauvegardée dans la bibliothèque : « "
+					+ saved + " ».");
+			} catch (fr.valcombe.rules.GameException ex) {
+				return "Rien n'est remis à neuf : la carte de « " + e.nom() + " » a été retouchée à la main et sa sauvegarde "
+					+ "automatique a échoué (" + ex.getMessage() + "). Enregistrez-la d'abord : /vc carte enregistrer <id> <nom>.";
+			}
+		}
+		return null;
+	}
+
+	/** Un message aux opérateurs connectés. */
+	private void tellOperators(String text) {
+		if (server == null) {
+			return;
+		}
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			if (Atelier.isOperator(p)) {
+				p.sendSystemMessage(Component.literal(text).withStyle(ChatFormatting.GOLD));
+			}
+		}
+	}
+
+	/** Une partie se joue-t-elle dans ce monde ? On n'y change pas de carte, on ne le remet pas à neuf. */
+	public boolean gameRunning() {
+		return ValcombeMod.session().game() != null;
+	}
+
+	// ------------------------------------------------------------------
+	// « Envoyer à la partie » (voir MapSender)
+	// ------------------------------------------------------------------
+	/** Ce que MapSender est en train d'envoyer à ce monde (« la carte « Port » »), ou null. */
+	private String sending;
+	/** Qui envoie les cartes au monde de la partie ; null avant le démarrage, ou sans les mondes de Valcombe. */
+	private MapSender sender;
+
+	public void setSender(MapSender sender) {
+		this.sender = sender;
+	}
+
+	/** Qui envoie les cartes au monde de la partie ; une GameException s'il n'est pas disponible. */
+	MapSender sender() {
+		if (sender == null) {
+			throw new fr.valcombe.rules.GameException("Les mondes de Valcombe ne sont pas disponibles sur ce serveur (voir son journal) : "
+				+ "on ne peut pas envoyer de carte à la partie.");
+		}
+		return sender;
+	}
+
+	/**
+	 * Une carte est en route vers ce monde (label, ce qu'on envoie), ou plus rien (null) : pendant l'envoi, la partie
+	 * est occupée (pas de lancement, pas de retouche de la carte).
+	 */
+	void setSending(String label) {
+		sending = label;
+	}
+
+	/**
+	 * La carte que MapSender vient de poser dans le monde neuf de la partie devient sa carte : enregistrement, salle
+	 * d'attente, et, pour un village généré, sa salle de convocation.
+	 */
+	void adopt(Village v) {
+		if (v.isGenerated() && v.libraryId().isEmpty()) {
+			adoptGenerated(v);
+		} else {
+			useVillage(v);
+		}
+	}
+
+	/**
+	 * Le monde de la partie vient d'être remis à neuf, plat et vide : la carte qu'il portait est partie avec lui (sa
+	 * fiche aussi, rangée dans son dossier). Il n'y a plus de carte en service jusqu'à ce qu'on en pose une.
+	 */
+	@Override
+	public void recreated(WorldEntry e, ServerLevel level) {
+		if (worldId == null || !worldId.equals(e.id())) {
+			return;
+		}
+		forgetMap();
+		WorldSetup.apply(level);
+		ValcombeMod.LOG.info("Monde de la partie « {} » remis à neuf : aucune carte en service.", e.nom());
+	}
+
+	/** Ce que l'hôte retient de la carte du monde de la partie, oublié d'un coup (le monde vient d'être remis à neuf). */
+	private void forgetMap() {
+		stage.clear(null); // ses entités sont parties avec l'ancien monde
+		village = null;
+		startupWarning = null;
+		lanterns = null;
+		hallKey = "";
+		carrying.clear();
+		handCarry.clear();
+		prefabs.clear();
+		markerUndo.clear();
+		restoreAt = -1;
+		restoring = false;
+		if (editor != null) {
+			editor.forgetHistory();
+		}
+		refreshLabels();
+	}
+
+	/**
+	 * Au démarrage, une fois le monde lié : règles de la partie dans ce monde, et village de Valcombe bâti au centre
+	 * du sol plat quand le monde ne porte aucune carte.
+	 */
+	public void prepareWorld() {
+		ServerLevel level = levelIfReady();
+		if (level == null && worlds != null && worldId != null) {
+			try {
+				level = level();
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.error("Monde de la partie « " + worldId + " » impossible à ouvrir", e);
+			}
+		}
+		if (level == null) {
+			ValcombeMod.LOG.error("Aucun monde de partie : la partie ne pourra pas se jouer sur ce serveur.");
+			return;
+		}
+		WorldSetup.apply(level);
+		if (village == null && noMap && startupWarning == null) {
+			// La place sur le sol plat, au centre du monde : on y arrive en entrant dans le monde.
+			Village v = Village.generated(new BlockPos(0, WorldManager.SURFACE_Y, 0));
+			v.build(level);
+			saveVillage(v);
+			village = v;
+			ValcombeMod.LOG.info("Village de Valcombe construit dans « {} » en {}", worldName(), v.center());
+		}
+		noMap = false;
 		if (village == null) {
-			// Carte oubliée ou fiche illisible : surtout ne pas bâtir un second village par-dessus le premier.
+			// Monde vidé exprès, envoi interrompu ou fiche illisible : surtout ne rien bâtir par-dessus.
 			if (startupWarning != null) {
 				ValcombeMod.LOG.error(startupWarning);
 			}
@@ -155,20 +424,19 @@ public final class McHost implements Host {
 			village.clearLegacyHall(level);
 			Village v = village.regenerated();
 			v.build(level);
-			v.save(server);
+			saveVillage(v);
 			village = v;
 			lanterns = null;
 			ValcombeMod.LOG.info("Village de Valcombe agrandi (plan {}) en {}", Village.LAYOUT, v.center());
 		}
 		if (village.oldThrones()) {
 			village.upgradeThrones(level);
-			village.save(server);
+			saveVillage(village);
 			ValcombeMod.LOG.info("Trônes du village remplacés par les trônes sculptés");
 		}
 		if (village.isGenerated() && !village.hasHall()) {
 			buildHall();
 		}
-		applySpawn();
 	}
 
 	// ------------------------------------------------------------------
@@ -182,7 +450,7 @@ public final class McHost implements Host {
 	 * Renvoie false si le bloc n'est pas un siège.
 	 */
 	public boolean sitAt(ServerPlayer p, BlockPos clicked) {
-		if (village == null || server == null || !inMainWorld(p)) {
+		if (village == null || server == null || !inGameWorld(p)) {
 			return false;
 		}
 		int k = village.seatIndexAt(clicked);
@@ -219,22 +487,23 @@ public final class McHost implements Host {
 		}
 		String tag = "vc_chair_" + (++chairCount);
 		float yaw = village.seatYaw(k);
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+		run(String.format(java.util.Locale.ROOT,
 			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_chair\",\"%s\"],Rotation:[%.1ff,0f]}",
 			feet.x, feet.y + 0.45, feet.z, tag, yaw));
-		p.teleportTo(server.overworld(), feet.x, feet.y, feet.z, Set.of(), yaw, p.getXRot(), false);
-		WorldSetup.run(server, "ride " + name + " mount @e[type=minecraft:item_display,tag=" + tag + ",limit=1]");
+		p.teleportTo((ServerLevel) p.level(), feet.x, feet.y, feet.z, Set.of(), yaw, p.getXRot(), false);
+		run("ride " + name + " mount @e[distance=0..,type=minecraft:item_display,tag=" + tag + ",limit=1]");
 		p.sendSystemMessage(Component.literal("Accroupis-toi pour te lever.").withStyle(ChatFormatting.GRAY), true);
 		return true;
 	}
 
 	/** Les sièges libres (hors partie) disparaissent quand on se lève. */
 	private void cleanChairs() {
-		if (chairCount == 0 || server == null) {
+		ServerLevel level = levelIfReady();
+		if (chairCount == 0 || level == null) {
 			return;
 		}
 		List<net.minecraft.world.entity.Entity> empty = new ArrayList<>();
-		for (var e : server.overworld().getAllEntities()) {
+		for (var e : level.getAllEntities()) {
 			if (e.entityTags().contains("vc_chair") && e.getPassengers().isEmpty()) {
 				empty.add(e);
 			}
@@ -247,6 +516,9 @@ public final class McHost implements Host {
 	// ------------------------------------------------------------------
 	/** Joueur de la partie visé par le regard (son corps ou son trône), à 48 blocs au plus ; null sinon. */
 	public String aimedPlayer(ServerPlayer p) {
+		if (!inGameWorld(p)) {
+			return null; // les trônes et les joueurs de la partie sont dans son monde
+		}
 		Vec3 eye = p.getEyePosition();
 		Vec3 dir = p.getLookAngle();
 		String best = null;
@@ -309,7 +581,10 @@ public final class McHost implements Host {
 	}
 
 	public void updateHall(fr.valcombe.session.Session ses) {
-		if (server == null || village == null || village.hallSpot() == null) {
+		ServerLevel level = levelIfReady();
+		// Seulement quand quelqu'un est dans le monde de la partie : la salle est alors chargée (on y arrive), et
+		// personne d'autre n'a besoin du présentoir.
+		if (level == null || village == null || village.hallSpot() == null || level.players().isEmpty()) {
 			return;
 		}
 		List<fr.valcombe.rules.Role> roles = hallRoles(ses);
@@ -321,8 +596,8 @@ public final class McHost implements Host {
 		hallKey = key;
 		hallGen++;
 		Vec3 h = village.hallSpot();
-		WorldSetup.run(server, "kill @e[tag=vc_presentoir]");
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+		run("kill @e[distance=0..,tag=vc_presentoir]");
+		run(String.format(java.util.Locale.ROOT,
 			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\",\"vc_pres_" + hallGen + "\"],billboard:\"center\",line_width:260,"
 				+ "background:-1308622848,text:{text:\"%s\",color:\"gold\"}}",
 			h.x, h.y + 4.4, h.z, text.replace("\"", "'")));
@@ -335,7 +610,7 @@ public final class McHost implements Host {
 			int inRow = Math.min(perRow, roles.size() - row * perRow);
 			double x = h.x + (i % perRow - (inRow - 1) / 2.0) * 1.2;
 			double y = h.y + 4.1 - row * 0.75;
-			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			run(String.format(java.util.Locale.ROOT,
 				"summon minecraft:item_display %.2f %.2f %.2f {Tags:[\"vc_presentoir\",\"vc_pres_" + hallGen + "\"],billboard:\"vertical\","
 					+ "brightness:{sky:15,block:15},item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":"
 					+ "\"valcombe:%s\",\"minecraft:custom_name\":\"%s\"}},transformation:{translation:[0f,0f,0f],"
@@ -348,10 +623,10 @@ public final class McHost implements Host {
 	@Override
 	public void addSeat(String name) {
 		ServerPlayer p = player(name);
-		if (server == null || p == null || seats.containsKey(name)) {
+		ServerLevel level = levelIfReady();
+		if (level == null || p == null || seats.containsKey(name)) {
 			return;
 		}
-		ServerLevel level = server.overworld();
 		Vec3 spot = null;
 		if (village != null) {
 			for (int k = 0; k < village.seatCount() && spot == null; k++) {
@@ -368,8 +643,9 @@ public final class McHost implements Host {
 			}
 		}
 		if (spot == null) {
+			// Sans carte : là où il se tient dans le monde de la partie, ou au centre de ce monde s'il arrive d'ailleurs.
 			Vec3 c = village != null ? new Vec3(village.center().getX() + 0.5, village.center().getY() + 1, village.center().getZ() + 3.5)
-				: p.position();
+				: inGameWorld(p) ? p.position() : WorldManager.spawn();
 			spot = c;
 		}
 		float yaw = village != null ? village.yawToCenter(spot) : p.getYRot();
@@ -487,9 +763,9 @@ public final class McHost implements Host {
 	/** Construit la salle d'attente du village et ses panneaux de règles. */
 	public String buildHall() {
 		Village v = requireVillage();
-		v.buildHall(server.overworld());
-		v.save(server);
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
+		v.buildHall(level());
+		saveVillage(v);
+		run("kill @e[distance=0..,type=minecraft:text_display,tag=valcombe_salle]");
 		boardGen++;
 		Vec3 hc = v.hallSpot();
 		for (var e : v.hallBoards().entrySet()) {
@@ -500,7 +776,7 @@ public final class McHost implements Host {
 			double dz = p.z - hc.z;
 			boolean wall = Math.abs(dx) > 3 || Math.abs(dz) > 3;
 			float yaw = Math.abs(dx) > Math.abs(dz) ? (dx < 0 ? -90f : 90f) : 0f;
-			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			run(String.format(java.util.Locale.ROOT,
 				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"valcombe_salle\",\"vc_salle_%d\"],Rotation:[%.1ff,0f],"
 					+ "billboard:\"%s\",line_width:220,background:-937749996,shadow:1b,"
 					+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
@@ -508,7 +784,6 @@ public final class McHost implements Host {
 				p.x, p.y, p.z, boardGen, yaw, wall ? "fixed" : "center", wall ? 1.35 : 0.6, wall ? 1.35 : 0.6, wall ? 1.35 : 0.6,
 				e.getKey().replace("\"", "'").replace("\n", "\\n")));
 		}
-		applySpawn();
 		return "Salle d'attente construite : dalle dorée pour s'inscrire, rouge pour se désinscrire.";
 	}
 
@@ -544,21 +819,14 @@ public final class McHost implements Host {
 		}
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 			Village.Pad pad = hubPads != null ? hubPads.apply(p) : null;
-			if (pad == null && village != null && p.level() == server.overworld()) {
-				// Seulement dans le monde principal : les mêmes blocs posés dans un autre monde ne sont pas des dalles.
+			if (pad == null && village != null && inGameWorld(p)) {
+				// Seulement dans le monde de la partie : les mêmes blocs posés dans un autre monde ne sont pas des dalles.
 				pad = village.padAt(p.blockPosition(), p.level());
 			}
 			Village.Pad before = lastPad.put(p.getScoreboardName(), pad);
 			if (pad != null && pad != before) {
 				padHandler.accept(p, pad);
 			}
-		}
-	}
-
-	private void applySpawn() {
-		if (village != null) {
-			server.overworld().setRespawnData(
-				net.minecraft.world.level.storage.LevelData.RespawnData.of(server.overworld().dimension(), village.spawn(), 180, 0));
 		}
 	}
 
@@ -569,8 +837,8 @@ public final class McHost implements Host {
 
 	/**
 	 * Arrivée d'un joueur : mode aventure (sauf opérateurs). Au hub, sauf si la partie en cours le retient au
-	 * village (stay : il y a sa place, ou il en est le Conteur) ; sans hub (mondes de Valcombe indisponibles), sur
-	 * la place du village comme avant.
+	 * village (stay : il y a sa place, ou il en est le Conteur) ; sans hub, sur la place du village du monde de la
+	 * partie.
 	 */
 	public void onJoin(ServerPlayer p, boolean inGame, boolean stay) {
 		boolean op = p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
@@ -597,7 +865,8 @@ public final class McHost implements Host {
 			// L'arrivée de Fabric (JOIN) est appelée au milieu de PlayerList.placeNewPlayer, avant que Minecraft n'ajoute
 			// le joueur à son monde de départ : un voyage vers un autre monde à ce moment-là le laisserait inscrit dans les
 			// deux (le hub le garderait en double, et le voyage suivant le marquerait retiré). Le hub l'accueille donc au
-			// tick suivant, une fois le joueur bien posé dans le monde principal.
+			// tick suivant, une fois le joueur bien posé dans le monde où Minecraft le place (le monde principal pour un
+			// nouveau venu : il n'y passe que ce tick-là).
 			schedule(1, () -> {
 				if (p.isRemoved() || server.getPlayerList().getPlayer(p.getUUID()) != p) {
 					return; // reparti entre-temps
@@ -611,15 +880,20 @@ public final class McHost implements Host {
 		toVillageSpawn(p);
 	}
 
-	/** Sur la place (ou la salle d'attente) du village actuel, s'il y en a un ; sinon le joueur reste où il est. */
+	/**
+	 * Sur la place (ou la salle d'attente) du village du monde de la partie, ou au centre de ce monde sans carte ;
+	 * sans monde de partie, le joueur reste où il est.
+	 */
 	private void toVillageSpawn(ServerPlayer p) {
-		if (village != null) {
-			BlockPos s = village.spawn();
-			p.teleportTo(server.overworld(), s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
+		ServerLevel level = levelIfReady();
+		if (level == null) {
+			return;
 		}
+		Vec3 at = village != null ? Vec3.atBottomCenterOf(village.spawn()) : WorldManager.spawn();
+		p.teleportTo(level, at.x, at.y, at.z, Set.of(), 180, 0, false);
 	}
 
-	/** Le point d'arrivée du village actuel (salle d'attente ou place), ou null sans carte en service. */
+	/** Le point d'arrivée du village du monde de la partie (salle d'attente ou place), ou null sans carte en service. */
 	public BlockPos villageSpawn() {
 		return village == null ? null : village.spawn();
 	}
@@ -661,42 +935,17 @@ public final class McHost implements Host {
 	}
 
 	// ------------------------------------------------------------------
-	// Carte personnalisée : /vc carte nouvelle, siege, maison, retirer, infos
+	// Repères de la carte : /vc carte trone, maison, retirer, centre, infos (une nouvelle carte arrive par MapSender)
 	// ------------------------------------------------------------------
-	public String customMap(ServerPlayer p) {
-		requireMainWorld(p);
-		return customMapAt(p.blockPosition().below());
-	}
-
-	/** Carte vide à compléter à la main, dont la place est en c (depuis l'Atelier web sans être en jeu : le point d'apparition). */
-	public String customMapAt(BlockPos c) {
-		Village old = village != null ? village : abandoned;
-		// Déclarée sur l'ancienne carte, la nouvelle garde ses blocs (c'est peut-être ce qu'on vient d'y bâtir à la
-		// main) et ne change que les repères ; déclarée ailleurs, elle la remplace : l'ancienne est retirée du monde.
-		boolean inPlace = old != null && Math.abs(c.getX() - old.center().getX()) <= old.extent() + 16
-			&& Math.abs(c.getZ() - old.center().getZ()) <= old.extent() + 16;
-		String saved = replaceMap("Nouvelle carte", new BuildQueue.Plan(), !inPlace, () -> {
-			useVillage(Village.custom(c));
-			announceAll("Nouvelle carte : la place est en " + c.toShortString() + ". Posez les trônes et les maisons, puis enregistrez-la.");
-		});
-		return "Nouvelle carte vide : la place est en " + c.toShortString() + (inPlace ? "." : ", et l'ancienne carte est retirée du monde.")
-			+ " Posez les trônes et les maisons (mode construction, plan de l'Atelier ou /vc carte trone et /vc carte maison), "
-			+ "puis enregistrez-la." + saved;
-	}
-
-	/** Ce joueur est-il dans le monde principal, celui du village actuel ? */
-	private boolean inMainWorld(ServerPlayer p) {
-		return p != null && server != null && p.level() == server.overworld();
-	}
 
 	/**
 	 * La carte du village se travaille sur place : un geste fait depuis un autre monde (le hub, une partie d'essai)
 	 * prendrait la position du joueur dans ce monde-là pour une position du village.
 	 */
-	private void requireMainWorld(ServerPlayer p) {
-		if (p != null && !inMainWorld(p)) {
-			throw new fr.valcombe.rules.GameException("La carte du village se travaille sur place : va d'abord au village actuel "
-				+ "(menu J, « Mondes », ou /vc monde aller principal).");
+	private void requireGameWorld(ServerPlayer p) {
+		if (p != null && !inGameWorld(p)) {
+			throw new fr.valcombe.rules.GameException("La carte du village se travaille sur place : va d'abord dans « "
+				+ worldName() + " » (menu J, « Mondes », ou /vc monde aller " + (worldId == null ? "partie" : worldId) + ").");
 		}
 	}
 
@@ -718,39 +967,6 @@ public final class McHost implements Host {
 		return v;
 	}
 
-	/**
-	 * Importe une construction à la place de la carte actuelle : un fichier déposé dans le dossier d'import
-	 * (.schem, .litematic, .nbt), ou une structure du monde (enregistrée avec un bloc de structure). Même
-	 * chemin que l'import de l'Atelier web : mêmes contrôles, même pose par petits lots.
-	 */
-	public String importStructure(ServerPlayer p, String name) {
-		// Sans carte à remplacer, la construction arrive là où se tient l'opérateur.
-		if (village == null && abandoned == null) {
-			requireMainWorld(p);
-		}
-		BlockPos where = village == null && abandoned == null && p != null ? p.blockPosition().below() : null;
-		if (ValcombeMod.structures().importable().contains(name)) {
-			return importSchematic(name, ValcombeMod.structures().inboxFile(name), where);
-		}
-		var id = net.minecraft.resources.Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name);
-		if (id == null) {
-			throw new fr.valcombe.rules.GameException("Nom de fichier ou de structure invalide : " + name);
-		}
-		var template = server.getStructureTemplateManager().get(id)
-			.orElseThrow(() -> new fr.valcombe.rules.GameException("Construction introuvable : " + name
-				+ ". Déposez un fichier .schem, .litematic ou .nbt dans " + ValcombeMod.structures().inboxPath()
-				+ ", ou enregistrez-la dans le monde avec un bloc de structure."));
-		byte[] data;
-		try {
-			// La structure du monde suit le même chemin qu'un fichier : relue case par case, sans entités ni données à risque.
-			data = MapStore.compress(template.save(new net.minecraft.nbt.CompoundTag()));
-		} catch (java.io.IOException e) {
-			throw new fr.valcombe.rules.GameException("Structure illisible : " + e.getMessage());
-		}
-		String file = id.getPath().substring(id.getPath().lastIndexOf('/') + 1) + ".nbt";
-		return importSchematic(file, data, where);
-	}
-
 	/** Ce qu'on peut importer depuis le jeu : les fichiers du dossier d'import, puis les structures du monde. */
 	public List<String> structures() {
 		List<String> out = new ArrayList<>(ValcombeMod.structures().importable());
@@ -766,7 +982,7 @@ public final class McHost implements Host {
 	/** Les repères ont changé : on enregistre et on rafraîchit les étiquettes du mode construction. */
 	void markersChanged() {
 		village.setModified(true);
-		village.save(server);
+		saveVillage(village);
 		refreshLabels();
 	}
 
@@ -834,32 +1050,23 @@ public final class McHost implements Host {
 	 */
 	public void noteEdit(ServerPlayer p, BlockPos pos) {
 		Village v = village;
-		if (v == null || server == null || v.modified() || ValcombeMod.session().game() != null || p.level() != server.overworld()
+		if (v == null || server == null || v.modified() || ValcombeMod.session().game() != null || !inGameWorld(p)
 			|| p.gameMode.getGameModeForPlayer() == GameType.ADVENTURE || p.gameMode.getGameModeForPlayer() == GameType.SPECTATOR) {
 			return;
 		}
 		int reach = v.extent() + 8;
 		if (Math.abs(pos.getX() - v.center().getX()) <= reach && Math.abs(pos.getZ() - v.center().getZ()) <= reach) {
 			v.setModified(true);
-			v.save(server);
+			saveVillage(v);
 		}
 	}
 
 	/** L'éditeur vient de changer des blocs : comme pour un bloc posé à la main, la carte est tenue pour retouchée. */
-	/** L'éditeur a bâti dans cette boîte : la carte la retient (voir Village.include), pour la raser en entier plus tard. */
-	void markBuilt(int x0, int y0, int z0, int x1, int y1, int z1) {
-		Village v = village;
-		if (v != null && server != null) {
-			v.include(x0, y0, z0, x1, y1, z1);
-			v.save(server);
-		}
-	}
-
 	void markEdited() {
 		Village v = village;
 		if (v != null && server != null && !v.modified()) {
 			v.setModified(true);
-			v.save(server);
+			saveVillage(v);
 		}
 	}
 
@@ -867,17 +1074,17 @@ public final class McHost implements Host {
 	void mapSaved(Village v) {
 		v.setModified(false);
 		if (v == village) {
-			v.save(server);
+			saveVillage(v);
 		}
 	}
 
 	public String addSeat(ServerPlayer p) {
-		requireMainWorld(p);
+		requireGameWorld(p);
 		return addSeatAt(p.blockPosition());
 	}
 
 	public String addHouse(ServerPlayer p) {
-		requireMainWorld(p);
+		requireGameWorld(p);
 		return addHouseAt(p.blockPosition());
 	}
 
@@ -923,7 +1130,7 @@ public final class McHost implements Host {
 		v.restore(markerUndo.pop());
 		// Une maison ou une salle bâtie d'un clic part avec le repère dont on annule la pose.
 		Village.Marks now = v.marks();
-		ServerLevel level = server.overworld();
+		ServerLevel level = level();
 		prefabs.entrySet().removeIf(e -> {
 			BlockPos at = e.getKey();
 			if (now.seats().contains(at) || now.houses().contains(at) || at.equals(now.convocation())) {
@@ -933,7 +1140,6 @@ public final class McHost implements Host {
 			return true;
 		});
 		carrying.clear();
-		applySpawn();
 		markersChanged();
 		return "Dernière modification des repères annulée (" + v.seatCount() + " trônes, " + v.houseCount() + " maisons).";
 	}
@@ -1006,7 +1212,7 @@ public final class McHost implements Host {
 
 	/** Clic droit avec l'outil « Carte : main » : reposer ce qu'on porte, ou ouvrir le menu de ce qu'on vise. */
 	public String handClick(ServerPlayer p, BlockPos clicked) {
-		requireMainWorld(p);
+		requireGameWorld(p);
 		Village v = requireEditable();
 		String who = p.getScoreboardName();
 		BlockPos at = clicked.above();
@@ -1018,7 +1224,6 @@ public final class McHost implements Host {
 			}
 			if (held.type() == Village.Mark.CENTER) {
 				moveCenter(v, clicked);
-				applySpawn();
 			} else {
 				moveMarker(v, held, at);
 			}
@@ -1138,10 +1343,10 @@ public final class McHost implements Host {
 	/** Trônes sculptés d'un village généré : reposés pour suivre les trônes déplacés ou tournés. */
 	private void refreshThrones() {
 		if (village != null && village.isGenerated() && server != null) {
-			// distance=0.. : le monde principal seulement (un @e sans position vise tous les mondes, et des cartes
-			// posées dans les mondes de Valcombe ont aussi leurs trônes sculptés, voir MapPlacer).
-			WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,distance=0..]");
-			village.placeThrones(server);
+			// distance=0.. : le monde de la partie seulement (un @e sans position vise tous les mondes, et des cartes
+			// posées dans les autres mondes de Valcombe ont aussi leurs trônes sculptés, voir MapPlacer).
+			run("kill @e[distance=0..,type=minecraft:item_display,tag=vc_trone]");
+			village.placeThrones(level());
 		}
 	}
 
@@ -1150,7 +1355,7 @@ public final class McHost implements Host {
 		if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
 			throw new IllegalArgumentException("Outil de l'éditeur : voir MapEditor.");
 		}
-		requireMainWorld(p);
+		requireGameWorld(p);
 		if (tool == ValcombeUi.MapTool.HAND) {
 			return handClick(p, clicked);
 		}
@@ -1177,7 +1382,6 @@ public final class McHost implements Host {
 				+ (h.type() == Village.Mark.SEAT || h.type() == Village.Mark.HOUSE ? " Les suivants reculent d'un numéro." : "");
 		} else if (tool == ValcombeUi.MapTool.CENTER) {
 			moveCenter(v, clicked);
-			applySpawn();
 			msg = "Centre de la place posé ici.";
 		} else {
 			Village.Mark type = markOf(tool);
@@ -1234,7 +1438,7 @@ public final class McHost implements Host {
 			throw new fr.valcombe.rules.GameException("Ce point est trop loin de la place (" + (Village.MAX_EXTENT - 8)
 				+ " blocs au plus).");
 		}
-		BlockPos at = v.groundAt(server.overworld(), v.center().getX() + dx, v.center().getZ() + dz);
+		BlockPos at = v.groundAt(level(), v.center().getX() + dx, v.center().getZ() + dz);
 		if (!action.equals("retirer") && mark != Village.Mark.CENTER) {
 			requireNear(v, at);
 		}
@@ -1265,14 +1469,13 @@ public final class McHost implements Host {
 				var built = mark == Village.Mark.CENTER ? null : prefabs.remove(v.markerPos(h));
 				v.removeMarker(h);
 				if (built != null) {
-					built.forEach((b, s) -> server.overworld().setBlock(b, s, Clip.EXACT));
+					built.forEach((b, s) -> level().setBlock(b, s, Clip.EXACT));
 				}
 				msg = h.label() + done(h, " retiré") + (built != null ? ", et sa construction avec." : ".");
 			}
 			default -> throw new fr.valcombe.rules.GameException("Action inconnue : " + action + ".");
 		}
 		if (mark == Village.Mark.CENTER) {
-			applySpawn();
 		}
 		markersChanged(before);
 		return msg;
@@ -1293,7 +1496,7 @@ public final class McHost implements Host {
 		if (prefabs.containsKey(at)) {
 			throw new fr.valcombe.rules.GameException(h.label() + " est déjà bâtie : la gomme la retire avec son repère.");
 		}
-		prefabs.put(at, room ? v.buildRoomAt(server.overworld(), at) : v.buildHouseAt(server.overworld(), at));
+		prefabs.put(at, room ? v.buildRoomAt(level(), at) : v.buildHouseAt(level(), at));
 		markEdited();
 		return h.label() + " bâtie. La gomme la retirera avec son repère.";
 	}
@@ -1317,7 +1520,7 @@ public final class McHost implements Host {
 		if (p.isPassenger()) {
 			p.stopRiding();
 		}
-		p.teleportTo(server.overworld(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, Set.of(), p.getYRot(), p.getXRot(), false);
+		moveTo(p, level(), new Vec3(at.getX() + 0.5, at.getY(), at.getZ() + 0.5), p.getYRot(), p.getXRot());
 		return "Vous voilà sur le repère.";
 	}
 
@@ -1329,7 +1532,7 @@ public final class McHost implements Host {
 			return;
 		}
 		labelGen++;
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=vc_repere]");
+		run("kill @e[distance=0..,type=minecraft:text_display,tag=vc_repere]");
 		if (builders.isEmpty() || village == null) {
 			return;
 		}
@@ -1347,7 +1550,7 @@ public final class McHost implements Host {
 	}
 
 	private void label(BlockPos at, String text, String color) {
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+		run(String.format(java.util.Locale.ROOT,
 			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"vc_repere\",\"vc_rep_%d\"],billboard:\"center\",see_through:1b,"
 				+ "background:-1073741824,shadow:1b,view_range:1.5f,"
 				+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
@@ -1368,13 +1571,13 @@ public final class McHost implements Host {
 	@Override
 	public boolean summon(String storyteller, String player) {
 		ServerPlayer pp = player(player);
-		if (server == null || pp == null || village == null) {
+		ServerLevel level = levelIfReady();
+		if (level == null || pp == null || village == null) {
 			return false;
 		}
-		ServerLevel level = server.overworld();
 		if (village.convocation() == null && village.isGenerated()) {
 			village.buildConvocation(level); // village bâti avant cette version : on lui ajoute sa salle
-			village.save(server);
+			saveVillage(village);
 		}
 		BlockPos room = village.convocation();
 		if (room == null) {
@@ -1427,10 +1630,10 @@ public final class McHost implements Host {
 	}
 
 	byte[] topView(Village v) {
-		return topView(server.overworld(), v.center(), Math.min(200, v.extent()));
+		return topView(level(), v.center(), Math.min(200, v.extent()));
 	}
 
-	/** Vue de dessus du carré de rayon r autour de c dans ce monde (voir topView()) : la carte du monde principal, ou d'un autre monde. */
+	/** Vue de dessus du carré de rayon r autour de c dans ce monde (voir topView()) : la carte du monde de la partie, ou d'un autre monde. */
 	static byte[] topView(ServerLevel level, BlockPos c, int r) {
 		int n = 2 * r + 1;
 		var img = new java.awt.image.BufferedImage(n, n, java.awt.image.BufferedImage.TYPE_INT_RGB);
@@ -1491,7 +1694,8 @@ public final class McHost implements Host {
 				// Écriture dans un fichier voisin, puis remplacement : une coupure ne laisse jamais une sauvegarde à moitié écrite.
 				java.nio.file.Files.createDirectories(f.getParent());
 				java.nio.file.Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
-				java.nio.file.Files.writeString(tmp, json);
+				// Le monde où se joue la partie : elle ne reprendra que là (voir GameSave).
+				java.nio.file.Files.writeString(tmp, GameSave.withWorld(json, worldId));
 				try {
 					java.nio.file.Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
 						java.nio.file.StandardCopyOption.ATOMIC_MOVE);
@@ -1504,14 +1708,43 @@ public final class McHost implements Host {
 		}
 	}
 
-	/** Sauvegarde laissée par un arrêt du serveur, ou null. */
+	/**
+	 * La partie laissée par un arrêt du serveur, à reprendre dans le monde de la partie, ou null. Une sauvegarde d'avant
+	 * les mondes de Valcombe (sans monde) est mise de côté ({@code valcombe-partie.json.ancienne}) : ses joueurs étaient
+	 * assis dans le monde principal, elle ne reprend pas. Une sauvegarde d'un autre monde est laissée sur le disque.
+	 */
 	public String savedGame() {
+		java.nio.file.Path f = saveFile();
+		String text;
 		try {
-			java.nio.file.Path f = saveFile();
-			return java.nio.file.Files.exists(f) ? java.nio.file.Files.readString(f) : null;
+			if (!java.nio.file.Files.exists(f)) {
+				return null;
+			}
+			text = java.nio.file.Files.readString(f);
 		} catch (java.io.IOException e) {
+			ValcombeMod.LOG.warn("Sauvegarde de la partie illisible", e);
 			return null;
 		}
+		GameSave.Read read = GameSave.read(text, worldId);
+		switch (read.verdict()) {
+			case OK -> {
+				return read.json();
+			}
+			case NO_WORLD -> {
+				ValcombeMod.LOG.warn("Partie enregistrée avant les mondes de Valcombe (dans le monde principal) : elle ne reprend "
+					+ "pas, et le fichier est mis de côté ({}.ancienne).", f.getFileName());
+				try {
+					java.nio.file.Files.move(f, f.resolveSibling(f.getFileName() + ".ancienne"),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				} catch (java.io.IOException e) {
+					ValcombeMod.LOG.warn("Ancienne sauvegarde de partie non mise de côté", e);
+				}
+			}
+			case OTHER_WORLD -> ValcombeMod.LOG.warn("Partie enregistrée dans le monde « {} », pas dans celui de la partie (« {} ») : "
+				+ "elle ne reprend pas.", read.world(), worldId);
+			case UNREADABLE -> ValcombeMod.LOG.error("Sauvegarde de partie illisible ({}) : ignorée.", f);
+		}
+		return null;
 	}
 
 	public Village village() {
@@ -1527,12 +1760,10 @@ public final class McHost implements Host {
 		this.maps = maps;
 	}
 
+	/** La carte d'un scénario : envoyée à la partie (monde remis à neuf, puis la carte posée dessus, voir MapSender). */
 	@Override
 	public String loadMap(String id) {
-		if (maps == null) {
-			throw new fr.valcombe.rules.GameException("Bibliothèque de cartes indisponible.");
-		}
-		return maps.load(id);
+		return sender().sendMap(id, worldId, null);
 	}
 
 	@Override
@@ -1541,141 +1772,55 @@ public final class McHost implements Host {
 		return village != null && !village.modified() && !busy() ? village.libraryId() : "";
 	}
 
-	/** Centre par défaut d'une carte (point d'apparition du monde, au niveau du sol). */
+	/**
+	 * Centre par défaut d'une carte : le centre du sol plat du monde de la partie (le bloc d'herbe), là où l'on arrive
+	 * dans ce monde.
+	 */
 	public BlockPos defaultCenter() {
-		ServerLevel level = server.overworld();
-		BlockPos spawn = level.getRespawnData().pos();
-		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawn.getX(), spawn.getZ()) - 1;
-		return new BlockPos(spawn.getX(), y, spawn.getZ());
+		return new BlockPos(0, WorldManager.SURFACE_Y, 0);
 	}
 
-	/** Où poser une carte chargée ou importée : à la place de l'actuelle (ou de celle qu'on a oubliée), sinon au point d'apparition. */
-	BlockPos mapCenter() {
-		return village != null ? village.center() : abandoned != null ? abandoned.center() : defaultCenter();
-	}
 
 	/** Chantiers en cours : les blocs sont posés par petits lots à chaque tick. */
 	private final BuildQueue builds = new BuildQueue();
 
+	/**
+	 * Un chantier, une remise en état ou un envoi de carte est en cours, ou le monde de la partie n'est pas prêt (en
+	 * cours de remise à neuf) : la partie ne peut pas commencer.
+	 */
 	@Override
 	public boolean busy() {
-		return builds.busy() || restoreAt >= 0;
+		return building() || restoreAt >= 0 || sending != null || (server != null && levelIfReady() == null);
 	}
 
-	/** Rien ne touche à la carte pendant un chantier, ni tant que la remise en état d'après partie n'est pas faite. */
+	/**
+	 * Un chantier est-il en cours dans le monde de la partie ? L'éditeur du mode construction travaille aussi ailleurs
+	 * (un atelier) : ce qu'il y bâtit n'empêche ni de lancer la partie ni de lui envoyer une carte.
+	 */
+	private boolean building() {
+		ServerLevel level = levelIfReady();
+		return level != null ? builds.busy(level) : builds.busy();
+	}
+
+	/**
+	 * Rien ne touche à la carte pendant un chantier ou un envoi, ni tant que la remise en état d'après partie n'est pas
+	 * faite.
+	 */
 	void requireFree() {
-		if (builds.busy()) {
+		if (sending != null) {
+			throw new fr.valcombe.rules.GameException("« " + worldName() + " » reçoit " + sending + " : attendez la fin de la barre.");
+		}
+		if (worldId != null && worlds != null && worlds.busy(worldId)) {
+			throw new fr.valcombe.rules.GameException("Le monde « " + worldName() + " » est en cours de remise à neuf : "
+				+ "réessayez dans un instant.");
+		}
+		if (building()) {
 			throw new fr.valcombe.rules.GameException("Une construction est déjà en cours : attendez la fin de la barre de progression.");
 		}
 		if (restoreAt >= 0) {
 			throw new fr.valcombe.rules.GameException("La carte va être remise en état après la partie : patientez quelques secondes "
 				+ "(/vc arreter la lance tout de suite).");
 		}
-	}
-
-	/** Raser sans rien faire tomber : ni le contenu d'un coffre, ni la torche dont le support disparaît. */
-	private static final int CLEAR_FLAGS = net.minecraft.world.level.block.Block.UPDATE_CLIENTS
-		| net.minecraft.world.level.block.Block.UPDATE_SUPPRESS_DROPS
-		| net.minecraft.world.level.block.Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
-
-	/**
-	 * La suite de blocs qui rase un carré autour du centre : socle de pierre, herbe, et de l'air au-dessus.
-	 * Elle est calculée bloc à bloc : même la plus grande carte ne demande aucune mémoire.
-	 */
-	BuildQueue.Part clearPart(BlockPos c, int radius, int below, int height) {
-		return clearBox(c.getX() - radius, c.getZ() - radius, c.getX() + radius, c.getZ() + radius, c.getY(), below, height);
-	}
-
-	/**
-	 * Rase un rectangle : `below` rangées de pierre sous baseY, de l'herbe à baseY, de l'air au-dessus,
-	 * sur `height` rangées en tout.
-	 */
-	BuildQueue.Part clearBox(int x0, int z0, int x1, int z1, int baseY, int below, int height) {
-		var stone = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState();
-		var grass = net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState();
-		var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-		int sx = x1 - x0 + 1;
-		int sz = z1 - z0 + 1;
-		return new BuildQueue.Part() {
-			@Override
-			int size() {
-				return sx * sz * height;
-			}
-
-			@Override
-			net.minecraft.world.level.block.state.BlockState at(int i, BlockPos.MutableBlockPos pos) {
-				int y = i / (sx * sz) - below;
-				int inLayer = i % (sx * sz);
-				pos.set(x0 + inLayer / sz, baseY + y, z0 + inLayer % sz);
-				return y < 0 ? stone : y == 0 ? grass : air;
-			}
-
-			@Override
-			int flags() {
-				return CLEAR_FLAGS;
-			}
-		};
-	}
-
-	/** Hauteur à raser pour retirer la carte v : 28 blocs comme une carte enregistrée, davantage si une construction importée dépasse. */
-	int clearHeight(Village v) {
-		if (v.isGenerated()) {
-			return 28;
-		}
-		return surfaceHeight(v.center(), v.extent());
-	}
-
-	/** Hauteur à raser (4 rangées de sous-sol comprises) pour tout ce qui dépasse dans le carré de rayon r autour de c. */
-	private int surfaceHeight(BlockPos c, int r) {
-		ServerLevel level = server.overworld();
-		int top = level.getMinY();
-		for (int cx = c.getX() - r >> 4; cx <= c.getX() + r >> 4; cx++) {
-			for (int cz = c.getZ() - r >> 4; cz <= c.getZ() + r >> 4; cz++) {
-				var chunk = level.getChunk(cx, cz);
-				for (int x = 0; x < 16; x++) {
-					for (int z = 0; z < 16; z++) {
-						if (Math.abs((cx << 4) + x - c.getX()) <= r && Math.abs((cz << 4) + z - c.getZ()) <= r) {
-							top = Math.max(top, chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z));
-						}
-					}
-				}
-			}
-		}
-		return Math.max(28, Math.min(SchematicImporter.MAX_HEIGHT + 10, top - c.getY() + 6));
-	}
-
-	/** Façons de raser l'ancienne carte avant d'en bâtir une autre. */
-	public enum Raze {
-		/** Tout ce que la carte occupe et tout ce que l'éditeur y a bâti. */
-		BATI,
-		/** Un grand carré fixe autour du centre (Village.MAX_EXTENT blocs de chaque côté), quoi qu'il contienne. */
-		CARRE;
-
-		public static Raze parse(String s) {
-			return s != null && s.toLowerCase(java.util.Locale.ROOT).startsWith("carr") ? CARRE : BATI;
-		}
-	}
-
-	/** Le rasage de l'ancienne carte old : {x0, z0, x1, z1, hauteur} autour de son centre. */
-	private int[] razeBox(Village old, Raze mode) {
-		BlockPos c = old.center();
-		if (mode == Raze.CARRE) {
-			int r = Village.MAX_EXTENT;
-			return new int[] {c.getX() - r, c.getZ() - r, c.getX() + r, c.getZ() + r, surfaceHeight(c, r)};
-		}
-		int r = old.extent();
-		int[] box = {c.getX() - r, c.getZ() - r, c.getX() + r, c.getZ() + r, clearHeight(old)};
-		int[] b = old.built();
-		if (b != null) {
-			// Ce que l'éditeur a bâti, même hors des repères (borné pour ne jamais raser au-delà d'un très grand carré).
-			int cap = 2 * Village.MAX_EXTENT;
-			box[0] = Math.max(c.getX() - cap, Math.min(box[0], b[0]));
-			box[1] = Math.max(c.getZ() - cap, Math.min(box[1], b[2]));
-			box[2] = Math.min(c.getX() + cap, Math.max(box[2], b[3]));
-			box[3] = Math.min(c.getZ() + cap, Math.max(box[3], b[5]));
-			box[4] = Math.max(box[4], Math.min(SchematicImporter.MAX_HEIGHT + 10, b[4] - c.getY() + 1 + 4));
-		}
-		return box;
 	}
 
 	/** L'éditeur de carte du mode construction (sélection, structures, annulation). */
@@ -1690,135 +1835,73 @@ public final class McHost implements Host {
 		return builders.contains(name);
 	}
 
-	/** Une opération de l'éditeur : posée par petits lots comme un chantier, sans toucher aux panneaux de la salle. */
-	void startEdit(String label, BuildQueue.Plan plan, Runnable done) {
-		builds.add(label, plan, done);
-	}
-
-	/** Lance un chantier ; done est appelé sur le fil du serveur quand tout est posé. */
-	void startBuild(String label, BuildQueue.Plan plan, Runnable done) {
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_salle]");
-		builds.add(label, plan, done);
-	}
-
-	/** Changement de carte en cours (son nom), noté sur le disque : un arrêt du serveur en plein chantier se voit au redémarrage. */
-	private java.nio.file.Path buildMarker() {
-		return server.getServerDirectory().resolve("config").resolve("valcombe-chantier.txt");
-	}
-
-	private void markBuild(String label) {
-		try {
-			java.nio.file.Path f = buildMarker();
-			if (label == null) {
-				java.nio.file.Files.deleteIfExists(f);
-			} else {
-				java.nio.file.Files.createDirectories(f.getParent());
-				java.nio.file.Files.writeString(f, label);
-			}
-		} catch (java.io.IOException e) {
-			ValcombeMod.LOG.warn("Marque de chantier non écrite", e);
-		}
-	}
-
-	/** Zone dont les chunks sont tenus chargés pendant qu'on retire une ancienne carte (ses entités doivent être là pour partir). */
-	private BlockPos holdCenter;
-	private int holdRadius;
-
-	private void holdChunks() {
-		server.overworld().getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL,
-			net.minecraft.world.level.ChunkPos.containing(holdCenter), holdRadius / 16 + 2);
-	}
-
-	/** Retire du monde tous les décors en entités d'une carte : scène, trônes sculptés, panneaux, présentoir, étiquettes, sièges libres. */
-	private void removeDecor() {
-		stage.clear(server);
-		List<net.minecraft.world.entity.Entity> gone = new ArrayList<>();
-		for (var e : server.overworld().getAllEntities()) {
-			var tags = e.entityTags();
-			if (tags.contains("vc_trone") || tags.contains("vc_scene") || tags.contains("valcombe_salle")
-				|| tags.contains("vc_presentoir") || tags.contains("vc_repere") || tags.contains("vc_chair")) {
-				gone.add(e);
-			}
-		}
-		gone.forEach(net.minecraft.world.entity.Entity::discard);
-		hallKey = ""; // le présentoir sera reposé dans la nouvelle salle
+	/**
+	 * Une opération de l'éditeur, dans le monde où travaille l'opérateur : posée par petits lots comme un chantier,
+	 * sans toucher aux panneaux de la salle. La barre suit les joueurs de ce monde et les opérateurs.
+	 */
+	void startEdit(String label, ServerLevel level, BuildQueue.Plan plan, Runnable done) {
+		builds.add(label, level, plan, done, p -> p.level() == level || Atelier.isOperator(p), null);
 	}
 
 	/**
-	 * Le seul chemin pour changer de carte, afin qu'il n'y en ait jamais deux dans le monde : l'ancienne
-	 * (en service ou oubliée) est d'abord retirée — toute son emprise, où qu'elle soit, avec ses trônes
-	 * sculptés, ses panneaux et ses étiquettes —, puis build est posé et done adopte la nouvelle.
-	 * Une ancienne carte retouchée à la main est d'abord sauvegardée dans la bibliothèque ; si cette
-	 * sauvegarde échoue, on ne touche à rien. raze = false : la nouvelle carte se déclare sur les blocs
-	 * de l'ancienne, qui restent en place. Renvoie la phrase à ajouter au message (vide le plus souvent).
+	 * Lance un chantier dans le monde de la partie ; done est appelé sur le fil du serveur quand tout est posé. La
+	 * barre suit les joueurs de ce monde et les opérateurs (qui le lancent parfois depuis l'Atelier, d'ailleurs). Si le
+	 * monde est remis à neuf avant la fin, le chantier est abandonné : il n'y a plus rien à poser.
 	 */
-	String replaceMap(String label, BuildQueue.Plan build, boolean raze, Runnable done) {
-		return replaceMap(label, build, raze, Raze.BATI, done);
-	}
-
-	String replaceMap(String label, BuildQueue.Plan build, boolean raze, Raze mode, Runnable done) {
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
-		}
-		requireFree();
-		Village old = village != null ? village : abandoned;
-		String saved = "";
-		if (old != null && old.modified()) {
-			try {
-				if (maps == null) {
-					throw new fr.valcombe.rules.GameException("bibliothèque de cartes indisponible");
-				}
-				saved = " L'ancienne carte, retouchée à la main, est sauvegardée dans la bibliothèque : « " + maps.backup(old) + " ».";
-				mapSaved(old);
-			} catch (fr.valcombe.rules.GameException e) {
-				throw new fr.valcombe.rules.GameException("Carte non remplacée : l'actuelle a été retouchée à la main et sa sauvegarde "
-					+ "automatique a échoué (" + e.getMessage() + "). Enregistrez-la d'abord : /vc carte enregistrer <id> <nom>.");
-			}
-		}
-		BuildQueue.Plan plan = new BuildQueue.Plan();
-		if (old != null && raze) {
-			int[] box = razeBox(old, mode);
-			plan.first(clearBox(box[0], box[1], box[2], box[3], old.center().getY(), 4, box[4]));
-			holdCenter = old.center();
-			holdRadius = Math.max(Math.max(old.center().getX() - box[0], box[2] - old.center().getX()),
-				Math.max(old.center().getZ() - box[1], box[3] - old.center().getZ()));
-			holdChunks();
-		}
-		plan.then(build);
-		// Les décors de l'ancienne carte partent avant que ceux de la nouvelle n'arrivent.
-		plan.after.add(0, this::removeDecor);
-		dropSnapshot();
-		if (editor != null) {
-			editor.forgetHistory(); // on n'annule pas une opération faite sur une carte qui n'est plus là
-		}
-		markBuild(label);
-		startBuild(label, plan, () -> {
-			abandoned = null;
-			done.run();
-			markBuild(null);
-			if (old != null && raze && village != null && village != old) {
-				rescuePlayers(old); // personne ne reste sur le terrain nu de l'ancienne carte
-			}
+	void startBuild(String label, BuildQueue.Plan plan, Runnable done) {
+		ServerLevel level = level();
+		WorldSetup.kill(level, "type=minecraft:text_display,tag=valcombe_salle");
+		builds.add(label, level, plan, done, p -> p.level() == level || Atelier.isOperator(p), () -> {
+			restoring = false;
+			ValcombeMod.LOG.info("Chantier « {} » abandonné : le monde « {} » a quitté le serveur.", label, worldName());
 		});
-		return saved;
 	}
 
-	/** Ceux qui se trouvent dans l'emprise de la carte v (un chantier, une remise en état) sont ramenés au point d'apparition. */
+	/**
+	 * Envoi de carte en cours (ce qu'on envoie), noté par MapSender dans le dossier du monde de la partie : un arrêt du
+	 * serveur en plein envoi se voit au redémarrage. Null sans monde.
+	 */
+	private java.nio.file.Path buildMarker() {
+		return worldFile(MapSender.MARK);
+	}
+
+	/**
+	 * Charge tout de suite les tronçons autour de c (r blocs) dans le monde de la partie, et les y tient un moment :
+	 * on va y poser des entités (la scène) alors que les joueurs, qui arrivent d'un autre monde, ne les ont pas encore
+	 * fait charger.
+	 */
+	private static void loadAround(ServerLevel level, BlockPos c, int r) {
+		var at = net.minecraft.world.level.ChunkPos.containing(c);
+		int n = Math.max(1, r / 16 + 1);
+		level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL, at, n);
+		for (int dx = -n; dx <= n; dx++) {
+			for (int dz = -n; dz <= n; dz++) {
+				level.getChunk(at.x() + dx, at.z() + dz);
+			}
+		}
+	}
+
+	/**
+	 * Ceux qui se trouvent dans l'emprise de la carte v (un chantier, une remise en état), dans le monde de la partie,
+	 * sont ramenés au point d'arrivée du village.
+	 */
 	private void rescuePlayers(Village v) {
+		ServerLevel level = levelIfReady();
+		if (level == null) {
+			return;
+		}
 		BlockPos spot = (village != null ? village : v).spawn();
 		int reach = v.extent() + 6;
-		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+		for (ServerPlayer p : new ArrayList<>(level.players())) {
 			if (builders.contains(p.getScoreboardName())) {
 				continue; // un constructeur reste où il travaille
 			}
-			if (p.level() != server.overworld()) {
-				continue; // au hub ou dans un autre monde : rien à craindre du chantier du village
-			}
+			// Au hub ou dans un autre monde : rien à craindre du chantier du village (level.players() ne les compte pas).
 			if (Math.abs(p.getX() - v.center().getX()) <= reach && Math.abs(p.getZ() - v.center().getZ()) <= reach) {
 				if (p.isPassenger()) {
 					p.stopRiding();
 				}
-				p.teleportTo(server.overworld(), spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, Set.of(), 180, 0, false);
+				p.teleportTo(level, spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, Set.of(), 180, 0, false);
 			}
 		}
 	}
@@ -1831,15 +1914,28 @@ public final class McHost implements Host {
 	/** La remise en état est en train de poser ses blocs. */
 	private boolean restoring;
 
-	/** L'instantané de la carte pris au lancement de la partie : il reste sur le disque tant que la carte n'est pas remise en état. */
-	private java.nio.file.Path snapshotFile() {
-		return server.getServerDirectory().resolve("config").resolve("valcombe-instantane.nbt");
+	/**
+	 * L'instantané de la carte pris au lancement de la partie, dans le dossier du monde de la partie : il reste sur le
+	 * disque tant que la carte n'est pas remise en état (et part avec le monde s'il est remis à neuf). Null sans monde.
+	 */
+	public java.nio.file.Path snapshotFile() {
+		return worldFile("valcombe-instantane.nbt");
+	}
+
+	/** L'instantané attend-il sur le disque ? */
+	private boolean hasSnapshot() {
+		java.nio.file.Path f = snapshotFile();
+		return f != null && java.nio.file.Files.exists(f);
 	}
 
 	private void dropSnapshot() {
 		restoreAt = -1;
+		java.nio.file.Path f = snapshotFile();
+		if (f == null) {
+			return;
+		}
 		try {
-			java.nio.file.Files.deleteIfExists(snapshotFile());
+			java.nio.file.Files.deleteIfExists(f);
 		} catch (java.io.IOException e) {
 			ValcombeMod.LOG.warn("Instantané de la carte non supprimé", e);
 		}
@@ -1848,7 +1944,7 @@ public final class McHost implements Host {
 	/** Une partie commence : on garde la carte telle qu'elle est, pour la rendre intacte à la fin. */
 	@Override
 	public void gameStarted() {
-		if (server == null) {
+		if (levelIfReady() == null) {
 			return;
 		}
 		dropSnapshot();
@@ -1861,11 +1957,11 @@ public final class McHost implements Host {
 		try {
 			if (village.isGenerated() && village.convocation() == null) {
 				// Village d'avant les salles de convocation : bâtie maintenant, elle fait partie de ce qu'on garde.
-				village.buildConvocation(server.overworld());
-				village.save(server);
+				village.buildConvocation(level());
+				saveVillage(village);
 			}
 			long start = System.nanoTime();
-			MapSnapshot.capture(server.overworld(), village.center(), village.extent()).write(snapshotFile());
+			MapSnapshot.capture(level(), village.center(), village.extent()).write(snapshotFile());
 			ValcombeMod.LOG.info("Instantané de la carte pris en {} ms ({} Ko)", (System.nanoTime() - start) / 1_000_000,
 				java.nio.file.Files.size(snapshotFile()) / 1024);
 		} catch (java.io.IOException | RuntimeException e) {
@@ -1876,7 +1972,7 @@ public final class McHost implements Host {
 	/** La partie est finie : la carte retrouvera son état d'avant dans delayTicks (le temps de voir les rôles révélés). */
 	@Override
 	public void restoreMap(int delayTicks) {
-		if (server == null || restoring || !java.nio.file.Files.exists(snapshotFile())) {
+		if (server == null || restoring || !hasSnapshot()) {
 			return;
 		}
 		long at = tick + Math.max(1, delayTicks);
@@ -1904,15 +2000,19 @@ public final class McHost implements Host {
 	 * pu reprendre, la carte n'est pas laissée à moitié refaite : la remise en état repart.
 	 */
 	public void resumeRestore() {
-		if (server != null && ValcombeMod.session().game() == null && java.nio.file.Files.exists(snapshotFile())) {
+		if (server != null && ValcombeMod.session().game() == null && hasSnapshot()) {
 			ValcombeMod.LOG.info("Carte laissée en l'état par l'arrêt du serveur : sa remise en état reprend");
 			restoreAt = tick + 100;
 		}
 	}
 
 	private void startRestore() {
-		ServerLevel level = server.overworld();
+		ServerLevel level = levelIfReady();
 		java.nio.file.Path f = snapshotFile();
+		if (level == null || f == null) {
+			restoreAt = -1; // le monde de la partie est en cours de remise à neuf : l'instantané part avec lui
+			return;
+		}
 		MapSnapshot snap;
 		try {
 			snap = MapSnapshot.read(f, level);
@@ -1934,7 +2034,8 @@ public final class McHost implements Host {
 			return;
 		}
 		// Ce que la partie a laissé derrière elle : scène, sièges libres, signes et bulles, objets au sol.
-		stage.clear(server);
+		stage.clear(level);
+		loadAround(level, v.center(), Math.min(Village.MAX_EXTENT, v.extent()));
 		List<net.minecraft.world.entity.Entity> gone = new ArrayList<>();
 		for (var e : level.getAllEntities()) {
 			for (String tag : e.entityTags()) {
@@ -1959,8 +2060,8 @@ public final class McHost implements Host {
 		});
 		startBuild("Remise en état de la carte", plan, () -> {
 			// Un bloc a pu revenir là où quelqu'un se tenait.
-			for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-				if (p.level() == level && !p.isSpectator() && !level.noCollision(p)) {
+			for (ServerPlayer p : new ArrayList<>(level.players())) {
+				if (!p.isSpectator() && !level.noCollision(p)) {
 					BlockPos s = v.spawn();
 					p.teleportTo(level, s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
 				}
@@ -1969,18 +2070,16 @@ public final class McHost implements Host {
 		});
 	}
 
-	/** Adopte une carte (chargée ou générée) : enregistrement, salle d'attente, apparition. */
+	/** Adopte une carte (envoyée à la partie, voir MapSender) : enregistrement, salle d'attente, apparition. */
 	public void useVillage(Village v) {
-		stage.clear(server);
+		stage.clear(levelIfReady());
 		village = v;
-		abandoned = null;
 		startupWarning = null;
 		lanterns = null;
-		v.save(server);
+		saveVillage(v);
 		if (v.hasHall()) {
 			buildHall();
 		}
-		applySpawn();
 		rescuePlayers(v);
 		carrying.clear();
 		prefabs.clear();
@@ -1994,75 +2093,20 @@ public final class McHost implements Host {
 	/** Fin des messages qui lancent un chantier : valable dans le jeu comme sur la page de l'Atelier. */
 	static final String PROGRESS = " Dans le jeu, une barre en haut de l'écran suit le chantier.";
 
-	/** Génère un village réglable au même endroit (ou sous les pieds du joueur s'il n'y en a pas). */
-	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses) {
-		return generateVillage(p, seatCount, size, theme, houses, Raze.BATI);
-	}
-
-	public String generateVillage(ServerPlayer p, int seatCount, int size, String theme, boolean houses, Raze raze) {
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
-		}
-		requireFree();
-		// Sans carte, le village est bâti sous les pieds de l'opérateur s'il est au village, sinon au centre habituel.
-		BlockPos c = village != null ? village.center()
-			: inMainWorld(p) ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : mapCenter();
-		Village v = Village.generated(c, theme, seatCount, size, houses);
-		// L'ancienne carte est retirée, puis le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
-		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, raze, () -> {
-			adoptGenerated(v);
-			announceAll("Le village est construit : " + v.seatTotal() + " trônes, thème " + v.theme() + ".");
-		});
-		return "Construction lancée : " + v.seatTotal() + " trônes, taille " + new String[] {"petite", "normale", "grande"}[v.size()]
-			+ ", thème " + v.theme() + (houses ? ", avec maisons." : ", sans maisons.") + PROGRESS + saved;
-	}
-
 	/** Le village généré v vient d'être bâti : sa salle de convocation, sa salle d'attente, et il devient la carte. */
 	private void adoptGenerated(Village v) {
-		v.buildConvocation(server.overworld());
+		v.buildConvocation(level());
 		useVillage(v);
 		if (!v.hasHall()) {
 			buildHall();
 		}
 	}
 
-	/**
-	 * Importe une construction (.schem, .litematic, .nbt) à la place de la carte actuelle, centrée
-	 * sur la place ; elle devient une carte à compléter en mode construction (trônes, maisons, centre).
-	 */
-	public String importSchematic(String fileName, byte[] data) {
-		return importSchematic(fileName, data, null);
-	}
-
-	/** where : le centre voulu quand il n'y a aucune carte à remplacer (null : le point d'apparition). */
-	public String importSchematic(String fileName, byte[] data, BlockPos where) {
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
-		}
-		ServerLevel level = server.overworld();
-		Clip clip = SchematicImporter.read(fileName, data, server.registryAccess().lookupOrThrow(
-			net.minecraft.core.registries.Registries.BLOCK));
-		BlockPos c = village == null && abandoned == null && where != null ? where : mapCenter();
-		requireFree();
-		int half = Math.max(clip.width, clip.length) / 2 + 2;
-		BlockPos corner = c.offset(-clip.width / 2, 0, -clip.length / 2);
-		// L'ancienne carte est retirée et le terrain rasé, puis la construction est posée : le tout par petits lots.
-		BuildQueue.Plan build = new BuildQueue.Plan().first(clearPart(c, half, 4, Math.max(28, clip.height + 6)))
-			.then(clip.plan(level, corner, false, false));
-		String saved = replaceMap("Import de « " + fileName + " »", build, true, () -> {
-			useVillage(Village.custom(c));
-			announceAll("Construction « " + fileName + " » importée (" + clip.dims() + "). Passez en mode construction pour poser "
-				+ "les trônes, les maisons et le centre, puis enregistrez la carte.");
-		});
-		return "Import de « " + fileName + " » lancé (" + clip.dims() + " blocs)." + PROGRESS + saved;
-	}
-
 	public String setMapCenter(ServerPlayer p) {
-		requireMainWorld(p);
+		requireGameWorld(p);
 		Village v = requireEditable();
 		Village.Marks before = v.marks();
 		moveCenter(v, p.blockPosition().below());
-		applySpawn();
 		markersChanged(before);
 		return "Centre de la place posé ici.";
 	}
@@ -2086,15 +2130,16 @@ public final class McHost implements Host {
 			return "Mode construction terminé. Pensez à enregistrer la carte : bouton « Enregistrer » de l'Atelier, "
 				+ "ou /vc carte enregistrer <identifiant> <nom>.";
 		}
-		if (ValcombeMod.session().game() != null) {
+		// Le mode construction sert dans n'importe quel monde (l'éditeur travaille là où se tient l'opérateur) ; les
+		// repères, eux, ne se posent que dans le monde de la partie. Pendant une partie, on ne bâtit pas dans son monde.
+		if (ValcombeMod.session().game() != null && inGameWorld(p)) {
 			throw new fr.valcombe.rules.GameException("Pas de construction pendant une partie.");
 		}
-		requireMainWorld(p);
 		builders.add(name);
-		if (village != null && !village.modified()) {
+		if (village != null && !village.modified() && inGameWorld(p)) {
 			// On entre ici pour bâtir : la carte est désormais tenue pour retouchée, elle ne sera pas remplacée sans sauvegarde.
 			village.setModified(true);
-			village.save(server);
+			saveVillage(village);
 		}
 		builderModes.put(name, p.gameMode.getGameModeForPlayer());
 		p.setGameMode(GameType.CREATIVE);
@@ -2123,8 +2168,8 @@ public final class McHost implements Host {
 		}
 		for (String name : builders) {
 			ServerPlayer p = player(name);
-			if (p == null) {
-				continue;
+			if (p == null || !inGameWorld(p)) {
+				continue; // les repères sont ceux du village du monde de la partie
 			}
 			ServerLevel level = p.level();
 			BlockPos c = village.center();
@@ -2178,48 +2223,6 @@ public final class McHost implements Host {
 			}
 			p.sendSystemMessage(Component.literal(check).withStyle(seats >= 5 ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
 		}
-	}
-
-	/** Construit le village de Valcombe sous les pieds du joueur. */
-	public String buildVillage(ServerPlayer p) {
-		return buildVillage(p, "gothique");
-	}
-
-	public String buildVillage(ServerPlayer p, String theme) {
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
-		}
-		requireFree();
-		requireMainWorld(p);
-		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
-		Village v = Village.generated(c, theme);
-		// Bâti ailleurs que l'ancienne carte, le village la remplace tout de même : elle est d'abord retirée du monde.
-		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, () -> {
-			adoptGenerated(v);
-			announceAll("Le village de Valcombe (" + v.theme() + ") est construit, avec sa salle d'attente.");
-		});
-		return "Construction du village lancée." + PROGRESS + saved;
-	}
-
-	/**
-	 * Oublie la carte : on jouera autour du Conteur. Ses blocs ne sont pas détruits (c'est peut-être un travail
-	 * fait à la main) ; la fiche retient son emprise, et la prochaine carte bâtie la retirera du monde.
-	 */
-	public String forgetVillage() {
-		if (ValcombeMod.session().game() != null) {
-			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
-		}
-		requireFree();
-		Village v = requireVillage();
-		v.saveForgotten(server);
-		stage.clear(server);
-		abandoned = v;
-		village = null;
-		lanterns = null;
-		carrying.clear();
-		refreshLabels();
-		return "La carte est oubliée : les joueurs seront placés autour du Conteur. Ses blocs restent en place ; "
-			+ "ils seront retirés du monde dès qu'une autre carte sera bâtie, générée ou chargée.";
 	}
 
 	/** Message à tous les joueurs connectés. */
@@ -2343,7 +2346,7 @@ public final class McHost implements Host {
 			return;
 		}
 		if (labels.isEmpty()) {
-			stage.clear(server);
+			stage.clear(levelIfReady());
 			return;
 		}
 		stage.labels(labels);
@@ -2369,8 +2372,8 @@ public final class McHost implements Host {
 		for (String name : players) {
 			ServerPlayer p = player(name);
 			int i = stage.index(name);
-			if (p != null && i >= 0 && !p.isPassenger()) {
-				WorldSetup.run(server, "ride " + name + " mount @e[type=minecraft:item_display,tag=vc_seat_" + i + ",limit=1]");
+			if (p != null && i >= 0 && !p.isPassenger() && inGameWorld(p)) {
+				run("ride " + name + " mount @e[distance=0..,type=minecraft:item_display,tag=vc_seat_" + i + ",limit=1]");
 			}
 		}
 	}
@@ -2441,24 +2444,24 @@ public final class McHost implements Host {
 	@Override
 	public void sign(String player, String symbol, String color) {
 		ServerPlayer p = player(player);
-		if (server == null || p == null) {
-			return;
+		if (!inGameWorld(p)) {
+			return; // hors du monde de la partie, il n'est pas à la table : personne ne verrait son signe
 		}
 		String tag = "vc_signe_" + Math.abs(player.hashCode());
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+		run("kill @e[distance=0..,type=minecraft:text_display,tag=" + tag + "]");
+		run(String.format(java.util.Locale.ROOT,
 			"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"%s\"],billboard:\"center\",background:0,"
 				+ "see_through:0b,shadow:1b,transformation:{translation:[0f,0.7f,0f],left_rotation:[0f,0f,0f,1f],"
 				+ "right_rotation:[0f,0f,0f,1f],scale:[2.6f,2.6f,2.6f]},text:{text:\"%s\",color:\"%s\",bold:1b}}",
 			p.getX(), p.getY() + 2.1, p.getZ(), tag, symbol, color));
-		WorldSetup.run(server, "ride @e[type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + player);
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT, "playsound minecraft:block.note_block.hat master @a %.1f %.1f %.1f 0.6 1.6",
+		run("ride @e[distance=0..,type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + player);
+		run(String.format(java.util.Locale.ROOT, "playsound minecraft:block.note_block.hat master @a[distance=0..] %.1f %.1f %.1f 0.6 1.6",
 			p.getX(), p.getY(), p.getZ()));
 		int token = ++signToken;
 		signTokens.put(player, token);
 		schedule(80, () -> {
 			if (signTokens.getOrDefault(player, 0) == token) {
-				WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
+				run("kill @e[distance=0..,type=minecraft:text_display,tag=" + tag + "]");
 			}
 		});
 	}
@@ -2473,18 +2476,18 @@ public final class McHost implements Host {
 		}
 		for (String name : List.of(from, to)) {
 			ServerPlayer p = player(name);
-			if (p == null) {
+			if (!inGameWorld(p)) {
 				continue;
 			}
 			String tag = "vc_bulle_" + Math.abs(name.hashCode());
-			WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]");
-			WorldSetup.run(server, String.format(java.util.Locale.ROOT,
+			run("kill @e[distance=0..,type=minecraft:text_display,tag=" + tag + "]");
+			run(String.format(java.util.Locale.ROOT,
 				"summon minecraft:text_display %.2f %.2f %.2f {Tags:[\"%s\"],billboard:\"center\",background:-1073741824,"
 					+ "transformation:{translation:[0f,0.55f,0f],left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
 					+ "scale:[1.4f,1.4f,1.4f]},text:{text:\"…\",color:\"light_purple\"}}",
 				p.getX(), p.getY() + 2.1, p.getZ(), tag));
-			WorldSetup.run(server, "ride @e[type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + name);
-			schedule(160, () -> WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=" + tag + "]"));
+			run("ride @e[distance=0..,type=minecraft:text_display,tag=" + tag + ",limit=1] mount " + name);
+			schedule(160, () -> run("kill @e[distance=0..,type=minecraft:text_display,tag=" + tag + "]"));
 		}
 	}
 
@@ -2492,7 +2495,7 @@ public final class McHost implements Host {
 	public void accusation(String from, String to) {
 		ServerPlayer a = player(from);
 		ServerPlayer b = player(to);
-		if (server == null || a == null || b == null) {
+		if (!inGameWorld(a) || !inGameWorld(b)) {
 			return;
 		}
 		for (int k = 0; k < 4; k++) {
@@ -2506,7 +2509,7 @@ public final class McHost implements Host {
 				}
 			});
 		}
-		WorldSetup.run(server, String.format(java.util.Locale.ROOT, "playsound valcombe:cloche master @a %.1f %.1f %.1f 1.5 1.4",
+		run(String.format(java.util.Locale.ROOT, "playsound valcombe:cloche master @a[distance=0..] %.1f %.1f %.1f 1.5 1.4",
 			b.getX(), b.getY(), b.getZ()));
 	}
 
@@ -2543,13 +2546,17 @@ public final class McHost implements Host {
 	@Override
 	public void execution(String name) {
 		ServerPlayer p = player(name);
-		if (server == null || p == null) {
+		if (p == null) {
+			return;
+		}
+		if (!inGameWorld(p)) {
+			stage.execution(name); // le gibet se dresse quand même sur la place
 			return;
 		}
 		String at = String.format(java.util.Locale.ROOT, "%.2f %.2f %.2f", p.getX(), p.getY() + 1, p.getZ());
-		WorldSetup.run(server, "particle minecraft:large_smoke " + at + " 0.4 1 0.4 0.02 60 force");
-		WorldSetup.run(server, "particle minecraft:soul_fire_flame " + at + " 0.3 0.8 0.3 0.03 50 force");
-		WorldSetup.run(server, "playsound minecraft:entity.wither.death master @a " + at + " 0.6 0.7");
+		run("particle minecraft:large_smoke " + at + " 0.4 1 0.4 0.02 60 force");
+		run("particle minecraft:soul_fire_flame " + at + " 0.3 0.8 0.3 0.03 50 force");
+		run("playsound minecraft:entity.wither.death master @a[distance=0..] " + at + " 0.6 0.7");
 		stage.execution(name);
 	}
 
@@ -2563,8 +2570,8 @@ public final class McHost implements Host {
 			int k = i;
 			schedule(10 * i, () -> {
 				String at = String.format(java.util.Locale.ROOT, "%d %d %d", c.getX() + (k % 3 - 1) * 4, c.getY() + 8, c.getZ() + (k / 3) * 4 - 2);
-				WorldSetup.run(server, "particle minecraft:firework " + at + " 1.5 1.5 1.5 0.15 120 force");
-				WorldSetup.run(server, "playsound minecraft:entity.firework_rocket.twinkle master @a " + at + " 2 1");
+				run("particle minecraft:firework " + at + " 1.5 1.5 1.5 0.15 120 force");
+				run("playsound minecraft:entity.firework_rocket.twinkle master @a[distance=0..] " + at + " 2 1");
 			});
 		}
 	}
@@ -2728,13 +2735,6 @@ public final class McHost implements Host {
 			restoreAt = -1;
 			startRestore();
 		}
-		if (holdCenter != null && server != null) {
-			if (!builds.busy()) {
-				holdCenter = null;
-			} else if (tick % 20 == 0) {
-				holdChunks();
-			}
-		}
 		builds.tick(server);
 		if (editor != null) {
 			editor.tick();
@@ -2750,15 +2750,16 @@ public final class McHost implements Host {
 			councilGlow();
 		}
 		if (tick % 100 == 0 && server != null) {
+			// Ménages dans le monde de la partie seulement (run et distance=0..) : les décors des cartes posées dans
+			// d'autres mondes (ateliers, parties d'essai) restent.
 			if (village != null) {
-				// Dans le monde principal seulement (distance=0..) : les trônes des cartes posées ailleurs restent.
-				WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + ",distance=0..]");
+				run("kill @e[distance=0..,type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + "]");
 			}
 			// Scène d'avant un redémarrage, restée dans des chunks qui n'étaient pas chargés quand on l'a retirée.
-			WorldSetup.run(server, "kill @e[tag=vc_scene,tag=!" + Stage.GEN_TAG + "]");
-			WorldSetup.run(server, "kill @e[tag=vc_presentoir,tag=!vc_pres_" + hallGen + "]");
-			WorldSetup.run(server, "kill @e[tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
-			WorldSetup.run(server, "kill @e[tag=vc_repere,tag=!vc_rep_" + (builders.isEmpty() ? -1 : labelGen) + "]");
+			run("kill @e[distance=0..,tag=vc_scene,tag=!" + Stage.GEN_TAG + "]");
+			run("kill @e[distance=0..,tag=vc_presentoir,tag=!vc_pres_" + hallGen + "]");
+			run("kill @e[distance=0..,tag=valcombe_salle,tag=!vc_salle_" + boardGen + "]");
+			run("kill @e[distance=0..,tag=vc_repere,tag=!vc_rep_" + (builders.isEmpty() ? -1 : labelGen) + "]");
 		}
 		if (tick % 4 == 0 && !seats.isEmpty()) {
 			featherHints();
@@ -2781,7 +2782,7 @@ public final class McHost implements Host {
 		if (tick % 30 == 0 && !ghostNames.isEmpty() && ValcombeMod.session().settings().fullEffects) {
 			for (String name : ghostNames) {
 				ServerPlayer p = player(name);
-				if (p != null) {
+				if (inGameWorld(p)) {
 					p.level().sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL, p.getX(), p.getY() + 0.4, p.getZ(),
 						3, 0.25, 0.4, 0.25, 0.01);
 				}
@@ -2805,15 +2806,79 @@ public final class McHost implements Host {
 	// Placement et effets
 	// ------------------------------------------------------------------
 	private void teleport(ServerPlayer p, SeatPos s) {
-		p.teleportTo(s.level(), s.pos().x, s.pos().y, s.pos().z, Set.of(), s.yaw(), 0, false);
+		moveTo(p, s.level(), s.pos(), s.yaw(), 0);
+	}
+
+	/**
+	 * Ce que les voyages font d'un joueur qui quitte un monde : noter sa position, pour qu'il la retrouve en y
+	 * revenant (branché sur Travel.remember). Null sans voyages.
+	 */
+	private java.util.function.Consumer<ServerPlayer> leaving;
+
+	public void setLeaving(java.util.function.Consumer<ServerPlayer> leaving) {
+		this.leaving = leaving;
+	}
+
+	/** Amène ce joueur ici ; s'il arrive d'un autre monde (le hub), sa position là-bas est notée d'abord. */
+	private void moveTo(ServerPlayer p, ServerLevel level, Vec3 pos, float yaw, float pitch) {
+		var l = leaving;
+		if (p.level() != level && l != null) {
+			try {
+				l.accept(p);
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Position de " + p.getScoreboardName() + " non notée avant son départ", e);
+			}
+		}
+		p.teleportTo(level, pos.x, pos.y, pos.z, Set.of(), yaw, pitch, false);
+	}
+
+	/**
+	 * Amène ce joueur dans le monde de la partie (il s'inscrit, il devient Conteur) : à la salle d'attente ou sur la
+	 * place, ou là où il était la dernière fois s'il y revient (voyages). Rien s'il y est déjà, ou si la partie n'a
+	 * pas de monde.
+	 */
+	@Override
+	public void toTable(String name) {
+		ServerPlayer p = player(name);
+		ServerLevel level = levelIfReady();
+		if (p == null || level == null || p.level() == level) {
+			return;
+		}
+		var t = bring;
+		if (t != null) {
+			try {
+				p.sendSystemMessage(Component.literal(t.apply(p)).withStyle(ChatFormatting.GREEN));
+				return;
+			} catch (fr.valcombe.rules.GameException e) {
+				ValcombeMod.LOG.warn("Voyage de {} vers la partie : {}", name, e.getMessage());
+			}
+		}
+		if (p.isPassenger()) {
+			p.stopRiding();
+		}
+		Vec3 at = village != null ? Vec3.atBottomCenterOf(village.spawn()) : WorldManager.spawn();
+		moveTo(p, level, at, 180, 0);
+	}
+
+	/** Le voyage d'un joueur vers le monde de la partie (Travel), qui renvoie le message à lui dire ; null sans voyages. */
+	private java.util.function.Function<ServerPlayer, String> bring;
+
+	public void setBring(java.util.function.Function<ServerPlayer, String> bring) {
+		this.bring = bring;
 	}
 
 	@Override
 	public void seatPlayers(List<String> players, String anchor) {
 		houses.clear();
 		inHouses = false;
-		if (village != null && server != null) {
-			ServerLevel level = server.overworld();
+		ServerLevel level = levelIfReady();
+		if (level == null) {
+			ValcombeMod.LOG.error("Joueurs non placés : le monde de la partie n'est pas prêt.");
+			return;
+		}
+		if (village != null) {
+			// Les joueurs arrivent souvent d'un autre monde (le hub) : la place est chargée avant d'y monter la scène.
+			loadAround(level, village.center(), 48);
 			int n = players.size();
 			if (village.seatCount() < n) {
 				announce("Attention : la carte n'a que " + village.seatCount() + " trône(s) pour " + n + " joueurs.");
@@ -2844,9 +2909,8 @@ public final class McHost implements Host {
 		if (center == null) {
 			return;
 		}
-		// Sans carte, le cercle se forme autour du meneur, dans le monde principal : s'il attend au hub (ou dans un
-		// autre monde de Valcombe), le cercle se forme au point d'apparition du monde principal, jamais au hub.
-		ServerLevel level = server != null ? server.overworld() : center.level();
+		// Sans carte, le cercle se forme autour du meneur, dans le monde de la partie : s'il attend ailleurs (le hub, un
+		// atelier), le cercle se forme au centre du monde de la partie, jamais au hub.
 		double cx;
 		double cz;
 		double cy;
@@ -2855,11 +2919,12 @@ public final class McHost implements Host {
 			cz = Math.floor(center.getZ()) + 0.5;
 			cy = center.getY();
 		} else {
-			BlockPos s = server.getRespawnData().pos();
-			cx = s.getX() + 0.5;
-			cz = s.getZ() + 0.5;
-			cy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, s.getX(), s.getZ());
+			Vec3 s = WorldManager.spawn();
+			cx = s.x;
+			cz = s.z;
+			cy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) Math.floor(s.x), (int) Math.floor(s.z));
 		}
+		loadAround(level, BlockPos.containing(cx, cy, cz), 32);
 		int n = players.size();
 		double radius = Math.max(4, Math.ceil(n * 0.75));
 		seats.clear();
@@ -2876,7 +2941,7 @@ public final class McHost implements Host {
 			if (p != null) {
 				previousMode.putIfAbsent(p.getScoreboardName(), p.gameMode.getGameModeForPlayer());
 				p.setGameMode(GameType.ADVENTURE);
-				p.teleportTo(level, x, y, z, Set.of(), yaw, 0, false);
+				moveTo(p, level, pos, yaw, 0);
 			}
 		}
 		setupStage(new Vec3(cx, cy, cz), cy + 3.5, players, false);
@@ -2886,10 +2951,10 @@ public final class McHost implements Host {
 	private List<BlockPos> lanterns;
 
 	private void lights(boolean night) {
-		if (server == null || village == null) {
+		ServerLevel level = levelIfReady();
+		if (level == null || village == null) {
 			return;
 		}
-		ServerLevel level = server.overworld();
 		if (lanterns == null) {
 			lanterns = new ArrayList<>();
 			BlockPos c = village.center();
@@ -2923,7 +2988,7 @@ public final class McHost implements Host {
 	private boolean night;
 
 	private void setupStage(Vec3 center, double handY, List<String> players, boolean lectern) {
-		WorldSetup.run(server, "kill @e[type=minecraft:text_display,tag=valcombe_jeton]"); // anciennes versions
+		run("kill @e[distance=0..,type=minecraft:text_display,tag=valcombe_jeton]"); // anciennes versions
 		Map<String, Stage.Spot> spots = new java.util.LinkedHashMap<>();
 		for (String name : players) {
 			SeatPos s = seats.get(name);
@@ -2932,18 +2997,23 @@ public final class McHost implements Host {
 			}
 		}
 		// Village généré : les trônes sont en blocs ; ailleurs, la scène pose des trônes sculptés.
-		stage.setup(server, center, handY, spots, lectern, village == null || !village.isGenerated());
+		ServerLevel level = levelIfReady();
+		if (level != null) {
+			stage.setup(level, center, handY, spots, lectern, village == null || !village.isGenerated());
+		}
 	}
 
 	@Override
 	public void nightEffects(List<String> players, boolean night, Settings settings) {
 		this.night = night;
 		frozen = night && settings.nightFreeze;
-		if (server != null) {
+		ServerLevel level = levelIfReady();
+		if (level != null) {
+			// L'heure du monde de la partie seulement : le hub et les ateliers gardent la leur.
 			if (night) {
-				WorldSetup.night(server);
+				WorldSetup.night(level);
 			} else {
-				WorldSetup.day(server);
+				WorldSetup.day(level);
 			}
 		}
 		boolean toHouses = night && settings.nightHouses && !houses.isEmpty();
@@ -3002,10 +3072,10 @@ public final class McHost implements Host {
 				p.removeEffect(MobEffects.GLOWING);
 			}
 		}
-		if (night && server != null) {
+		if (night && levelIfReady() != null) {
 			// Partie arrêtée en pleine nuit : le jour et les lanternes reviennent.
 			night = false;
-			WorldSetup.day(server);
+			WorldSetup.day(levelIfReady());
 			lights(false);
 		}
 		deadPlayers(List.of(), List.of());

@@ -11,7 +11,6 @@ import java.util.List;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -26,7 +25,8 @@ import net.minecraft.world.phys.Vec3;
  * Le lieu des parties : un centre (la place), des sièges et des maisons.
  * Soit généré (village de Valcombe, 16 sièges et 16 maisons), soit placé à la main
  * sur une carte personnalisée avec /vc carte siege et /vc carte maison.
- * Enregistré dans config/valcombe-village.json.
+ * Sa fiche est enregistrée dans le dossier du monde de la partie qui le porte ({@link #FILE}, voir McHost) : elle
+ * disparaît avec ce monde quand il est remis à neuf.
  */
 public final class Village {
 	/** Trônes d'un village généré par défaut. */
@@ -68,7 +68,7 @@ public final class Village {
 		return angle(0, seatTotal) + Math.PI / seatTotal;
 	}
 
-	/** Plus grande étendue d'une carte (voir MapStore) : au-delà, on ne saurait ni l'enregistrer ni la raser sans figer le serveur. */
+	/** Plus grande étendue d'une carte (voir MapStore) : au-delà, on ne saurait ni l'enregistrer ni la poser sans figer le serveur. */
 	public static final int MAX_EXTENT = 200;
 
 	/** Rayon qu'il faut à la carte pour contenir ce repère (8 blocs de marge autour). */
@@ -96,24 +96,7 @@ public final class Village {
 		return r;
 	}
 
-	/** Ce que l'éditeur a bâti sur la carte, au-delà des repères : {x0, y0, z0, x1, y1, z1}, ou null. */
-	private int[] built;
-
-	/** L'éditeur vient de poser des blocs dans cette boîte : la carte la retient, pour tout raser plus tard. */
-	public void include(int x0, int y0, int z0, int x1, int y1, int z1) {
-		if (built == null) {
-			built = new int[] {x0, y0, z0, x1, y1, z1};
-			return;
-		}
-		built = new int[] {Math.min(built[0], x0), Math.min(built[1], y0), Math.min(built[2], z0),
-			Math.max(built[3], x1), Math.max(built[4], y1), Math.max(built[5], z1)};
-	}
-
-	public int[] built() {
-		return built;
-	}
-
-	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer ou le retirer. */
+	/** Rayon de tout ce que le village occupe (salle d'attente comprise), pour l'enregistrer ou le poser. */
 	public int extent() {
 		if (!generated) {
 			return Math.min(MAX_EXTENT, farthest());
@@ -151,15 +134,12 @@ public final class Village {
 		int[] convocation;
 		/** Retouchée à la main depuis son dernier enregistrement dans la bibliothèque (absent : fiche d'avant ce suivi). */
 		Boolean modified;
-		/** Carte oubliée (/vc carte oublier) : ses blocs sont encore dans le monde, mais on ne joue plus dessus. */
-		boolean forgotten;
+
 		/** Carte de la bibliothèque dont celle-ci vient : identifiant et nom (absents : aucune). */
 		String carte;
 		String carteNom;
 		/** Trônes tournés à la main : {x, y, z, angle} absolus (les autres regardent le centre). */
 		List<double[]> orientations;
-		/** Tout ce que l'éditeur a bâti sur cette carte : {x0, y0, z0, x1, y1, z1} absolus (absent : rien hors des repères). */
-		int[] built;
 	}
 
 	/**
@@ -1364,11 +1344,11 @@ public final class Village {
 			return;
 		}
 		String summon = throneDisplay(new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5));
-		MinecraftServer server = level.getServer();
+		// Dans le monde où le village est bâti (celui de la partie), jamais dans le monde principal.
 		if (plan != null) {
-			plan.after.add(() -> WorldSetup.run(server, summon)); // le trône sculpté attend que son estrade soit posée
+			plan.after.add(() -> WorldSetup.run(level, summon)); // le trône sculpté attend que son estrade soit posée
 		} else {
-			WorldSetup.run(server, summon);
+			WorldSetup.run(level, summon);
 		}
 	}
 
@@ -1387,20 +1367,10 @@ public final class Village {
 	}
 
 	/**
-	 * Village généré rechargé de la bibliothèque : la structure enregistrée ne contient que des blocs,
-	 * les trônes sculptés (des entités) sont donc reposés sur chaque estrade.
+	 * Village généré rechargé de la bibliothèque, ou posé dans un monde de Valcombe (voir MapPlacer) : la structure
+	 * enregistrée ne contient que des blocs, les trônes sculptés (des entités) sont donc reposés sur chaque estrade,
+	 * dans ce monde-ci.
 	 */
-	public void placeThrones(MinecraftServer server) {
-		if (!generated) {
-			return;
-		}
-		decorGen++;
-		for (int k = 0; k < seats.size(); k++) {
-			WorldSetup.run(server, throneDisplay(feet(seats.get(k)), seatYaw(k)));
-		}
-	}
-
-	/** Comme placeThrones(server), dans ce monde-ci : un village généré posé dans un monde de Valcombe (voir MapPlacer). */
 	public void placeThrones(ServerLevel level) {
 		if (!generated) {
 			return;
@@ -1596,9 +1566,8 @@ public final class Village {
 	// ------------------------------------------------------------------
 	// Enregistrement
 	// ------------------------------------------------------------------
-	private static Path file(MinecraftServer server) {
-		return server.getServerDirectory().resolve("config").resolve("valcombe-village.json");
-	}
+	/** Nom de la fiche du village, dans le dossier du monde de la partie (voir McHost). */
+	public static final String FILE = "valcombe-village.json";
 
 	private static int[] arr(BlockPos p) {
 		return new int[] {p.getX(), p.getY(), p.getZ()};
@@ -1608,20 +1577,13 @@ public final class Village {
 		return new BlockPos(a[0], a[1], a[2]);
 	}
 
-	public void save(MinecraftServer server) {
-		save(file(server), false);
-	}
-
-	/** Carte oubliée : la fiche garde son emprise, pour que la prochaine carte bâtie la retire du monde. */
-	public void saveForgotten(MinecraftServer server) {
-		save(file(server), true);
-	}
-
-	void save(Path f, boolean forgotten) {
+	/**
+	 * Écrit la fiche de cette carte dans ce fichier : celle du monde de partie qui la porte (dans son dossier, elle
+	 * disparaît avec lui quand il est remis à neuf).
+	 */
+	public void save(Path f) {
 		Data d = new Data();
 		d.modified = modified;
-		d.built = built;
-		d.forgotten = forgotten;
 		d.carte = libraryId.isEmpty() ? null : libraryId;
 		d.carteNom = libraryName.isEmpty() ? null : libraryName;
 		d.center = arr(center);
@@ -1657,13 +1619,11 @@ public final class Village {
 		ABSENT,
 		/** La carte en service. */
 		READY,
-		/** Carte oubliée : plus de carte en service, mais ses blocs sont encore dans le monde. */
-		FORGOTTEN,
 		/** Une fiche existe mais ne se lit plus (ni elle, ni sa copie de secours). */
 		UNREADABLE
 	}
 
-	/** La fiche relue : son état et, s'il y en a une, la carte (en service ou oubliée). */
+	/** La fiche relue : son état et, s'il y en a une, la carte en service. */
 	public record Loaded(Fiche state, Village village) {
 	}
 
@@ -1680,11 +1640,8 @@ public final class Village {
 		}
 	}
 
-	public static Loaded load(MinecraftServer server) {
-		return load(file(server));
-	}
-
-	static Loaded load(Path json) {
+	/** Relit la fiche de ce fichier (celle du monde de la partie, voir McHost). */
+	public static Loaded load(Path json) {
 		try {
 			if (SafeFile.exists(json)) {
 				String text = SafeFile.read(json, Village::valid);
@@ -1717,8 +1674,7 @@ public final class Village {
 				// Fiche d'avant ce suivi : on ne sait pas ce qui a été bâti dessus à la main, la carte est donc à protéger.
 				v.modified = d.modified == null || d.modified;
 				v.setLibrary(d.carte, d.carteNom);
-				v.built = d.built != null && d.built.length == 6 ? d.built : null;
-				return new Loaded(d.forgotten ? Fiche.FORGOTTEN : Fiche.READY, v);
+				return new Loaded(Fiche.READY, v);
 			}
 			// Ancien format (version 0.1.0) : seulement le centre d'un village généré.
 			Path old = json.resolveSibling("valcombe-village.txt");

@@ -27,7 +27,7 @@ final class BuildQueue {
 	private static final int MAX_CHANGES = 8000;
 
 	/**
-	 * Une suite de blocs calculée au fur et à mesure, sans rien garder en mémoire : raser un terrain,
+	 * Une suite de blocs calculée au fur et à mesure, sans rien garder en mémoire : remettre un terrain à plat,
 	 * remettre un instantané. (Une liste de plusieurs millions de positions saturerait la mémoire.)
 	 */
 	abstract static class Part {
@@ -96,7 +96,7 @@ final class BuildQueue {
 		final String label;
 		final Plan plan;
 		final Runnable done;
-		/** Monde du chantier, ou null : le monde principal (les chantiers de la carte actuelle). */
+		/** Monde du chantier : celui de la partie (sa carte), ou un autre monde de Valcombe (une carte qu'on y pose). */
 		final ServerLevel level;
 		/** Joueurs qui voient la barre d'avancement. */
 		final Predicate<ServerPlayer> audience;
@@ -130,17 +130,13 @@ final class BuildQueue {
 		return !jobs.isEmpty();
 	}
 
-	/** Met un chantier en file dans le monde principal ; done est appelé quand tout est posé. Tous les joueurs voient la barre. */
-	void add(String label, Plan plan, Runnable done) {
-		jobs.add(new Job(label, null, plan, done, p -> true, null));
-	}
-
 	/**
 	 * Met un chantier en file dans ce monde ; done est appelé quand tout est posé. Seuls les joueurs que retient
 	 * audience voient la barre. Si le monde quitte le serveur avant la fin (recréé, supprimé), ou si le serveur
 	 * s'arrête, le chantier est abandonné et cancelled appelé (s'il n'est pas null).
 	 */
 	void add(String label, ServerLevel level, Plan plan, Runnable done, Predicate<ServerPlayer> audience, Runnable cancelled) {
+		java.util.Objects.requireNonNull(level, "un chantier se fait dans un monde donné");
 		jobs.add(new Job(label, level, plan, done, audience, cancelled));
 	}
 
@@ -186,13 +182,13 @@ final class BuildQueue {
 		if (job == null || server == null) {
 			return;
 		}
-		if (job.level != null && server.getLevel(job.level.dimension()) != job.level) {
+		if (server.getLevel(job.level.dimension()) != job.level) {
 			// Le monde a quitté le serveur (remis à neuf, supprimé) : on n'écrit pas dans un monde fermé.
 			jobs.poll();
 			drop(job);
 			return;
 		}
-		ServerLevel level = job.level != null ? job.level : server.overworld();
+		ServerLevel level = job.level;
 		long start = System.nanoTime();
 		int changed = 0;
 		long total = job.total;

@@ -145,10 +145,11 @@ public class StorytellerScreen extends HdScreen {
 			col.add(new Entry("Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()), false));
 			int lx = leftX();
 			button(lx, py + ph - 48, 150, "Éditer le script", () -> minecraft.gui.setScreen(new ScriptScreen()));
-			// Bâtir un village remplace la carte actuelle : un second clic le confirme.
+			// Un nouveau village est envoyé à la partie : son monde est remis à neuf, puis le village y est bâti. Un second
+			// clic le confirme.
 			String build = "vc carte construire " + THEMES[theme];
 			boolean ready = build.equals(armed);
-			button(lx, py + ph - 26, 104, ready ? "Confirmer" : "Bâtir le village", () -> {
+			button(lx, py + ph - 26, 104, ready ? "Confirmer" : "Nouveau village", () -> {
 				if (!ready) {
 					armed = build;
 					rebuildSoon();
@@ -157,8 +158,9 @@ public class StorytellerScreen extends HdScreen {
 				armed = null;
 				send(build);
 				onClose();
-			}).tooltip(ready ? "Le village " + THEME_NAMES[theme] + " remplace la carte actuelle."
-				: "Bâtit un village du thème choisi à la place de la carte actuelle (second clic pour confirmer).");
+			}).tooltip(ready ? "Le monde de la partie est remis à neuf, puis le village " + THEME_NAMES[theme] + " y est bâti."
+				: "Remet le monde de la partie à neuf et y bâtit un village du thème choisi, à la place de la carte actuelle "
+					+ "(second clic pour confirmer).");
 			button(lx + 108, py + ph - 26, 104, "Thème : " + THEME_NAMES[theme], () -> {
 				theme = (theme + 1) % THEMES.length;
 				rebuildSoon();

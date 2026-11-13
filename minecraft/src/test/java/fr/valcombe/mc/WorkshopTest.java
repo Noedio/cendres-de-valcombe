@@ -132,14 +132,14 @@ class WorkshopTest {
 		Village v = Village.custom(new BlockPos(10, 70, -4));
 		v.setLibrary("port-aux-brumes", "Le Port aux Brumes");
 		v.setModified(false);
-		v.save(f, false);
+		v.save(f);
 		Village back = Village.load(f).village();
 		assertEquals("port-aux-brumes", back.libraryId());
 		assertEquals("Le Port aux Brumes", back.libraryName());
 		assertFalse(back.modified());
 		// Une fiche d'avant cette version n'a pas ces champs : la carte ne vient d'aucune carte de la bibliothèque.
 		Village plain = Village.custom(new BlockPos(0, 64, 0));
-		plain.save(f, false);
+		plain.save(f);
 		assertEquals("", Village.load(f).village().libraryId());
 	}
 

@@ -9,6 +9,13 @@ public interface Host {
 	default void storytellerTools(String name, boolean on) {
 	}
 
+	/**
+	 * Ce joueur rejoint la table (il s'inscrit, il devient Conteur, la partie commence) : l'amener là où se joue la
+	 * partie s'il est ailleurs (au hub, dans un atelier).
+	 */
+	default void toTable(String player) {
+	}
+
 	/** Un voyageur arrive : le placer sur un trône libre de la place. */
 	default void addSeat(String player) {
 	}

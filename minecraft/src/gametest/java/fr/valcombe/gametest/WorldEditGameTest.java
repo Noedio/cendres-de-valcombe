@@ -48,7 +48,7 @@ public class WorldEditGameTest implements FabricClientGameTest {
 		return world.getServer().computeOnServer(server -> {
 			int n = 0;
 			for (BlockPos pos : BlockPos.betweenClosed(a, b)) {
-				if (server.overworld().getBlockState(pos).is(block)) {
+				if (ValcombeMod.host().level().getBlockState(pos).is(block)) {
 					n++;
 				}
 			}
@@ -116,9 +116,11 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
 			ctx.waitTicks(40);
-			// On arrive au hub : ce test se passe au village actuel (monde principal).
+			// On arrive au hub : ce test se passe au village de la partie, dans son monde.
 			ctx.runOnClient(mc -> fr.valcombe.client.ClientState.send("vc monde aller principal"));
 			ctx.waitTicks(40);
+			check(world.getServer().computeOnServer(server -> ValcombeMod.host().inGameWorld(server.getPlayerList().getPlayerByName(me))),
+				"joueur dans le monde de la partie");
 
 			// Les commandes sont enregistrées sur le serveur et envoyées au joueur opérateur (« //wand » s'écrit
 			// « /wand » dans l'arbre des commandes).
@@ -164,8 +166,11 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			BlockPos feet, BlockPos weCorner) {
 		BlockPos first = feet.offset(2, 0, -1);
 		BlockPos second = feet.offset(2, 0, 1);
-		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", first.getX(), first.getY(), first.getZ()));
-		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", second.getX(), second.getY(), second.getZ()));
+		// Dans le monde de la partie, où se tient le joueur (une commande de la console viserait le monde principal).
+		world.getServer().runOnServer(server -> {
+			ValcombeMod.host().level().setBlockAndUpdate(first, Blocks.STONE.defaultBlockState());
+			ValcombeMod.host().level().setBlockAndUpdate(second, Blocks.STONE.defaultBlockState());
+		});
 		// L'éditeur de Valcombe ne répond qu'en mode construction : on y entre (il donne aussi les outils de carte).
 		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));
 		ctx.waitTicks(10);
@@ -181,7 +186,7 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			var p = server.getPlayerList().getPlayerByName(me);
 			var ed = ValcombeMod.editor();
 			return "coin 1 " + ed.isCorner(p, 1, first) + " | coin 2 " + ed.isCorner(p, 2, second) + " | bloc intact "
-				+ server.overworld().getBlockState(first).is(Blocks.STONE);
+				+ ValcombeMod.host().level().getBlockState(first).is(Blocks.STONE);
 		});
 		check(clicks.equals("coin 1 true | coin 2 true | bloc intact true"), "clics de l'outil de sélection de Valcombe : " + clicks);
 		Region sel = selection(world, me);
@@ -203,7 +208,7 @@ public class WorldEditGameTest implements FabricClientGameTest {
 		ctx.waitTicks(10);
 		Region wand = selection(world, me);
 		check(wand != null && wand.contains(vec(second)) && world.getServer().computeOnServer(server ->
-			server.overworld().getBlockState(second).is(Blocks.STONE)), "la baguette de WorldEdit pose son premier coin (" + wand + ")");
+			ValcombeMod.host().level().getBlockState(second).is(Blocks.STONE)), "la baguette de WorldEdit pose son premier coin (" + wand + ")");
 		check(world.getServer().computeOnServer(server -> ValcombeMod.editor().isCorner(server.getPlayerList().getPlayerByName(me), 1, first)),
 			"le coin de Valcombe n'a pas bougé");
 		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));

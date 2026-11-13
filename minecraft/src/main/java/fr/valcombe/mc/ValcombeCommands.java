@@ -92,6 +92,32 @@ public final class ValcombeCommands {
 			+ "sur un repère déjà posé pour le déplacer), sélection et structure (éditeur du mode construction).";
 	}
 
+	/** Tailles de village de /vc carte generer, dans l'ordre (0 petite, 1 normale, 2 grande). */
+	private static final List<String> SIZES = List.of("petite", "normale", "grande");
+
+	/** Les cartes de la bibliothèque, pour les suggestions. */
+	private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MAP_IDS = (c, b) ->
+		SharedSuggestionProvider.suggest(ValcombeMod.maps() == null ? List.<String>of()
+			: ValcombeMod.maps().list().stream().map(d -> d.id).toList(), b);
+
+	/** Les mondes de partie (vraies parties et parties d'essai), où l'on envoie une carte. */
+	private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GAME_WORLDS = (c, b) -> {
+		var worlds = ValcombeMod.worlds();
+		return SharedSuggestionProvider.suggest(worlds == null ? List.<String>of() : worlds.list().stream()
+			.filter(e -> MapSender.accepts(e.sorte()))
+			.map(fr.valcombe.mc.worlds.WorldEntry::id).toList(), b);
+	};
+
+	/** /vc carte generer <places> <taille> <theme> <maisons> [monde] : un village généré envoyé à un monde de partie. */
+	private static String generate(CommandContext<CommandSourceStack> ctx, String world) {
+		int size = SIZES.indexOf(arg(ctx, "taille"));
+		if (size < 0) {
+			throw new GameException("Taille : petite, normale ou grande.");
+		}
+		return ValcombeMod.host().sender().sendVillage(number(ctx, "places"), size, arg(ctx, "theme"),
+			!arg(ctx, "maisons").equals("non"), world, ctx.getSource().getPlayer());
+	}
+
 	/** Envoie à l'écran en jeu l'aperçu vu de dessus d'une carte (id vide : la carte actuelle). */
 	private static String preview(CommandContext<CommandSourceStack> ctx, String id) throws Exception {
 		ServerPlayer p = player(ctx);
@@ -437,22 +463,36 @@ public final class ValcombeCommands {
 							return "Script supprimé.";
 						})))))
 			.then(Commands.literal("carte").requires(admin)
+				// Tout ce qui change la carte d'un monde de partie passe par « Envoyer à la partie » (MapSender) : le monde
+				// est remis à neuf, plat et vide, puis la carte y est posée. Sans monde nommé, celui de la partie du serveur.
+				.then(Commands.literal("envoyer")
+					.then(Commands.argument("id", StringArgumentType.word()).suggests(MAP_IDS)
+						.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), null, x.getSource().getPlayer())))
+						.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
+							.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), arg(x, "monde"),
+								x.getSource().getPlayer()))))))
 				.then(Commands.literal("construire")
-					.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException())))
+					.executes(c -> exec(c, x -> ui.host().sender().sendVillage(Village.SEATS, 1, "gothique", true, null,
+						x.getSource().getPlayer())))
 					.then(Commands.argument("theme", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
-						.executes(c -> exec(c, x -> ui.host().buildVillage(x.getSource().getPlayerOrException(),
-							arg(x, "theme"))))))
+						.executes(c -> exec(c, x -> ui.host().sender().sendVillage(Village.SEATS, 1, arg(x, "theme"), true, null,
+							x.getSource().getPlayer())))))
 				.then(Commands.literal("importer")
 					.then(Commands.argument("structure", StringArgumentType.greedyString())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ui.host().structures(), b))
-						.executes(c -> exec(c, x -> ui.host().importStructure(x.getSource().getPlayerOrException(),
-							arg(x, "structure"))))))
+						.executes(c -> exec(c, x -> ui.host().sender().sendStructure(arg(x, "structure"), null,
+							x.getSource().getPlayer())))))
 				.then(Commands.literal("outils").executes(c -> exec(c, x -> mapTools(x))))
 				.then(Commands.literal("baguette").executes(c -> exec(c, x -> mapTools(x)))) // ancien nom de « outils »
-				.then(Commands.literal("oublier").executes(c -> exec(c, x -> ui.host().forgetVillage())))
+				.then(Commands.literal("vider")
+					.executes(c -> exec(c, x -> ui.host().sender().clear(null, x.getSource().getPlayer())))
+					.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
+						.executes(c -> exec(c, x -> ui.host().sender().clear(arg(x, "monde"), x.getSource().getPlayer())))))
 				.then(Commands.literal("nouvelle")
-					.executes(c -> exec(c, x -> ui.host().customMap(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> ui.host().sender().sendBlank(null, x.getSource().getPlayer())))
+					.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
+						.executes(c -> exec(c, x -> ui.host().sender().sendBlank(arg(x, "monde"), x.getSource().getPlayer())))))
 				.then(Commands.literal("trone")
 					.executes(c -> exec(c, x -> ui.host().addSeat(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("siege") // ancien nom de « trone »
@@ -493,10 +533,10 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "id"))))
 						.then(Commands.argument("nom", StringArgumentType.greedyString())
 							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(arg(x, "id"), arg(x, "nom")))))))
+				// Ancien nom de « envoyer », vers le monde de la partie du serveur.
 				.then(Commands.literal("charger")
-					.then(Commands.argument("id", StringArgumentType.word())
-						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
-						.executes(c -> exec(c, x -> ValcombeMod.maps().load(arg(x, "id"))))))
+					.then(Commands.argument("id", StringArgumentType.word()).suggests(MAP_IDS)
+						.executes(c -> exec(c, x -> ui.host().sender().sendMap(arg(x, "id"), null, x.getSource().getPlayer())))))
 				// Une carte de la bibliothèque dans un monde de Valcombe, et l'inverse (voir MapPlacer).
 				.then(MapPlacerCommands.place())
 				.then(MapPlacerCommands.capture())
@@ -506,25 +546,17 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ValcombeMod.maps().delete(arg(x, "id"))))))
 				.then(Commands.literal("generer")
 					.then(Commands.argument("places", IntegerArgumentType.integer(Village.MIN_SEATS, Village.MAX_SEATS))
-						.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
-							IntegerArgumentType.getInteger(x, "places"), 1, "gothique", true)))
+						.executes(c -> exec(c, x -> ui.host().sender().sendVillage(IntegerArgumentType.getInteger(x, "places"), 1,
+							"gothique", true, null, x.getSource().getPlayer())))
 						.then(Commands.argument("taille", StringArgumentType.word())
-							.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("petite", "normale", "grande"), b))
+							.suggests((c, b) -> SharedSuggestionProvider.suggest(SIZES, b))
 							.then(Commands.argument("theme", StringArgumentType.word())
 								.suggests((c, b) -> SharedSuggestionProvider.suggest(Village.THEMES, b))
 								.then(Commands.argument("maisons", StringArgumentType.word())
 									.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("oui", "non"), b))
-									.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
-										IntegerArgumentType.getInteger(x, "places"),
-										List.of("petite", "normale", "grande").indexOf(arg(x, "taille")),
-										arg(x, "theme"), !arg(x, "maisons").equals("non"))))
-									// Rasage de l'ancienne carte : « bati » (tout ce qu'elle a bâti) ou « carre » (200 blocs autour du centre).
-									.then(Commands.argument("raser", StringArgumentType.word())
-										.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("bati", "carre"), b))
-										.executes(c -> exec(c, x -> ui.host().generateVillage(x.getSource().getPlayerOrException(),
-											IntegerArgumentType.getInteger(x, "places"),
-											List.of("petite", "normale", "grande").indexOf(arg(x, "taille")),
-											arg(x, "theme"), !arg(x, "maisons").equals("non"), McHost.Raze.parse(arg(x, "raser")))))))))))
+									.executes(c -> exec(c, x -> generate(x, null)))
+									.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
+										.executes(c -> exec(c, x -> generate(x, arg(x, "monde"))))))))))
 				.then(Commands.literal("salle").executes(c -> exec(c, x -> ui.host().buildHall()))))
 			.then(Commands.literal("bots").requires(leader)
 				.then(Commands.literal("retirer").executes(c -> exec(c, x -> session.removeBots())))

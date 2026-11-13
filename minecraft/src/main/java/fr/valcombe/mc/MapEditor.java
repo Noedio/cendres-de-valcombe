@@ -149,28 +149,51 @@ public final class MapEditor {
 		this.server = server;
 		desks.clear();
 		history.clear();
+		work = null;
 	}
 
+	/**
+	 * Le monde où travaille l'éditeur : celui de l'opérateur qui s'en est servi en dernier (voir require). Son
+	 * historique ne vaut que pour ce monde : il repart de zéro quand l'éditeur change de monde.
+	 */
+	private ServerLevel work;
+
 	private ServerLevel level() {
-		return server.overworld();
+		if (work == null || server == null || server.getLevel(work.dimension()) != work) {
+			throw new GameException("L'éditeur n'a pas de monde où travailler : servez-vous d'abord d'un outil, là où vous êtes.");
+		}
+		return work;
+	}
+
+	/**
+	 * La carte en service si l'éditeur travaille dans le monde de la partie, sinon null : les repères (maison, salle)
+	 * ne se posent qu'avec la carte de ce monde-là.
+	 */
+	private Village village() {
+		return work != null && host.isGameLevel(work) ? host.village() : null;
 	}
 
 	// ------------------------------------------------------------------
 	// Droits et limites
 	// ------------------------------------------------------------------
-	/** L'éditeur ne sert qu'à un opérateur en mode construction, hors partie, dans le monde principal. */
+	/**
+	 * L'éditeur ne sert qu'à un opérateur en mode construction ; il travaille dans le monde où se tient cet opérateur
+	 * (jamais dans la partie en cours, si c'est son monde).
+	 */
 	private Desk require(ServerPlayer p) {
 		if (server == null || !Atelier.isOperator(p)) {
 			throw new GameException("L'éditeur de carte est réservé aux opérateurs.");
 		}
-		if (ValcombeMod.session().game() != null) {
+		if (ValcombeMod.session().game() != null && host.inGameWorld(p)) {
 			throw new GameException("On ne touche pas à la carte pendant une partie.");
 		}
 		if (!host.isBuilder(p.getScoreboardName())) {
 			throw new GameException("L'éditeur s'utilise en mode construction : /vc carte construction.");
 		}
-		if (p.level() != server.overworld()) {
-			throw new GameException("L'éditeur ne travaille que dans le monde principal.");
+		if (work != p.level()) {
+			// Un autre monde : ce qu'on pouvait annuler l'a été ailleurs.
+			forgetHistory();
+			work = p.level();
 		}
 		return desks.computeIfAbsent(p.getScoreboardName(), k -> new Desk());
 	}
@@ -210,9 +233,11 @@ public final class MapEditor {
 	/** Lance une opération : elle entre dans l'historique, puis ses blocs sont posés par petits lots. */
 	private void commit(String label, Box zone, Clip before, BuildQueue.Plan plan, Marker marker) {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
-		host.markEdited();
-		host.markBuilt(zone.x0(), zone.y0(), zone.z0(), zone.x1(), zone.y1(), zone.z1());
-		host.startEdit(label, plan, null);
+		if (village() != null) {
+			// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée.
+			host.markEdited();
+		}
+		host.startEdit(label, level(), plan, null);
 	}
 
 	private static String name(BlockState s) {
@@ -553,15 +578,17 @@ public final class MapEditor {
 		} else {
 			history.putUndo(inverse, now.volume());
 		}
-		host.markEdited();
-		host.startEdit((undo ? "Annulation : " : "Rétablissement : ") + lower(c.label()),
+		if (village() != null) {
+			host.markEdited();
+		}
+		host.startEdit((undo ? "Annulation : " : "Rétablissement : ") + lower(c.label()), level(),
 			c.before().plan(level(), c.corner(), false, false), left > 1 ? () -> step(undo, left - 1) : null);
 		return c.label();
 	}
 
 	/** Retire le repère posé avec une structure, ou le remet ; renvoie de quoi faire l'inverse. */
 	private Marker toggle(Marker m) {
-		Village v = host.village();
+		Village v = village();
 		if (v != null) {
 			if (m.type() == Village.Mark.HOUSE) {
 				Village.Hit h = v.markerAt(m.pos(), Village.Mark.HOUSE, 0);
@@ -746,7 +773,7 @@ public final class MapEditor {
 		BlockPos feet = clicked.above();
 		BlockPos corner = corner(def, d.turn, feet);
 		Box zone = Box.at(corner, clip.width, clip.height, clip.length);
-		Village v = host.village();
+		Village v = village();
 		boolean house = v != null && def.repere.equals("maison");
 		boolean room = v != null && def.repere.equals("salle");
 		if (house) {
@@ -918,7 +945,7 @@ public final class MapEditor {
 		for (Map.Entry<String, Desk> e : desks.entrySet()) {
 			ServerPlayer p = host.player(e.getKey());
 			Desk d = e.getValue();
-			if (p == null || !host.isBuilder(e.getKey()) || p.level() != server.overworld()) {
+			if (p == null || !host.isBuilder(e.getKey()) || p.level() != work) {
 				continue;
 			}
 			if (d.a != null || d.b != null) {

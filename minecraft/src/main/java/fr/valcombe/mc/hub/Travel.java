@@ -25,33 +25,38 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Les voyages entre les mondes de Valcombe : le hub, le village actuel (monde principal) et les mondes du
- * {@link WorldManager}.
+ * Les voyages entre les mondes de Valcombe : le hub, le monde de la partie (son village) et les autres mondes du
+ * {@link WorldManager}. Le monde principal de Minecraft n'est pas une destination : la partie se joue dans son monde
+ * de partie ({@link McHost#worldId()}).
  * <ul>
  * <li>Chaque joueur retrouve sa dernière position et son orientation dans chaque monde ({@link LastPositions},
  * gardées d'un démarrage à l'autre). La première fois, il arrive au point d'arrivée du monde : la salle
- * d'accueil au hub, la salle d'attente (ou la place) au village, le centre ailleurs.</li>
- * <li>À la connexion, tout le monde arrive au hub, sauf un joueur que la partie en cours retient au village.</li>
- * <li>Les opérateurs voient tous les mondes ; les autres joueurs le hub, le village actuel et les mondes de partie
+ * d'accueil au hub, la salle d'attente (ou la place) au village de la partie, le centre ailleurs.</li>
+ * <li>À la connexion, tout le monde arrive au hub, sauf un joueur que la partie en cours retient à sa table.</li>
+ * <li>Les opérateurs voient tous les mondes ; les autres joueurs le hub et les mondes de partie
  * ({@link WorldKind#openToAll()}).</li>
- * <li>Un joueur assis à la partie en cours ne quitte pas le village avant la fin.</li>
+ * <li>Un joueur assis à la partie en cours ne quitte pas son monde avant la fin.</li>
  * <li>C'est aussi le repli du gestionnaire de mondes : les joueurs d'un monde remis à neuf ou supprimé vont au hub
- * (ceux du hub lui-même, au village).</li>
+ * (ceux du hub lui-même, au village de la partie).</li>
  * </ul>
  * Tout se fait sur le fil du serveur.
  */
 public final class Travel implements WorldManager.Fallback, WorldManager.Listener {
-	/** La destination « village actuel » : le monde principal, où se joue la partie en attendant les mondes de partie. */
+	/**
+	 * Le mot qui désigne le monde de la partie dans les commandes : {@code /vc monde aller principal} (ou
+	 * {@code village}, ou {@code partie}). C'était la clé du monde principal avant les mondes de partie ; les positions
+	 * gardées sous cette clé sont oubliées.
+	 */
 	public static final String MAIN = LastPositions.MAIN;
-	/** Le nom affiché du monde principal. */
-	public static final String MAIN_NAME = "Village actuel";
+	/** La sorte d'une destination « monde de la partie » dans le menu « Mondes » (son emblème : la cloche du village). */
+	public static final String GAME_KIND = "village";
 
 	/**
 	 * Une destination telle que la montrent le menu « Mondes » et les portes du hub.
 	 *
-	 * @param id      {@link #MAIN} ou l'identifiant du monde de Valcombe
+	 * @param id      l'identifiant du monde de Valcombe
 	 * @param nom     nom affiché
-	 * @param sorte   {@code village} pour le monde principal, sinon le code de la sorte ({@code hub}, {@code partie}...)
+	 * @param sorte   {@link #GAME_KIND} pour le monde de la partie, sinon le code de la sorte ({@code hub}, {@code partie}...)
 	 * @param label   la sorte en clair, pour les joueurs (« partie d'essai »)
 	 * @param joueurs joueurs qui s'y trouvent en ce moment
 	 * @param ici     le joueur pour qui la liste est faite s'y trouve
@@ -83,6 +88,8 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		this.positions = positions;
 		this.host = host;
 		this.session = session;
+		// Positions gardées dans le monde principal, du temps où la partie s'y jouait : elles ne désignent plus rien.
+		positions.forgetWorld(MAIN);
 	}
 
 	/** Les positions gardées (pour les tests et le hub). */
@@ -100,11 +107,14 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		return hubs.isEmpty() ? null : hubs.get(0);
 	}
 
-	/** La clé du monde où se trouve ce niveau : {@link #MAIN}, l'identifiant d'un monde de Valcombe, ou null (Nether, End). */
+	/** L'identifiant du monde de la partie (son village), ou null s'il n'y en a pas. */
+	public String game() {
+		String id = host.worldId();
+		return id != null && worlds.find(id) != null ? id : null;
+	}
+
+	/** La clé du monde où se trouve ce niveau : l'identifiant d'un monde de Valcombe, ou null (monde principal, Nether, End). */
 	public String keyOf(Level level) {
-		if (level.dimension() == Level.OVERWORLD) {
-			return MAIN;
-		}
 		WorldEntry e = worlds.entryOf(level);
 		return e == null ? null : e.id();
 	}
@@ -125,7 +135,8 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	/** Pourquoi ce joueur ne peut pas quitter le monde où il est, ou null s'il le peut. */
 	public String blocked(ServerPlayer p) {
 		Game g = session.game();
-		if (g != null && g.winner() == null && g.seatOf(p.getScoreboardName()) >= 0 && MAIN.equals(keyOf(p))) {
+		String game = game();
+		if (g != null && g.winner() == null && g.seatOf(p.getScoreboardName()) >= 0 && game != null && game.equals(keyOf(p))) {
 			return "Tu joues la partie en cours : tu restes au village jusqu'à la fin.";
 		}
 		return null;
@@ -133,15 +144,12 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 
 	/** Le nom affiché d'une destination. */
 	public String name(String key) {
-		if (MAIN.equals(key)) {
-			return MAIN_NAME;
-		}
-		WorldEntry e = worlds.find(key);
-		return e == null ? key : e.nom();
+		WorldEntry e = key == null ? null : worlds.find(key);
+		return e == null ? String.valueOf(key) : e.nom();
 	}
 
 	/**
-	 * Les destinations que ce joueur voit, dans l'ordre du menu : le hub, le village actuel, puis les autres mondes
+	 * Les destinations que ce joueur voit, dans l'ordre du menu : le hub, le monde de la partie, puis les autres mondes
 	 * dans l'ordre du registre (parties, parties d'essai, puis les ateliers pour un opérateur).
 	 */
 	public List<Destination> destinations(ServerPlayer p) {
@@ -158,9 +166,14 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		if (hub != null) {
 			out.add(destination(hub, present, here));
 		}
-		out.add(new Destination(MAIN, MAIN_NAME, "village", "partie en cours au village", present.getOrDefault(MAIN, 0), MAIN.equals(here)));
+		String game = game();
+		if (game != null) {
+			WorldEntry e = worlds.find(game);
+			out.add(new Destination(e.id(), e.nom(), GAME_KIND, "le village de la partie", present.getOrDefault(e.id(), 0),
+				e.id().equals(here)));
+		}
 		for (WorldEntry e : worlds.list()) {
-			if (e.sorte() != WorldKind.HUB && canSee(p, e)) {
+			if (e.sorte() != WorldKind.HUB && !e.id().equals(game) && canSee(p, e)) {
 				out.add(destination(e, present, here));
 			}
 		}
@@ -181,17 +194,22 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	}
 
 	/**
-	 * La clé de destination désignée par ce texte : un identifiant de monde, {@code principal} (ou {@code village})
-	 * pour le village actuel, {@code hub} pour le hub. Une {@link GameException} si rien ne correspond.
+	 * La clé de destination désignée par ce texte : un identifiant de monde, {@code principal} (ou {@code village},
+	 * {@code partie}) pour le monde de la partie, {@code hub} pour le hub. Une {@link GameException} si rien ne
+	 * correspond.
 	 */
 	public String resolve(String text) {
 		String t = text == null ? "" : text.strip().toLowerCase(java.util.Locale.ROOT);
-		if (t.equals(MAIN) || t.equals("village")) {
-			return MAIN;
-		}
 		WorldEntry e = worlds.find(t);
 		if (e != null) {
 			return e.id();
+		}
+		if (t.equals(MAIN) || t.equals("village") || t.equals("partie")) {
+			String game = game();
+			if (game != null) {
+				return game;
+			}
+			throw new GameException("La partie n'a pas de monde sur ce serveur (voir son journal).");
 		}
 		if (t.equals("hub") || t.equals("accueil")) {
 			WorldEntry hub = hub();
@@ -231,11 +249,6 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		}
 	}
 
-	/** Le monde Minecraft d'une destination (ouvert si besoin). */
-	private ServerLevel level(String key) {
-		return MAIN.equals(key) ? server.overworld() : worlds.level(key);
-	}
-
 	/** Un joueur tient-il debout à cette position, sans rien dans les jambes ni dans la tête ? */
 	private static boolean free(ServerPlayer p, ServerLevel level, LastPositions.Spot s) {
 		if (s.y() < level.getMinY() || s.y() > level.getMaxY()) {
@@ -246,13 +259,13 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	}
 
 	/**
-	 * Une position gardée au village actuel vaut-elle encore ? Le monde principal n'est jamais remis à neuf, mais sa
-	 * carte peut être remplacée (ailleurs, ou plus petite) : une position hors du village en service renverrait le
-	 * joueur dans un champ vide, loin de la partie. Il arrive alors au point d'arrivée du village. Les autres
-	 * mondes oublient leurs positions quand ils sont remis à neuf ({@link #recreated}).
+	 * Une position gardée dans le monde de la partie vaut-elle encore ? Sa carte peut avoir été remplacée (ailleurs,
+	 * ou plus petite) : une position hors du village en service renverrait le joueur dans un champ vide, loin de la
+	 * partie. Il arrive alors au point d'arrivée du village. Les mondes oublient leurs positions quand ils sont remis
+	 * à neuf ({@link #recreated}).
 	 */
 	private boolean nearVillage(String key, LastPositions.Spot s) {
-		fr.valcombe.mc.Village v = MAIN.equals(key) ? host.village() : null;
+		fr.valcombe.mc.Village v = key.equals(game()) ? host.village() : null;
 		if (v == null) {
 			return true;
 		}
@@ -263,14 +276,11 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 
 	/** Le point d'arrivée d'une destination, pour une première visite (ou une position gardée devenue inutilisable). */
 	private LastPositions.Spot arrival(ServerPlayer p, String key) {
-		if (MAIN.equals(key)) {
+		if (key.equals(game())) {
 			BlockPos s = host.villageSpawn();
-			if (s == null) {
-				var spawn = server.getRespawnData();
-				s = p.adjustSpawnLocation(server.overworld(), spawn.pos());
-				return new LastPositions.Spot(s.getX() + 0.5, s.getY(), s.getZ() + 0.5, spawn.yaw(), spawn.pitch());
+			if (s != null) {
+				return new LastPositions.Spot(s.getX() + 0.5, s.getY(), s.getZ() + 0.5, 180f, 0f);
 			}
-			return new LastPositions.Spot(s.getX() + 0.5, s.getY(), s.getZ() + 0.5, 180f, 0f);
 		}
 		WorldEntry e = worlds.find(key);
 		if (e != null && e.sorte() == WorldKind.HUB) {
@@ -281,6 +291,9 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	}
 
 	private static void teleport(ServerPlayer p, ServerLevel level, LastPositions.Spot s) {
+		if (p.isPassenger()) {
+			p.stopRiding(); // un siège de l'autre monde ne suit pas
+		}
 		p.teleportTo(level, s.x(), s.y(), s.z(), Set.of(), s.yaw(), s.pitch(), false);
 	}
 
@@ -301,8 +314,8 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	 * @return le message à lui dire
 	 */
 	public String go(ServerPlayer p, String key, LastPositions.Spot leaveAt) {
-		WorldEntry target = MAIN.equals(key) ? null : worlds.get(key);
-		if (target != null && !canSee(p, target)) {
+		WorldEntry target = worlds.get(key);
+		if (!canSee(p, target)) {
 			throw new GameException("« " + target.nom() + " » est réservé aux opérateurs.");
 		}
 		String from = keyOf(p);
@@ -313,7 +326,7 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		if (why != null) {
 			throw new GameException(why);
 		}
-		ServerLevel level = level(key); // ouvre le monde au besoin ; refuse un monde en cours de remise à neuf
+		ServerLevel level = worlds.level(key); // ouvre le monde au besoin ; refuse un monde en cours de remise à neuf
 		if (from != null && !worlds.busy(from)) {
 			positions.put(p.getUUID(), p.getScoreboardName(), from, leaveAt != null ? leaveAt : spotOf(p));
 		}
@@ -321,10 +334,22 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		LastPositions.Spot to = saved != null && free(p, level, saved) && nearVillage(key, saved) ? saved : arrival(p, key);
 		teleport(p, level, to);
 		positions.save();
-		if (MAIN.equals(key)) {
-			return "Te voilà au village actuel.";
+		if (key.equals(game())) {
+			return "Te voilà au village de la partie (« " + target.nom() + " »).";
 		}
 		return target.sorte() == WorldKind.HUB ? "Te voilà au hub." : "Te voilà dans « " + target.nom() + " » (" + target.sorte().label() + ").";
+	}
+
+	/**
+	 * Amène ce joueur au village de la partie (il s'inscrit, il devient Conteur) ; renvoie le message à lui dire. Une
+	 * {@link GameException} si la partie n'a pas de monde, ou s'il ne peut pas quitter le sien.
+	 */
+	public String toGame(ServerPlayer p) {
+		String game = game();
+		if (game == null) {
+			throw new GameException("La partie n'a pas de monde sur ce serveur (voir son journal).");
+		}
+		return go(p, game, null);
 	}
 
 	/** Envoie ce joueur au point d'arrivée du hub (connexion) ; faux si le hub n'est pas disponible. */
@@ -342,13 +367,19 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		}
 	}
 
-	/** Repli du gestionnaire de mondes : au hub, ou au village pour les joueurs du hub lui-même. */
+	/**
+	 * Repli du gestionnaire de mondes : au hub ; pour les joueurs du hub lui-même, au village de la partie. Si ni
+	 * l'un ni l'autre n'est disponible, le gestionnaire se rabat sur le monde principal (dernier recours).
+	 */
 	@Override
 	public void evacuate(ServerPlayer p, WorldEntry from) {
 		if (from.sorte() != WorldKind.HUB && toHubArrival(p)) {
 			return;
 		}
-		teleport(p, server.overworld(), arrival(p, MAIN));
+		String game = game();
+		if (game != null && !game.equals(from.id()) && !worlds.busy(game)) {
+			teleport(p, worlds.level(game), arrival(p, game));
+		}
 	}
 
 	/** Un monde remis à neuf : les positions qu'on y gardait ne veulent plus rien dire. */
@@ -370,7 +401,7 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 	 */
 	public void afterRespawn(ServerPlayer before, ServerPlayer after) {
 		String k = keyOf(before);
-		if (k == null || MAIN.equals(k) || worlds.find(k) == null || worlds.busy(k)) {
+		if (k == null || worlds.find(k) == null || worlds.busy(k)) {
 			return;
 		}
 		try {

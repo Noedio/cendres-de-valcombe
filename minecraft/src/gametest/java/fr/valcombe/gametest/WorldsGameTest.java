@@ -157,12 +157,14 @@ public class WorldsGameTest implements FabricClientGameTest {
 			check(server.computeOnServer(s -> worlds().get(id).nom().equals("Essai renommé")), "monde renommé");
 			send(ctx, "vc monde liste");
 
-			// Retour dans le monde puis au monde principal par la commande.
+			// Retour dans le monde puis au village de la partie par la commande (« principal » : le monde de la partie).
 			send(ctx, "vc monde aller " + id);
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals("valcombe:" + id)), "de retour dans le monde");
 			send(ctx, "vc monde aller principal");
-			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
-				"/vc monde aller principal");
+			String gameDim = "valcombe:" + server.computeOnServer(s -> ValcombeMod.host().worldId());
+			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(gameDim)), "/vc monde aller principal mène au monde de la partie");
+			check(server.computeOnServer(s -> !dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
+				"jamais dans le monde principal");
 
 			// Supprimer, avec le joueur tout juste arrivé dedans (ses tronçons encore en chargement) : il est sorti,
 			// la fiche et les fichiers disparaissent.

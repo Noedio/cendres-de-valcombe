@@ -892,6 +892,7 @@ public final class Session {
 			throw new GameException("Le Conteur ne peut pas être spectateur.");
 		}
 		spectators.add(name);
+		host.toTable(name); // on regarde la partie là où elle se joue
 		host.spectator(name, true);
 		announce(name + " regarde la partie en spectateur.");
 		return "Tu es spectateur : tu vois tout le monde, mais tu ne joues pas et ton micro ne porte pas jusqu'aux joueurs."
@@ -951,6 +952,7 @@ public final class Session {
 		}
 		lobby.add(name);
 		announce(name + " rejoint la partie (" + lobby.size() + " inscrits).");
+		host.toTable(name); // inscrit depuis le hub : il rejoint le monde de la partie
 		return "Inscription enregistrée.";
 	}
 
@@ -1031,6 +1033,7 @@ public final class Session {
 		}
 		storyteller = name;
 		announce(name + " est le Conteur.");
+		host.toTable(name);
 		return "Tu es le Conteur.";
 	}
 
@@ -1070,7 +1073,8 @@ public final class Session {
 			throw new GameException("Une partie est déjà en cours.");
 		}
 		if (host.busy()) {
-			throw new GameException("La carte est en chantier ou en cours de remise en état : patientez quelques secondes.");
+			throw new GameException("La carte est en chantier, en route vers la partie ou en cours de remise en état : "
+				+ "patientez quelques secondes.");
 		}
 		List<String> names = lobby.stream().filter(this::online).toList();
 		if (scenario != null && !scenario.playable().contains(names.size())) {
@@ -1131,6 +1135,7 @@ public final class Session {
 		host.gameStarted(); // avant d'installer qui que ce soit : la carte est gardée telle qu'elle est
 		host.seatPlayers(names(), storyteller != null && host.online(storyteller) ? storyteller : starter);
 		if (wanted == Mode.HUMAIN && storyteller != null) {
+			host.toTable(storyteller); // le Conteur mène la partie depuis son monde
 			host.storytellerTools(storyteller, true);
 		}
 		summoned = null;

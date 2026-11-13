@@ -37,6 +37,15 @@ public class ScreensGameTest implements FabricClientGameTest {
 		}
 	}
 
+	/**
+	 * Une commande de la console, lancée depuis le monde de la partie : une commande de la console part du monde
+	 * principal, et un « tp » ou un « setblock » y viserait le monde principal au lieu du village de la partie.
+	 */
+	private static void inGame(TestSingleplayerContext world, String command) {
+		String dim = world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().level().dimension().identifier().toString());
+		world.getServer().runCommand("execute in " + dim + " run " + command);
+	}
+
 	private static void send(ClientGameTestContext ctx, String cmd) {
 		ctx.runOnClient(mc -> ClientState.send(cmd));
 		ctx.waitTicks(10);
@@ -63,6 +72,19 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(20);
 	}
 
+	/**
+	 * « Envoyer à la partie » sort les joueurs du monde remis à neuf (au hub) : on revient sur la place du village de
+	 * la partie, comme par le lien « [Y aller] » du message de fin.
+	 */
+	private static void backToVillage(ClientGameTestContext ctx, TestSingleplayerContext world, String me) {
+		var c = world.getServer().computeOnServer(server -> {
+			var v = fr.valcombe.mc.ValcombeMod.host().village();
+			return v == null ? new net.minecraft.core.BlockPos(0, fr.valcombe.mc.worlds.WorldManager.SURFACE_Y, 0) : v.center();
+		});
+		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me, c.getX(), c.getY() + 1, c.getZ() + 4));
+		ctx.waitTicks(20);
+	}
+
 	/** Une opération de l'éditeur de carte, puis l'attente de la fin de sa pose ; renvoie ce que l'éditeur a répondu. */
 	private static String edit(ClientGameTestContext ctx, TestSingleplayerContext world, String me,
 			java.util.function.BiFunction<fr.valcombe.mc.MapEditor, net.minecraft.server.level.ServerPlayer, String> op) {
@@ -82,7 +104,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		return world.getServer().computeOnServer(server -> {
 			int n = 0;
 			for (var pos : net.minecraft.core.BlockPos.betweenClosed(a, b)) {
-				if (server.overworld().getBlockState(pos).is(block)) {
+				if (fr.valcombe.mc.ValcombeMod.host().level().getBlockState(pos).is(block)) {
 					n++;
 				}
 			}
@@ -182,7 +204,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		press(ctx, "Confirmer : supprimer");
 		check(!server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie")), "carte supprimée au second clic");
 
-		// Village : quinze trônes, à confirmer ; puis la carte de la bibliothèque est rechargée depuis l'écran.
+		// Village : quinze trônes, à confirmer ; puis la carte de la bibliothèque est envoyée à la partie depuis l'écran.
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(1));
 		press(ctx, "−");
 		shot(ctx, "28d-atelier-village");
@@ -197,11 +219,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(0));
 		ctx.waitTicks(70);
 		press(ctx, "Village de test");
-		press(ctx, "Charger");
-		press(ctx, "Confirmer : charger");
+		press(ctx, "Envoyer à la partie");
+		check(!server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().busy()), "envoyer demande une confirmation");
+		press(ctx, "Confirmer : envoyer à la partie");
 		waitBuild(ctx, world);
 		check(village.get().seatCount() == 16 && village.get().libraryId().equals("village-test") && !village.get().modified(),
-			"carte rechargée depuis l'écran");
+			"carte envoyée à la partie depuis l'écran");
+		backToVillage(ctx, world, me);
 
 		// Repères : liste de contrôle, mode construction, un trône posé puis le geste annulé.
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(2));
@@ -383,7 +407,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			return ed.place(p, spot);
 		});
 		String house = world.getServer().computeOnServer(server -> {
-			var level = server.overworld();
+			var level = fr.valcombe.mc.ValcombeMod.host().level();
 			var door = level.getBlockState(feet.offset(4, 0, 0));
 			boolean east = door.getBlock() instanceof net.minecraft.world.level.block.DoorBlock
 				&& door.getValue(net.minecraft.world.level.block.DoorBlock.FACING) == net.minecraft.core.Direction.EAST;
@@ -404,23 +428,23 @@ public class ScreensGameTest implements FabricClientGameTest {
 		});
 		System.out.println("[valcombe-test] structure posée : " + placed + " → " + house);
 		check(house.equals("porte à l'est true | toit true | vitres raccordées true | maisons 17"), "maison du catalogue posée tournée : " + house);
-		world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 			port.getX() + 16, port.getY() + 5, port.getZ() + 14, spot.getX(), spot.getY() + 3, spot.getZ()));
 		ctx.waitTicks(40);
 		shot(ctx, "27-structure-du-catalogue");
 
 		// Annuler retire la maison et son repère ; rétablir les remet.
 		edit(ctx, world, me, (ed, p) -> ed.undo(p, 1));
-		check(world.getServer().computeOnServer(server -> server.overworld().getBlockState(spot.above(5)).isAir()
+		check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().level().getBlockState(spot.above(5)).isAir()
 			&& fr.valcombe.mc.ValcombeMod.host().village().houseCount() == 16), "pose annulée : maison et repère retirés");
 		edit(ctx, world, me, (ed, p) -> ed.redo(p, 1));
-		check(world.getServer().computeOnServer(server -> !server.overworld().getBlockState(spot.above(5)).isAir()
+		check(world.getServer().computeOnServer(server -> !fr.valcombe.mc.ValcombeMod.host().level().getBlockState(spot.above(5)).isAir()
 			&& fr.valcombe.mc.ValcombeMod.host().village().houseCount() == 17), "pose rétablie");
 		edit(ctx, world, me, (ed, p) -> ed.undo(p, 1));
 
 		// Aperçu : le contour suit le bloc visé, l'outil « structure » en main.
 		world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.editor().choose(server.getPlayerList().getPlayerByName(me), "puits"));
-		world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 			port.getX() + 5, port.getY() + 4, port.getZ() + 14, spot.getX(), spot.getY(), spot.getZ()));
 		ctx.waitTicks(40);
 		shot(ctx, "27b-structure-apercu");
@@ -436,7 +460,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		check(selected.contains("5 × 3 × 4") && selected.contains("60 blocs"), "sélection : " + selected);
 		edit(ctx, world, me, (ed, p) -> ed.fill(p, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()));
 		check(count(world, a, b, net.minecraft.world.level.block.Blocks.STONE) == 60, "sélection remplie");
-		world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 			a.getX() + 2, spot.getY() + 1, a.getZ() - 14, a.getX() + 2, a.getY() + 1, a.getZ() + 2));
 		ctx.runOnClient(mc -> {
 			var inv = mc.player.getInventory();
@@ -561,7 +585,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		String undone = world.getServer().computeOnServer(server -> {
 			int left = 0;
 			for (var pos : net.minecraft.core.BlockPos.betweenClosed(a.offset(-6, 0, -6), a.offset(20, 20, 8))) {
-				if (!server.overworld().getBlockState(pos).isAir()) {
+				if (!fr.valcombe.mc.ValcombeMod.host().level().getBlockState(pos).isAir()) {
 					left++;
 				}
 			}
@@ -573,11 +597,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 		check(steps >= 7 && undone.equals("blocs restants 0 | à annuler 0 | à rétablir " + steps + " | maisons 16"), "tout annuler : " + undone);
 
 		// De vrais clics avec l'outil de sélection : le clic gauche pose le premier coin sans casser le bloc, le clic droit le second.
-		world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me, port.getX() + 2, port.getY() + 1, port.getZ() + 8));
+		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me, port.getX() + 2, port.getY() + 1, port.getZ() + 8));
 		ctx.waitTicks(20);
 		var left = port.offset(2, 0, 9);
 		var right = port.offset(4, 0, 10);
-		var ground = world.getServer().computeOnServer(server -> server.overworld().getBlockState(left));
+		var ground = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().level().getBlockState(left));
 		ctx.runOnClient(mc -> {
 			var inv = mc.player.getInventory();
 			for (int i = 0; i < 9; i++) {
@@ -596,7 +620,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			var p = server.getPlayerList().getPlayerByName(me);
 			var ed = fr.valcombe.mc.ValcombeMod.editor();
 			return "coin 1 " + ed.isCorner(p, 1, left) + " | coin 2 " + ed.isCorner(p, 2, right) + " | bloc intact "
-				+ (server.overworld().getBlockState(left) == ground);
+				+ (fr.valcombe.mc.ValcombeMod.host().level().getBlockState(left) == ground);
 		});
 		check(clicks.equals("coin 1 true | coin 2 true | bloc intact true"), "clics de l'outil de sélection : " + clicks);
 
@@ -613,7 +637,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		send(ctx, "vc edit remplacer glass oak_fence");
 		ctx.waitTicks(10);
 		check(world.getServer().computeOnServer(server -> {
-			var fence = server.overworld().getBlockState(high.offset(1, 0, 0));
+			var fence = fr.valcombe.mc.ValcombeMod.host().level().getBlockState(high.offset(1, 0, 0));
 			// Une barrière posée par l'éditeur se raccorde à ses voisines.
 			return fence.is(net.minecraft.world.level.block.Blocks.OAK_FENCE) && fence.getValue(net.minecraft.world.level.block.FenceBlock.EAST)
 				&& fence.getValue(net.minecraft.world.level.block.FenceBlock.WEST);
@@ -816,7 +840,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				} else if (line.startsWith("/")) {
 					send(ctx, line.substring(1));
 				} else if (line.startsWith("!")) {
-					world.getServer().runCommand(line.substring(1));
+					inGame(world, line.substring(1));
 				} else if (line.startsWith("capture ")) {
 					captured.remove(line.substring(8));
 					shot(ctx, line.substring(8));
@@ -915,9 +939,9 @@ public class ScreensGameTest implements FabricClientGameTest {
 		try (TestSingleplayerContext world = ctx.worldBuilder().adjustSettings(w -> w.setAllowCommands(true)).create()) {
 			ctx.waitTicks(60);
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
-			world.getServer().runCommand("op " + me);
+			inGame(world, "op " + me);
 			ctx.waitTicks(40);
-			// On arrive au hub (voir HubGameTest) : ce test se passe au village actuel, dans le monde principal.
+			// On arrive au hub (voir HubGameTest) : ce test se passe au village de la partie, dans son monde.
 			send(ctx, "vc monde aller principal");
 			ctx.waitTicks(30);
 			if ("1".equals(System.getenv("VALCOMBE_SEANCE"))) {
@@ -931,7 +955,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 
 			// Salon
 			send(ctx, "vc rejoindre");
-			world.getServer().runCommand("vc bots 6");
+			inGame(world, "vc bots 6");
 			ctx.waitTicks(20);
 			ctx.setScreen(MainScreen::new);
 			shot(ctx, "1-salon");
@@ -941,7 +965,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "2b-carnet");
 			ctx.setScreen(StorytellerScreen::new);
 			shot(ctx, "3-panneau-salon");
-			world.getServer().runCommand("vc script basculer margrave");
+			inGame(world, "vc script basculer margrave");
 			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);
 			shot(ctx, "3b-script");
 			// Groupes de rôles : ranger le script dans un groupe, le réduire au groupe, l'agrandir de nouveau.
@@ -962,17 +986,17 @@ public class ScreensGameTest implements FabricClientGameTest {
 			send(ctx, "vc script groupe supprimer Sans la Goule");
 			ctx.waitTicks(5);
 			check(world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.creations().groups().isEmpty()), "groupe supprimé");
-			world.getServer().runCommand("vc script complet");
+			inGame(world, "vc script complet");
 			ctx.setScreen(fr.valcombe.client.screen.SettingsScreen::new);
 			shot(ctx, "3c-reglages");
-			world.getServer().runCommand("vc figure sablier oui");
+			inGame(world, "vc figure sablier oui");
 			ctx.setScreen(fr.valcombe.client.screen.FiguresScreen::new);
 			shot(ctx, "3d-figures");
-			world.getServer().runCommand("vc figure sablier non");
+			inGame(world, "vc figure sablier non");
 
 			// Partie avec Conteur automatique
 			ctx.setScreen(() -> null);
-			world.getServer().runCommand("vc lancer auto");
+			inGame(world, "vc lancer auto");
 			ctx.waitTicks(20);
 			ctx.setScreen(() -> null);
 			ctx.runOnClient(mc -> mc.player.setXRot(10));
@@ -985,16 +1009,16 @@ public class ScreensGameTest implements FabricClientGameTest {
 			// captures) et un objet lâché dans une maison ; tout doit être revenu comme avant après la partie.
 			var scar = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center().offset(4, -2, -4));
 			var scarBefore = world.getServer().computeOnServer(server -> java.util.List.of(
-				server.overworld().getBlockState(scar), server.overworld().getBlockState(scar.above())));
+				fr.valcombe.mc.ValcombeMod.host().level().getBlockState(scar), fr.valcombe.mc.ValcombeMod.host().level().getBlockState(scar.above())));
 			check(world.getServer().computeOnServer(server -> java.nio.file.Files.exists(
-				server.getServerDirectory().resolve("config").resolve("valcombe-instantane.nbt"))), "instantané de la carte pris au lancement");
+				fr.valcombe.mc.ValcombeMod.host().snapshotFile())), "instantané de la carte pris au lancement");
 			var litter = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().houseFeet().get(3));
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "setblock %d %d %d minecraft:air", scar.getX(), scar.getY(), scar.getZ()));
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "setblock %d %d %d minecraft:gold_block",
+			inGame(world, String.format(java.util.Locale.ROOT, "setblock %d %d %d minecraft:air", scar.getX(), scar.getY(), scar.getZ()));
+			inGame(world, String.format(java.util.Locale.ROOT, "setblock %d %d %d minecraft:gold_block",
 				scar.getX(), scar.getY() + 1, scar.getZ()));
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT,
+			inGame(world, String.format(java.util.Locale.ROOT,
 				"summon minecraft:item %.1f %.1f %.1f {Item:{id:\"minecraft:stick\",count:1}}", litter.x, litter.y + 0.5, litter.z));
-			world.getServer().runCommand("vc nuit");
+			inGame(world, "vc nuit");
 			ctx.waitTicks(40);
 			playNight(ctx);
 			if (phase(ctx).equals("DAY")) {
@@ -1020,7 +1044,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				send(ctx, "vc vote oui"); // Conseil de la table : refusé tant que les votes n'ont pas commencé
 				ctx.waitTicks(20);
 				shot(ctx, "5b-defense");
-				world.getServer().runCommand("vc voter");
+				inGame(world, "vc voter");
 				// Le premier vote commence un court temps après la fin des accusations (2 × Settings.stepDelayTicks,
 				// 60 ticks du serveur). On attend l'invite de vote et son écran, ouvert de lui-même : un nombre fixe de
 				// ticks du client tombait tantôt juste avant (la capture ne montrait que le bandeau de jeu), tantôt après.
@@ -1039,13 +1063,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 					shot(ctx, "invite-vote-main-levee");
 				}
 				ctx.setScreen(() -> null);
-				world.getServer().runCommand("ride Player0 dismount");
-				world.getServer().runCommand("gamemode spectator Player0");
-				world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
+				inGame(world, "ride Player0 dismount");
+				inGame(world, "gamemode spectator Player0");
+				inGame(world, "execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
 				ctx.waitTicks(40);
 				shot(ctx, "14-horloge-vote");
-				world.getServer().runCommand("gamemode adventure Player0");
-				world.getServer().runCommand("vc rassembler");
+				inGame(world, "gamemode adventure Player0");
+				inGame(world, "vc rassembler");
 				ctx.waitTicks(10);
 				ctx.runOnClient(mc -> {
 					mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_BACK);
@@ -1074,24 +1098,24 @@ public class ScreensGameTest implements FabricClientGameTest {
 				});
 				if (swap != null && !swap.isEmpty()) {
 					String[] w = swap.split(" ");
-					world.getServer().runCommand("vc changer " + me + " " + w[1]);
-					world.getServer().runCommand("vc changer " + w[0] + " " + w[2]);
+					inGame(world, "vc changer " + me + " " + w[1]);
+					inGame(world, "vc changer " + w[0] + " " + w[2]);
 					ctx.waitTicks(5);
 				}
 				if (swap != null) {
-					world.getServer().runCommand("vc tuer " + me);
+					inGame(world, "vc tuer " + me);
 					ctx.runOnClient(mc -> {
 						if (!mc.gui.hud.isHidden()) mc.gui.hud.toggle();
 						mc.player.setXRot(10);
 					});
 					ctx.waitTicks(30);
 					shot(ctx, "17-coiffe-chapeau");
-					world.getServer().runCommand("vc reglage coiffe crane");
+					inGame(world, "vc reglage coiffe crane");
 					ctx.waitTicks(15);
 					shot(ctx, "17b-coiffe-crane");
 					ctx.runOnClient(mc -> { if (mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });
-					world.getServer().runCommand("vc reglage coiffe chapeau");
-					world.getServer().runCommand("vc ressusciter " + me);
+					inGame(world, "vc reglage coiffe chapeau");
+					inGame(world, "vc ressusciter " + me);
 					ctx.waitTicks(10);
 				}
 				ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.FIRST_PERSON));
@@ -1100,28 +1124,28 @@ public class ScreensGameTest implements FabricClientGameTest {
 			// Fin de partie : le Conteur tue les joueurs fictifs jusqu'à la victoire d'un camp
 			ctx.setScreen(() -> null);
 			for (int b = 1; b <= 6; b++) {
-				world.getServer().runCommand("vc tuer Bot" + b);
+				inGame(world, "vc tuer Bot" + b);
 				ctx.waitTicks(5);
 			}
 			ctx.waitTicks(100);
 			ctx.runOnClient(mc -> mc.player.setXRot(-8));
 			shot(ctx, "13-revelation");
 			// Vue d'ensemble de la place, depuis les airs
-			world.getServer().runCommand("gamemode spectator Player0");
-			world.getServer().runCommand("execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
+			inGame(world, "gamemode spectator Player0");
+			inGame(world, "execute at @e[tag=vc_hand,limit=1] run tp Player0 ~ ~9 ~19 facing entity @e[tag=vc_hand,limit=1] feet");
 			ctx.waitTicks(30);
 			shot(ctx, "13b-place-revelation");
-			world.getServer().runCommand("gamemode creative Player0");
+			inGame(world, "gamemode creative Player0");
 			ctx.setScreen(fr.valcombe.client.screen.ChronicleScreen::new);
 			shot(ctx, "15-chronique");
 			ctx.setScreen(() -> null);
-			world.getServer().runCommand("vc arreter");
+			inGame(world, "vc arreter");
 			ctx.waitTicks(20);
 			shot(ctx, "15b-remise-en-etat");
 			// Fin de partie : la carte est remise en état par petits lots, chacun attend dans la salle d'attente.
 			waitBuild(ctx, world);
 			String restored = world.getServer().computeOnServer(server -> {
-				var level = server.overworld();
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
 				var v = fr.valcombe.mc.ValcombeMod.host().village();
 				int r = v.extent();
 				var box = new net.minecraft.world.phys.AABB(v.center().getX() - r, v.center().getY() - 8, v.center().getZ() - r,
@@ -1141,7 +1165,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				return "cassé " + (level.getBlockState(scar) == scarBefore.get(0)) + " | posé "
 					+ (level.getBlockState(scar.above()) == scarBefore.get(1)) + " | objets " + items + " | scène " + scene
 					+ " | lanternes " + lanterns + " | instantané "
-					+ java.nio.file.Files.exists(server.getServerDirectory().resolve("config").resolve("valcombe-instantane.nbt"));
+					+ java.nio.file.Files.exists(fr.valcombe.mc.ValcombeMod.host().snapshotFile());
 			});
 			System.out.println("[valcombe-test] remise en état : " + restored);
 			check(restored.equals("cassé true | posé true | objets 0 | scène 0 | lanternes true | instantané false"),
@@ -1149,10 +1173,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 
 			// Hors partie : clic droit sur un trône pour s'y asseoir
 			ctx.setScreen(() -> null);
-			world.getServer().runCommand("gamemode adventure " + me);
+			inGame(world, "gamemode adventure " + me);
 			var seat = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatFeet(0));
 			var center = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
 				me, seat.x + (center.getX() + 0.5 - seat.x) * 0.2, seat.y, seat.z + (center.getZ() + 0.5 - seat.z) * 0.2,
 				seat.x, seat.y + 0.3, seat.z));
 			ctx.waitTicks(10);
@@ -1179,16 +1203,16 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "16-trone-libre");
 			ctx.runOnClient(mc -> { if (mc.gui.hud.isHidden()) mc.gui.hud.toggle(); });
 			ctx.runOnClient(mc -> mc.options.setCameraType(net.minecraft.client.CameraType.FIRST_PERSON));
-			world.getServer().runCommand("ride " + me + " dismount");
+			inGame(world, "ride " + me + " dismount");
 			// Vue aérienne de tout le village
-			world.getServer().runCommand("gamemode spectator " + me);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+			inGame(world, "gamemode spectator " + me);
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 				center.getX(), center.getY() + 34, center.getZ() + 46, center.getX(), center.getY(), center.getZ() + 4));
 			ctx.waitTicks(60);
 			shot(ctx, "8a-village-vue-aerienne");
-			world.getServer().runCommand("gamemode creative " + me);
+			inGame(world, "gamemode creative " + me);
 
-			// Bibliothèque de cartes : enregistrer, générer un village de 8 trônes, recharger
+			// Bibliothèque de cartes : enregistrer, envoyer à la partie un village de 8 trônes, puis la carte enregistrée
 			send(ctx, "vc carte enregistrer village-test Village de test");
 			ctx.waitTicks(40);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test")), "carte enregistrée");
@@ -1209,23 +1233,29 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "19a-chantier-en-cours");
 			waitBuild(ctx, world);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 8, "8 trônes");
-			world.getServer().runCommand("gamemode spectator " + me);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center().equals(center)),
+				"village envoyé au centre du monde de la partie");
+			inGame(world, "gamemode spectator " + me);
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 				center.getX(), center.getY() + 30, center.getZ() + 38, center.getX(), center.getY(), center.getZ() + 4));
 			ctx.waitTicks(60);
 			shot(ctx, "19-village-8-tronees");
+			// « charger » : l'ancien nom de « envoyer », vers le monde de la partie.
 			send(ctx, "vc carte charger village-test");
 			waitBuild(ctx, world);
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().seatCount()) == 16, "carte rechargée");
+			// Sortis au hub pendant l'envoi, on revient au-dessus de la place pour la voir.
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+				center.getX(), center.getY() + 30, center.getZ() + 38, center.getX(), center.getY(), center.getZ() + 4));
 			ctx.waitTicks(40);
 			shot(ctx, "19b-carte-rechargee");
-			world.getServer().runCommand("gamemode creative " + me);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
+			inGame(world, "gamemode creative " + me);
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
 				center.getX(), center.getY() + 1, center.getZ() + 4));
 			ctx.waitTicks(20);
 			checkAtelierScreen(ctx, world, me);
-			world.getServer().runCommand("gamemode creative " + me);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
+			inGame(world, "gamemode creative " + me);
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
 				center.getX(), center.getY() + 1, center.getZ() + 4));
 
 			// Import de constructions : une petite schématique WorldEdit (v2) et un fichier Litematica
@@ -1251,13 +1281,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 				} catch (java.io.IOException e) {
 					throw new AssertionError(e);
 				}
-				return fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.schem", out.toByteArray());
+				return fr.valcombe.mc.ValcombeMod.sender().sendImport("essai.schem", out.toByteArray(), null, null);
 			});
-			waitBuild(ctx, world); // le terrain est rasé par petits lots, puis la construction est posée
+			waitBuild(ctx, world); // le monde est remis à neuf, puis la construction est posée par petits lots
 			boolean schemOk = world.getServer().computeOnServer(server -> {
 				var c = fr.valcombe.mc.ValcombeMod.host().village().center();
 				var corner = c.offset(-1, 0, -1);
-				var level = server.overworld();
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
 				System.out.println("[valcombe-test] import schem : centre " + c + " ; coin " + level.getBlockState(corner)
 					+ " ; dessus " + level.getBlockState(corner.offset(1, 1, 1)) + " ; sous " + level.getBlockState(corner.below()));
 				return level.getBlockState(corner).is(net.minecraft.world.level.block.Blocks.STONE)
@@ -1290,11 +1320,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 				} catch (java.io.IOException e) {
 					throw new AssertionError(e);
 				}
-				return fr.valcombe.mc.ValcombeMod.host().importSchematic("essai.litematic", out2.toByteArray());
+				return fr.valcombe.mc.ValcombeMod.sender().sendImport("essai.litematic", out2.toByteArray(), null, null);
 			});
 			waitBuild(ctx, world);
 			boolean litOk = world.getServer().computeOnServer(server -> {
-				var level = server.overworld();
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
 				var c2 = fr.valcombe.mc.ValcombeMod.host().village().center();
 				System.out.println("[valcombe-test] import litematic : " + level.getBlockState(c2.offset(-1, 0, 0)) + " ; " + level.getBlockState(c2));
 				return level.getBlockState(c2.offset(-1, 0, 0)).is(net.minecraft.world.level.block.Blocks.GOLD_BLOCK)
@@ -1304,46 +1334,53 @@ public class ScreensGameTest implements FabricClientGameTest {
 			check(litOk, "import d'une construction .litematic");
 			System.out.println("[valcombe-test] import : " + imported);
 
-			// Une seule carte à la fois : un village bâti ailleurs retire l'ancienne carte du monde, où qu'elle soit.
+			// Envoyer à la partie : chaque carte arrive sur un monde remis à neuf. Sur la carte faite à la main, un bloc
+			// très haut (la sauvegarde automatique doit le contenir) et un autre loin de la place, hors de toute emprise :
+			// ni l'un ni l'autre ne reste dans le monde neuf.
 			ctx.setScreen(() -> null);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
-				center.getX() + 170, center.getY() + 1, center.getZ()));
-			ctx.waitTicks(60);
-			// Un bloc posé très haut sur la carte faite à la main : la sauvegarde doit le contenir, puisqu'il sera rasé.
-			world.getServer().runOnServer(server -> server.overworld().setBlockAndUpdate(center.above(40),
-				net.minecraft.world.level.block.Blocks.DIAMOND_BLOCK.defaultBlockState()));
+			var stray = center.offset(170, 1, 0);
+			world.getServer().runOnServer(server -> {
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
+				level.setBlockAndUpdate(center.above(40), net.minecraft.world.level.block.Blocks.DIAMOND_BLOCK.defaultBlockState());
+				level.setBlockAndUpdate(stray, net.minecraft.world.level.block.Blocks.GOLD_BLOCK.defaultBlockState());
+			});
 			send(ctx, "vc carte construire");
+			ctx.waitTicks(5);
+			String hub = world.getServer().computeOnServer(server -> "valcombe:" + fr.valcombe.mc.ValcombeMod.hub().id());
+			check(world.getServer().computeOnServer(server -> server.getPlayerList().getPlayerByName(me).level().dimension()
+				.identifier().toString()).equals(hub), "le joueur attend au hub pendant l'envoi");
 			waitBuild(ctx, world);
 			String tall = world.getServer().computeOnServer(server -> {
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
 				int height = fr.valcombe.mc.ValcombeMod.maps().list().stream().filter(d -> d.id.startsWith("sauvegarde-"))
 					.mapToInt(d -> d.hauteur).max().orElse(0);
-				return "rasé " + server.overworld().getBlockState(center.above(40)).isAir() + " | sauvegardé jusque-là " + (height >= 45);
+				return "haut parti " + level.getBlockState(center.above(40)).isAir() + " | loin parti " + level.getBlockState(stray).isAir()
+					+ " | sauvegardé jusque-là " + (height >= 45);
 			});
-			check(tall.equals("rasé true | sauvegardé jusque-là true"), "carte haute sauvegardée en entier avant d'être rasée : " + tall);
-			var far = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
-			var farSeat = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village()
+			check(tall.equals("haut parti true | loin parti true | sauvegardé jusque-là true"),
+				"carte haute sauvegardée en entier, monde neuf sans aucun reste : " + tall);
+			var seat0 = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village()
 				.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0)));
 			String first = world.getServer().computeOnServer(server -> {
-				var level = server.overworld();
-				// La construction importée (bloc d'or au centre) a disparu, et comme elle était faite à la main,
-				// elle a d'abord été sauvegardée dans la bibliothèque.
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
+				var v = fr.valcombe.mc.ValcombeMod.host().village();
+				// La construction importée était faite à la main : elle a d'abord été sauvegardée dans la bibliothèque.
 				long backups = fr.valcombe.mc.ValcombeMod.maps().list().stream().filter(d -> d.id.startsWith("sauvegarde-")).count();
-				return "ailleurs " + (far.getX() == center.getX() + 170) + " | ancienne retirée "
-					+ (level.getBlockState(center).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK) && level.getBlockState(center.above()).isAir())
-					+ " | sauvegardes " + (backups >= 1) + " | trône " + level.getBlockState(farSeat).is(net.minecraft.world.level.block.Blocks.BARRIER);
+				return "au centre " + v.center().equals(center) + " | sauvegardes " + (backups >= 1) + " | trône "
+					+ level.getBlockState(seat0).is(net.minecraft.world.level.block.Blocks.BARRIER) + " | salle de convocation "
+					+ (v.convocation() != null);
 			});
-			System.out.println("[valcombe-test] second village : " + first);
-			check(first.equals("ailleurs true | ancienne retirée true | sauvegardes true | trône true"), "second village : " + first);
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
-				center.getX(), center.getY() + 1, center.getZ() + 4));
-			ctx.waitTicks(60);
+			System.out.println("[valcombe-test] village envoyé : " + first);
+			check(first.equals("au centre true | sauvegardes true | trône true | salle de convocation true"), "village envoyé : " + first);
+			shot(ctx, "19c-envoi-termine-au-hub"); // le message de fin et son lien « [Y aller] », vus du hub
+			backToVillage(ctx, world, me);
 
-			// Le village de Valcombe : rebâti à l'ancien endroit, il ne laisse rien du village précédent.
+			// Un autre village : le monde est de nouveau remis à neuf, il ne reste rien du précédent (ni blocs ni décors).
 			send(ctx, "vc carte construire port");
 			waitBuild(ctx, world);
 			ctx.waitTicks(20);
 			String second = world.getServer().computeOnServer(server -> {
-				var level = server.overworld();
+				var level = fr.valcombe.mc.ValcombeMod.host().level();
 				var v = fr.valcombe.mc.ValcombeMod.host().village();
 				int thrones = 0;
 				int stale = 0;
@@ -1355,18 +1392,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 						}
 					}
 				}
-				boolean flat = true;
-				for (var pos : net.minecraft.core.BlockPos.betweenClosed(far.offset(-60, 1, -60), far.offset(60, 12, 60))) {
-					flat &= level.getBlockState(pos).isAir();
-				}
-				return "place rasée " + (level.getBlockState(far).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK) && flat)
-					+ " | trône " + level.getBlockState(farSeat).isAir() + " | trônes sculptés " + thrones + " dont anciens " + stale;
+				return "thème " + v.theme() + " | trônes sculptés " + thrones + " dont anciens " + stale;
 			});
-			System.out.println("[valcombe-test] village rebâti : " + second);
-			check(second.equals("place rasée true | trône true | trônes sculptés 16 dont anciens 0"), "un seul village à la fois : " + second);
-			// À la fin du chantier, les joueurs sont ramenés à la salle d'attente : on revient sur la place pour la photo.
+			System.out.println("[valcombe-test] village renvoyé : " + second);
+			check(second.equals("thème port | trônes sculptés 16 dont anciens 0"), "un monde neuf pour chaque carte : " + second);
+			// On revient sur la place pour la photo.
 			var port = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
 				port.getX(), port.getY() + 1, port.getZ() + 12));
 			ctx.waitTicks(40);
 			shot(ctx, "8-village");
@@ -1385,11 +1417,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 				var p = server.getPlayerList().getPlayerByName(me);
 				String msg = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.HOUSE, spot, true);
 				return msg + " | maisons " + host.village().houseCount() + " | toit "
-					+ !server.overworld().getBlockState(spot.above(5)).isAir();
+					+ !fr.valcombe.mc.ValcombeMod.host().level().getBlockState(spot.above(5)).isAir();
 			});
 			System.out.println("[valcombe-test] maison bâtie : " + built);
 			check(built.contains("maisons 17") && built.endsWith("toit true"), "maison bâtie d'un clic");
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 				port.getX() + 5, port.getY() + 4, port.getZ() + 12, spot.getX(), spot.getY() + 3, spot.getZ()));
 			ctx.waitTicks(40);
 			shot(ctx, "25b-maison-batie");
@@ -1398,7 +1430,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				var p = server.getPlayerList().getPlayerByName(me);
 				var v = host.village();
 				String erased = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.ERASE, spot, false);
-				boolean gone = server.overworld().getBlockState(spot.above(5)).isAir();
+				boolean gone = fr.valcombe.mc.ValcombeMod.host().level().getBlockState(spot.above(5)).isAir();
 				var throne = v.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0));
 				String taken = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.below(), false);
 				String moved = host.useTool(p, fr.valcombe.mc.ValcombeUi.MapTool.SEAT, throne.offset(1, -1, 0), false);
@@ -1434,15 +1466,15 @@ public class ScreensGameTest implements FabricClientGameTest {
 			// Partie avec Conteur humain : le joueur devient Conteur
 			send(ctx, "vc quitter");
 			send(ctx, "vc conteur");
-			world.getServer().runCommand("vc bots 2");
-			world.getServer().runCommand("vc lancer humain");
+			inGame(world, "vc bots 2");
+			inGame(world, "vc lancer humain");
 			ctx.waitTicks(20);
 			// Salle de convocation : le Conteur y reçoit un joueur à l'écart (ici, lui-même, faute d'autre joueur réel)
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().summon("personne", me)), "salle de convocation");
 			ctx.runOnClient(mc -> mc.player.setXRot(5));
 			ctx.waitTicks(40);
 			shot(ctx, "26-salle-de-convocation");
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d 180 0", me,
 				port.getX(), port.getY() + 1, port.getZ() + 12));
 			ctx.waitTicks(20);
 			ctx.setScreen(StorytellerScreen::new);
@@ -1456,7 +1488,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> new fr.valcombe.client.screen.SeatScreen("Bot1"));
 			shot(ctx, "12-siege-retouche");
 			ctx.setScreen(() -> null);
-			world.getServer().runCommand("vc nuit");
+			inGame(world, "vc nuit");
 			ctx.waitTicks(40);
 			ctx.setScreen(() -> null);
 			shot(ctx, "6b-conteur-nuit");
@@ -1483,13 +1515,13 @@ public class ScreensGameTest implements FabricClientGameTest {
 			shot(ctx, "7c-journal-du-conteur");
 			ctx.setScreen(() -> null);
 			// Le Conteur voit le rôle de chacun au-dessus de lui
-			world.getServer().runCommand("gamemode spectator " + me);
+			inGame(world, "gamemode spectator " + me);
 			var ctr = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
+			inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
 				ctr.getX(), ctr.getY() + 9, ctr.getZ() + 16, ctr.getX(), ctr.getY() + 1, ctr.getZ()));
 			ctx.waitTicks(40);
 			shot(ctx, "23-conteur-roles");
-			world.getServer().runCommand("gamemode creative " + me);
+			inGame(world, "gamemode creative " + me);
 			// Bâton du Conteur : viser un joueur montre son rôle ; clic droit ouvre sa ligne du grimoire
 			ctx.runOnClient(mc -> {
 				var inv = mc.player.getInventory();
@@ -1499,7 +1531,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 					}
 				}
 			});
-			world.getServer().runCommand("execute as " + me + " at @s facing entity @e[tag=vc_seat_1,limit=1] feet run tp @s ~ ~ ~ ~ ~");
+			inGame(world, "execute as " + me + " at @s facing entity @e[tag=vc_seat_1,limit=1] feet run tp @s ~ ~ ~ ~ ~");
 			ctx.waitTicks(20);
 			shot(ctx, "18-baton-conteur");
 			ctx.runOnClient(mc -> mc.gameMode.useItem(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND));
@@ -1508,7 +1540,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 			checkTablet(ctx);
 			send(ctx, "vc stats");
-			world.getServer().runCommand("vc arreter");
+			inGame(world, "vc arreter");
 			waitBuild(ctx, world); // la carte est remise en état avant de passer à la suite
 			// L'Atelier, puis le scénario du Bal masqué qu'il a choisi : écran Scénarios et rôle créé dans le script
 			checkAtelier(ctx);
@@ -1519,7 +1551,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 
 			// Phase 12 : prochaine soirée (description du serveur), carnet pour le launcher, daltonien, présentoir
-			world.getServer().runCommand("vc soiree vendredi 21 h");
+			inGame(world, "vc soiree vendredi 21 h");
 			ctx.waitTicks(60);
 			check(world.getServer().computeOnServer(server -> server.getMotd()).contains("vendredi 21 h"), "prochaine soirée annoncée");
 			check(ctx.computeOnClient(mc -> java.nio.file.Files.exists(mc.gameDirectory.toPath().resolve("valcombe-carnet.json"))),
@@ -1531,11 +1563,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> null);
 			var hall = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().hallSpot());
 			if (hall != null) {
-				world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+				inGame(world, String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
 					me, hall.x, hall.y, hall.z + 1.5, hall.x, hall.y + 3.2, hall.z - 6));
 				ctx.waitTicks(60);
 				shot(ctx, "22-salle-presentoir");
-				world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
+				inGame(world, String.format(java.util.Locale.ROOT, "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f",
 					me, hall.x + 3, hall.y, hall.z, hall.x - 8, hall.y + 2.5, hall.z));
 				ctx.waitTicks(20);
 				shot(ctx, "22b-salle-panneau-mur");
@@ -1546,51 +1578,48 @@ public class ScreensGameTest implements FabricClientGameTest {
 				var host = fr.valcombe.mc.ValcombeMod.host();
 				var pos = host.village().center().offset(3, 0, 3);
 				host.gameStarted(); // l'instantané d'une partie qui ne reprendra pas
-				server.overworld().setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
+				fr.valcombe.mc.ValcombeMod.host().level().setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
 				host.resumeRestore(); // ce que fait le démarrage du serveur
 				return pos;
 			});
 			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().busy()), "remise en état reprise au démarrage");
 			waitBuild(ctx, world);
-			check(world.getServer().computeOnServer(server -> !server.overworld().getBlockState(gap).isAir()), "bloc revenu après la reprise");
+			check(world.getServer().computeOnServer(server -> !fr.valcombe.mc.ValcombeMod.host().level().getBlockState(gap).isAir()), "bloc revenu après la reprise");
 
-			// Carte oubliée : rien n'est détruit, mais la prochaine carte bâtie — même ailleurs — la retire du monde.
-			var forgotten = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
-			send(ctx, "vc carte oublier");
-			check(world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village() == null
-				&& fr.valcombe.mc.Village.load(server).state() == fr.valcombe.mc.Village.Fiche.FORGOTTEN
-				&& !server.overworld().getBlockState(gap).isAir()), "carte oubliée, blocs en place");
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
-				forgotten.getX() - 170, forgotten.getY() + 1, forgotten.getZ()));
-			ctx.waitTicks(60);
-			send(ctx, "vc carte construire monastere");
+			// Vider le monde : remis à neuf, plat et vide, on y joue sans carte (et le démarrage n'y bâtira rien).
+			var oldCenter = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village().center());
+			send(ctx, "vc carte vider");
 			waitBuild(ctx, world);
-			var cloister = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().village());
-			var cloisterSeat = cloister.markerPos(new fr.valcombe.mc.Village.Hit(fr.valcombe.mc.Village.Mark.SEAT, 0));
-			check(world.getServer().computeOnServer(server -> server.overworld().getBlockState(forgotten).is(
-				net.minecraft.world.level.block.Blocks.GRASS_BLOCK) && server.overworld().getBlockState(forgotten.above()).isAir()
-				&& server.overworld().getBlockState(gap).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK)),
-				"la carte oubliée est retirée quand une autre est bâtie");
-			// /vc carte nouvelle sur la carte actuelle : ses blocs restent (on y a peut-être bâti à la main), seuls les repères repartent de zéro.
-			world.getServer().runCommand(String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me,
-				cloister.center().getX(), cloister.center().getY() + 1, cloister.center().getZ() + 6));
-			ctx.waitTicks(40);
+			String empty = world.getServer().computeOnServer(server -> {
+				var host = fr.valcombe.mc.ValcombeMod.host();
+				var level = host.level();
+				return "sans carte " + (host.village() == null) + " | sans fiche " + !java.nio.file.Files.exists(host.villageFile())
+					+ " | marqué " + java.nio.file.Files.exists(fr.valcombe.mc.ValcombeMod.worlds().folder(host.worldId())
+						.resolve("valcombe-sans-carte.txt"))
+					+ " | sol plat " + (level.getBlockState(oldCenter).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK)
+						&& level.getBlockState(oldCenter.above()).isAir() && level.getBlockState(gap).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK));
+			});
+			System.out.println("[valcombe-test] monde vidé : " + empty);
+			check(empty.equals("sans carte true | sans fiche true | marqué true | sol plat true"), "monde vidé : " + empty);
+			// Nouvelle carte vide : un monde neuf, la place au centre, sans repères ni décors, à enregistrer.
 			send(ctx, "vc carte nouvelle");
 			waitBuild(ctx, world);
 			String fresh = world.getServer().computeOnServer(server -> {
-				var v = fr.valcombe.mc.ValcombeMod.host().village();
+				var host = fr.valcombe.mc.ValcombeMod.host();
+				var v = host.village();
 				int thrones = 0;
-				for (var e : server.overworld().getAllEntities()) {
+				for (var e : host.level().getAllEntities()) {
 					if (e.entityTags().contains("vc_trone")) {
 						thrones++;
 					}
 				}
-				return "à la main " + !v.isGenerated() + " | repères " + v.seatCount() + " | blocs gardés "
-					+ server.overworld().getBlockState(cloisterSeat).is(net.minecraft.world.level.block.Blocks.BARRIER)
-					+ " | trônes sculptés " + thrones + " | à protéger " + v.modified();
+				return "à la main " + !v.isGenerated() + " | au centre " + v.center().equals(oldCenter) + " | repères " + v.seatCount()
+					+ " | trônes sculptés " + thrones + " | à protéger " + v.modified() + " | marque partie "
+					+ !java.nio.file.Files.exists(fr.valcombe.mc.ValcombeMod.worlds().folder(host.worldId()).resolve("valcombe-sans-carte.txt"));
 			});
 			System.out.println("[valcombe-test] nouvelle carte : " + fresh);
-			check(fresh.equals("à la main true | repères 0 | blocs gardés true | trônes sculptés 0 | à protéger true"), "nouvelle carte sur place : " + fresh);
+			check(fresh.equals("à la main true | au centre true | repères 0 | trônes sculptés 0 | à protéger true | marque partie true"),
+				"nouvelle carte vide sur un monde neuf : " + fresh);
 		}
 	}
 }

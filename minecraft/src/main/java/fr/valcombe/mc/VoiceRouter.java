@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
@@ -38,16 +39,21 @@ public final class VoiceRouter {
 		return routes.get(speaker);
 	}
 
-	static void update(MinecraftServer server, Session session, Village village) {
+	/**
+	 * Recalcule les routes. level : le monde de la partie (null s'il n'est pas prêt). Seuls les joueurs qui s'y
+	 * trouvent sont dans la partie : un joueur au hub ou dans un atelier garde le vocal de proximité de son monde, et
+	 * n'entend jamais la table (ni la nuit, ni le Conseil).
+	 */
+	static void update(MinecraftServer server, Session session, Village village, ServerLevel level) {
 		Map<UUID, Route> next = new HashMap<>();
 		List<ServerPlayer> players = server.getPlayerList().getPlayers();
 		boolean day = session.game() != null && session.game().phase() == fr.valcombe.rules.Game.Phase.DAY;
 		Map<Integer, List<ServerPlayer>> byHouse = new HashMap<>();
 		Map<Integer, List<ServerPlayer>> byNook = new HashMap<>();
 		java.util.Set<String> inNooks = new java.util.HashSet<>();
-		if (day && village != null) {
+		if (day && village != null && level != null) {
 			for (ServerPlayer p : players) {
-				if (p.level() != server.overworld()) {
+				if (p.level() != level) {
 					continue; // au hub ou dans un autre monde : aux mêmes coordonnées, ce n'est pas une maison du village
 				}
 				int h = village.houseAt(p.position());
@@ -66,19 +72,23 @@ public final class VoiceRouter {
 			return; // pas de Simple Voice Chat sur ce serveur : aucune route à calculer
 		}
 		for (ServerPlayer p : players) {
+			if (level == null || p.level() != level) {
+				continue; // hors du monde de la partie : vocal de proximité ordinaire, dans son monde
+			}
 			Session.VoiceRule rule = session.voiceRule(p.getScoreboardName());
 			if (rule != null && rule.targets() != null) {
 				List<UUID> ids = new ArrayList<>();
 				for (String n : rule.targets()) {
 					ServerPlayer t = server.getPlayerList().getPlayerByName(n);
-					if (t != null && t != p) {
+					// Seulement ceux qui sont à la table, dans le monde de la partie.
+					if (t != null && t != p && t.level() == level) {
 						ids.add(t.getUUID());
 					}
 				}
 				next.put(p.getUUID(), new Route(ids, 0));
 				continue;
 			}
-			if (day && village != null && p.level() == server.overworld()) {
+			if (day && village != null) {
 				int h = village.houseAt(p.position());
 				if (h >= 0) {
 					next.put(p.getUUID(), new Route(byHouse.get(h).stream().filter(o -> o != p).map(ServerPlayer::getUUID).toList(), 0));

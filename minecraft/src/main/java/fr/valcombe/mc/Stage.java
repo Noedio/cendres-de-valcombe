@@ -10,13 +10,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
-import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 
 /**
  * La scène 3D de la place : trônes, jetons en relief, étiquettes, horloge de vote géante,
  * mains levées, gibet et lutrin du Conteur. Tout est fait d'entités d'affichage marquées
  * « vc_scene » : le serveur les déplace, le client les anime (interpolation).
+ *
+ * La scène vit dans le monde de la partie qui la monte, et seulement là : ses commandes partent de ce monde et ses
+ * sélecteurs s'y tiennent (distance=0..), pour qu'une autre partie, ailleurs, garde la sienne.
  *
  * Optimisation : chaque élément n'est mis à jour que s'il a changé (aucune entité n'est
  * recréée à chaque événement de partie).
@@ -39,7 +42,8 @@ final class Stage {
 	private static final double FLAME_Y = 2.05;
 
 	private final BiConsumer<Integer, Runnable> scheduler;
-	private MinecraftServer server;
+	/** Le monde où la scène est montée, ou null. */
+	private ServerLevel level;
 	private final List<String> order = new ArrayList<>();
 	private final Map<String, Spot> spots = new HashMap<>();
 	private final Map<String, String> labels = new HashMap<>();
@@ -64,17 +68,22 @@ final class Stage {
 	}
 
 	boolean active() {
-		return server != null && center != null;
+		return level != null && center != null;
+	}
+
+	/** Le monde où la scène est montée, ou null. */
+	ServerLevel level() {
+		return level;
 	}
 
 	int index(String name) {
 		return order.indexOf(name);
 	}
 
-	/** Monte la scène pour ces sièges (dans l'ordre du cercle). */
-	void setup(MinecraftServer server, Vec3 center, double handY, Map<String, Spot> seats, boolean lectern, boolean thrones) {
-		clear(server);
-		this.server = server;
+	/** Monte la scène dans ce monde pour ces sièges (dans l'ordre du cercle). */
+	void setup(ServerLevel level, Vec3 center, double handY, Map<String, Spot> seats, boolean lectern, boolean thrones) {
+		clear(level);
+		this.level = level;
 		this.center = center;
 		this.handY = handY;
 		double radius = 0;
@@ -141,11 +150,18 @@ final class Stage {
 		summonSeat(order.size() - 1, name, s);
 	}
 
-	/** Retire toute la scène. */
-	void clear(MinecraftServer server) {
-		if (server != null) {
-			WorldSetup.run(server, "kill @e[tag=" + SCENE + "]");
+	/**
+	 * Retire toute la scène de ce monde (le monde de la partie ; null : seulement l'état en mémoire, le monde est
+	 * fermé ou remis à neuf et la scène est partie avec lui). Une scène montée dans un autre monde y est retirée aussi.
+	 */
+	void clear(ServerLevel in) {
+		if (in != null) {
+			WorldSetup.kill(in, "tag=" + SCENE);
 		}
+		if (level != null && level != in && level.getServer().getLevel(level.dimension()) == level) {
+			WorldSetup.kill(level, "tag=" + SCENE);
+		}
+		level = null;
 		order.clear();
 		spots.clear();
 		labels.clear();
@@ -171,7 +187,7 @@ final class Stage {
 			}
 			labels.put(e.getKey(), e.getValue());
 			String[] parts = e.getValue().split("\\|", 2);
-			run("data merge entity @e[type=minecraft:text_display,tag=vc_lab_" + i + ",limit=1] {text:{text:\""
+			run("data merge entity @e[distance=0..,type=minecraft:text_display,tag=vc_lab_" + i + ",limit=1] {text:{text:\""
 				+ esc(parts[1]) + "\",color:\"" + parts[0] + "\"}}");
 		}
 	}
@@ -186,7 +202,7 @@ final class Stage {
 				continue;
 			}
 			models.put(e.getKey(), e.getValue());
-			String target = "@e[type=minecraft:item_display,tag=vc_tok_" + i + ",limit=1]";
+			String target = "@e[distance=0..,type=minecraft:item_display,tag=vc_tok_" + i + ",limit=1]";
 			if (!flip) {
 				run("data merge entity " + target + " {" + item(e.getValue()) + "}");
 				continue;
@@ -220,7 +236,7 @@ final class Stage {
 		if (s != null) {
 			pointHand(Math.atan2(s.pos().x - center.x, s.pos().z - center.z), Math.max(1, v.moveTicks()));
 			if (!v.defense() && v.moveTicks() > 0) {
-				run("playsound valcombe:tic master @a " + xyz(center.x, handY, center.z) + " 2 1");
+				run("playsound valcombe:tic master @a[distance=0..] " +xyz(center.x, handY, center.z) + " 2 1");
 			}
 		}
 		setCount(v.defense()
@@ -259,7 +275,7 @@ final class Stage {
 		// Toujours dans le sens des aiguilles d'une montre, par le plus court chemin sinon.
 		double delta = Math.atan2(Math.sin(angle - handAngle), Math.cos(angle - handAngle));
 		handAngle += delta;
-		run("data merge entity @e[type=minecraft:block_display,tag=vc_hand,limit=1] {start_interpolation:0,"
+		run("data merge entity @e[distance=0..,type=minecraft:block_display,tag=vc_hand,limit=1] {start_interpolation:0,"
 			+ "interpolation_duration:" + ticks + ",transformation:" + handTransform(handAngle) + "}");
 	}
 
@@ -277,7 +293,7 @@ final class Stage {
 		boolean had = !countText.isEmpty();
 		countText = text;
 		if (text.isEmpty()) {
-			run("kill @e[type=minecraft:text_display,tag=vc_count]");
+			run("kill @e[distance=0..,type=minecraft:text_display,tag=vc_count]");
 			return;
 		}
 		if (!had) {
@@ -286,7 +302,7 @@ final class Stage {
 				+ "transformation:" + transform("[0f,0f,0f]", quatY(0), "[2.6f,2.6f,2.6f]") + ",text:{text:\""
 				+ esc(text) + "\",color:\"gold\"}}");
 		} else {
-			run("data merge entity @e[type=minecraft:text_display,tag=vc_count,limit=1] {text:{text:\"" + esc(text)
+			run("data merge entity @e[distance=0..,type=minecraft:text_display,tag=vc_count,limit=1] {text:{text:\"" + esc(text)
 				+ "\",color:\"gold\"}}");
 		}
 	}
@@ -295,7 +311,7 @@ final class Stage {
 		for (String n : new ArrayList<>(flames.keySet())) {
 			if (!wanted.containsKey(n)) {
 				flames.remove(n);
-				run("kill @e[type=minecraft:block_display,tag=vc_flame_" + order.indexOf(n) + "]");
+				run("kill @e[distance=0..,type=minecraft:block_display,tag=vc_flame_" + order.indexOf(n) + "]");
 			}
 		}
 		for (var e : wanted.entrySet()) {
@@ -306,7 +322,7 @@ final class Stage {
 			}
 			flames.put(e.getKey(), e.getValue());
 			if (before != null) {
-				run("data merge entity @e[type=minecraft:block_display,tag=vc_flame_" + i + ",limit=1] {block_state:\""
+				run("data merge entity @e[distance=0..,type=minecraft:block_display,tag=vc_flame_" + i + ",limit=1] {block_state:\""
 					+ e.getValue() + "\"}");
 				continue;
 			}
@@ -331,14 +347,14 @@ final class Stage {
 			return;
 		}
 		// Un autre gibet est dressé ou en train de descendre : on le retire tout de suite.
-		run("kill @e[type=minecraft:block_display,tag=vc_gibet]");
+		run("kill @e[distance=0..,type=minecraft:block_display,tag=vc_gibet]");
 		Spot s = spots.get(name);
 		if (s == null) {
 			return;
 		}
 		gibetFor = name;
 		int token = ++gibetToken;
-		run("playsound valcombe:craquement master @a " + xyz(center.x, center.y + 1, center.z) + " 2 0.9");
+		run("playsound valcombe:craquement master @a[distance=0..] " +xyz(center.x, center.y + 1, center.z) + " 2 0.9");
 		double dx = s.pos().x - center.x;
 		double dz = s.pos().z - center.z;
 		double d = Math.max(0.1, Math.hypot(dx, dz));
@@ -358,7 +374,7 @@ final class Stage {
 			}
 			for (int k = 0; k < GIBET.length; k++) {
 				String[] part = GIBET[k];
-				run("data merge entity @e[type=minecraft:block_display,tag=vc_gibet_" + k
+				run("data merge entity @e[distance=0..,type=minecraft:block_display,tag=vc_gibet_" + k
 					+ ",limit=1] {start_interpolation:0,interpolation_duration:30,transformation:"
 					+ transform(part[1], quatY(0), part[2]) + "}");
 			}
@@ -373,13 +389,13 @@ final class Stage {
 		int token = ++gibetToken;
 		for (int k = 0; k < GIBET.length; k++) {
 			String[] part = GIBET[k];
-			run("data merge entity @e[type=minecraft:block_display,tag=vc_gibet_" + k
+			run("data merge entity @e[distance=0..,type=minecraft:block_display,tag=vc_gibet_" + k
 				+ ",limit=1] {start_interpolation:0,interpolation_duration:25,transformation:"
 				+ transform(lowered(part[1]), quatY(0), part[2]) + "}");
 		}
 		scheduler.accept(28, () -> {
 			if (token == gibetToken) {
-				run("kill @e[type=minecraft:block_display,tag=vc_gibet]");
+				run("kill @e[distance=0..,type=minecraft:block_display,tag=vc_gibet]");
 			}
 		});
 	}
@@ -395,8 +411,8 @@ final class Stage {
 	// Outils
 	// ------------------------------------------------------------------
 	private void run(String cmd) {
-		if (server != null) {
-			WorldSetup.run(server, cmd);
+		if (level != null) {
+			WorldSetup.run(level, cmd);
 		}
 	}
 

@@ -16,6 +16,8 @@
 			"fr.valcombe.gametest.BackupsGameTest",
 			"fr.valcombe.gametest.PlayerScreensHdGameTest",
 			"fr.valcombe.gametest.StorytellerHdGameTest",
+			"fr.valcombe.gametest.PartieWorldGameTest",
+			"fr.valcombe.gametest.EnvoiPartieGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

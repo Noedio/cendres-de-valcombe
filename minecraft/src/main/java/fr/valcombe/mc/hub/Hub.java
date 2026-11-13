@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
  * dossier du monde).</li>
  * <li>Dalles d'inscription : les mêmes que dans la salle d'attente du village (branchées sur {@link McHost}).</li>
  * <li>Mur des rôles : le script de la prochaine partie, ses rôles en jetons, les inscrits et le Conteur.</li>
- * <li>Portes : six portes portent le nom d'un monde (le village actuel, puis les mondes de partie) ; on y entre
+ * <li>Portes : six portes portent le nom d'un monde (le monde de la partie, puis les autres mondes de partie) ; on y entre
  * pour y aller. Le menu J, entrée « Mondes », donne la liste complète.</li>
  * </ul>
  * Les textes et jetons sont des entités d'affichage, rangées en groupes (étiquette {@code vc_hub_<groupe>}) refaits
@@ -178,14 +178,16 @@ public final class Hub implements WorldManager.Listener {
 	}
 
 	/**
-	 * Les destinations des portes : le village actuel, puis les mondes de partie (vraies parties d'abord, puis
-	 * parties d'essai) dans l'ordre du registre, tant qu'il reste des portes.
+	 * Les destinations des portes : le monde de la partie (son village, première porte, au milieu du mur ouest), puis
+	 * les autres mondes de partie (vraies parties d'abord, puis parties d'essai) dans l'ordre du registre, tant qu'il
+	 * reste des portes. Sans monde de partie, la première porte reste libre.
 	 */
 	private void assignDoors() {
 		List<String> list = new ArrayList<>();
-		list.add(Travel.MAIN);
+		String game = travel.game();
+		list.add(game);
 		for (WorldEntry e : worlds.list()) {
-			if (e.sorte() == WorldKind.PARTIE || e.sorte() == WorldKind.ESSAI) {
+			if ((e.sorte() == WorldKind.PARTIE || e.sorte() == WorldKind.ESSAI) && !e.id().equals(game)) {
 				list.add(e.id());
 			}
 		}
@@ -343,7 +345,7 @@ public final class Hub implements WorldManager.Listener {
 		double feet = HubHall.FEET;
 		text(level, Group.FIXE, HubHall.JOIN_X + 0.5, feet + 3.2, HubHall.JOIN_Z + 0.5, null, 260, 1.1,
 			comp("Bienvenue à Valcombe", "gold", true,
-				"\nInscris-toi sur la dalle dorée : la partie t'emmènera au village.", "white", false,
+				"\nInscris-toi sur la dalle dorée : tu rejoins aussitôt le village de la partie.", "white", false,
 				"\nPasse une porte pour rejoindre un monde, ou ouvre le menu J, « Mondes ».", "gray", false));
 		text(level, Group.FIXE, HubHall.JOIN_X + 0.5, feet + 1.9, HubHall.JOIN_Z + 0.5, null, 120, 0.7,
 			comp("S'inscrire", "gold", true));
@@ -372,16 +374,17 @@ public final class Hub implements WorldManager.Listener {
 			}
 		}
 		String count = n == 0 ? "personne" : n == 1 ? "1 joueur" : n + " joueurs";
-		if (Travel.MAIN.equals(dest)) {
+		WorldEntry e = worlds.find(dest);
+		if (e == null) {
+			return new String[] {"Porte libre", "Une partie viendra s'ouvrir ici"};
+		}
+		if (dest.equals(travel.game())) {
+			// Le village de la partie : ce qui s'y passe en ce moment.
 			Game g = session.game();
 			String state = g != null && g.winner() == null
 				? "partie en cours, " + (g.phase() == Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day())
 				: session.lobby().isEmpty() ? "salon ouvert" : session.lobby().size() + " inscrit(s)";
-			return new String[] {Travel.MAIN_NAME, state + " · " + count};
-		}
-		WorldEntry e = worlds.find(dest);
-		if (e == null) {
-			return new String[] {"Porte libre", "Une partie viendra s'ouvrir ici"};
+			return new String[] {e.nom(), state + " · " + count};
 		}
 		String label = e.sorte().label();
 		return new String[] {e.nom(), Character.toUpperCase(label.charAt(0)) + label.substring(1) + " · " + count};
