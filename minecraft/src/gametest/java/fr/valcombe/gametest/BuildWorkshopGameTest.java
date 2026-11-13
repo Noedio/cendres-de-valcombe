@@ -25,6 +25,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -124,6 +127,18 @@ public class BuildWorkshopGameTest implements FabricClientGameTest {
 			}
 			return n;
 		});
+	}
+
+	/** Combien de cet objet le joueur a dans son inventaire. */
+	private static int count(ServerPlayer p, Item item) {
+		var inv = p.getInventory();
+		int n = 0;
+		for (int i = 0; i < inv.getContainerSize(); i++) {
+			if (inv.getItem(i).is(item)) {
+				n += inv.getItem(i).getCount();
+			}
+		}
+		return n;
 	}
 
 	private static boolean hasWand(MinecraftServer s, String me) {
@@ -250,14 +265,21 @@ public class BuildWorkshopGameTest implements FabricClientGameTest {
 				.anyMatch(d -> ClientState.str(d, "id").equals(atelier) && ClientState.bool(d, "invite"))), "menu « Mondes » : invité");
 			shot(ctx, "mondes-atelier-invite");
 			ctx.setScreen(() -> null);
+			// Ce que l'invité porte en entrant : il le retrouvera en sortant.
+			server.runOnServer(s -> player(s, me).getInventory().add(new ItemStack(Items.APPLE, 3)));
 			send(ctx, "vc monde aller " + atelier);
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals("valcombe:" + atelier)), "l'invité va dans l'atelier");
 			ctx.waitTicks(20);
 			check(server.computeOnServer(s -> player(s, me).gameMode.getGameModeForPlayer() == GameType.CREATIVE), "l'invité est en créatif");
 			check(server.computeOnServer(s -> hasWand(s, me)), "l'invité a la baguette");
+			check(server.computeOnServer(s -> count(player(s, me), Items.APPLE) == 0), "inventaire de l'invité mis de côté à l'entrée");
+			// Pris en créatif dans l'atelier : ne doit pas en sortir.
+			server.runOnServer(s -> player(s, me).getInventory().add(new ItemStack(Items.ENDER_PEARL, 16)));
 			check(Boolean.TRUE.equals(permission(world, me, "region.set")), "WorldEdit permis à l'invité");
 			check(Boolean.FALSE.equals(permission(world, me, "reload")) && Boolean.FALSE.equals(permission(world, me, "world")),
 				"pas ce qui touche au serveur");
+			check(Boolean.FALSE.equals(permission(world, me, "history.undo.other"))
+				&& Boolean.FALSE.equals(permission(world, me, "clipboard.save")), "ni le travail des autres, ni les fichiers de schémas");
 			check(clientHasSet(ctx), "//set dans l'arbre des commandes de l'invité");
 			BlockPos c = new BlockPos(-6, 70, -6);
 			BlockPos d = c.offset(2, 2, 2);
@@ -275,6 +297,8 @@ public class BuildWorkshopGameTest implements FabricClientGameTest {
 			ctx.waitTicks(10);
 			check(server.computeOnServer(s -> player(s, me).gameMode.getGameModeForPlayer() != GameType.CREATIVE && !hasWand(s, me)),
 				"hors de l'atelier : mode d'avant, baguette rendue");
+			check(server.computeOnServer(s -> count(player(s, me), Items.APPLE) == 3 && count(player(s, me), Items.ENDER_PEARL) == 0),
+				"hors de l'atelier : son inventaire rendu, rien de ce qu'il y a pris");
 			check(server.computeOnServer(s -> BuildAccess.current().invitations().list().stream().noneMatch(i -> i.joueur().equals(me))),
 				"plus d'invitation");
 

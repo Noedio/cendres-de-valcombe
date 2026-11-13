@@ -13,10 +13,12 @@ class WorldEditGateTest {
 	@Test
 	void unInviteConstruitMaisNeToucheNiAuServeurNiASesFichiers() {
 		for (String ok : new String[] {"selection.pos", "region.set", "region.walls", "clipboard.copy", "clipboard.paste", "history.undo",
-			"brush.sphere", "navigation.jumpto.tool", "schematic.load", "wand", "worldsomething"}) {
+			"brush.sphere", "navigation.jumpto.tool", "schematic.load", "clipboard.load", "history.undo.self", "history.redo",
+			"wand", "worldsomething"}) {
 			assertFalse(WorldEditGate.deniedToGuests(ok), ok);
 		}
 		for (String no : new String[] {"reload", "world", "scripting.execute", "snapshots.restore", "schematic.delete", "schematic.save",
+			"clipboard.save", "schematic.share", "clipboard.share", "history.undo.other", "history.redo.other", "regen", "watchdog",
 			"limit.unrestricted", "delchunks", "anyblock", "report", "debugpaste"}) {
 			assertTrue(WorldEditGate.deniedToGuests(no), no);
 		}

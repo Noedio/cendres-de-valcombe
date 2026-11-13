@@ -53,6 +53,8 @@ import net.minecraft.world.level.GameType;
  * pas opérateur revient en aventure s'il n'y a rien à retrouver, par exemple après un redémarrage).</li>
  * <li>Il reçoit la baguette de construction ({@link ValcombeUi#wandItem()}), rendue en sortant. Une baguette « nue »
  * donnée par //wand prend son apparence en moins d'une seconde.</li>
+ * <li>Un invité qui n'est pas opérateur laisse son inventaire à l'entrée ({@link WorkshopInventories}) : ce qu'il prend
+ * en créatif reste dans l'atelier, il retrouve le sien en sortant, même après un redémarrage.</li>
  * <li>Un joueur qui n'a plus le droit d'y être (invitation retirée) est renvoyé au hub.</li>
  * <li>Sa sélection WorldEdit est envoyée au mod client, qui la dessine en 3D avec ses dimensions
  * ({@link ValcombeNet.SelectionPayload}).</li>
@@ -61,10 +63,17 @@ import net.minecraft.world.level.GameType;
 public final class WorldEditGate {
 	/**
 	 * Permissions de WorldEdit jamais accordées à un invité qui n'est pas opérateur (le chemin, et tout ce qui est
-	 * dessous) : elles agissent sur le serveur ou ses fichiers, pas sur l'atelier.
+	 * dessous) : elles agissent sur le serveur ou ses fichiers, pas sur l'atelier, ou sur le travail des autres.
+	 * <p>
+	 * Une commande de WorldEdit est permise dès que l'une de ses permissions l'est : //schem save demande
+	 * {@code clipboard.save} <b>ou</b> {@code schematic.save}, les deux sont donc refusées (de même pour le partage, qui
+	 * envoie la copie sur un service extérieur). {@code history.undo.other} : //undo d'un autre joueur, qui défait ses
+	 * modifications, y compris dans un atelier où l'invité n'est pas. {@code regen} recrée des tronçons du monde par son
+	 * générateur, {@code watchdog} touche à la surveillance du serveur.
 	 */
 	static final List<String> GUEST_DENIED = List.of("reload", "report", "debugpaste", "trace", "world", "scripting", "snapshots",
-		"snapshot", "schematic.delete", "schematic.save", "delchunks", "limit.unrestricted", "timeout.unrestricted", "anyblock",
+		"snapshot", "schematic.delete", "schematic.save", "schematic.share", "clipboard.save", "clipboard.share", "delchunks",
+		"regen", "watchdog", "history.undo.other", "history.redo.other", "limit.unrestricted", "timeout.unrestricted", "anyblock",
 		"override");
 
 	private static volatile WorldEditGate current;
@@ -81,6 +90,8 @@ public final class WorldEditGate {
 	private final Map<UUID, String> sent = new HashMap<>();
 	/** Dernier rappel « WorldEdit ne sert que dans les ateliers » après un clic avec la baguette (une fois toutes les 2 s). */
 	private final Map<UUID, Integer> hinted = new HashMap<>();
+	/** Les inventaires des invités, mis de côté le temps de l'atelier. */
+	private final WorkshopInventories bags;
 	private int ticks;
 
 	WorldEditGate(MinecraftServer server, BuildAccess access, WorldEditLink link, SharedUndo undo) {
@@ -88,6 +99,7 @@ public final class WorldEditGate {
 		this.access = access;
 		this.link = link;
 		this.undo = undo;
+		this.bags = new WorkshopInventories(WorkshopInventories.dirIn(server.getServerDirectory()));
 	}
 
 	/** Le lien vers WorldEdit : {@link WorldEditBridge} si le mod est là, sinon {@link WorldEditLink#NONE}. */
@@ -129,6 +141,12 @@ public final class WorldEditGate {
 	/** À appeler une fois, au chargement du mod, après {@link ToolPriority#install()} (dont le refus passe d'abord). */
 	static void installPermissions() {
 		PermissionEvents.ON_REQUEST.register(WorldEditGate::onPermission);
+		if (net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("fabric-permissions-api-v0")) {
+			// Avec l'API de permissions de lucko (LuckPerms…), WorldEdit lui pose ses questions, pas à celle de Fabric.
+			ValcombeMod.LOG.warn("[valcombe] fabric-permissions-api-v0 est installé : WorldEdit demande ses permissions à "
+				+ "LuckPerms (ou au mod qui l'apporte), plus à Valcombe. Ses commandes et la baguette restent refusées hors des "
+				+ "ateliers, mais les outils et brosses, et ce que peuvent les invités, suivent alors les réglages de LuckPerms.");
+		}
 	}
 
 	/** Le chemin d'une permission est-il refusé aux invités (lui ou ce qui est au-dessus de lui dans la liste) ? */
@@ -230,6 +248,11 @@ public final class WorldEditGate {
 		if (workshop) {
 			boolean first = inside.add(id);
 			GameType mode = p.gameMode.getGameModeForPlayer();
+			// Un invité laisse son inventaire à l'entrée : ce qu'il prend en créatif reste dans l'atelier.
+			boolean stashed = first && !BuildAccess.operator(p) && bags.stash(p, mode);
+			if (stashed) {
+				p.getInventory().add(ValcombeUi.menuItem());
+			}
 			if (mode != GameType.CREATIVE) {
 				modes.putIfAbsent(id, mode);
 				p.setGameMode(GameType.CREATIVE);
@@ -241,8 +264,17 @@ public final class WorldEditGate {
 					+ "clic gauche, premier coin ; clic droit, second coin ; puis //set, //walls, //copy, //paste… "
 					+ "Annuler : /vc annuler.", ChatFormatting.GREEN));
 			}
-		} else if (inside.remove(id)) {
+			if (stashed) {
+				p.sendSystemMessage(Gui.plain("Ton inventaire est mis de côté : tu le retrouves en sortant de l'atelier, et ce que tu "
+					+ "y prends reste ici.", ChatFormatting.GRAY));
+			}
+		} else if (inside.remove(id) | bags.holds(id)) {
+			// Sortie de l'atelier (ou retour après un redémarrage, inventaire encore de côté).
+			GameType kept = bags.restore(p);
 			GameType before = modes.remove(id);
+			if (before == null) {
+				before = kept;
+			}
 			if (before != null) {
 				p.setGameMode(before);
 			} else if (!BuildAccess.operator(p) && p.gameMode.getGameModeForPlayer() == GameType.CREATIVE) {
