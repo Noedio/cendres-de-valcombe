@@ -375,6 +375,14 @@ public final class MapStore {
 	// ------------------------------------------------------------------
 	public String delete(String id) {
 		MapDef d = def(id);
+		// Ouverte dans un atelier carte : son enregistrement automatique la remettrait dans la bibliothèque, sans les
+		// versions effacées avec elle. On ferme d'abord l'atelier (il l'enregistre), puis on la supprime.
+		MapWorkshop shop = ValcombeMod.mapWorkshop();
+		fr.valcombe.mc.worlds.WorldEntry open = shop == null ? null : shop.atelierOf(d.id);
+		if (open != null) {
+			throw new GameException("La carte « " + d.nom + " » est ouverte dans l'atelier « " + open.nom() + " » : fermez d'abord "
+				+ "l'atelier (Menu J › Mondes › « Atelier de la carte »), puis supprimez-la.");
+		}
 		changed();
 		try {
 			Files.deleteIfExists(dir.resolve(id + ".json"));

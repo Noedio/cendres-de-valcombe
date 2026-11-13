@@ -203,9 +203,12 @@ public class WorldsScreen extends HdScreen {
 			button(rx, py + ph - 74, rw, "Ouvrir une carte…", () -> minecraft.gui.setScreen(new MapWorkshopOpenScreen()))
 				.tooltip("Une carte de la bibliothèque, une carte vierge ou un village généré, chacune dans son propre atelier.");
 		}
-		if (d != null && !mapWorkshopHere) {
-			goButton.tooltip(ClientState.bool(d, "ici") ? "Tu es déjà dans ce monde."
-				: blocked() != null ? blocked() : "Tu y retrouves ta dernière position (la première fois : son point d'arrivée).");
+		if (d != null) {
+			if (!mapWorkshopHere) {
+				goButton.tooltip(ClientState.bool(d, "ici") ? "Tu es déjà dans ce monde."
+					: blocked() != null ? blocked() : "Tu y retrouves ta dernière position (la première fois : son point d'arrivée).");
+			}
+			// L'emblème de la sorte, aussi pour l'atelier carte où l'on se tient (le titre à côté lui laisse sa place).
 			addRenderableOnly(new HdIcon(rx, py + 14, 22, HdIcon.gui(emblem(ClientState.str(d, "sorte"))),
 				ClientState.str(d, "label"), null));
 		}

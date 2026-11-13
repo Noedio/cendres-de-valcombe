@@ -32,7 +32,7 @@ La carte de la bibliothèque est posée au centre d'un monde neuf (`MapPlacer.pl
 - **Capture** : `MapPlacer.shoot` prépare la carte (zone bâtie autour de la place, repères, réglages) sans l'écrire ; `MapPlacer.signature` en donne l'empreinte ; `MapPlacer.keep` la range dans la bibliothèque et note que le monde la porte. Rien n'est écrit quand l'empreinte n'a pas changé.
 - **Zone cherchée** : l'emprise de la carte plus 48 blocs, et aussi loin que les constructeurs sont allés (au plus 200 blocs du centre).
 - **Automatique** : toutes les 5 minutes après un changement vu (blocs posés ou cassés, WorldEdit, repères, structures), à l'arrêt du serveur, à la fermeture, et avant qu'un atelier ne soit supprimé ou remis à neuf autrement (`/vc monde supprimer`, API d'administration : garde `WorldManager.Guard`).
-- **Versions** (`MapVersions`) : `config/valcombe/creations/cartes/versions/<carte>/<date>/` (fiche, blocs, aperçu, `version.json`). 10 versions automatiques et 20 versions demandées par carte au plus, comptées à part. « Revenir à la version du … » garde d'abord l'état présent, remet la version dans la bibliothèque et la repose dans l'atelier. Une carte supprimée de la bibliothèque emporte ses versions.
+- **Versions** (`MapVersions`) : `config/valcombe/creations/cartes/versions/<carte>/<date>/` (fiche, blocs, aperçu, `version.json`). 10 versions automatiques et 20 versions demandées par carte au plus, comptées à part. « Revenir à la version du … » garde d'abord l'état présent, remet la version dans la bibliothèque et la repose dans l'atelier. Une carte supprimée de la bibliothèque emporte ses versions ; une carte ouverte dans un atelier ne se supprime pas (on ferme d'abord l'atelier, qui l'enregistre).
 
 ## Envoyer, fermer
 

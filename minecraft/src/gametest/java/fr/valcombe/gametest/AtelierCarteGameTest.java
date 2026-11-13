@@ -324,6 +324,19 @@ public class AtelierCarteGameTest implements FabricClientGameTest {
 			}
 		});
 		check(refused.startsWith("Nom de carte"), "une carte vierge sans nom est refusée : " + refused);
+		// Ouverte dans son atelier, la carte ne quitte pas la bibliothèque (son enregistrement automatique l'y remettrait).
+		String kept = server.computeOnServer(s -> {
+			int versions = ValcombeMod.maps().versions().list(mapId).size();
+			try {
+				ValcombeMod.maps().delete(mapId);
+				return "supprimée";
+			} catch (GameException e) {
+				return e.getMessage() + " | " + ValcombeMod.maps().exists(mapId) + " | "
+					+ (versions > 0 && ValcombeMod.maps().versions().list(mapId).size() == versions);
+			}
+		});
+		check(kept.contains("fermez d'abord l'atelier") && kept.endsWith(" | true | true"),
+			"une carte ouverte dans un atelier ne se supprime pas, ses versions restent : " + kept);
 
 		// 10. Poser suit la règle de casser : au hub, un opérateur en créatif pose, en survie non.
 		send(ctx, "vc hub");

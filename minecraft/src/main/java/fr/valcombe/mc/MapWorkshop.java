@@ -180,6 +180,8 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 	/** La dernière modification WorldEdit vue de chaque joueur (pour savoir qu'il vient d'en faire une). */
 	private final Map<UUID, Integer> worldEditSeen = new HashMap<>();
 	private final Map<UUID, Reply> replies = new HashMap<>();
+	/** Les ateliers dont l'état a été regardé une fois au démarrage (pose coupée par un arrêt à reprendre). */
+	private final Set<String> probed = new HashSet<>();
 	private int replyCount;
 	private int ticks;
 	private int autosaveTicks = AUTOSAVE_MINUTES * 60 * 20;
@@ -395,6 +397,13 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 			d.failedAt = ticks;
 			ValcombeMod.LOG.warn("Atelier carte « {} » : pose impossible à reprendre ({}).", e.nom(), ex.getMessage());
 		}
+	}
+
+	/** L'état sur le disque de cet atelier note-t-il une pose inachevée ? */
+	private boolean pendingPose(WorldEntry e) {
+		Draft probe = new Draft(e.id());
+		readState(e, probe);
+		return probe.pose != null;
 	}
 
 	/** L'atelier est-il prêt (ni pose de carte, ni construction de village en cours) ? Pour les écrans et les tests en jeu. */
@@ -1447,7 +1456,12 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 				}
 				Draft d = drafts.get(e.id());
 				if (d == null && level.players().isEmpty()) {
-					continue; // un atelier où personne ne va n'est pas relu
+					// Un atelier où personne ne va n'est pas relu ; sauf une pose coupée par un arrêt du serveur, qui reprend dès
+					// le démarrage (une seule lecture de son état par atelier).
+					if (probed.add(e.id()) && pendingPose(e)) {
+						draft(e);
+					}
+					continue;
 				}
 				d = draft(e);
 				if (!level.players().isEmpty()) {
@@ -1460,8 +1474,12 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 				if (d.changed && ticks - d.lastSave >= autosaveTicks && d.v != null && !placing(e)) {
 					try {
 						autosave(e.id(), MapVersions.Kind.AUTO);
-					} catch (GameException ex) {
-						d.lastSave = ticks; // un nouvel essai au prochain intervalle
+					} catch (RuntimeException ex) {
+						// Un nouvel essai au prochain intervalle (et non à chaque seconde, journal compris).
+						d.lastSave = ticks;
+						if (!(ex instanceof GameException)) {
+							ValcombeMod.LOG.error("Enregistrement automatique de l'atelier carte « " + e.nom() + " » en échec", ex);
+						}
 						tellWorld(level, Gui.plain("Enregistrement automatique impossible : " + ex.getMessage(), ChatFormatting.RED));
 					}
 				}
@@ -1546,9 +1564,12 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		MutableComponent c = Component.literal("Atelier de la carte « " + nom + " » : bâtissez avec WorldEdit et à la main ; les outils "
 			+ "« Carte : ... » posent les trônes, les maisons, le centre et la salle de convocation. Enregistrement automatique toutes les "
 			+ AUTOSAVE_MINUTES + " minutes. ").withStyle(ChatFormatting.GREEN);
-		c.append(link("[Atelier de la carte]", "/vc atelier carte", "L'écran de l'atelier : enregistrer, versions, envoyer, fermer"));
 		if (BuildAccess.operator(p)) {
+			c.append(link("[Atelier de la carte]", "/vc atelier carte", "L'écran de l'atelier : enregistrer, versions, envoyer, fermer"));
 			c.append(Component.literal(" ")).append(link("[Enregistrer]", "/vc atelier carte enregistrer", "Ranger la carte dans la bibliothèque"));
+		} else {
+			// Les commandes /vc atelier sont aux opérateurs : un invité ouvre l'écran de l'atelier par le menu.
+			c.append(Component.literal("Le compte des repères : Menu J › Mondes › « Atelier de la carte ».").withStyle(ChatFormatting.GRAY));
 		}
 		p.sendSystemMessage(c);
 	}
