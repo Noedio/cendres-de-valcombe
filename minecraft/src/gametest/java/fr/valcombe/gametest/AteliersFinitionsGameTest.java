@@ -87,7 +87,9 @@ public class AteliersFinitionsGameTest implements FabricClientGameTest {
 			// 2. Les étiquettes de la sélection 3D, de près puis de loin.
 			type(ctx, String.format(Locale.ROOT, "/pos1 %d,%d,%d", 3, 65, 3));
 			type(ctx, String.format(Locale.ROOT, "/pos2 %d,%d,%d", 10, 70, 14));
-			ctx.waitTicks(10);
+			for (int i = 0; i < 100 && !ctx.computeOnClient(mc -> BuildSelection.shown()); i += 5) {
+				ctx.waitTicks(5);
+			}
 			check(ctx.computeOnClient(mc -> BuildSelection.shown()), "sélection reçue par le client");
 			server.runOnServer(s -> {
 				ServerPlayer p = player(s, me);

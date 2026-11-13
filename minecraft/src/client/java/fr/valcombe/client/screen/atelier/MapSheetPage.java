@@ -360,8 +360,10 @@ public class MapSheetPage extends AtelierPage {
 		y += AtelierArt.chipHeight(hd, cs) + hd.u(4);
 		int limit = hd.px(mode == Mode.ACTIONS ? actionsTop() : bottom() - 4 - 18 - (mode == Mode.RENAME ? 22 + 12 : 0)) - hd.u(5);
 		if (mode == Mode.DELETE) {
-			y += hd.paragraph(HdStyle.TEXTE, "Mettre « " + str(m, "nom") + " » à la corbeille ? Elle y reste 30 jours avec ses "
-				+ ClientState.num(m, "versions", 0) + " versions gardées ; « Restaurer » la remet telle quelle.", x, y, w, 0xFF7A1E24, limit - y);
+			int versions = ClientState.num(m, "versions", 0);
+			String kept = versions == 0 ? "" : versions == 1 ? " avec sa version gardée" : " avec ses " + versions + " versions gardées";
+			y += hd.paragraph(HdStyle.TEXTE, "Mettre « " + str(m, "nom") + " » à la corbeille ? Elle y reste 30 jours" + kept
+				+ " ; « Restaurer » la remet telle quelle.", x, y, w, 0xFF7A1E24, limit - y);
 			return;
 		}
 		// Les détails : une ligne « libellé  valeur » par sujet.

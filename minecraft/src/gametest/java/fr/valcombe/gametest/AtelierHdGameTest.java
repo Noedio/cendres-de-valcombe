@@ -291,16 +291,23 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			() -> RoleSheetPage.visit(made.role));
 		String[] names = {"accueil", "bibliotheque", "ateliers", "corbeille", "fiche", "nouvelle", "structures", "construire",
 			"fiche-structure", "nouvelle-structure", "parties", "fiche-partie", "scenarios", "roles", "packs", "fiche-scenario", "fiche-role"};
+		List<String> problems = new ArrayList<>();
 		for (int i = 0; i < pages.size(); i++) {
 			Supplier<Screen> page = pages.get(i);
 			ctx.setScreen(page::get);
 			ctx.waitTicks(6);
 			String problem = ctx.computeOnClient(AtelierHdGameTest::layoutProblem);
-			check(problem == null, "mise en page « " + names[i] + " » (" + suffix + ") : " + (problem == null ? "bonne" : problem));
-			if (SHOWN.contains(names[i])) {
+			if (problem == null) {
+				System.out.println("[valcombe-test] atelier hd : mise en page « " + names[i] + " » (" + suffix + ") : bonne");
+			} else {
+				System.out.println("[valcombe-test] atelier hd : mise en page « " + names[i] + " » (" + suffix + ") : " + problem);
+				problems.add(names[i] + " : " + problem);
+			}
+			if (SHOWN.contains(names[i]) || problem != null) {
 				shot(ctx, "taille-" + suffix + "-" + names[i]);
 			}
 		}
+		check(problems.isEmpty(), "mise en page (" + suffix + ") : " + String.join(" ; ", problems));
 	}
 
 	/** Donne ce texte au champ de saisie de l'écran (comme tapé), puis rouvre la page pour qu'elle en tienne compte. */
@@ -631,22 +638,48 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		check(waitFor(ctx, world, 600, s -> ValcombeMod.worlds().find(imported) == null), "atelier d'import fermé depuis la liste");
 
 		String mainId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().id());
-		structures(ctx, world, made, stamp);
-		parties(ctx, world, made, stamp, mainId);
-		roles(ctx, world, made, stamp, mapId);
+		// Chaque entrée est vérifiée même si une autre a échoué : le test dit tout ce qui ne va pas, puis échoue.
+		List<String> failed = new ArrayList<>();
+		section(ctx, failed, "Structures", () -> structures(ctx, world, made, stamp));
+		section(ctx, failed, "Parties", () -> parties(ctx, world, made, stamp, mainId));
+		section(ctx, failed, "Rôles et scénarios", () -> roles(ctx, world, made, stamp, mapId));
 
 		// 10. La mise en page de chaque page, à plusieurs tailles d'interface.
-		if (scale(ctx, 2, 854, 480)) {
-			layouts(ctx, "427x240", mapId, mainId, made);
-		}
-		if (scale(ctx, 3, 1280, 720)) {
-			layouts(ctx, "echelle3", mapId, mainId, made);
-		}
-		if (scale(ctx, 1, 854, 480)) {
-			layouts(ctx, "echelle1", mapId, mainId, made);
-		}
-		if (scale(ctx, 2, 2560, 1440)) {
-			layouts(ctx, "2560x1440", mapId, mainId, made);
+		section(ctx, failed, "mise en page 427x240", () -> {
+			if (scale(ctx, 2, 854, 480)) {
+				layouts(ctx, "427x240", mapId, mainId, made);
+			}
+		});
+		section(ctx, failed, "mise en page à l'échelle 3", () -> {
+			if (scale(ctx, 3, 1280, 720)) {
+				layouts(ctx, "echelle3", mapId, mainId, made);
+			}
+		});
+		section(ctx, failed, "mise en page à l'échelle 1", () -> {
+			if (scale(ctx, 1, 854, 480)) {
+				layouts(ctx, "echelle1", mapId, mainId, made);
+			}
+		});
+		section(ctx, failed, "mise en page 2560x1440", () -> {
+			if (scale(ctx, 2, 2560, 1440)) {
+				layouts(ctx, "2560x1440", mapId, mainId, made);
+			}
+		});
+		check(failed.isEmpty(), "entrées de l'Atelier en échec : " + String.join(" | ", failed));
+	}
+
+	/** Lance une partie du test ; un échec est noté (avec la capture de l'écran) et la suite continue. */
+	private static void section(ClientGameTestContext ctx, List<String> failed, String name, Runnable part) {
+		try {
+			part.run();
+		} catch (AssertionError e) {
+			System.out.println("[valcombe-test] atelier hd : ÉCHEC dans « " + name + " » : " + e.getMessage());
+			failed.add(name + " : " + e.getMessage());
+			try {
+				shot(ctx, "echec-" + failed.size());
+			} catch (RuntimeException ignored) {
+				// La capture n'est qu'un indice : l'échec est déjà noté.
+			}
 		}
 	}
 

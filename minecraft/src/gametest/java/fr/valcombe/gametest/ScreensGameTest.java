@@ -416,11 +416,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(40);
 		server.runCommand("vc arreter");
 		waitBuild(ctx, world);
-		// Même scénario, la carte intacte en place : plus rien à confirmer ni à recharger.
-		ctx.setScreen(() -> fr.valcombe.client.screen.atelier.ScenarioSheetPage.visit("essai-carte"));
-		ctx.waitTicks(30);
-		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE);
-		ctx.runOnClient(mc -> {
+		// L'essai a choisi son scénario pour la partie principale : la fiche le dit et propose « Ne plus le choisir ».
+		Runnable pickMain = () -> ctx.runOnClient(mc -> {
 			for (var w : mc.gui.screen().children()) {
 				if (w instanceof fr.valcombe.client.hd.HdList<?> l) {
 					for (int i = 0; i < l.items().size(); i++) {
@@ -431,9 +428,30 @@ public class ScreensGameTest implements FabricClientGameTest {
 				}
 			}
 		});
+		ctx.setScreen(() -> fr.valcombe.client.screen.atelier.ScenarioSheetPage.visit("essai-carte"));
+		ctx.waitTicks(30);
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE);
+		pickMain.run();
+		ctx.waitTicks(5);
+		shot(ctx, "28n0-atelier-scenario-deja-choisi");
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.UNCHOOSE);
+		boolean unchosen = false;
+		for (int i = 0; i < 40 && !unchosen; i++) {
+			ctx.waitTicks(2);
+			unchosen = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario() == null);
+		}
+		check(unchosen, "« Ne plus le choisir » : la partie joue sans scénario : " + reply(ctx));
+		// Le même scénario de nouveau, la carte intacte en place : on confirme, mais rien n'est rechargé.
+		ctx.setScreen(() -> fr.valcombe.client.screen.atelier.ScenarioSheetPage.visit("essai-carte"));
+		ctx.waitTicks(30);
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE);
+		pickMain.run();
 		ctx.waitTicks(5);
 		shot(ctx, "28n-atelier-scenario-pour-une-partie");
 		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE_CONFIRM);
+		for (int i = 0; i < 40 && server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario() == null); i++) {
+			ctx.waitTicks(2);
+		}
 		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "carte déjà en place : pas de rechargement");
 		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario() != null
 			&& fr.valcombe.mc.games.Games.main().session().scenario().id.equals("essai-carte")), "scénario choisi pour la partie : " + reply(ctx));
@@ -699,7 +717,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 		}
 	}
 
-	private static void checkAtelier(ClientGameTestContext ctx) {
+	private static void checkAtelier(ClientGameTestContext ctx, TestSingleplayerContext world) {
 		send(ctx, "vc atelier");
 		ctx.waitTicks(10);
 		String link = atelierLink(ctx);
@@ -753,7 +771,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 		// leur état d'envoi chacune (une partie qui joue ailleurs ne grise pas l'envoi à celle-ci).
 		check(data.body().contains("\"carteResume\"") && data.body().contains("\"controle\"") && data.body().contains("\"signature\"")
 			&& data.body().contains("\"structures\"") && data.body().contains("\"tronesMax\":20") && data.body().contains("\"parties\":[{")
-			&& data.body().contains("\"bloque\""), "catalogue de la page : cartes, structures, parties");
+			&& data.body().contains("\"enCours\":") && !data.body().contains("\"bloque\""), "catalogue de la page : cartes, structures, parties"
+			+ " (rien n'empêche d'envoyer une carte à une partie au salon : pas de champ « bloque »)");
 		// Un champ vide ou hors bornes est refusé en clair, sans rien lancer.
 		var empty = post.apply("carte/generer", "{\"places\":null,\"taille\":1,\"theme\":\"port\",\"maisons\":true}");
 		check(empty.statusCode() == 409 && empty.body().equals("Trônes : indiquez un nombre de 5 à 20."), "champ vide : " + empty.body());
@@ -808,25 +827,27 @@ public class ScreensGameTest implements FabricClientGameTest {
 		check(journal.body().contains("Banc du test") && journal.body().contains(trialName), "le journal note la structure copiée et la partie créée");
 		// La partie d'essai du test s'en va (son monde avec), comme on la supprime du menu « Parties ».
 		// Son village est d'abord posé (envoyé à la création) : la supprimer pendant la remise à neuf serait refusé.
-		var integrated = ctx.computeOnClient(mc -> mc.getSingleplayerServer());
-		java.util.function.Supplier<Boolean> trialIdle = () -> integrated.submit(() -> {
+		// Le serveur ne tourne que quand le fil du test le laisse faire : on l'interroge par computeOnServer (attendre une
+		// tâche soumise au serveur intégré bloquerait les deux fils).
+		var integrated = world.getServer();
+		java.util.function.Supplier<Boolean> trialIdle = () -> integrated.computeOnServer(s -> {
 			var r = fr.valcombe.mc.games.Games.byWorld(trialId);
 			var sender = fr.valcombe.mc.ValcombeMod.sender();
 			return r != null && (sender == null || sender.sendingTo(trialId) == null) && !r.host().busy()
 				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId);
-		}).join();
+		});
 		boolean idle = trialIdle.get();
 		for (int i = 0; i < 1200 && !idle; i += 5) {
 			ctx.waitTicks(5);
 			idle = trialIdle.get();
 		}
 		check(idle, "la partie d'essai de la page a reçu son village");
-		integrated.submit(() -> fr.valcombe.mc.games.Games.current().delete(trialId)).join();
+		integrated.runOnServer(s -> fr.valcombe.mc.games.Games.current().delete(trialId));
 		boolean gone = false;
 		for (int i = 0; i < 600 && !gone; i += 5) {
 			ctx.waitTicks(5);
-			gone = integrated.submit(() -> fr.valcombe.mc.games.Games.byWorld(trialId) == null
-				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId)).join();
+			gone = integrated.computeOnServer(s -> fr.valcombe.mc.games.Games.byWorld(trialId) == null
+				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId));
 		}
 		check(gone, "la partie d'essai de la page est supprimée");
 		// Fermer la tablette du Conteur ne ferme pas l'Atelier ; /vc atelier fermer ferme le lien de cet opérateur.
@@ -1581,7 +1602,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 			inGame(world, "vc arreter");
 			waitBuild(ctx, world); // la carte est remise en état avant de passer à la suite
 			// L'Atelier, puis le scénario du Bal masqué qu'il a choisi : écran Scénarios et rôle créé dans le script
-			checkAtelier(ctx);
+			checkAtelier(ctx, world);
 			ctx.setScreen(fr.valcombe.client.screen.ScenarioScreen::new);
 			shot(ctx, "20-scenarios");
 			ctx.setScreen(fr.valcombe.client.screen.ScriptScreen::new);

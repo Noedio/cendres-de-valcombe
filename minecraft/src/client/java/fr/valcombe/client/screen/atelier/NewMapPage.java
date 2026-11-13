@@ -486,7 +486,8 @@ public class NewMapPage extends AtelierPage {
 				for (int i = 0; i < labels.length; i++) {
 					hd.textMiddle(ls, labels[i], x, y + i * row, h18, Hd.INK);
 				}
-				hd.textMiddle(HdStyle.FORT, String.valueOf(seats), x + hd.u(52 + 22), y + row, h18, Hd.INK);
+				// Le nombre au milieu de la case entre « − » et « + » (40 de large).
+				hd.textCentered(HdStyle.FORT, String.valueOf(seats), x + hd.u(52 + 22 + 20), y + row + (h18 - hd.lineHeight(HdStyle.FORT)) / 2, Hd.INK);
 				int tx = x + hd.u(52 + 22 + 40 + 22 + 8);
 				int room = x + w - tx;
 				if (room > hd.u(40)) {

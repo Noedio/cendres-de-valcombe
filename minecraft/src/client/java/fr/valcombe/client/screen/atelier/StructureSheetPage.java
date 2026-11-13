@@ -296,7 +296,8 @@ public class StructureSheetPage extends AtelierPage {
 			return;
 		}
 		List<String[]> rows = new ArrayList<>();
-		rows.add(new String[] {"Taille", StructuresPage.dims(s) + " blocs (largeur, hauteur, profondeur)"});
+		// Largeur × hauteur × profondeur, comme dans le catalogue : la ligne reste assez courte pour ne pas être coupée.
+		rows.add(new String[] {"Taille", StructuresPage.dims(s) + " blocs"});
 		rows.add(new String[] {"Blocs", ClientState.num(s, "blocs", 0) + " posés"});
 		String mark = StructuresPage.markText(s);
 		rows.add(new String[] {"Repère", mark.isEmpty() ? "aucun" : mark});
