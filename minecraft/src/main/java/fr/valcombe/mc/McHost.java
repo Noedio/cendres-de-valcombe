@@ -1041,7 +1041,9 @@ public final class McHost implements Host {
 	/** Trônes sculptés d'un village généré : reposés pour suivre les trônes déplacés ou tournés. */
 	private void refreshThrones() {
 		if (village != null && village.isGenerated() && server != null) {
-			WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone]");
+			// distance=0.. : le monde principal seulement (un @e sans position vise tous les mondes, et des cartes
+			// posées dans les mondes de Valcombe ont aussi leurs trônes sculptés, voir MapPlacer).
+			WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,distance=0..]");
 			village.placeThrones(server);
 		}
 	}
@@ -2644,7 +2646,8 @@ public final class McHost implements Host {
 		}
 		if (tick % 100 == 0 && server != null) {
 			if (village != null) {
-				WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + "]");
+				// Dans le monde principal seulement (distance=0..) : les trônes des cartes posées ailleurs restent.
+				WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_" + village.decorGen() + ",distance=0..]");
 			}
 			// Scène d'avant un redémarrage, restée dans des chunks qui n'étaient pas chargés quand on l'a retirée.
 			WorldSetup.run(server, "kill @e[tag=vc_scene,tag=!" + Stage.GEN_TAG + "]");

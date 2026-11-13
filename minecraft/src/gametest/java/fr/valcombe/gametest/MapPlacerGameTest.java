@@ -246,6 +246,10 @@ public class MapPlacerGameTest implements FabricClientGameTest {
 				return t.size() == 5 && t.stream().anyMatch(e -> e.blockPosition().getX() == turned.pos().getX()
 					&& e.blockPosition().getZ() == turned.pos().getZ() && Math.abs(e.getYRot() - 45) < 0.5f);
 			}), "5 trônes sculptés, le trône tourné regarde à 45°");
+			// Le ménage des trônes du monde principal (McHost, toutes les 5 secondes) ne touche pas aux autres mondes.
+			server.runCommand("kill @e[type=minecraft:item_display,tag=vc_trone,tag=!vc_tr_999,distance=0..]");
+			ctx.waitTicks(5);
+			check(server.computeOnServer(s -> thrones(level(b)).size() == 5), "les trônes de B survivent au ménage du monde principal");
 			check(server.computeOnServer(s -> mapA.equals(worlds().get(b).carte())), "la fiche de B note sa carte");
 
 			// Une capture dans la console du joueur : on va voir la carte dans B.
