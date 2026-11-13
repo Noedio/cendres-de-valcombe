@@ -127,6 +127,8 @@ final class SessionView {
 		st.put("councilSeconds", ses.settings.councilSeconds);
 		st.put("absoluteMajority", ses.settings.absoluteMajority);
 		st.put("evilMajorityWins", ses.settings.evilMajorityWins);
+		st.put("heirAlways", ses.settings.heirAlways);
+		st.put("evilInfoAlways", ses.settings.evilInfoAlways);
 		v.put("settings", st);
 		if (leader) {
 			// Rôles imposés au salon (joueur → rôle) et, avant la première nuit, l'avertissement de répartition.

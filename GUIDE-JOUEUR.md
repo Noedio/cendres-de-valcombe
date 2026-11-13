@@ -82,7 +82,7 @@ Les touches se changent dans les options de Minecraft (raccourcis clavier), rubr
 ### La nuit
 
 - La nuit tombe : brume, lanternes bleues, chacun dort dans sa maison.
-- **Première nuit** : le Diablotin ne tue personne. Les Sbires apprennent qui est le Diablotin, et le Diablotin apprend ses Sbires et ses trois bluffs (voir section 8 : à partir de 7 joueurs).
+- **Première nuit** : le Diablotin ne tue personne. Les Sbires apprennent qui est le Diablotin, et le Diablotin apprend ses Sbires et ses trois bluffs. Avec nos règles, c'est vrai dès 5 joueurs (voir section 8).
 - Quand votre tour vient, un écran « Tu te réveilles » s'ouvre : cliquez sur un ou deux jetons de joueurs, ou lisez votre information, puis « Je me rendors ». Avec un MJ humain, vous pouvez lui parler à ce moment, seuls au vocal.
 - Les autres voient « Tu dors… » et peuvent relire leur carnet.
 
@@ -157,7 +157,7 @@ Chaque ligne donne le nom de la feuille, le nom dans le jeu et ce que fait le r�
 | Empoisonneur | L'Alchimiste | Chaque nuit, empoisonne un joueur : cette nuit et le lendemain, son pouvoir ne marche pas et ses informations peuvent être fausses. |
 | Espion | Le Mouchard | Consulte chaque nuit le grimoire (tous les rôles). Peut passer pour un Villageois ou un Outsider. |
 | Baron | Le Margrave | Deux Outsiders de plus sont en jeu (à la place de deux Villageois). |
-| Femme écarlate | L'Héritière | Si le Diablotin meurt alors qu'il reste au moins 5 vivants, elle devient le Diablotin. |
+| Femme écarlate | L'Héritière | Si le Diablotin meurt, elle devient le Diablotin. Avec nos règles, c'est sans condition ; en règle officielle, il faut au moins 5 vivants. |
 | Sorcière | La Sorcière | Chaque nuit, maudit un joueur : s'il est accusé au Conseil suivant, il meurt à la fin du Conseil, après les votes. Le pouvoir s'éteint à 3 vivants. |
 | Diablotin | La Goule | Chaque nuit sauf la première, tue un joueur. S'il se tue lui-même, un Sbire devient le Diablotin. Reçoit trois bluffs. |
 
@@ -167,8 +167,8 @@ La feuille, la liste des rôles et les fiches d'attribution ne disent pas toujou
 
 | Sujet | Les documents de la table | Le jeu | Effet |
 | --- | --- | --- | --- |
-| **Femme écarlate** | Devient le Diablotin quand il meurt, sans condition. | Seulement s'il reste au moins 5 vivants (règle officielle). | En fin de partie, tuer le Diablotin gagne même si elle vit. |
-| **Infos du mal la première nuit** | Les Sbires apprennent le Diablotin, et lui ses bluffs, quel que soit le nombre de joueurs. | Seulement à partir de 7 joueurs (règle officielle). | À 5 ou 6 joueurs, le mal joue à l'aveugle. |
+| **Femme écarlate** | Devient le Diablotin quand il meurt, sans condition. | Comme la feuille avec la règle « Héritière sans seuil » (cochée dans « La Table de Valcombe »). Sans elle : seulement s'il reste au moins 5 vivants (règle officielle). | Avec la règle officielle, tuer le Diablotin en fin de partie gagne même si elle vit. |
+| **Infos du mal la première nuit** | Les Sbires apprennent le Diablotin, et lui ses bluffs, quel que soit le nombre de joueurs. | Comme la feuille avec la règle « Infos du mal dès 5 » (cochée dans « La Table de Valcombe »). Sans elle : à partir de 7 joueurs (règle officielle). | Avec la règle officielle, à 5 ou 6 joueurs, le mal joue à l'aveugle. |
 | Croque-mort | La liste dit « chaque nuit, le dernier exécuté » ; la fiche dit « la nuit d'après une exécution ». | Comme la fiche : seulement la nuit qui suit une exécution. | Pas d'information une nuit sans exécution la veille. |
 | Prêtre | « Un joueur » (soi-même compris ?). | Un **autre** joueur que lui. | Le Prêtre ne se protège pas. |
 | Soldat | « Ne peut pas mourir la nuit. » | « Le Diablotin ne peut pas le tuer. » | Identique ici : la nuit, seul le Diablotin tue. |
@@ -181,7 +181,7 @@ La feuille, la liste des rôles et les fiches d'attribution ne disent pas toujou
 
 Ce que le jeu ajoute et que la feuille ne dit pas : le vote unique des morts, les voyageurs (un joueur en retard rejoint la partie en cours), les figures neutres (la Sentinelle, le Doyen, le Sablier) et la Pèlerine qui ne compte que si l'accusateur est un **Villageois** (pas un Outsider).
 
-Les deux écarts en gras sont des règles officielles de Blood on the Clocktower. Si la table veut jouer comme sur la feuille, il faut l'ajouter au jeu : demandez-le au MJ.
+Les deux écarts en gras viennent des règles officielles de Blood on the Clocktower. Le jeu les propose désormais comme règles de la table : le scénario « La Table de Valcombe » les coche, et le MJ peut les changer dans le Pupitre du Conteur › Réglages de la partie (« Héritière sans seuil », « Infos du mal dès 5 ») ou dans l'Atelier.
 
 ## 9. Conseils pour bien jouer
 
@@ -202,7 +202,7 @@ Les deux écarts en gras sont des règles officielles de Blood on the Clocktower
 
 ## 10. Pour le MJ : préparer une partie de la table
 
-- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue et la victoire du mal majoritaire. Choisissez-le dans l'Atelier ou dans le jeu (menu J › Pupitre du Conteur › Éditer le script › Scénarios…).
+- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue, la victoire du mal majoritaire, l'Héritière sans seuil et le mal qui se connaît dès 5 joueurs. Choisissez-le dans l'Atelier ou dans le jeu (menu J › Pupitre du Conteur › Éditer le script › Scénarios…).
 - **Le temps de discussion** et la durée du Conseil se règlent dans le Pupitre du Conteur › « Durées et minuteurs… ».
 - **Choisir les rôles soi-même** : au salon, Pupitre du Conteur › « Imposer des rôles… » ; avant la première nuit, onglet Nuit › « Distribution des rôles… » montre le rôle de chacun, à changer d'un clic.
 - **Les groupes de rôles** : dans l'éditeur de script (Pupitre du Conteur › Éditer le script), la colonne de droite propose les groupes : cliquez sur le nom pour passer d'un groupe à l'autre (ses jetons sont soulignés d'or), puis « + » (ajouter au script), « − » (retirer) ou « Seul » (le script devient le groupe). « Ranger… » enregistre le script en cours comme groupe. Les groupes se créent aussi dans l'Atelier web et voyagent dans les fichiers `.valcombe` (onglet Partage).

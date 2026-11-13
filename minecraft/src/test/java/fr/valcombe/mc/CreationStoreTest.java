@@ -133,6 +133,7 @@ class CreationStoreTest {
 		assertNull(table.problem(), "le scénario de la table est jouable");
 		assertEquals(26, table.script().size());
 		assertTrue(table.regles.majoriteAbsolue && table.regles.victoireMalMajoritaire && table.reglages.conseil);
+		assertTrue(table.regles.heritiereSansSeuil && table.regles.infosDuMalDes5, "les deux règles de la feuille");
 		// Choisir le scénario applique le script et les réglages
 		ses.useScenario("bal-masque");
 		assertTrue(ses.script().contains(Role.parse("passeur")));
@@ -161,6 +162,27 @@ class CreationStoreTest {
 		assertTrue(again.scenarios().stream().noneMatch(x -> x.id.equals("table")));
 		assertNotNull(Role.parse("passeur"));
 		assertThrows(GameException.class, () -> store2.importPack("{\"format\":\"autre\"}"));
+	}
+
+	@Test
+	void scenarioDeLaTableMisAJourUneFois() throws Exception {
+		// Un serveur qui a reçu le scénario de la table avant les deux règles de la feuille
+		Path creations = tmp.resolve("valcombe/creations");
+		Files.createDirectories(creations.resolve("scenarios"));
+		Files.writeString(creations.resolve(".scenario-table-offert"), "");
+		ScenarioDef old = scenario("table", List.of());
+		old.regles.majoriteAbsolue = true;
+		Files.writeString(creations.resolve("scenarios/table.json"), new com.google.gson.Gson().toJson(old));
+		CreationStore store = new CreationStore(tmp, session());
+		store.load();
+		ScenarioDef t = store.scenarios().stream().filter(x -> x.id.equals("table")).findFirst().orElseThrow();
+		assertTrue(t.regles.heritiereSansSeuil && t.regles.infosDuMalDes5 && t.regles.majoriteAbsolue, "règles ajoutées, le reste gardé");
+		// Décochées ensuite, elles le restent
+		t.regles.infosDuMalDes5 = false;
+		store.saveScenario(t);
+		CreationStore again = new CreationStore(tmp, session());
+		again.load();
+		assertTrue(!again.scenarios().stream().filter(x -> x.id.equals("table")).findFirst().orElseThrow().regles.infosDuMalDes5);
 	}
 
 	@Test

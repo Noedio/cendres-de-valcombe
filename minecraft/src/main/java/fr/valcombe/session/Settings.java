@@ -19,6 +19,10 @@ public final class Settings {
 	public boolean absoluteMajority;
 	/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
 	public boolean evilMajorityWins;
+	/** Règle de la table : l'Héritière devient le Démon même s'il reste moins de 5 vivants. */
+	public boolean heirAlways;
+	/** Règle de la table : le mal se connaît la première nuit dès 5 joueurs (officiellement : dès 7). */
+	public boolean evilInfoAlways;
 	/**
 	 * Mode manuel (avec un Conteur humain) : aucun minuteur n'enchaîne seul. Le Conteur ouvre et clôt le
 	 * Conseil, lance chaque vote, appelle chaque rôle la nuit et lance le vote après la défense.

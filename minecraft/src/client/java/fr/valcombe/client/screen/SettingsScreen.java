@@ -19,10 +19,14 @@ public class SettingsScreen extends BaseScreen {
 	}
 
 	/** Interrupteur dans la colonne de gauche (col 0) ou de droite (col 1). */
-	private void toggle(int col, int y, String label, String key, boolean on) {
+	private fr.valcombe.client.ui.WaxButton toggle(int col, int y, String label, String key, boolean on) {
 		int w = pw / 2 - 15;
-		button(px + 10 + col * (w + 10), y, w, label + " : " + (on ? "oui" : "non"),
+		return button(px + 10 + col * (w + 10), y, w, label + " : " + (on ? "oui" : "non"),
 			() -> send("vc reglage " + key + " " + (on ? "non" : "oui")));
+	}
+
+	private static net.minecraft.client.gui.components.Tooltip tip(String text) {
+		return net.minecraft.client.gui.components.Tooltip.create(net.minecraft.network.chat.Component.literal(text));
 	}
 
 	@Override
@@ -53,6 +57,13 @@ public class SettingsScreen extends BaseScreen {
 		toggle(0, y += 21, "Carte remise en état", "remise_en_etat", restore);
 		// Défense, aiguille et toutes les autres durées : écran « Durées et minuteurs ».
 		button(rx, y, w, "Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()));
+		// Règles de notre feuille, là où elle s'écarte de la règle officielle.
+		toggle(0, y += 21, "Héritière sans seuil", "heritiere_sans_seuil", ClientState.bool(st, "heirAlways"))
+			.setTooltip(tip("Oui : l'Héritière (Femme écarlate) devient le Démon même s'il reste moins de 5 vivants. "
+				+ "Non : règle officielle, 5 vivants au moins."));
+		toggle(1, y, "Infos du mal dès 5", "infos_mal_des_5", ClientState.bool(st, "evilInfoAlways"))
+			.setTooltip(tip("Oui : dès 5 joueurs, les Sbires apprennent le Démon et le Démon ses Sbires et ses bluffs. "
+				+ "Non : règle officielle, à partir de 7 joueurs."));
 		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
 

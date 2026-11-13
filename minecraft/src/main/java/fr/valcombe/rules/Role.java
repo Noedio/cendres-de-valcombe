@@ -57,7 +57,7 @@ public enum Role {
 	MOUCHARD("Le Mouchard", RoleType.SBIRE, 4, 10, 0, false,
 		"Chaque nuit, tu consultes le grimoire. Tu peux passer pour bon, Citadin ou Étranger, même mort."),
 	HERITIERE("L'Héritière", RoleType.SBIRE, 0, 3, 0, false,
-		"S'il reste au moins 5 vivants et que le Démon meurt, tu deviens le Démon."),
+		"Si le Démon meurt, tu deviens le Démon : s'il reste au moins 5 vivants, ou toujours avec la règle de la table."),
 	MARGRAVE("Le Margrave", RoleType.SBIRE, 0, 0, 0, false,
 		"Deux Étrangers de plus sont en jeu."),
 	// Sbire des Brumes de Valcombe

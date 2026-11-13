@@ -302,6 +302,21 @@ public final class Game {
 		this.evilMajorityWins = evilMajorityWins;
 	}
 
+	/** Règles de la table : l'Héritière prend la relève sans seuil de 5 vivants. */
+	private boolean heirAlways;
+	/** Règles de la table : les Sbires et le Démon se connaissent (et le Démon reçoit ses bluffs) dès 5 joueurs. */
+	private boolean evilInfoAlways;
+
+	public void setTableRules(boolean heirAlways, boolean evilInfoAlways) {
+		this.heirAlways = heirAlways;
+		this.evilInfoAlways = evilInfoAlways;
+	}
+
+	/** Le mal reçoit-il ses informations la première nuit ? Officiellement à partir de 7 joueurs. */
+	public boolean evilLearnsEachOther() {
+		return evilInfoAlways || size() >= 7;
+	}
+
 	// Les sauvegardes d'avant les rôles de la table n'ont pas ces listes : elles sont créées à la demande.
 	private List<Integer> votersToday() {
 		if (votersToday == null) {
@@ -892,7 +907,7 @@ public final class Game {
 				}
 			}
 		}
-		if (h >= 0 && player(h).alive && !isPoisoned(h) && aliveBefore >= 5) {
+		if (h >= 0 && player(h).alive && !isPoisoned(h) && (aliveBefore >= 5 || heirAlways)) {
 			makeDemon(h, demon);
 			return;
 		}
@@ -978,9 +993,9 @@ public final class Game {
 	private Step buildStep(Slot slot) {
 		switch (slot.kind) {
 			case MINION_INFO:
-				return size() < 7 ? null : new Step(Step.Kind.MINION_INFO, null, -1, minionSeats());
+				return !evilLearnsEachOther() ? null : new Step(Step.Kind.MINION_INFO, null, -1, minionSeats());
 			case DEMON_INFO:
-				return size() < 7 ? null : new Step(Step.Kind.DEMON_INFO, null, demonSeat(), List.of());
+				return !evilLearnsEachOther() ? null : new Step(Step.Kind.DEMON_INFO, null, demonSeat(), List.of());
 			case NEW_DEMON:
 				return newDemon >= 0 && player(newDemon).alive
 					? new Step(Step.Kind.NEW_DEMON, null, newDemon, List.of()) : null;

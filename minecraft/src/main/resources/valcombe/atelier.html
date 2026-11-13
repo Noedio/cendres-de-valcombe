@@ -305,6 +305,8 @@
 				<label class="check"><input type="checkbox" id="sReveal"> Le rôle d'un mort est révélé à tous</label>
 				<label class="check"><input type="checkbox" id="sMajAbs"> Exécution à la majorité absolue des vivants</label>
 				<label class="check"><input type="checkbox" id="sMalMaj"> Le mal gagne dès qu'il est majoritaire</label>
+				<label class="check"><input type="checkbox" id="sHeirAll"> L'Héritière devient le Démon même à moins de 5 vivants</label>
+				<label class="check"><input type="checkbox" id="sEvilInfo"> Le mal se connaît dès 5 joueurs (au lieu de 7)</label>
 				<div><label>Accusations par jour (0 : sans limite)</label><input id="sAccMax" type="number" min="0" max="20" value="0"></div>
 			</div>
 			<h3>Rôles toujours en jeu</h3>
@@ -1274,6 +1276,8 @@ function editSc(s) {
 	$("sReveal").checked = !!rg.roleReveleALaMort;
 	$("sMajAbs").checked = !!rg.majoriteAbsolue;
 	$("sMalMaj").checked = !!rg.victoireMalMajoritaire;
+	$("sHeirAll").checked = !!rg.heritiereSansSeuil;
+	$("sEvilInfo").checked = !!rg.infosDuMalDes5;
 	$("sAccMax").value = rg.accusationsMax || 0;
 	imposes = (rg.imposes || []).slice();
 	repart = JSON.parse(JSON.stringify(rg.repartition || {}));
@@ -1313,6 +1317,7 @@ function scForm() {
 			chuchotementsInterdits: $("sChu").checked, mortsSansVote: $("sSansVote").checked,
 			roleReveleALaMort: $("sReveal").checked, accusationsMax: parseInt($("sAccMax").value || "0", 10),
 			majoriteAbsolue: $("sMajAbs").checked, victoireMalMajoritaire: $("sMalMaj").checked,
+			heritiereSansSeuil: $("sHeirAll").checked, infosDuMalDes5: $("sEvilInfo").checked,
 			imposes: imposes.filter(id => currentPicked().includes(id)),
 			repartition: $("sRepOn").checked ? repart : {},
 			// L'ordre n'est enregistré que s'il diffère de l'ordre habituel.

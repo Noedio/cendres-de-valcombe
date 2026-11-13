@@ -68,6 +68,10 @@ public final class ScenarioDef {
 		public boolean majoriteAbsolue;
 		/** Le mal gagne dès qu'il est majoritaire parmi les vivants. */
 		public boolean victoireMalMajoritaire;
+		/** L'Héritière (Femme écarlate) devient le Démon sans seuil de 5 vivants. */
+		public boolean heritiereSansSeuil;
+		/** Les Sbires et le Démon se connaissent dès 5 joueurs (au lieu de 7). */
+		public boolean infosDuMalDes5;
 		/** Rôles toujours en jeu (dans la limite des places de leur type). */
 		public List<String> imposes = new ArrayList<>();
 		/** Répartition propre : nombre de joueurs → [Citadins, Étrangers, Sbires, Démons]. */

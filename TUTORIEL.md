@@ -114,7 +114,7 @@ Les joueurs arrivent dans la **salle d'attente** : la dalle **dorée** pour s'in
 
 - Le **bien** (Citadins et Étrangers) gagne quand le **Démon meurt**.
 - Le **mal** (le Démon et ses Sbires) gagne quand il ne reste que **deux vivants** (sans compter les voyageurs). Avec la règle de la table « le mal gagne dès qu'il est majoritaire », il gagne aussi dès qu'il y a plus de mauvais que de bons parmi les vivants.
-- Le mal sait qui il est (à partir de 7 joueurs) ; le bien doit deviner qui ment.
+- Le mal sait qui il est (à partir de 7 joueurs, ou dès 5 avec la règle de la table « Infos du mal dès 5 ») ; le bien doit deviner qui ment.
 
 ### Le lancement
 
@@ -123,7 +123,7 @@ Le Conteur (ou l'opérateur, en Conteur automatique) lance la partie : menu J �
 ### La nuit
 
 - Le Conteur fait tomber la nuit : brume, lanternes bleues, chacun dort dans sa maison (selon les réglages : écran noir, micros coupés).
-- La **première nuit**, les Sbires apprennent qui est le Démon, et le Démon apprend ses Sbires et trois rôles absents pour bluffer (à partir de 7 joueurs).
+- La **première nuit**, les Sbires apprennent qui est le Démon, et le Démon apprend ses Sbires et trois rôles absents pour bluffer (à partir de 7 joueurs, ou dès 5 avec la règle « Infos du mal dès 5 »).
 - Puis chaque rôle qui agit la nuit est **réveillé à son tour** : un écran s'ouvre (« Tu te réveilles »), on désigne un ou deux joueurs en cliquant sur leurs jetons, ou on lit son information, puis « Je me rendors ». Le Conteur et le joueur réveillé se parlent seuls au vocal.
 - Ceux qui dorment voient « Tu dors… » : ils peuvent relire leur carnet (touche J).
 
@@ -229,7 +229,7 @@ Trente secondes plus tard, ou dix secondes après la fin de la veillée si elle 
 | --- | --- | --- | --- |
 | **L'Alchimiste** | Nuit 1 (3), suivantes (1) | Empoisonne un joueur : son pouvoir ne marche pas cette nuit et le lendemain. | Visez les rôles d'information. |
 | **Le Mouchard** | Nuit 1 (4), suivantes (10) | Consulte le grimoire chaque nuit ; peut passer pour bon. | Il voit tout : guidez votre Démon. |
-| **L'Héritière** | Suivantes (3) | S'il reste au moins 5 vivants et que le Démon meurt, elle devient le Démon. | La relève : restez discrète. |
+| **L'Héritière** | Suivantes (3) | S'il reste au moins 5 vivants et que le Démon meurt, elle devient le Démon (sans condition avec la règle de la table « Héritière sans seuil »). | La relève : restez discrète. |
 | **Le Margrave** | Aucun | Deux Étrangers de plus sont en jeu. | Son effet joue au tirage. |
 | **La Faussaire** *(Brumes)* | Nuit 1 (3), suivantes (1) | Désigne un joueur : s'il reçoit une information cette nuit, elle est fausse. | Brouillez la meilleure source du bien. |
 

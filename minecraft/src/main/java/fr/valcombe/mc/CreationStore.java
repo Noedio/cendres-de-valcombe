@@ -89,6 +89,7 @@ public final class CreationStore {
 			}
 		}
 		offerTableScenario();
+		upgradeTableScenario();
 		groups.clear();
 		Path g = dir.resolve("groupes.json");
 		if (Files.exists(g)) {
@@ -150,12 +151,38 @@ public final class CreationStore {
 		d.reglages.conseil = true;
 		d.regles.majoriteAbsolue = true;
 		d.regles.victoireMalMajoritaire = true;
+		d.regles.heritiereSansSeuil = true;
+		d.regles.infosDuMalDes5 = true;
 		try {
 			write("scenarios", d.id, d);
 			Files.writeString(marker, "Scénario de la table offert une fois ; supprimez ce fichier pour le recevoir à nouveau.");
 			scenarios.add(d);
 		} catch (RuntimeException | IOException e) {
 			LOG.warn("Atelier : scénario de la table non créé", e);
+		}
+	}
+
+	/**
+	 * Le scénario de la table, offert avant les deux règles de la feuille (Héritière sans seuil, le mal se connaît dès
+	 * 5 joueurs), les reçoit une fois. Décochées ensuite dans l'Atelier, elles le restent.
+	 */
+	private void upgradeTableScenario() {
+		Path marker = dir.resolve(".scenario-table-v2");
+		if (Files.exists(marker)) {
+			return;
+		}
+		try {
+			ScenarioDef t = scenarios.stream().filter(s -> "table".equals(s.id)).findFirst().orElse(null);
+			if (t != null && t.regles != null && !(t.regles.heritiereSansSeuil && t.regles.infosDuMalDes5)) {
+				t.regles.heritiereSansSeuil = true;
+				t.regles.infosDuMalDes5 = true;
+				write("scenarios", t.id, t);
+				LOG.info("Atelier : scénario de la table mis à jour (Héritière sans seuil, infos du mal dès 5 joueurs)");
+			}
+			Files.createDirectories(dir);
+			Files.writeString(marker, "Règles de la feuille ajoutées une fois au scénario de la table.");
+		} catch (RuntimeException | IOException e) {
+			LOG.warn("Atelier : scénario de la table non mis à jour", e);
 		}
 	}
 

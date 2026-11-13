@@ -535,6 +535,8 @@ public final class Session {
 		settings.absoluteMajority = d.regles.majoriteAbsolue;
 		settings.discussionMinutes = Math.max(0, d.regles.discussionMinutes);
 		settings.evilMajorityWins = d.regles.victoireMalMajoritaire;
+		settings.heirAlways = d.regles.heritiereSansSeuil;
+		settings.evilInfoAlways = d.regles.infosDuMalDes5;
 		settings.defenseSeconds = r.defense;
 		settings.clockTicks = (int) Math.round(r.horloge * 20);
 		settings.nightHouses = r.nuitMaisons;
@@ -1109,6 +1111,7 @@ public final class Session {
 			presets.clear();
 		}
 		g.setHouseRules(settings.absoluteMajority, settings.evilMajorityWins);
+		g.setTableRules(settings.heirAlways, settings.evilInfoAlways);
 		if (wanted == Mode.HUMAIN) {
 			g.decide = policies;
 		}
@@ -1432,6 +1435,16 @@ public final class Session {
 					updateBoards();
 				}
 			}
+			case "heritiere_sans_seuil", "infos_mal_des_5" -> {
+				if (key.equals("heritiere_sans_seuil")) {
+					settings.heirAlways = yes;
+				} else {
+					settings.evilInfoAlways = yes;
+				}
+				if (game != null) {
+					game.setTableRules(settings.heirAlways, settings.evilInfoAlways);
+				}
+			}
 			case "temps_defense" -> settings.defenseSeconds = Math.max(5, Math.min(180, number(value)));
 			case "temps_horloge" -> settings.clockTicks = Math.max(10, Math.min(100, number(value) * 2));
 			case "spectateurs_grimoire" -> settings.spectatorGrimoire = yes;
@@ -1449,7 +1462,8 @@ public final class Session {
 				&& !value.equalsIgnoreCase("non");
 			default -> throw new GameException(
 				"Réglages : nuit_immobile, nuit_sombre, nuit_maisons, nuit_muette, remise_convocation, remise_en_etat, "
-					+ "conseil, manuel, noms, carnet_nuit, nuit_auto, majorite_absolue, victoire_majorite (oui|non), discussion_minutes <min>, "
+					+ "conseil, manuel, noms, carnet_nuit, nuit_auto, majorite_absolue, victoire_majorite, "
+					+ "heritiere_sans_seuil, infos_mal_des_5 (oui|non), discussion_minutes <min>, "
 					+ "pause_etapes <s>, coucher <s>, portee_chuchoter, portee_crier <blocs>, "
 					+ "duree_conseil <secondes, 0 : à la main>, temps_defense <secondes>, "
 					+ "temps_horloge <dixièmes de seconde par trône>, effets (complets|reduits), coiffe (chapeau|crane|aucun).");
