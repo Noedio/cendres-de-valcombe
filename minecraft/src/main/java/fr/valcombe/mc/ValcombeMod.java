@@ -121,6 +121,15 @@ public final class ValcombeMod implements ModInitializer {
 	}
 
 	private static Workshop workshop;
+	private static fr.valcombe.mc.worlds.WorldManager worlds;
+
+	/**
+	 * Gestionnaire des mondes de Valcombe (hub, parties, ateliers) ; null avant le démarrage du serveur, ou si
+	 * les mondes n'ont pas pu être préparés (le jeu dans le monde principal continue alors sans eux).
+	 */
+	public static fr.valcombe.mc.worlds.WorldManager worlds() {
+		return worlds;
+	}
 
 	/** Ce que l'Atelier montre des cartes et des structures, pour la page web et l'écran en jeu ; null avant le démarrage du serveur. */
 	public static Workshop workshop() {
@@ -221,6 +230,14 @@ public final class ValcombeMod implements ModInitializer {
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
 			HOST.prepareWorld();
+			// Mondes de Valcombe (Fantasy) : rouverts avant l'arrivée des joueurs, qui peuvent s'y être déconnectés.
+			try {
+				var manager = new fr.valcombe.mc.worlds.WorldManager(server, fr.valcombe.mc.worlds.WorldManager.defaultFile(server));
+				manager.start();
+				worlds = manager;
+			} catch (RuntimeException | LinkageError e) {
+				LOG.error("Mondes de Valcombe indisponibles : le jeu continue dans le monde principal", e);
+			}
 			String saved = HOST.savedGame();
 			if (saved != null) {
 				try {
@@ -246,6 +263,10 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			HOST.setServer(null);
 			workshop = null;
+			if (worlds != null) {
+				worlds.stop();
+				worlds = null;
+			}
 			if (editor != null) {
 				editor.setServer(null);
 			}
@@ -258,6 +279,10 @@ public final class ValcombeMod implements ModInitializer {
 			// Chaque partie du tick est protégée : une erreur d'affichage ne doit pas arrêter le serveur ni la partie.
 			guarded("la partie", HOST::onTick);
 			guarded("la vue des joueurs", () -> SYNC.onTick(server));
+			var w = worlds;
+			if (w != null) {
+				guarded("les mondes", w::tick);
+			}
 			if (server.getTickCount() % 5 == 0) {
 				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village()));
 			}
