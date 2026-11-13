@@ -73,6 +73,11 @@ public final class MapSender {
 		String label();
 	}
 
+	/** « de la carte « Port » », « d'un village généré » : le complément, avec l'élision devant une voyelle. */
+	static String ofLabel(String label) {
+		return label != null && !label.isEmpty() && "aeiouyéèêàâîôûAEIOUYÉ".indexOf(label.charAt(0)) >= 0 ? "d'" + label : "de " + label;
+	}
+
 	/** Une carte de la bibliothèque, fiche et blocs déjà relus et contrôlés. */
 	public record Library(MapStore.MapDef def, Clip clip) implements Source {
 		@Override
@@ -345,7 +350,7 @@ public final class MapSender {
 			}
 			throw ex;
 		}
-		ValcombeMod.LOG.info("Envoi de {} à « {} » : remise à neuf du monde.", src.label(), e.nom());
+		ValcombeMod.LOG.info("Envoi {} à « {} » : remise à neuf du monde.", ofLabel(src.label()), e.nom());
 		tell(s, Component.literal("[Valcombe] « " + e.nom() + " » reçoit " + src.label() + " : le monde est remis à neuf, plat et vide, "
 			+ "puis " + (src instanceof Nothing ? "il reste tel quel." : "la carte y est posée. Une barre suit l'avancement.")
 			+ " Vous pourrez y retourner à la fin.").withStyle(ChatFormatting.GOLD), by);
@@ -356,7 +361,7 @@ public final class MapSender {
 				placeOn(s, level);
 			}
 		});
-		return "Envoi de " + src.label() + " à « " + e.nom() + " » lancé : le monde est remis à neuf, puis "
+		return "Envoi " + ofLabel(src.label()) + " à « " + e.nom() + " » lancé : le monde est remis à neuf, puis "
 			+ (src instanceof Nothing ? "laissé plat et vide." : "la carte y est posée." + McHost.PROGRESS) + saved;
 	}
 
@@ -444,7 +449,7 @@ public final class MapSender {
 				host.setSending(null);
 			}
 		}
-		ValcombeMod.LOG.info("Envoi de {} à « {} » terminé.", s.label(), s.entry().nom());
+		ValcombeMod.LOG.info("Envoi {} à « {} » terminé.", ofLabel(s.label()), s.entry().nom());
 		String what = v == null ? "« " + s.entry().nom() + " » est vide : on y jouera autour du Conteur."
 			: (s.source() instanceof Library l ? "La carte « " + l.def().nom + " »" : s.source() instanceof Generated ? "Le village"
 				: s.source() instanceof Imported i ? "La construction « " + i.fileName() + " »" : "La carte vide")
@@ -465,11 +470,11 @@ public final class MapSender {
 		Throwable c = t instanceof CompletionException && t.getCause() != null ? t.getCause() : t;
 		String why = c instanceof GameException ? c.getMessage() : "erreur interne : " + c.getMessage();
 		if (!(c instanceof GameException)) {
-			ValcombeMod.LOG.error("Envoi de " + s.label() + " à « " + s.entry().nom() + " » en échec", c);
+			ValcombeMod.LOG.error("Envoi " + ofLabel(s.label()) + " à « " + s.entry().nom() + " » en échec", c);
 		} else {
-			ValcombeMod.LOG.warn("Envoi de {} à « {} » en échec : {}", s.label(), s.entry().nom(), why);
+			ValcombeMod.LOG.warn("Envoi {} à « {} » en échec : {}", ofLabel(s.label()), s.entry().nom(), why);
 		}
-		tell(s, Component.literal("[Valcombe] L'envoi de " + s.label() + " à « " + s.entry().nom() + " » a échoué : " + why
+		tell(s, Component.literal("[Valcombe] L'envoi " + ofLabel(s.label()) + " à « " + s.entry().nom() + " » a échoué : " + why
 			+ " Le monde est peut-être incomplet : envoyez-y de nouveau une carte.").withStyle(ChatFormatting.RED), null);
 	}
 
@@ -508,7 +513,7 @@ public final class MapSender {
 			}
 			return;
 		}
-		write(id, MARK, "Envoi de " + text);
+		write(id, MARK, "Envoi " + ofLabel(text));
 	}
 
 	private void write(String id, String name, String text) {

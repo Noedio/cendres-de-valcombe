@@ -92,6 +92,13 @@ public final class SharedUndo {
 		private final List<Entry> undone = new ArrayList<>();
 		/** Combien des prochaines entrées d'une pile Valcombe sont un « rétablir » attendu (et pas un geste nouveau). */
 		private final Map<Stack, Integer> expected = new java.util.EnumMap<>(Stack.class);
+		/**
+		 * Combien de gestes d'une pile Valcombe le journal a déjà défaits sans que la pile l'ait encore vu : une pile qui
+		 * pose ses blocs par petits lots (les structures) défait le premier geste tout de suite et enchaîne les suivants
+		 * à la fin de chaque chantier. Sans ce compte, le recalage prendrait l'écart pour des gestes nouveaux, et
+		 * viderait la liste à rétablir.
+		 */
+		private final Map<Stack, Integer> undoing = new java.util.EnumMap<>(Stack.class);
 
 		private int count(Stack s) {
 			int n = 0;
@@ -118,7 +125,19 @@ public final class SharedUndo {
 		 * défaits directement (on retire les plus récents), ceux qui s'ajoutent viennent d'être faits (à la fin).
 		 */
 		public void syncCount(Stack stack, int depth) {
-			int have = count(stack);
+			int pending = undoing.getOrDefault(stack, 0);
+			int have = count(stack) + pending;
+			// La pile rattrape d'abord les gestes que le journal a déjà défaits.
+			int caught = Math.min(pending, Math.max(0, have - depth));
+			if (caught > 0) {
+				pending -= caught;
+				have -= caught;
+				if (pending > 0) {
+					undoing.put(stack, pending);
+				} else {
+					undoing.remove(stack);
+				}
+			}
 			for (int i = done.size() - 1; i >= 0 && have > depth; i--) {
 				if (done.get(i).stack() == stack) {
 					done.remove(i);
@@ -211,6 +230,9 @@ public final class SharedUndo {
 			if (e.stack() != Stack.MARKERS) {
 				undone.add(e);
 			}
+			if (e.stack() != Stack.WORLDEDIT) {
+				undoing.merge(e.stack(), 1, Integer::sum); // la pile le défait maintenant, ou à la fin du chantier en cours
+			}
 		}
 
 		/** Ce geste va être refait par le « rétablir » commun : sa pile va le rendre, ce n'est pas un geste nouveau. */
@@ -257,6 +279,7 @@ public final class SharedUndo {
 			done.clear();
 			undone.clear();
 			expected.clear();
+			undoing.clear();
 		}
 	}
 

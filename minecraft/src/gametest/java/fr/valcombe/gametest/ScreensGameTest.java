@@ -211,7 +211,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 		press(ctx, "Générer le village");
 		check(!server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().busy()), "générer demande une confirmation");
 		press(ctx, "Confirmer : générer le village");
-		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().busy()), "village en chantier : " + reply(ctx));
+		// Le monde remis à neuf et un village de quinze trônes posé peuvent aller plus vite que la réponse affichée :
+		// l'envoi est en cours, ou déjà fini, mais il a bien été lancé.
+		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().busy()) || reply(ctx).contains("lancé"),
+			"village en chantier : " + reply(ctx));
 		ctx.waitTicks(10);
 		shot(ctx, "28e-atelier-chantier-en-cours");
 		waitBuild(ctx, world);
@@ -326,7 +329,10 @@ public class ScreensGameTest implements FabricClientGameTest {
 		press(ctx, "Confirmer : partie d'essai (charge sa carte)");
 		String waiting = server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.session().trialPending() + " " + fr.valcombe.mc.ValcombeMod.host().busy()
 			+ " " + (fr.valcombe.mc.ValcombeMod.session().game() == null));
-		check(waiting.equals("true true true"), "partie d'essai en attente du chantier (" + waiting + ") : " + reply(ctx));
+		// Le chantier (monde remis à neuf, carte posée) peut déjà être fini quand on regarde : la partie d'essai attend
+		// encore, elle n'a pas démarré, et l'envoi a bien été lancé.
+		check(waiting.startsWith("true ") && waiting.endsWith(" true") && (waiting.equals("true true true") || reply(ctx).contains("lancé")),
+			"partie d'essai en attente du chantier (" + waiting + ") : " + reply(ctx));
 		shot(ctx, "28m-atelier-essai-en-attente");
 		ctx.setScreen(() -> null);
 		for (int i = 0; i < 400 && server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.session().game() == null); i++) {

@@ -151,13 +151,59 @@ fabricApi {
 // manque ou s'il vaut l'un d'eux ; les autres réglages du fichier restent tels quels.
 // Le dossier est celui de la configuration de lancement de Loom (runClientGameTest : build/run/clientGameTest) : la
 // tâche ne reçoit son dossier de travail qu'au moment de lancer le jeu, après ce réglage.
+//
+// Serveur de développement (runServer) : même règle pour le port Minecraft. Son server.properties (run/, celui du
+// dossier de développement, jamais celui du serveur réel) reçoit server-port=25599 s'il manque ou vaut 25565 (le
+// défaut de Minecraft), 25570 ou 24454 ; un autre port choisi à la main est gardé. Le fichier est créé au besoin
+// avant le premier démarrage : Minecraft complète les autres réglages sans toucher à celui-ci.
 def devVoicePort = '24499'
 def forbiddenVoicePorts = ['24454', '25565', '25570', '-1']
+def devServerPort = '25599'
+def devTabletPort = '25598'
+def forbiddenServerPorts = ['24454', '25565', '25570']
 tasks.withType(JavaExec).matching { it.name.startsWith('run') && it.name.length() > 3 }.configureEach { t ->
 	def runName = t.name.substring(3, 4).toLowerCase() + t.name.substring(4)
 	def runDir = providers.provider {
 		def run = loom.runs.findByName(runName)
 		run == null ? null : file(run.runDir)
+	}
+	if (runName == 'server') {
+		t.doFirst { task ->
+			def dir = runDir.getOrNull() ?: task.workingDir
+			def props = new File(dir, 'server.properties')
+			def lines = props.exists() ? props.readLines('UTF-8') : []
+			int at = lines.findIndexOf { it.trim().startsWith('server-port=') }
+			def current = at >= 0 ? lines[at].trim().substring('server-port='.length()).trim() : ''
+			if (at >= 0 && !current.isEmpty() && !forbiddenServerPorts.contains(current)) {
+				return
+			}
+			if (at >= 0) {
+				lines[at] = "server-port=${devServerPort}".toString()
+			} else {
+				lines << "server-port=${devServerPort}".toString()
+			}
+			props.parentFile.mkdirs()
+			props.write(lines.join('\n') + '\n', 'UTF-8')
+			task.logger.lifecycle("Serveur de développement : port ${devServerPort} ({})", props)
+		}
+	}
+	// Le serveur web du mod (tablette, Atelier, API d'administration) écoute par défaut sur 25570, pris lui aussi sur ce
+	// PC : les lancements de développement (serveur, ou serveur intégré du client) prennent 25598, dans le
+	// config/valcombe-communaute.json de leur dossier ; les autres réglages sont gardés, et un port choisi à la main
+	// aussi s'il n'est pas interdit.
+	t.doFirst { task ->
+		def dir = runDir.getOrNull() ?: task.workingDir
+		def cfg = new File(dir, 'config/valcombe-communaute.json')
+		def json = cfg.exists() ? new groovy.json.JsonSlurper().parse(cfg, 'UTF-8') : [:]
+		def port = json instanceof Map && json.tabletPort != null ? json.tabletPort.toString() : ''
+		if (!port.isEmpty() && !forbiddenServerPorts.contains(port)) {
+			return
+		}
+		def out = json instanceof Map ? new LinkedHashMap(json) : [:]
+		out.tabletPort = (devTabletPort as int)
+		cfg.parentFile.mkdirs()
+		cfg.write(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(out)) + '\n', 'UTF-8')
+		task.logger.lifecycle("Lancement de développement : tablette et API sur le port ${devTabletPort} ({})", cfg)
 	}
 	t.doFirst { task ->
 		def dir = runDir.getOrNull() ?: task.workingDir

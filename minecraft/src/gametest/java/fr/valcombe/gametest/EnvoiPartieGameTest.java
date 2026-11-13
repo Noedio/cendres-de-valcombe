@@ -189,11 +189,23 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			});
 
 			// 3. Envoyer la carte A : les joueurs sortent au hub, la partie est occupée, une seconde carte attend son tour.
-			send(ctx, "vc carte envoyer " + MAP_A);
-			check(server.computeOnServer(s -> ValcombeMod.host().busy()), "la partie est occupée pendant l'envoi");
+			// La commande du joueur, puis les deux vérifications, dans le même tick du serveur : l'envoi ne peut pas être
+			// déjà fini quand on regarde (une carte posée vite irait plus vite que l'aller-retour du client).
+			String sending = server.computeOnServer(s -> {
+				var source = s.getPlayerList().getPlayerByName(me).createCommandSourceStack();
+				s.getCommands().performPrefixedCommand(source, "vc carte envoyer " + MAP_A);
+				String twice;
+				try {
+					ValcombeMod.sender().sendMap(MAP_B, null, null);
+					twice = "acceptée";
+				} catch (GameException e) {
+					twice = e.getMessage();
+				}
+				return "occupée " + ValcombeMod.host().busy() + " | seconde carte : " + twice;
+			});
+			check(sending.startsWith("occupée true"), "la partie est occupée pendant l'envoi : " + sending);
+			check(sending.contains("reçoit déjà"), "une seconde carte attend la fin de la première : " + sending);
 			check(waitFor(ctx, world, 60, s -> dimensionOf(s, me).equals(hubDim)), "le joueur attend au hub pendant l'envoi");
-			String twice = refusal(world, () -> ValcombeMod.sender().sendMap(MAP_B, null, null));
-			check(twice != null && twice.contains("reçoit déjà"), "une seconde carte attend la fin de la première : " + twice);
 			ctx.waitTicks(20);
 			shot(ctx, "envoi-barre-au-hub");
 			waitSent(ctx, world, "carte A posée");

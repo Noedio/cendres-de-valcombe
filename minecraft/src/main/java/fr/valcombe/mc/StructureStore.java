@@ -348,7 +348,8 @@ public final class StructureStore {
 
 	public Def def(String id) {
 		checkId(id);
-		Def d = builtins().get(id);
+		// Les fiches fournies ne sont calculées que pour une structure fournie (il y faut les blocs de Minecraft).
+		Def d = isBuiltin(id) ? builtins().get(id) : null;
 		if (d != null) {
 			return effective(d);
 		}

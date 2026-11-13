@@ -18,6 +18,14 @@ import org.junit.jupiter.api.Test;
 class MapSenderTest {
 
 	@Test
+	void lesMessagesDisentDUnEtDeLa() {
+		assertEquals("d'un village généré (8 trônes, thème gothique)",
+			MapSender.ofLabel(new MapSender.Generated("gothique", 8, 0, true).label()));
+		assertEquals("d'une carte vide", MapSender.ofLabel(new MapSender.Blank().label()));
+		assertEquals("de la construction « essai.schem »", MapSender.ofLabel("la construction « essai.schem »"));
+	}
+
+	@Test
 	void uneCarteNeSEnvoieQuAUnMondeDePartie() {
 		assertTrue(MapSender.accepts(WorldKind.PARTIE));
 		assertTrue(MapSender.accepts(WorldKind.ESSAI), "les parties d'essai reçoivent aussi leur carte");

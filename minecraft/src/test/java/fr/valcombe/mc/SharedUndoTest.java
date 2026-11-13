@@ -156,6 +156,28 @@ class SharedUndoTest {
 	}
 
 	@Test
+	void desStructuresAnnuleesALaSuiteRestentARetablirPendantQueLeurPileEnchaine() {
+		Journal j = new Journal();
+		j.syncCount(Stack.STRUCTURES, 1); // un puits
+		j.syncCount(Stack.STRUCTURES, 2); // un banc
+		// /vc annuler 2 : le journal défait les deux d'un coup ; la pile défait le banc tout de suite, et le puits à la
+		// fin du chantier du banc.
+		List<Journal.Entry> run = j.lastRun(ME, true, 2, false);
+		assertEquals(2, run.size());
+		run.forEach(j::undid);
+		j.syncCount(Stack.STRUCTURES, 1);
+		assertEquals(2, j.redoable(ME, true), "l'écart d'un chantier en cours n'est pas un geste nouveau");
+		assertEquals(0, j.undoable(ME, true));
+		j.syncCount(Stack.STRUCTURES, 0);
+		assertEquals(2, j.redoable(ME, true));
+		assertEquals(List.of(), j.order());
+		// Une structure posée ensuite est bien un geste nouveau : plus rien à rétablir.
+		j.syncCount(Stack.STRUCTURES, 1);
+		assertEquals(0, j.redoable(ME, true));
+		assertEquals(List.of(Stack.STRUCTURES), j.order());
+	}
+
+	@Test
 	void unRetablirRefuseNAttendPlusRien() {
 		Journal j = new Journal();
 		j.syncCount(Stack.STRUCTURES, 1);
