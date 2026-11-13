@@ -4,9 +4,9 @@ using System.Text;
 namespace Valcombe.Launcher.Services;
 
 /// <summary>
-/// Chiffrement local de Windows (DPAPI), lié à la session Windows de l'utilisateur : ce qui est chiffré ici
-/// ne se déchiffre que sur ce PC, avec ce compte Windows. Il garde le jeton Microsoft (compte.bin) et les clés
-/// d'administration des serveurs distants (page Serveur).
+/// Chiffrement local des secrets (DPAPI de Windows, lié à la session de l'utilisateur) : le jeton Microsoft
+/// (compte.bin), les clés d'administration des serveurs distants (page Serveur), les mots de passe et clés SSH
+/// des serveurs loués. Ce qui est chiffré ici ne se déchiffre que sur ce PC, avec ce compte Windows.
 /// </summary>
 public static class Dpapi
 {
@@ -17,30 +17,55 @@ public static class Dpapi
         public IntPtr Data;
     }
 
-    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    // Deux formes de chaque appel : sans entropie (pointeur nul, comme le jeton Microsoft et les clés
+    // d'administration l'ont toujours été) et avec entropie (un « sel » propre à chaque usage, pour qu'un
+    // secret ne se déchiffre pas à la place d'un autre : mots de passe et clés SSH).
+    [DllImport("crypt32.dll", EntryPoint = "CryptProtectData", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CryptProtectData(ref Blob input, string? desc, IntPtr entropy, IntPtr reserved,
         IntPtr prompt, int flags, ref Blob output);
 
-    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [DllImport("crypt32.dll", EntryPoint = "CryptProtectData", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptProtectDataSalted(ref Blob input, string? desc, ref Blob entropy, IntPtr reserved,
+        IntPtr prompt, int flags, ref Blob output);
+
+    [DllImport("crypt32.dll", EntryPoint = "CryptUnprotectData", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CryptUnprotectData(ref Blob input, IntPtr desc, IntPtr entropy, IntPtr reserved,
+        IntPtr prompt, int flags, ref Blob output);
+
+    [DllImport("crypt32.dll", EntryPoint = "CryptUnprotectData", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptUnprotectDataSalted(ref Blob input, IntPtr desc, ref Blob entropy, IntPtr reserved,
         IntPtr prompt, int flags, ref Blob output);
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr LocalFree(IntPtr mem);
 
-    private static byte[] Run(byte[] data, bool protect)
+    private static Blob Alloc(byte[] data)
     {
-        var input = new Blob { Size = data.Length, Data = Marshal.AllocHGlobal(Math.Max(1, data.Length)) };
-        Marshal.Copy(data, 0, input.Data, data.Length);
+        var blob = new Blob { Size = data.Length, Data = Marshal.AllocHGlobal(Math.Max(1, data.Length)) };
+        Marshal.Copy(data, 0, blob.Data, data.Length);
+        return blob;
+    }
+
+    private static byte[] Run(byte[] data, byte[]? entropy, bool protect)
+    {
+        var input = Alloc(data);
+        bool salted = entropy is { Length: > 0 };
+        var extra = salted ? Alloc(entropy!) : new Blob();
         var output = new Blob();
         try
         {
-            bool ok = protect
-                ? CryptProtectData(ref input, "Valcombe", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output)
-                : CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output);
+            bool ok = (protect, salted) switch
+            {
+                (true, false) => CryptProtectData(ref input, "Valcombe", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output),
+                (true, true) => CryptProtectDataSalted(ref input, "Valcombe", ref extra, IntPtr.Zero, IntPtr.Zero, 0, ref output),
+                (false, false) => CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output),
+                (false, true) => CryptUnprotectDataSalted(ref input, IntPtr.Zero, ref extra, IntPtr.Zero, IntPtr.Zero, 0, ref output),
+            };
             if (!ok)
             {
-                throw new InvalidOperationException("Chiffrement Windows indisponible.");
+                throw new InvalidOperationException(protect
+                    ? "Chiffrement Windows indisponible."
+                    : "Secret illisible : il a été enregistré sur un autre PC ou par un autre compte Windows.");
             }
             var result = new byte[output.Size];
             Marshal.Copy(output.Data, result, 0, output.Size);
@@ -49,6 +74,10 @@ public static class Dpapi
         finally
         {
             Marshal.FreeHGlobal(input.Data);
+            if (extra.Data != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(extra.Data);
+            }
             if (output.Data != IntPtr.Zero)
             {
                 LocalFree(output.Data);
@@ -56,11 +85,15 @@ public static class Dpapi
         }
     }
 
-    public static byte[] Protect(byte[] d) => Run(d, true);
+    public static byte[] Protect(byte[] d, byte[]? entropy = null) => Run(d, entropy, true);
 
-    public static byte[] Unprotect(byte[] d) => Run(d, false);
+    public static byte[] Unprotect(byte[] d, byte[]? entropy = null) => Run(d, entropy, false);
 
-    /// <summary>Un texte chiffré, en base 64 (pour un fichier JSON).</summary>
+    // ------------------------------------------------------------------
+    // Textes sans entropie : clés d'administration des serveurs distants (page Serveur)
+    // ------------------------------------------------------------------
+
+    /// <summary>Un texte chiffré sans entropie, en base 64 (pour un fichier JSON).</summary>
     public static string ProtectText(string text) => Convert.ToBase64String(Protect(Encoding.UTF8.GetBytes(text)));
 
     /// <summary>Le texte d'origine, ou null si le chiffré est abîmé ou vient d'un autre PC ou d'un autre compte Windows.</summary>
@@ -79,4 +112,19 @@ public static class Dpapi
             return null;
         }
     }
+
+    // ------------------------------------------------------------------
+    // Textes salés par usage : mots de passe et clés SSH des serveurs loués
+    // ------------------------------------------------------------------
+
+    /// <summary>Chiffre un texte pour cet usage et le rend en base 64, pour un fichier JSON. Texte vide : chaîne vide.</summary>
+    public static string ProtectText(string text, string purpose) =>
+        text.Length == 0 ? "" : Convert.ToBase64String(Protect(Encoding.UTF8.GetBytes(text), Encoding.UTF8.GetBytes(purpose)));
+
+    /// <summary>
+    /// Inverse de <see cref="ProtectText(string, string)"/>. Chaîne vide : texte vide. Lève une
+    /// <see cref="InvalidOperationException"/> si le secret vient d'un autre PC, d'un autre compte ou d'un autre usage.
+    /// </summary>
+    public static string UnprotectText(string base64, string purpose) =>
+        base64.Length == 0 ? "" : Encoding.UTF8.GetString(Unprotect(Convert.FromBase64String(base64), Encoding.UTF8.GetBytes(purpose)));
 }

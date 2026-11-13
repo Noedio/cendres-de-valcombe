@@ -86,13 +86,17 @@ public static class Http
         {
             throw new InvalidDataException($"Empreinte absente ou invalide dans le manifeste : {Path.GetFileName(target)}");
         }
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps
-            || !TrustedHosts.Contains(u.Host, StringComparer.OrdinalIgnoreCase))
+        if (!IsTrustedUrl(url))
         {
             throw new InvalidDataException($"Adresse de téléchargement refusée : {Path.GetFileName(target)}");
         }
         return DownloadAsync(url, target, sha512, progress, ct);
     }
+
+    /// <summary>Adresse https d'un hôte connu (versions GitHub, Modrinth) : celles d'où un mod peut venir.</summary>
+    public static bool IsTrustedUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
+        && TrustedHosts.Contains(u.Host, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Télécharge vers un fichier temporaire, vérifie l'empreinte, puis remplace la cible.</summary>
     public static async Task DownloadAsync(string url, string target, string? sha512, IProgress<double>? progress,

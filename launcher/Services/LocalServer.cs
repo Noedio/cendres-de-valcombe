@@ -215,18 +215,12 @@ public sealed class LocalServer
         if (!File.Exists(LauncherJar) || !File.Exists(StampFile) || File.ReadAllText(StampFile).Trim() != stamp)
         {
             progress.Report(("Serveur : téléchargement de Fabric…", 0));
-            var installers = JsonNode.Parse(await Http.Client.GetStringAsync("https://meta.fabricmc.net/v2/versions/installer", ct))!.AsArray();
-            string installer = (installers.FirstOrDefault(i => i!["stable"]?.GetValue<bool>() == true) ?? installers[0])!["version"]!.GetValue<string>();
-            await Http.DownloadAsync(
-                $"https://meta.fabricmc.net/v2/versions/loader/{manifest.Minecraft}/{manifest.Loader}/{installer}/server/jar",
+            await Http.DownloadAsync(await FabricServerJarUrlAsync(manifest, ct),
                 LauncherJar, null, new Progress<double>(p => progress.Report(("Serveur : téléchargement de Fabric…", p))), ct);
             File.WriteAllText(StampFile, stamp);
         }
 
-        // Mods du serveur : tous ceux du manifeste marqués « both » (Fabric API, Simple Voice Chat, WorldEdit,
-        // Valcombe...), jamais les mods graphiques des joueurs. Rien n'est écrit ici : un mod ajouté au manifeste
-        // par tools/make_modpack.py arrive tout seul. Fantasy est incluse dans le jar de Valcombe.
-        var mods = manifest.Mods.Where(m => m.Side.Length > 0 ? m.Side != "client" : ServerModNames.Contains(m.Name)).ToList();
+        var mods = ServerMods(manifest);
         var keep = mods.Select(m => m.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (string old in Directory.GetFiles(ModsDir, "*.jar"))
         {
@@ -255,14 +249,51 @@ public sealed class LocalServer
         return java.JavaExe;
     }
 
+    /// <summary>
+    /// Mods du serveur : tous ceux du manifeste marqués « both » (Fabric API, Simple Voice Chat, WorldEdit,
+    /// Valcombe...), jamais les mods graphiques des joueurs. Rien n'est écrit ici : un mod ajouté au manifeste
+    /// par tools/make_modpack.py arrive tout seul. Fantasy est incluse dans le jar de Valcombe.
+    /// Partagé avec l'installation sur un serveur loué (Ssh/VpsPlan).
+    /// </summary>
+    public static List<PackMod> ServerMods(PackManifest manifest) =>
+        manifest.Mods.Where(m => m.Side.Length > 0 ? m.Side != "client" : ServerModNames.Contains(m.Name)).ToList();
+
+    /// <summary>
+    /// Adresse du lanceur de serveur Fabric pour cette version de Minecraft et du chargeur, avec le dernier
+    /// installateur stable. Partagée avec l'installation sur un serveur loué (Ssh/VpsPlan).
+    /// </summary>
+    public static async Task<string> FabricServerJarUrlAsync(PackManifest manifest, CancellationToken ct = default)
+    {
+        var installers = JsonNode.Parse(await Http.Client.GetStringAsync("https://meta.fabricmc.net/v2/versions/installer", ct))!.AsArray();
+        string installer = (installers.FirstOrDefault(i => i!["stable"]?.GetValue<bool>() == true) ?? installers[0])!["version"]!.GetValue<string>();
+        return $"https://meta.fabricmc.net/v2/versions/loader/{manifest.Minecraft}/{manifest.Loader}/{installer}/server/jar";
+    }
+
     /// <summary>Réglages de départ (monde plat et vide, comptes officiels) ; un fichier existant n'est que retouché.</summary>
     private static void WriteProperties(LauncherConfig config)
     {
+        string[]? existing = File.Exists(PropertiesFile) ? File.ReadAllLines(PropertiesFile) : null;
+        File.WriteAllLines(PropertiesFile, MergeProperties(existing, new[]
+        {
+            ("server-port", config.HostPort.ToString()),
+            ("white-list", config.HostGuestsOnly ? "true" : "false"),
+            ("enforce-whitelist", config.HostGuestsOnly ? "true" : "false"),
+        }));
+    }
+
+    /// <summary>
+    /// Fusionne des réglages dans un server.properties : les lignes existantes gardent leur ordre et leurs valeurs,
+    /// sauf celles de <paramref name="set"/>. Sans fichier (null), on part des réglages de Valcombe (monde plat
+    /// et vide, comptes officiels), complétés par <paramref name="newDefaults"/>. Partagé avec le serveur loué.
+    /// </summary>
+    public static List<string> MergeProperties(IEnumerable<string>? existing, IEnumerable<(string Key, string Value)> set,
+        IEnumerable<(string Key, string Value)>? newDefaults = null)
+    {
         var values = new Dictionary<string, string>();
         var order = new List<string>();
-        if (File.Exists(PropertiesFile))
+        if (existing != null)
         {
-            foreach (string line in File.ReadAllLines(PropertiesFile))
+            foreach (string line in existing)
             {
                 int eq = line.IndexOf('=');
                 if (eq > 0 && !line.StartsWith('#'))
@@ -292,8 +323,12 @@ public sealed class LocalServer
             Start("generator-settings", @"{""layers""\:[{""block""\:""minecraft\:bedrock"",""height""\:1},"
                 + @"{""block""\:""minecraft\:stone"",""height""\:3},{""block""\:""minecraft\:grass_block"",""height""\:1}],"
                 + @"""biome""\:""minecraft\:the_void"",""features""\:false,""lakes""\:false,""structure_overrides""\:[]}");
+            foreach (var (k, v) in newDefaults ?? Enumerable.Empty<(string, string)>())
+            {
+                Start(k, v);
+            }
         }
-        void Put(string k, string v)
+        foreach (var (k, v) in set)
         {
             if (!values.ContainsKey(k))
             {
@@ -301,10 +336,7 @@ public sealed class LocalServer
             }
             values[k] = v;
         }
-        Put("server-port", config.HostPort.ToString());
-        Put("white-list", config.HostGuestsOnly ? "true" : "false");
-        Put("enforce-whitelist", config.HostGuestsOnly ? "true" : "false");
-        File.WriteAllLines(PropertiesFile, order.Distinct().Select(k => k + "=" + values[k]));
+        return order.Distinct().Select(k => k + "=" + values[k]).ToList();
     }
 
     // ------------------------------------------------------------------
