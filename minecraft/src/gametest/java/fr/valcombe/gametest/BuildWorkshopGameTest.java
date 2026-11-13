@@ -217,6 +217,7 @@ public class BuildWorkshopGameTest implements FabricClientGameTest {
 			server.runOnServer(s -> player(s, me).teleportTo(ValcombeMod.worlds().level(atelier), 14.5, 70, -6.5, java.util.Set.of(), 40f, 25f,
 				false));
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "atelier-selection-3d");
 
 			// L'« annuler » commun : la dernière modification WorldEdit, puis rétablie.

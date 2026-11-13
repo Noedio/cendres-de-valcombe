@@ -251,6 +251,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			// on les compte donc une fois revenu sur la place.
 			check(waitFor(ctx, world, 200, s -> java.util.Arrays.equals(thrones(fr.valcombe.mc.games.Games.main().host().level(), fr.valcombe.mc.games.Games.main().host().village()),
 				new int[] {8, 0})), "les 8 trônes sculptés de la carte A, aucun ancien");
+			WorldView.clearChat(ctx);
 			shot(ctx, "envoi-carte-a");
 
 			// 6. Envoyer la carte B, plus petite : rien ne reste de la carte A, ni sa tour au loin, ni ses trônes sculptés.
@@ -293,6 +294,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				return onB && Math.abs(p.getX() - seat[0]) < 1.5 && Math.abs(p.getZ() - seat[2]) < 1.5;
 			}), "assis sur un trône de la carte B");
 			ctx.runOnClient(mc -> mc.player.setXRot(8));
+			WorldView.clearChat(ctx);
 			shot(ctx, "envoi-partie-sur-la-carte-b");
 			String during = refusal(world, () -> ValcombeMod.sender().sendMap(MAP_A, null, null));
 			check(during != null && during.contains("Une partie se joue"), "rien n'est envoyé pendant la partie : " + during);

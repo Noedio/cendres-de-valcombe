@@ -161,6 +161,7 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 				ServerPlayer p = player(s, me);
 				return spawn != null && Math.abs(p.getX() - (spawn.getX() + 0.5)) < 0.6 && Math.abs(p.getZ() - (spawn.getZ() + 0.5)) < 0.6;
 			}), "à la salle d'attente du village");
+			WorldView.clearChat(ctx);
 			shot(ctx, "partie-monde-salle");
 			send(ctx, "vc hub");
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(hubDim)), "inscrit mais pas encore assis : retour au hub permis");
@@ -183,6 +184,7 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			check(server.computeOnServer(s -> decor(ValcombeMod.worlds().level(hubId)) == 0 && decor(s.overworld()) == 0),
 				"rien dans le hub ni dans le monde principal");
 			ctx.runOnClient(mc -> mc.player.setXRot(8));
+			WorldView.clearChat(ctx);
 			shot(ctx, "partie-monde-trones");
 
 			// 5. Pendant la partie : on reste à la table, et son monde ne se remet pas à neuf.

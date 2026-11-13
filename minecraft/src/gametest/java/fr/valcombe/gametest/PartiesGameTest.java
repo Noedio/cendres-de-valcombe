@@ -363,15 +363,19 @@ public class PartiesGameTest implements FabricClientGameTest {
 			// Captures : de l'entrée, de près à l'ouest et à l'est, et de dos depuis les dalles.
 			place(world, me, hubId, HubHall.ARRIVAL.x, HubHall.ARRIVAL.y, HubHall.ARRIVAL.z, HubHall.ARRIVAL_YAW, 8f);
 			ctx.waitTicks(60);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties");
 			place(world, me, hubId, -6.5, HubHall.FEET, HubHall.BOARD_FRONT + 3.2, 180f, 4f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-ouest");
 			place(world, me, hubId, 7.5, HubHall.FEET, HubHall.BOARD_FRONT + 3.2, 180f, 4f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-est");
 			place(world, me, hubId, 0.5, HubHall.FEET, -3.5, 0f, 6f);
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-dos");
 
 			// 3. En direct : trois inscrits arrivent au salon de la partie d'essai, sa fiche les compte au passage suivant.
@@ -585,6 +589,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 				&& secondPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 1 : les six premières fiches seulement");
 			place(world, me, hubId, 0.5, HubHall.FEET, HubHall.BOARD_FRONT + 9.5, 180f, 8f);
 			ctx.waitTicks(40);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-page-1");
 			// Un clic sur la flèche de droite (vue de l'entrée) : la page suivante, aussitôt.
 			boolean turned = server.computeOnServer(s -> {
@@ -603,6 +608,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 				&& firstPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 2 : les fiches suivantes");
 			check(server.computeOnServer(s -> ValcombeMod.hub().boardShown().startsWith("page 2/")), "le tableau dit sa page");
 			ctx.waitTicks(30);
+			WorldView.clearChat(ctx);
 			shot(ctx, "tableau-des-parties-page-2");
 			// La flèche de gauche, frappée (clic gauche) : retour à la première page.
 			boolean back = server.computeOnServer(s -> {

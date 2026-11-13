@@ -175,11 +175,13 @@ public class HubGameTest implements FabricClientGameTest {
 			check(server.computeOnServer(s -> !ValcombeMod.worlds().level(hubId).getEntities(
 				net.minecraft.world.entity.EntityTypes.TEXT_DISPLAY, e -> e.entityTags().contains("vc_hub_fixe")).isEmpty()),
 				"textes de la salle posés");
+			WorldView.clearChat(ctx);
 			shot(ctx, "hub-accueil");
 			ctx.runOnClient(mc -> {
 				mc.player.setYRot(90);
 				mc.player.setXRot(-6);
 			});
+			WorldView.clearChat(ctx);
 			shot(ctx, "hub-portes");
 			ctx.runOnClient(mc -> {
 				mc.player.setYRot(180);
@@ -187,6 +189,7 @@ public class HubGameTest implements FabricClientGameTest {
 			});
 			place(world, me, hubId, 0.5, HubHall.FEET, -4.5, 180f, -12f);
 			ctx.waitTicks(20);
+			WorldView.clearChat(ctx);
 			shot(ctx, "hub-mur-des-roles");
 
 			// 2. Dalles : la dalle dorée inscrit (et emmène au village de la partie), la rouge désinscrit.
