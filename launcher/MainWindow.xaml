@@ -825,7 +825,7 @@
                           <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
                                      Text="Un serveur Linux chez un hébergeur (Debian ou Ubuntu). Le launcher s'y connecte par SSH, y installe Valcombe, le démarre, le sauvegarde et le met à jour : rien à taper dans un terminal."/>
                           <TextBlock Style="{StaticResource Hint}"
-                                     Text="Tout passe par SSH, chiffré : seul le port du jeu est ouvert au public. Il vous faut l'adresse du serveur et son compte (mot de passe ou clé), donnés par l'hébergeur."/>
+                                     Text="Tout passe par SSH, chiffré : seuls les ports du jeu et du vocal sont ouverts au public. Il vous faut l'adresse du serveur et son compte (mot de passe ou clé), donnés par l'hébergeur."/>
                         </StackPanel>
                       </DockPanel>
                     </Border>
@@ -1210,10 +1210,21 @@
                              Text="Le bien (Citadins et Étrangers) gagne quand le Démon meurt. Le mal (le Démon et ses Sbires) gagne quand il ne reste que deux vivants. Le mal se connaît ; le bien doit deviner qui ment."/>
                   <TextBlock Style="{StaticResource H2}" Text="Une journée à Valcombe" Margin="0,12,0,6"/>
                   <TextBlock Style="{StaticResource Hint}"
-                             Text="La nuit, chacun dort chez soi ; quand vient ton tour, un écran s'ouvre pour utiliser ton pouvoir. Le jour, on discute, on se parle en privé, puis on accuse. L'accusé se défend, et l'aiguille dorée fait le tour du cercle : lève la main avant qu'elle passe devant toi. Le joueur sur le billot à la fin du jour est exécuté."/>
+                             Text="La nuit, chacun dort chez soi ; quand vient ton tour, un écran s'ouvre pour utiliser ton pouvoir. Le jour, on discute, on se parle en privé, puis le Conseil se réunit : chacun accuse d'abord qui il veut, puis on vote pour chaque accusé. L'aiguille dorée fait le tour du cercle : lève la main avant qu'elle passe devant toi. Le joueur sur le billot à la fin du jour est exécuté."/>
                   <TextBlock Style="{StaticResource H2}" Text="Les morts" Margin="0,12,0,6"/>
                   <TextBlock Style="{StaticResource Hint}"
                              Text="Un mort reste dans la partie : il parle, il écoute, et il garde un seul vote, signalé par le cierge sur sa coiffe."/>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="En arrivant : le hub"/>
+                  <TextBlock Style="{StaticResource Hint}"
+                             Text="En te connectant, tu arrives au hub, la salle d'accueil du serveur. Plusieurs parties peuvent s'y jouer en même temps, chacune dans son village, avec son Conteur et son vocal : on n'entend jamais une autre table."/>
+                  <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                             Text="Le tableau des parties montre chacune d'elles : clique sur une fiche (ou menu J, « Parties ») pour la rejoindre, ou pour la regarder en spectateur, sans voir les rôles. La dalle dorée t'inscrit à la Partie principale ; les portes mènent aux villages ; menu J, « Mondes », pour aller d'un monde à l'autre."/>
+                  <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                             Text="Si le Conteur met la partie en suspens, tout le monde revient au hub, sa place gardée. À la reprise, clique sur [Y aller] dans le chat pour retrouver ton trône."/>
                 </StackPanel>
               </Border>
               <Border Style="{StaticResource CardBox}">
@@ -1227,9 +1238,10 @@
                     <Grid.RowDefinitions>
                       <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                       <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                      <RowDefinition/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="J"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Menu du jeu : ton rôle, tes actions, ton carnet"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Menu du jeu : ton rôle, tes actions, ton carnet ; au hub, les parties et les mondes"/>
                     <TextBlock Grid.Row="1" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="H"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Lever ou baisser la main pendant un vote"/>
                     <TextBlock Grid.Row="2" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="G"/>
@@ -1247,7 +1259,9 @@
                     <TextBlock Grid.Row="8" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="Menu › Parler en privé"/>
                     <TextBlock Grid.Row="8" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Inviter un joueur : vous ne vous entendez plus qu'à deux, jusqu'à la cloche"/>
                     <TextBlock Grid.Row="9" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="Menu › Demander la parole"/>
-                    <TextBlock Grid.Row="9" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Le Conteur vous donne la parole à votre tour ; une barre montre votre temps"/>
+                    <TextBlock Grid.Row="9" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Le Conteur te donne la parole à ton tour ; une barre montre ton temps"/>
+                    <TextBlock Grid.Row="10" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="B"/>
+                    <TextBlock Grid.Row="10" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Portée de ta voix : chuchoter, parler ou crier"/>
                   </Grid>
                 </StackPanel>
               </Border>

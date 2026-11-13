@@ -1,6 +1,11 @@
 [
   {
     "date": "13 nov. 2026",
+    "title": "Version 0.14.0 : les mondes de Valcombe, plusieurs parties à la fois, des ateliers refaits",
+    "text": "Chaque partie a maintenant son propre monde, et plusieurs parties se jouent en même temps, chacune avec ses joueurs, son Conteur et son vocal. En vous connectant, vous arrivez au hub : le tableau des parties permet d'en rejoindre une ou de la regarder en spectateur, et le Conteur peut mettre une partie en suspens pour la reprendre plus tard. Chaque carte se prépare dans son propre atelier, avec WorldEdit, puis s'envoie à la partie dans un monde remis à neuf : il ne reste jamais rien de l'ancienne. L'Atelier en jeu est refait autour de quatre entrées (Cartes, Structures, Parties, Rôles et scénarios), avec des vignettes, et tous les écrans passent en haute résolution. Pour l'hôte, le launcher (0.14.0) pilote le serveur dans sa page Serveur : console, réglages, parties, sauvegardes et restauration, et un serveur loué installé par SSH. Le serveur doit passer à la 0.14.0 en même temps que les joueurs."
+  },
+  {
+    "date": "13 nov. 2026",
     "title": "Version 0.13.1 : le launcher montre la version du jeu",
     "text": "Le launcher se met à jour une fois (0.10.1). En bas de sa barre latérale, il affiche maintenant la version du jeu installé à côté de la sienne : le jeu change à chaque version publiée, le launcher seulement quand il change lui-même. Le jeu, lui, ne change pas."
   },

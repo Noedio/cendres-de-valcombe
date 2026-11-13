@@ -130,7 +130,7 @@ Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/
 ```json
 {
   "api": 1,
-  "version": "0.13.1",
+  "version": "0.14.0",
   "minecraft": "26.3",
   "dedie": true,
   "demarreLe": "2026-11-13T09:12:44.512Z",
@@ -355,7 +355,7 @@ Le mod ne peut pas se relancer lui-même : c'est **celui qui a lancé le serveur
 
 ## Les parties : le tableau, la création, la suppression
 
-Plusieurs parties se jouent en même temps, séparées, chacune dans son monde : la **partie principale** (créée au premier démarrage, elle ne se supprime pas) et autant de **parties d'essai** qu'on veut. Au hub, le **tableau des parties** les montre toutes ; un joueur y choisit la sienne, la rejoint (inscription au salon d'une partie ouverte) ou la regarde en spectateur (mode spectateur de Minecraft, sans voir les rôles ni entendre le vocal des joueurs). En jeu : menu J, « Parties », ou `/vc partie liste|rejoindre|regarder|sortir|creer|supprimer`.
+Plusieurs parties se jouent en même temps, séparées, chacune dans son monde : la **partie principale** (créée au premier démarrage, elle ne se supprime pas) et autant de **parties d'essai** qu'on veut. Au hub, le **tableau des parties** les montre toutes ; un joueur y choisit la sienne, la rejoint (inscription au salon d'une partie ouverte) ou la regarde en spectateur (mode spectateur de Minecraft, sans voir les rôles ni entendre le vocal des joueurs). En jeu : menu J, « Parties » (au hub), ou `/vc partie liste|voir|rejoindre|regarder|sortir|aller|creer|supprimer`. Le launcher les montre dans l'onglet **Parties** de sa page Serveur. Les vignettes (la carte que porte une partie, les cartes et les structures) ne passent pas par cette API : le jeu les reçoit par ses paquets, l'Atelier web par sa propre API (voir [UI-HD.md](UI-HD.md), paragraphe « Vignettes, côté serveur »).
 
 ### GET /admin/parties
 
@@ -398,7 +398,7 @@ Corps : `{"partie": "essai-du-mardi"}`. La partie d'essai et son monde disparais
 
 ## Les parties : mise en suspens et reprise
 
-Une partie en cours peut être **mise en suspens** : son horloge est gelée (minuteurs, étapes de la nuit, aiguille du vote, joueurs fictifs s'arrêtent là où ils en sont), elle est enregistrée, et tous les joueurs de son monde vont au hub, leur position gardée. Elle reste ainsi, même après un redémarrage du serveur, jusqu'à ce qu'on la **reprenne** : ses joueurs reçoivent un lien `[Y aller]` et retrouvent leur siège en arrivant ; elle reste en pause le temps que tout le monde soit revenu (une minute au plus), puis repart d'elle-même. Les autres parties ne voient rien de tout cela. En jeu, c'est `/vc partie suspendre [id]` et `/vc partie reprendre [id]` (le Conteur de la partie ou un opérateur), ou le pupitre du Conteur.
+Une partie en cours peut être **mise en suspens** : son horloge est gelée (minuteurs, étapes de la nuit, aiguille du vote, joueurs fictifs s'arrêtent là où ils en sont), elle est enregistrée, et tous les joueurs de son monde vont au hub, leur position gardée. Elle reste ainsi, même après un redémarrage du serveur, jusqu'à ce qu'on la **reprenne** : ses joueurs reçoivent un lien `[Y aller]` et retrouvent leur siège en arrivant ; elle reste en pause le temps que tout le monde soit revenu (une minute au plus), puis repart d'elle-même. Les autres parties ne voient rien de tout cela. En jeu, c'est `/vc partie suspendre [id]` et `/vc partie reprendre [id]` (le Conteur de la partie ou un opérateur), le pupitre du Conteur (onglet Partie, « Mettre en suspens », puis « Reprendre la partie en suspens »), l'écran « Parties » du menu J, ou la fiche de la partie dans l'Atelier en jeu.
 
 ### POST /admin/parties/suspendre
 

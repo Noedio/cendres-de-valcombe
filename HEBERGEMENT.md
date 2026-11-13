@@ -1,11 +1,37 @@
-# Les Cendres de Valcombe — héberger le serveur
+# Les Cendres de Valcombe : héberger le serveur
 
 Deux façons d'accueillir vos amis :
 
-- **Sur votre PC** : le plus simple pour commencer. Voir [INSTALLATION.md](INSTALLATION.md), partie « Pour l'hôte ».
+- **Sur votre PC** : le plus simple pour commencer. Launcher, page **Héberger une partie** (voir [INSTALLATION.md](INSTALLATION.md), partie « Pour l'hôte », et le [tutoriel](TUTORIEL.md#4-héberger-le-serveur)).
 - **Sur un petit serveur loué** (VPS Linux) : le serveur reste allumé sans votre PC. C'est l'objet de ce guide.
 
+Dans les deux cas, la page **Serveur** du launcher pilote le serveur : état, console, réglages, parties, sauvegardes (partie 8 et « Ensuite »).
+
 Pour le serveur loué, deux chemins : **depuis le launcher**, qui fait tout par SSH (partie suivante), ou **à la main**, étape par étape (parties 1 à 8). Les deux donnent le même serveur : même dossier `/opt/valcombe`, même compte `valcombe`, même service `valcombe.service`. On peut passer de l'un à l'autre.
+
+## Les ports par défaut
+
+| Port | Protocole | Pour quoi | Ouvert au public |
+| --- | --- | --- | --- |
+| 25565 | TCP | Le jeu (Minecraft) | Oui |
+| 24454 | UDP | Le vocal (Simple Voice Chat) | Oui |
+| 25570 | TCP | Le serveur web du mod : tablette du Conteur, Atelier web, API d'administration | Non : tunnel SSH (l'API n'accepte de toute façon que la machine elle-même) |
+| 22 | TCP | SSH (serveur loué) | Déjà ouvert par l'hébergeur |
+
+Sur votre PC, le port du jeu se change dans le launcher (page Héberger, ou page Serveur › Réglages › « Port du jeu ») ; sur un serveur loué, à l'étape Installation du parcours. Le port 25570 se change avec `/vc tablette port <numéro>`.
+
+## Ce qu'il y a sur le serveur
+
+Un serveur de Valcombe tient plusieurs **mondes**, créés et gérés par le mod (rien à préparer) : le **hub** où arrivent les joueurs, le monde de la **Partie principale** et celui de chaque **partie d'essai**, les **ateliers carte** et l'**atelier structures**. Chaque partie a sa fiche, enregistrée à chaque moment clé et à l'arrêt : elles reprennent toutes au redémarrage. Le détail est dans le [tutoriel](TUTORIEL.md#5-le-hub-et-les-mondes).
+
+| Où | Quoi |
+| --- | --- |
+| `config/valcombe/mondes.json` | La liste des mondes de Valcombe |
+| `config/valcombe/parties/<monde>.json` | La partie de chaque monde de partie (en cours, en pause, en suspens) |
+| `config/valcombe/creations/` | Les créations : cartes et leurs versions, structures, rôles, scénarios, fichiers d'import et de partage |
+| `config/valcombe/ateliers.json` | Les invitations à construire dans les ateliers |
+| `config/valcombe/admin.json` | La clé de l'API d'administration (ne la partagez pas) |
+| `backups/` | Les sauvegardes du mod (partie 6) |
 
 ## Depuis le launcher (SSH)
 
@@ -43,7 +69,7 @@ Page **Serveur** du launcher, bouton **« Ajouter un serveur »**, puis **« Enr
 
 ### Ensuite
 
-- **État et pilotage** : la page Serveur montre l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct, les réglages et les sauvegardes, comme pour tout serveur ; tout passe par le tunnel SSH.
+- **État et pilotage** : la page Serveur montre l'état (version, durée, TPS, mémoire, joueurs) et ses onglets, comme pour tout serveur : **Vue d'ensemble** (joueurs connectés, mondes), **Console**, **Réglages**, **Parties** et **Sauvegardes** (partie 8). Tout passe par le tunnel SSH.
 - **Mettre à jour** : quand une nouvelle version est publiée, le bouton « Mettre à jour (vX) » apparaît à côté de Redémarrer et d'Arrêter (le launcher compare la version installée sur le serveur à la dernière publiée). Il relance le même script : seul ce qui a changé est téléchargé, un mod qui n'est plus dans la version est retiré, les réglages changés entre-temps (port, joueurs max, liste blanche...) sont gardés. Si le serveur tournait et que quelque chose a changé, il est redémarré : la partie en cours est enregistrée et reprend.
 - **Démarrer** : un serveur loué arrêté (ou en panne) se relance d'ici, bouton « Démarrer » : la page dit que le service est arrêté (ou en panne, avec où lire pourquoi), puis suit le démarrage jusqu'à ce que l'API réponde. **Arrêter et redémarrer** passent par l'API ; l'arrêt laisse jusqu'à deux minutes à Minecraft pour enregistrer les mondes.
 - **Journal** : les dernières lignes du service, ou en direct ; utile surtout quand le serveur ne démarre pas (la console de l'API d'administration prend le relais ensuite).
@@ -145,7 +171,7 @@ Premier opérateur : arrêtez le service, ajoutez votre pseudo dans `ops.json` e
 | --- | --- | --- | --- |
 | 25565 | TCP | Minecraft | oui |
 | 24454 | UDP | Simple Voice Chat | oui |
-| 25570 | TCP | Grimoire sur tablette | seulement si le Conteur l'utilise hors du réseau local |
+| 25570 | TCP | Tablette du Conteur, Atelier web | seulement si le Conteur utilise la tablette hors du réseau local (le tunnel SSH est plus sûr) |
 
 Avec le pare-feu `ufw` :
 
@@ -160,7 +186,7 @@ Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo u
 
 ## 6. Sauvegardes automatiques
 
-**Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières ; celle qui tombe pendant une partie attend la fin de la partie (24 heures au plus). Le jeu continue pendant la copie. Rien à installer :
+**Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières ; celle qui tombe pendant une partie attend la fin des parties qui se jouent (24 heures au plus ; une partie en suspens ne la retient pas). Le jeu continue pendant la copie. Rien à installer :
 
 - `/vc sauvegarde` dit où elles en sont, `/vc sauvegarde maintenant` en fait une tout de suite, `/vc sauvegarde liste` les montre ;
 - **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. L'API d'administration le fait d'un clic (restauration puis redémarrage) ;
@@ -197,15 +223,27 @@ Pour restaurer une archive brute : arrêtez le service, décompressez l'archive 
 
 ## 7. Mettre à jour
 
-1. Sur votre PC : `./gradlew build` puis `python tools/make_modpack.py --serveur=adresse-du-vps`.
-2. Publiez la nouvelle version (le launcher des joueurs se met à jour tout seul).
-3. Envoyez le nouveau dossier `mods/` sur le VPS (remplacez les anciens fichiers), puis `sudo systemctl restart valcombe`.
+Le serveur doit avoir la même version du mod que les joueurs. Chaque partie en cours est enregistrée à l'arrêt et reprend après le redémarrage, dans son monde (pour une longue coupure, mettez-la plutôt en suspens : `/vc partie suspendre`).
 
-Une partie en cours est sauvegardée automatiquement et reprend après le redémarrage.
+- **Serveur loué installé par le launcher** : page Serveur, bouton **Mettre à jour (vX)** (voir « Ensuite », plus haut).
+- **Serveur de votre PC** : il se met à jour à chaque démarrage depuis le launcher : arrêtez-le, puis démarrez-le (page Héberger ou Serveur). « Redémarrer » le relance tel quel, sans mise à jour.
+- **À la main** :
+  1. Récupérez les mods de la nouvelle version : les fichiers joints à la version GitHub, ou, depuis les sources, `./gradlew build` puis `python tools/make_modpack.py --serveur=adresse-du-vps` (dossier `dist/serveur-valcombe/mods/`).
+  2. Envoyez le nouveau dossier `mods/` sur le VPS (remplacez les anciens fichiers, sans en laisser deux versions), puis `sudo systemctl restart valcombe`.
+
+### Passer à la 0.14
+
+La 0.14 range chaque partie dans son propre monde. Au premier démarrage, le serveur crée le hub et le monde de la Partie principale, où il bâtit le village de Valcombe ; l'ancien monde principal n'est plus utilisé (il reste sur le disque). Avant de mettre à jour :
+
+- **Rangez dans la bibliothèque une carte faite à la main** qui n'y est pas encore (avec la 0.13 : `/vc carte enregistrer <id> <nom>`, ou « Enregistrer la carte actuelle » de l'Atelier) : elle se renverra ensuite à la Partie principale en un clic.
+- **Finissez la partie en cours** : une partie d'avant la 0.14 ne reprend pas (sa sauvegarde est mise de côté, `config/valcombe-partie.json.ancienne`).
+- La bibliothèque de cartes, vos structures, vos rôles, vos scénarios, les statistiques et les réglages sont repris tels quels.
+
+Les notes de version ([NOTES-0.14.0.md](NOTES-0.14.0.md)) donnent le détail.
 
 ## 8. Piloter le serveur : l'API d'administration
 
-Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage, sauvegardes (liste, téléchargement, restauration d'un clic). La page **Serveur** du launcher s'en sert pour piloter le serveur (voir plus bas) ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
+Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage, mondes et parties (créer ou supprimer une partie d'essai, mettre une partie en suspens, la reprendre), invitations à construire, sauvegardes (liste, téléchargement, restauration d'un clic). La page **Serveur** du launcher s'en sert pour piloter le serveur (voir plus bas) ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
 
 - **La clé** s'affiche dans le journal au premier démarrage (`sudo journalctl -u valcombe | grep "Clé d'administration"`). Elle est gardée dans `/opt/valcombe/config/valcombe/admin.json`. Ensuite : `/vc admin cle` (console, ou opérateur en jeu) la réaffiche, `/vc admin nouvellecle` la remplace. Elle donne tout pouvoir sur le serveur : ne la partagez pas.
 - **Elle n'accepte que la machine elle-même** (une requête venue d'ailleurs est refusée, même avec la clé) : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :
@@ -219,7 +257,12 @@ Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du
 - **Depuis le launcher** : page **Serveur**, bouton « Ajouter un serveur ».
   - **Serveur loué** (conseillé) : le parcours guidé de la partie « Depuis le launcher (SSH) », en tête de ce guide. Le launcher ouvre lui-même le tunnel SSH et lit la clé sur le serveur : rien à copier.
   - **Accès direct** : pour un serveur que votre PC joint par un réseau privé ou un VPN (avec `"adminLocalOnly": false` dans `admin.json`). Donnez un nom, l'adresse, le port de l'API (25570 s'il n'a pas changé) et la clé ; « Tester la connexion » vérifie le tout. La clé est gardée chiffrée sur votre PC (DPAPI de Windows). Un tunnel SSH ouvert à la main convient aussi (adresse `localhost`, et le port choisi sur votre PC, par exemple `ssh -N -L 25571:localhost:25570 utilisateur@adresse-du-vps`), mais la fiche de serveur loué le fait pour vous.
-  - Dans tous les cas, la page montre l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct avec l'envoi de commandes, les réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max, port), les sauvegardes (partie 6), et les boutons Arrêter et Redémarrer ; pour un serveur loué, aussi Démarrer et Mettre à jour.
+  - Dans tous les cas, la page montre l'état (version, durée, TPS, mémoire, joueurs) et les boutons Arrêter et Redémarrer (pour un serveur loué, aussi Démarrer et Mettre à jour), puis cinq onglets :
+    - **Vue d'ensemble** : les joueurs connectés (opérateur, expulser) et les mondes, avec l'état de la partie de chaque monde de partie ;
+    - **Console** : la console en direct, avec l'envoi de commandes ;
+    - **Réglages** : liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max, port ;
+    - **Parties** : le tableau des parties (état, phase, places, Conteur, qui est dans son monde et qui la regarde), **Suspendre** et **Reprendre**, la suppression d'une partie d'essai (après une confirmation qui dit ce qui disparaît) et **Nouvelle partie d'essai** › « Créer la partie » ;
+    - **Sauvegardes** (partie 6).
   - « Ce PC », dans la même liste, est le serveur que le launcher héberge sur votre PC (page Héberger) : la page Serveur le démarre, l'arrête et le redémarre aussi, et y règle en plus la mémoire et le port du jeu.
 
 ## Vie de la communauté
