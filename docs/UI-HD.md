@@ -100,6 +100,32 @@ Ajoutés avec le passage des écrans des joueurs et de l'affichage en jeu :
 | `HdText` | Paragraphe serré (`HdText.SERRE`, une ligne toutes les `HdText.PAS` = 11 unités) pour les écrans chargés : `paragraph(hd, style, texte, x, y, largeur, couleur, interligne, hauteurMax)`, `line(...)` raccourcie par « … ». Symboles dessinés compris. |
 | `HdTokenArt` | Jeton dessiné (pas un widget), même dessin que `HdToken` : `HdTokenArt.draw(hd, x, y, taille, rôle, camp, vivant, choisi, survolé)` en pixels réels, et `drawWithAlpha` pour un jeton qui apparaît ou s'efface. Remplace `Theme.token` dans `drawHd`. |
 
+### Cercle des sièges
+
+Tout écran qui montre la table (menu J, pupitre et grimoire, désigner un joueur, vote, choix de nuit, grimoire du Mouchard) la pose avec `RingLayout` (calcul pur) par `SeatRing` (mesure avec la vraie police des noms, à l'échelle en cours, et garde les dernières mises en page) :
+
+```java
+RingLayout.Result ring = SeatRing.layout(noms, SeatRing.spec(x, y, w, h).tokens(26, 14));
+for (int i = 0; i < noms.size(); i++) {
+	RingLayout.Seat s = ring.seats().get(i);
+	token(new HdToken(s.cx(), s.cy(), ring.size(), noms.get(i), rôle, camp, vivant, choisi, action).seat(s));
+}
+```
+
+- **Garanties** : aucun jeton ne touche un autre ; aucune plaque de nom ne sort de la zone, ne recouvre une autre plaque ni ne mord sur un autre jeton (marqueurs compris : ils sont posés sur le bord du disque, qu'ils ne dépassent que d'une unité et demie). Vrai de 5 à 20 joueurs, avec des noms de 16 caractères, aux échelles 1 à 4 (`RingLayoutTest`, avec la vraie police).
+- **Comment** : les sièges sont espacés également le long du bord de l'ellipse ; chaque plaque est posée le long de la normale à l'ellipse, collée à son jeton. L'ellipse se rétrécit et se recentre jusqu'à ce que tout tienne. Deux plaques qui se touchent : la plus large passe d'abord de l'autre côté de son jeton (dedans, ou un rang plus loin dehors) si elle y tient, sinon perd un caractère (« … »). Ensuite, les noms raccourcis reprennent des lettres là où la place s'est libérée. En dernier recours seulement, un nom est caché. On garde la mise en page qui montre le plus de lettres, puis les plus grands jetons.
+- **Réglages** : `.tokens(max, min)` (tailles essayées), `.outsideOnly()` quand le centre porte un texte ou l'aiguille du vote, `.aspect(large, haut)` (rapport des rayons permis : 2,6 pour la bande basse du menu J).
+- **Survol** : la plaque fait partie du jeton (survol, clic, liseré doré) ; un nom raccourci ou caché se lit en entier dans l'infobulle.
+- **Menu J en partie** : colonne de gauche (carte de rôle, dont le jeton donne le texte du rôle en infobulle, dernière annonce), cercle à droite, actions en bas sur trois colonnes, ou quatre (libellés en 10,5) si cela fait gagner une rangée au cercle ; un libellé qui ne tient pas dans sa case en prend deux.
+- **Test en jeu** : `SeatRingGameTest` (captures `valcombe-cercle-*.png`) ouvre ces écrans avec 5, 13 et 20 joueurs aux noms longs, à 427 x 240, à l'échelle 3 et 4, en 640 x 360 et à l'échelle 1, et vérifie plaques, jetons et widgets.
+
+### Affichage en jeu
+
+- Sous un écran de Valcombe ouvert, l'affichage en jeu ne dessine aucun texte (il se mêlerait au bandeau et au panneau sous leur voile) ; le chat et les écrans du jeu le gardent.
+- Chaque message au centre de l'écran a sa plaque sombre : il se lit sur n'importe quel décor et recouvre proprement les textes posés dans le monde (accueil du hub). Les messages du haut s'empilent sous le vote ; ceux du bas s'empilent vers le haut au-dessus de la barre d'objets.
+- La carte de rôle qui tombe au début de la partie passe par-dessus tout le reste.
+- Le bandeau « Le serveur a une autre version du mod Valcombe » ne lit que la version annoncée par le serveur de la connexion en cours, jamais en partie solo (`VersionCheck`, vérifié par `VersionCheckTest`).
+
 Écrans des joueurs passés en haute résolution : `MainScreen`, `SheetsScreen`, `NotebookScreen`, `NotebookGuessScreen`, `PromptScreen`, `NightScreen`, `GuessScreen`, `ClaimScreen`, `SignScreen`, `TokenScreen`, `ChronicleScreen`, `FiguresScreen`, `PrefsScreen`, `PickerScreen`, `RolePickerScreen`, ainsi que l'affichage en jeu (`Hud` : bandeau de phase, vote et horloge, tableau du jour, voix, carte de rôle, messages). Test en jeu : `PlayerScreensHdGameTest` (captures `valcombe-hd-joueurs-*.png`).
 
 ### Textes
@@ -117,7 +143,7 @@ Les tailles sont en unités d'interface (la taille réelle vaut taille × échel
 
 `style.size(n)` donne le même style à une autre taille. Les coordonnées d'un texte sont le **haut de sa ligne** ; la hauteur de ligne vaut 1,3 fois la taille et les capitales y sont centrées : centrer la ligne dans un bouton centre le texte.
 
-Couleurs (`Hd.*`) : `INK` (encre, texte sur parchemin), `INK_SOFT` (texte secondaire), `WINE`, `BRONZE`, `GOLD`, `PARCH`, `ASH`, `LIGHT` (texte sur fond sombre), `MUTED` (inactif, indication), `SELECTION`, `HOVER`, `TEXT_SELECTION`.
+Couleurs (`Hd.*`) : `INK` (encre, texte sur parchemin), `INK_SOFT` (texte secondaire), `WINE`, `BRONZE` (cadres, filets ; pas de texte sur parchemin, trop pâle), `BRONZE_INK` (texte bronze sur parchemin, contraste de 5), `GOLD`, `PARCH`, `ASH`, `LIGHT` (texte sur fond sombre), `MUTED` (inactif, indication), `SELECTION`, `HOVER`, `TEXT_SELECTION`.
 
 Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 
@@ -144,7 +170,7 @@ Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 
 Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), éditeur de script, scénarios, durées et minuteurs, ordre de réveil et distribution des rôles sont passés à `HdScreen`, avec les mêmes boutons et les mêmes commandes. Ils tiennent tous dans une interface de 427 × 240.
 
-- **Grimoire** : `Grimoire.hdTokens(x, y, w, h, clic)` place des `HdToken` sur une ellipse qui épouse la zone libre du pupitre. Les sièges sont espacés également le long du bord (et non à pas d'angle égal, qui les serre sur les côtés) ; la taille des jetons (26 à 14 unités) est la plus grande qui laisse un écart entre voisins ; les noms vont vers l'extérieur et sont raccourcis à la place qu'ils ont. La géométrie (`Grimoire.ring`, `Grimoire.spread`) est un calcul pur, vérifié par `GrimoireRingTest`. `Grimoire.place` garde les anciens jetons pour les écrans pas encore migrés.
+- **Grimoire** : `Grimoire.hdTokens(x, y, w, h, max, min, clic)` pose les jetons du grimoire (rôles, linceuls, marqueurs, infobulle détaillée) sur le cercle des sièges (voir plus bas) dans la zone libre du pupitre ; le grimoire montré au Mouchard passe par la même méthode.
 - **Colonne d'actions du pupitre** : boutons de 18 unités avec des écarts entre les groupes si tout tient ; sinon resserrés (16, puis 15) ; sinon la colonne défile à la molette (ascenseur à droite), les actions hors de la fenêtre restant dans l'écran, cachées. Les onglets Partie, Nuit, Jour, Parole et Fin sont un `HdTabs`.
 - **`StorytellerKit`** (paquet `screen`) : mesures de texte en unités pour placer les widgets dans `build()`, bouton fléché dessiné (`ArrowButton`, libellé « ▲ » ou « ▼ » gardé pour la narration), ascenseur des listes de boutons qui défilent ligne à ligne, fond alterné des lignes d'un tableau.
 - **Test en jeu** : `StorytellerHdGameTest` ouvre chaque écran sur des vues fabriquées (salon, lancement, journée chargée, nuit, 20 joueurs) à 427 × 240, vérifie qu'aucun widget visible ne sort du panneau ni n'en chevauche un autre, clique un jeton, change d'onglet, fait défiler la colonne, et capture le tout (`valcombe-conteur-hd-*.png`), aussi à l'échelle 3 et dans une interface de 640 × 360.
@@ -157,7 +183,7 @@ Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), édit
 
 ## Tests
 
-- JUnit : `FontLadderTest`, `HdSpritesTest`, `ScrollTest`, `TextEditorTest` (logique pure, sans Minecraft).
+- JUnit : `FontLadderTest`, `HdSpritesTest`, `ScrollTest`, `TextEditorTest`, `RingLayoutTest`, `VersionCheckTest` (logique pure, sans Minecraft).
 - En jeu : `HdGameTest` (polices chargées, réglages en captures aux échelles 1, 2 et 3, interrupteur qui change le réglage sur le serveur, infobulle, vitrine : saisie, défilement, onglets, mémoire après reconstruction). Captures `valcombe-hd-*.png` dans `build/run/clientGameTest/screenshots/`.
 
 ## Limites connues

@@ -430,15 +430,38 @@ public final class Hud {
 	 * montent (pour les messages du bas de l'écran). w en unités d'interface, y et le retour en pixels réels.
 	 */
 	private static int centered(Hd hd, String text, int w, int y, int color, boolean up) {
-		List<String> lines = hd.wrap(MESSAGE, text, hd.u(Math.max(80, w - 24)));
+		List<String> lines = hd.wrap(MESSAGE, text, hd.u(Math.max(80, w - 40)));
 		int lh = pitch(hd) + hd.u(1);
 		int top = up ? y - (lines.size() - 1) * lh : y;
 		int cx = hd.px(w / 2);
+		// Une plaque sombre sous le message : il se lit sur n'importe quel décor, et ne se mêle plus aux textes posés
+		// dans le monde (accueil du hub, panneaux), qu'il recouvre au lieu de s'y superposer.
+		int widest = 0;
+		for (String line : lines) {
+			widest = Math.max(widest, HdGlyphs.width(hd, MESSAGE, line));
+		}
+		int padX = hd.u(7);
+		int padY = hd.u(2.5);
+		hd.sprite(HdSprites.INFOBULLE, cx - widest / 2 - padX, top - padY, widest + 2 * padX,
+			(lines.size() - 1) * lh + hd.lineHeight(MESSAGE) + 2 * padY, 0xF0FFFFFF);
 		for (int i = 0; i < lines.size(); i++) {
 			String line = lines.get(i);
 			HdGlyphs.textShadow(hd, MESSAGE, line, cx - HdGlyphs.width(hd, MESSAGE, line) / 2, top + i * lh, color, SHADOW);
 		}
-		return lines.size() * lh;
+		return lines.size() * lh + hd.u(4);
+	}
+
+	/**
+	 * Messages du bas de l'écran, empilés vers le haut depuis bottom (pixels réels) sans se recouvrir. Renvoie le
+	 * nouveau bas de la pile.
+	 */
+	private static int stackUp(Hd hd, String text, int w, int bottom, int color) {
+		List<String> lines = hd.wrap(MESSAGE, text, hd.u(Math.max(80, w - 40)));
+		int lh = pitch(hd) + hd.u(1);
+		int height = (lines.size() - 1) * lh + hd.lineHeight(MESSAGE);
+		int top = bottom - height;
+		centered(hd, text, w, top, color, false);
+		return top - hd.u(2.5) - hd.u(4);
 	}
 
 	/** Voix du joueur, en bas à droite de la barre d'objets : niveau choisi (touche B), et règle du Conseil. */
@@ -551,6 +574,9 @@ public final class Hud {
 		String phase = ClientState.phase();
 		int w = g.guiWidth();
 		int h = g.guiHeight();
+		// Un écran de Valcombe ouvert (menu, invite, pupitre) passe devant : l'affichage en jeu n'y glisse pas ses textes,
+		// qui se mêleraient au bandeau et au panneau de l'écran sous son voile. Le chat et les écrans du jeu les gardent.
+		boolean screenOpen = mc.gui.screen() instanceof fr.valcombe.client.screen.BaseScreen;
 
 		// Voile de nuit qui s'installe doucement (plein écran, sans texte : en unités d'interface)
 		float target = phase.equals("NIGHT") ? 1f : 0f;
@@ -570,7 +596,11 @@ public final class Hud {
 			int alpha = (int) ((1 - wake) * 220);
 			g.fill(0, 0, w, h, (alpha << 24) | 0x05030A);
 		}
+		if (screenOpen) {
+			return;
+		}
 		try (Hd hd = Hd.begin(g)) {
+			drawHudText(hd, mc, phase, w, h);
 			if (wake >= 0) {
 				int textAlpha = (int) (255 * Math.min(1f, (1 - wake) * 2));
 				if (textAlpha > 8) {
@@ -579,33 +609,21 @@ public final class Hud {
 						hd.px(h / 2) - hd.lineHeight(big) / 2 - hd.u(8), alpha(textAlpha, 0xD9B45A), alpha(textAlpha * 3 / 4, 0x140A0C));
 				}
 			}
+			// La carte de rôle passe par-dessus tout le reste : rien ne s'écrit sur elle.
 			drawCard(hd, w, h);
-			drawHudText(hd, mc, phase, w, h);
 		}
 	}
 
 	/** Tout ce qui s'écrit sur l'affichage en jeu, dans un contexte haute résolution déjà ouvert. */
 	private static void drawHudText(Hd hd, Minecraft mc, String phase, int w, int h) {
+		// Messages du bas, empilés vers le haut au-dessus de la barre d'objets.
+		int bottom = hd.px(h - 47);
 		// Le serveur n'a pas la même version du mod : des écrans et des commandes ne marcheront pas.
 		String other = ClientState.serverVersionMismatch();
-		if (other != null) {
-			String t = "Le serveur a une autre version du mod Valcombe (serveur : " + other + ", vous : "
-				+ ClientState.modVersion() + "). L'hôte doit le mettre à jour.";
-			List<String> lines = hd.wrap(MESSAGE, t, hd.u(Math.max(80, w - 30)));
-			int lw = 0;
-			for (String l : lines) {
-				lw = Math.max(lw, hd.width(MESSAGE, l));
-			}
-			int lh = pitch(hd) + hd.u(1);
-			int bottom = hd.px(h - 82);
-			int top = bottom - hd.u(4) - lines.size() * lh;
-			int cx = hd.px(w / 2);
-			hd.fill(cx - lw / 2 - hd.u(6), top - hd.u(3), cx + lw / 2 + hd.u(6), bottom, 0xE0801818);
-			for (int i = 0; i < lines.size(); i++) {
-				hd.textCentered(MESSAGE, lines.get(i), cx, top + i * lh, 0xFFFFFFFF);
-			}
-		}
 		if (phase.equals("LOBBY")) {
+			if (other != null) {
+				drawVersionWarning(hd, other, w, bottom);
+			}
 			return;
 		}
 		JsonObject v = ClientState.view();
@@ -617,63 +635,46 @@ public final class Hud {
 		};
 		drawPhase(hd, phase, label, w);
 
+		// En haut, sous le bandeau de phase : le vote en cours (ou l'étape de la nuit pour le Conteur), puis les
+		// messages pour tous, les uns sous les autres.
+		int y = hd.px(24);
 		JsonObject vote = ClientState.obj(v, "vote");
-		// Le tableau du jour se pose sous le bandeau de phase, ou sous le vote en cours et ses messages.
-		int todayTop = hd.px(30);
 		if (vote != null) {
-			todayTop = Math.max(hd.px(84), drawVote(hd, mc, vote, w) + hd.u(10));
+			y = drawVote(hd, mc, vote, w);
 		}
-		drawToday(hd, mc, v, todayTop);
-		drawVoice(hd, mc, v, w, h);
-		drawStorytellerRoles(hd, mc, v);
+		JsonObject ns = ClientState.obj(v, "nightStep");
+		if (ns != null) {
+			y = Math.max(y, drawNightStep(hd, ns, w) + hd.u(5));
+		}
 		// Conteur : joueurs déconnectés
 		var absents = v.getAsJsonArray("absents");
 		if (absents != null && !absents.isEmpty()) {
 			StringBuilder names = new StringBuilder();
 			absents.forEach(e -> names.append(names.length() == 0 ? "" : ", ").append(e.getAsString()));
 			String t = "Absents : " + names + " (fiche du joueur : le faire relayer)";
-			centered(hd, t, w, hd.px(42), 0xFFE05A4A, false);
+			y += centered(hd, t, w, y + hd.u(3), 0xFFE05A4A, false) + hd.u(3);
 		}
 		// Partie en pause, ou en suspens (ses joueurs l'attendent au hub) : tout le monde le voit
-		if (ClientState.bool(v, "suspended") && mc.gui.screen() == null) {
+		if (ClientState.bool(v, "suspended")) {
 			JsonObject game = ClientState.obj(v, "partie");
 			String name = game == null ? null : ClientState.str(game, "nom");
-			centered(hd, "⏸ Partie" + (name == null || name.isEmpty() ? "" : " « " + name + " »")
-				+ " en suspens : elle reprendra où elle en est", w, hd.px(54), 0xFFE8C36A, true);
-		} else if (ClientState.bool(v, "paused") && mc.gui.screen() == null) {
-			centered(hd, "⏸ Partie en pause", w, hd.px(54), 0xFFE8C36A, true);
+			y += centered(hd, "⏸ Partie" + (name == null || name.isEmpty() ? "" : " « " + name + " »")
+				+ " en suspens : elle reprendra où elle en est", w, y + hd.u(3), 0xFFE8C36A, false) + hd.u(3);
+		} else if (ClientState.bool(v, "paused")) {
+			y += centered(hd, "⏸ Partie en pause", w, y + hd.u(3), 0xFFE8C36A, false) + hd.u(3);
 		}
-		// Nuit d'attente : ceux qui dorment savent quoi faire
-		if (phase.equals("NIGHT") && ClientState.obj(v, "prompt") == null && !ClientState.bool(v, "isStoryteller")
-				&& ClientState.num(v, "mySeat", -1) >= 0 && mc.gui.screen() == null) {
-			String t = "Tu dors… Le Conteur réveille chacun à son tour. (J : ton carnet)";
-			centered(hd, t, w, hd.px(h - 60), 0xFFB8A6C8, true);
-		}
-		// Conteur, la nuit : qui est réveillé et ce qu'on attend
-		JsonObject ns = ClientState.obj(v, "nightStep");
-		if (ns != null) {
-			String who = ClientState.str(ns, "player");
-			String wait = ClientState.str(ns, "waiting");
-			String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
-				+ (wait == null || wait.isEmpty() ? "" : " : " + wait);
-			t = hd.ellipsize(STRIP, t, hd.u(w - 20));
-			int nw = hd.width(STRIP, t) + hd.u(14);
-			int ny = hd.px(23);
-			int nh = hd.u(16);
-			int nx = hd.px(w / 2) - nw / 2;
-			hd.sprite(HdSprites.INFOBULLE, nx, ny, nw, nh, 0xFFC8B0F0);
-			hd.fill(nx + hd.u(2.5), ny + hd.u(2.5), nx + nw - hd.u(2.5), ny + nh - hd.u(2.5), 0x702A1840);
-			hd.textMiddle(STRIP, t, nx + hd.u(7), ny, nh, 0xFFE8DCF8);
-		}
-		// Conversation privée entre joueurs, et invitation en attente
-		String talk = ClientState.str(v, "talkingWith");
-		String invite = ClientState.str(v, "talkInvite");
-		if (talk != null && !talk.isEmpty()) {
-			String t = "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)";
-			centered(hd, t, w, hd.px(h - 84), 0xFFC8A8F0, true);
-		} else if (invite != null && !invite.isEmpty()) {
-			String t = invite + " veut te parler en privé (touche J pour répondre)";
-			centered(hd, t, w, hd.px(h - 84), Theme.GOLD, true);
+		// Le tableau du jour se pose sous tout cela, à droite.
+		drawToday(hd, mc, v, Math.max(vote != null ? hd.px(84) : hd.px(30), y + hd.u(8)));
+		drawVoice(hd, mc, v, w, h);
+		drawStorytellerRoles(hd, mc, v);
+
+		// En bas, du plus bas au plus haut : l'action qui attend (ou le sommeil), l'aparté, la conversation privée, la
+		// version du serveur.
+		if (ClientState.obj(v, "prompt") != null) {
+			bottom = stackUp(hd, "Une action t'attend (touche J)", w, bottom, Theme.GOLD);
+		} else if (phase.equals("NIGHT") && !ClientState.bool(v, "isStoryteller") && ClientState.num(v, "mySeat", -1) >= 0) {
+			// Nuit d'attente : ceux qui dorment savent quoi faire
+			bottom = stackUp(hd, "Tu dors… Le Conteur réveille chacun à son tour. (J : ton carnet)", w, bottom, 0xFFB8A6C8);
 		}
 		// Aparté avec le Conteur (vocal seul à seul)
 		String aside = ClientState.str(v, "aside");
@@ -681,11 +682,53 @@ public final class Hud {
 		if (aside != null && !aside.isEmpty() && (aside.equals(me) || ClientState.bool(v, "isStoryteller"))) {
 			String t = aside.equals(me) ? "En aparté avec le Conteur : vous seuls vous entendez"
 				: "En aparté avec " + aside + " (accroupi + clic droit au bâton pour finir)";
-			centered(hd, t, w, hd.px(h - 72), 0xFFC8A8F0, true);
+			bottom = stackUp(hd, t, w, bottom, 0xFFC8A8F0);
 		}
-		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
-			String hint = "Une action t'attend (touche J)";
-			centered(hd, hint, w, hd.px(h - 60), Theme.GOLD, true);
+		// Conversation privée entre joueurs, et invitation en attente
+		String talk = ClientState.str(v, "talkingWith");
+		String invite = ClientState.str(v, "talkInvite");
+		if (talk != null && !talk.isEmpty()) {
+			bottom = stackUp(hd, "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)", w, bottom, 0xFFC8A8F0);
+		} else if (invite != null && !invite.isEmpty()) {
+			bottom = stackUp(hd, invite + " veut te parler en privé (touche J pour répondre)", w, bottom, Theme.GOLD);
+		}
+		if (other != null) {
+			drawVersionWarning(hd, other, w, bottom);
+		}
+	}
+
+	/** Conteur, la nuit : qui est réveillé et ce qu'on attend, sous le bandeau de phase. Renvoie le bas du bandeau. */
+	private static int drawNightStep(Hd hd, JsonObject ns, int w) {
+		String who = ClientState.str(ns, "player");
+		String wait = ClientState.str(ns, "waiting");
+		String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
+			+ (wait == null || wait.isEmpty() ? "" : " : " + wait);
+		t = hd.ellipsize(STRIP, t, hd.u(w - 20));
+		int nw = hd.width(STRIP, t) + hd.u(14);
+		int ny = hd.px(23);
+		int nh = hd.u(16);
+		int nx = hd.px(w / 2) - nw / 2;
+		hd.sprite(HdSprites.INFOBULLE, nx, ny, nw, nh, 0xFFC8B0F0);
+		hd.fill(nx + hd.u(2.5), ny + hd.u(2.5), nx + nw - hd.u(2.5), ny + nh - hd.u(2.5), 0x702A1840);
+		hd.textMiddle(STRIP, t, nx + hd.u(7), ny, nh, 0xFFE8DCF8);
+		return ny + nh;
+	}
+
+	/** Bandeau rouge : le serveur a une autre version du mod. Posé au-dessus de bottom (pixels réels). */
+	private static void drawVersionWarning(Hd hd, String other, int w, int bottom) {
+		String t = "Le serveur a une autre version du mod Valcombe (serveur : " + other + ", vous : "
+			+ ClientState.modVersion() + "). L'hôte doit le mettre à jour.";
+		List<String> lines = hd.wrap(MESSAGE, t, hd.u(Math.max(80, w - 40)));
+		int lw = 0;
+		for (String l : lines) {
+			lw = Math.max(lw, hd.width(MESSAGE, l));
+		}
+		int lh = pitch(hd) + hd.u(1);
+		int top = bottom - hd.u(4) - lines.size() * lh;
+		int cx = hd.px(w / 2);
+		hd.fill(cx - lw / 2 - hd.u(7), top - hd.u(3), cx + lw / 2 + hd.u(7), bottom, 0xE0801818);
+		for (int i = 0; i < lines.size(); i++) {
+			hd.textCentered(MESSAGE, lines.get(i), cx, top + i * lh, 0xFFFFFFFF);
 		}
 	}
 }

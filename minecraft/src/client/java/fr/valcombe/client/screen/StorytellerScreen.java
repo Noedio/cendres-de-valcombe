@@ -210,7 +210,8 @@ public class StorytellerScreen extends HdScreen {
 						// Remise des rôles : le Conteur reçoit chaque joueur dans la salle de convocation.
 						int left = v.has("unbriefed") ? v.getAsJsonArray("unbriefed").size() : 0;
 						String here = ClientState.str(v, "summoned");
-						col.add(new Entry(left > 0 ? "Convoquer le suivant (" + left + " à recevoir)" : "Convoquer le suivant",
+						// Le nombre de joueurs à recevoir entre parenthèses, comme sur la tablette : le libellé tient sur le bouton.
+						col.add(new Entry(left > 0 ? "Convoquer le suivant (" + left + ")" : "Convoquer le suivant",
 							() -> send("vc convoquer suivant"), false));
 						if (here != null && !here.isEmpty()) {
 							col.add(new Entry("Renvoyer " + here + " au village", () -> send("vc convoquer fin"), false));
@@ -312,7 +313,7 @@ public class StorytellerScreen extends HdScreen {
 			// Le grimoire occupe la place entre le texte de tête (et l'avertissement) et l'aide du bas.
 			int top = headTop + headHeight(v, lw) + warnHeight(v, lw) + 4;
 			int bottom = py + ph - 22;
-			for (HdToken t : Grimoire.hdTokens(leftX(), top, lw, bottom - top,
+			for (HdToken t : Grimoire.hdTokens(leftX(), top, lw, bottom - top, 26, 14,
 					name -> minecraft.gui.setScreen(new SeatScreen(name)))) {
 				token(t);
 			}
@@ -364,6 +365,9 @@ public class StorytellerScreen extends HdScreen {
 			}
 			HdButton b = e.on() != null ? addRenderableWidget(new HdToggle(colX, y, w, h, e.label(), e.on(), e.run()))
 				: addRenderableWidget(new HdButton(colX, y, w, h, e.label(), e.run()));
+			if (e.on() == null && StorytellerKit.textWidth(HdStyle.BOUTON, e.label()) > w - 10) {
+				b.tooltip(e.label()); // libellé raccourci (« … ») : lisible en entier au survol
+			}
 			if (i < first || i >= first + colShown) {
 				b.visible = false; // hors de la fenêtre : ni dessinée ni cliquable, mais toujours dans l'écran
 			} else {
@@ -481,7 +485,7 @@ public class StorytellerScreen extends HdScreen {
 		}
 		if (status != null) {
 			hd.paragraph(HEAD, status, hd.px(lx), hd.px(statusTop), hd.px(lw),
-				ClientState.bool(v, "lobbyReady") ? Hd.BRONZE : Theme.BLOOD, HEAD_LINES * hd.lineHeight(HEAD));
+				ClientState.bool(v, "lobbyReady") ? Hd.BRONZE_INK : Theme.BLOOD, HEAD_LINES * hd.lineHeight(HEAD));
 		}
 	}
 }

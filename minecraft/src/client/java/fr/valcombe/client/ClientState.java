@@ -134,19 +134,38 @@ public final class ClientState {
 	}
 
 	/**
-	 * Version du mod sur le serveur, ou null si elle est identique à celle du joueur. Un serveur
-	 * d'avant la 0.5.3 n'envoie pas sa version : il est forcément différent.
+	 * Version du mod sur le serveur, ou null si elle est identique à celle du joueur (voir VersionCheck : jamais en
+	 * partie solo, et seulement d'après une vue reçue du serveur de la connexion en cours). Un serveur d'avant la
+	 * 0.5.3 n'envoie pas sa version : il est forcément différent.
 	 */
 	public static String serverVersionMismatch() {
-		if (view == null || !view.has("phase")) {
-			return null;
+		return VersionCheck.mismatch(serverViewSeen, serverModVersion, modVersion(),
+			net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer());
+	}
+
+	/** Une vue est arrivée du serveur pendant cette connexion, et la version du mod qu'elle annonçait. */
+	private static boolean serverViewSeen;
+	private static String serverModVersion;
+
+	/** Une vue envoyée par le serveur (et non posée par le client lui-même) : on retient aussi sa version du mod. */
+	public static void receive(String json) {
+		apply(json);
+		if (view.has("phase")) {
+			serverViewSeen = true;
+			serverModVersion = str(view, "modVersion");
 		}
-		String server = str(view, "modVersion");
-		String mine = modVersion();
-		if (server != null && server.equals(mine)) {
-			return null;
-		}
-		return server == null ? "plus ancienne" : server;
+	}
+
+	/**
+	 * Connexion à un serveur, ou déconnexion : la vue et la version de l'ancien serveur sont oubliées (sans quoi
+	 * l'affichage en jeu montrerait sa partie, et son bandeau de version, jusqu'à la première vue du nouveau).
+	 */
+	public static void forgetServer() {
+		serverViewSeen = false;
+		serverModVersion = null;
+		view = new JsonObject();
+		lastPromptKey = "";
+		version++;
 	}
 
 	public static String str(JsonObject o, String key) {

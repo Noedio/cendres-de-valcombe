@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
 import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdFonts;
 import fr.valcombe.client.hd.HdScreen;
 import fr.valcombe.client.hd.HdStyle;
 import fr.valcombe.client.hd.HdText;
@@ -93,17 +94,24 @@ public class GuessScreen extends HdScreen {
 			return;
 		}
 		List<String> players = strings(p, "players");
-		int colW = (pw - 36) / 2;
-		int rows = Math.max(1, (ph - 90) / 20);
-		for (int i = 0; i < players.size() && i < rows * 2; i++) {
+		// Les joueurs commencent sous la consigne (une ou deux lignes), avec un écart : elle ne touche jamais les boutons.
+		int top = py + 20 + textLines(p) * HdText.PAS + 6;
+		int rows = Math.max(1, (py + ph - 32 - top) / 20);
+		// Deux colonnes, trois si la table est trop grande pour deux, quatre en dernier recours (consigne sur deux lignes
+		// et 20 joueurs dans 427 x 240 : trois colonnes n'en montraient que 18) : chaque joueur a son bouton.
+		int cols = Math.min(4, Math.max(2, (players.size() + rows - 1) / rows));
+		int colW = (pw - 28 - (cols - 1) * 8) / cols;
+		int scale = Hd.guiScale();
+		for (int i = 0; i < players.size() && i < rows * cols; i++) {
 			String name = players.get(i);
 			Role r = NotebookScreen.roleOf(picks.get(name));
 			int x = px + 14 + (i / rows) * (colW + 8);
-			int y = py + 44 + (i % rows) * 20;
-			var b = button(x, y, colW, name + " : " + (r == null ? "?" : r.displayName), () -> {
+			int y = top + (i % rows) * 20;
+			String label = name + " : " + (r == null ? "?" : r.displayName);
+			var b = button(x, y, colW, label, () -> {
 				pickingFor = name;
 				rebuildSoon();
-			});
+			}).tooltip(HdFonts.width(HdStyle.BOUTON, scale, label) > (colW - 10) * scale ? label : null);
 			if (r == null && picks.size() >= count && count > 1) {
 				b.disabled(); // déjà assez d'hypothèses : en retirer une d'abord
 			}
@@ -116,6 +124,16 @@ public class GuessScreen extends HdScreen {
 		if (picks.size() != count) {
 			ok.disabled();
 		}
+	}
+
+	/** Lignes de la consigne (deux au plus) à la largeur du panneau. */
+	private int textLines(JsonObject p) {
+		String text = ClientState.str(p, "text");
+		if (text == null || text.isEmpty()) {
+			return 0;
+		}
+		int s = Hd.guiScale();
+		return Math.min(2, HdFonts.wrap(HdText.SERRE, s, text, (pw - 28) * s).size());
 	}
 
 	@Override
