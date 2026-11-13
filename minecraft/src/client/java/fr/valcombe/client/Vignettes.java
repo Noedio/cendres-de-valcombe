@@ -39,6 +39,12 @@ import net.minecraft.util.Util;
 public final class Vignettes {
 	/** Délai avant de redemander une vignette restée sans réponse, en millisecondes. */
 	private static final long RETRY = 8000;
+	/**
+	 * Vignettes gardées en textures, au plus (chacune pèse un peu moins de 1,5 Mo sur la carte graphique avec ses
+	 * réductions) : au-delà, les moins récemment dessinées sont rendues, et redemandées si on les revoit. Sans cette
+	 * limite, régler un village dans « Nouvelle carte » (thème, trônes, taille, maisons) en garderait des centaines.
+	 */
+	private static final int MAX_IMAGES = 80;
 
 	/** Une vignette reçue, prête à dessiner. */
 	public record Image(Identifier id, int width, int height, String stamp) {
@@ -51,6 +57,8 @@ public final class Vignettes {
 		long askedAt;
 		/** Le serveur n'a pas pu la faire (pour cette empreinte). */
 		String failed;
+		/** Dernière fois qu'on l'a voulue (dessinée), pour rendre d'abord les plus anciennes. */
+		long usedAt;
 	}
 
 	private static final Map<String, Entry> ENTRIES = new HashMap<>();
@@ -71,6 +79,7 @@ public final class Vignettes {
 		boolean upToDate = e.image != null && (stamp == null || stamp.isEmpty() || stamp.equals(e.image.stamp()));
 		boolean refused = stamp != null && stamp.equals(e.failed);
 		long now = Util.getMillis();
+		e.usedAt = now;
 		if (!upToDate && !refused && (e.asked == null || !e.asked.equals(stamp) || now - e.askedAt > RETRY)) {
 			e.asked = stamp == null ? "" : stamp;
 			e.askedAt = now;
@@ -115,6 +124,31 @@ public final class Vignettes {
 		}
 		e.image = new Image(id, t.width, t.height, p.stamp());
 		e.failed = null;
+		e.usedAt = Util.getMillis();
+		trim(e);
+	}
+
+	/** Au-delà de MAX_IMAGES textures, rend les moins récemment voulues (jamais keep, qui vient d'arriver). */
+	private static void trim(Entry keep) {
+		List<Map.Entry<String, Entry>> held = new ArrayList<>();
+		for (Map.Entry<String, Entry> me : ENTRIES.entrySet()) {
+			if (me.getValue().image != null) {
+				held.add(me);
+			}
+		}
+		if (held.size() <= MAX_IMAGES) {
+			return;
+		}
+		held.sort((a, b) -> Long.compare(a.getValue().usedAt, b.getValue().usedAt));
+		for (int i = 0, extra = held.size() - MAX_IMAGES; i < held.size() && extra > 0; i++) {
+			Entry old = held.get(i).getValue();
+			if (old == keep) {
+				continue;
+			}
+			Minecraft.getInstance().getTextureManager().release(old.image.id());
+			ENTRIES.remove(held.get(i).getKey());
+			extra--;
+		}
 	}
 
 	/** Oublie toutes les vignettes (déconnexion : un autre serveur a d'autres cartes). */
