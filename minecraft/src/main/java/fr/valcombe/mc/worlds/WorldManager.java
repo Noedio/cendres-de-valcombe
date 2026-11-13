@@ -259,6 +259,30 @@ public final class WorldManager {
 		return pending.containsKey(id);
 	}
 
+	/**
+	 * Les mondes tels que l'API d'administration les montre (GET /admin/etat, champ « mondes »), dans l'ordre du
+	 * registre (hub d'abord). Fil du serveur. État : « charge » (ouvert sur le serveur), « remise-a-neuf »
+	 * (recréation ou suppression en cours) ou « decharge » (fermé : ses anciens fichiers attendent d'être effacés,
+	 * il s'ouvrira à la demande). Les joueurs comptés sont ceux qui s'y trouvent en ce moment.
+	 */
+	public List<fr.valcombe.admin.WorldsView.World> adminView() {
+		requireServerThread();
+		Map<String, Integer> present = new HashMap<>();
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			WorldEntry e = entryOf(p.level());
+			if (e != null) {
+				present.merge(e.id(), 1, Integer::sum);
+			}
+		}
+		List<fr.valcombe.admin.WorldsView.World> out = new ArrayList<>();
+		for (WorldEntry e : registry.list()) {
+			String state = busy(e.id()) ? "remise-a-neuf" : isOpen(e.id()) ? "charge" : "decharge";
+			out.add(new fr.valcombe.admin.WorldsView.World(e.id(), e.nom(), e.sorte().code(), state,
+				present.getOrDefault(e.id(), 0)));
+		}
+		return out;
+	}
+
 	/** Le point d'apparition d'un monde de Valcombe : au centre, debout sur l'herbe. */
 	public static Vec3 spawn() {
 		return new Vec3(0.5, SURFACE_Y + 1, 0.5);

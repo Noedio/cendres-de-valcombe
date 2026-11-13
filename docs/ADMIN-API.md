@@ -137,13 +137,13 @@ Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alor
 - `enVeille` : un serveur dédié vide depuis une minute se met en veille et ne fait plus de tick ; `tps` reste alors la dernière valeur mesurée.
 - `memoire` : mémoire Java utilisée, réservée et maximale (réglée par `-Xmx`), en Mo.
 - `messageAccueil` : la première ligne de la description du serveur quand aucune soirée n'est annoncée. `motd` : la description telle que la liste des serveurs l'affiche (deux lignes, séparées par `\n`).
-- `mondes` : les mondes de Valcombe. **Vide pour l'instant** : le gestionnaire de mondes (sprint 10) la remplira. Chaque monde aura la forme :
+- `mondes` : les mondes de Valcombe inscrits dans `config/valcombe/mondes.json` (hub d'abord), donnés par le gestionnaire de mondes. Le monde principal de Minecraft n'y figure pas. Liste vide si aucun monde n'est inscrit ou si le gestionnaire n'a pas pu démarrer. Chaque monde a la forme :
 
 ```json
 {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "etat": "charge", "joueurs": 6}
 ```
 
-  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. D'autres champs pourront s'ajouter.
+  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. D'autres champs pourront s'ajouter (l'état des parties au sprint 12).
 - `redemarrageNecessaire` : un réglage enregistré n'agira qu'au prochain démarrage (voir `/admin/reglages`).
 
 ### GET /admin/joueurs
@@ -336,5 +336,5 @@ curl -s -X POST -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/redemar
 
 ## Ce qui viendra
 
-- `mondes` rempli par le gestionnaire de mondes (sprint 10), puis les parties (sprint 12).
+- L'état des parties dans `mondes` (sprint 12).
 - Les sauvegardes (sprint 14, ticket à part).

@@ -279,6 +279,7 @@ public final class ValcombeMod implements ModInitializer {
 				var manager = new fr.valcombe.mc.worlds.WorldManager(server, fr.valcombe.mc.worlds.WorldManager.defaultFile(server));
 				manager.start();
 				worlds = manager;
+				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
 			} catch (RuntimeException | LinkageError e) {
 				LOG.error("Mondes de Valcombe indisponibles : le jeu continue dans le monde principal", e);
 			}
@@ -312,6 +313,7 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			workshop = null;
 			if (worlds != null) {
+				setWorldsView(null);
 				worlds.stop();
 				worlds = null;
 			}

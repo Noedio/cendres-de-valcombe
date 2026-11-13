@@ -113,7 +113,37 @@ public class AdminApiGameTest implements FabricClientGameTest {
 			check(e.getAsJsonObject("joueurs").get("connectes").getAsInt() == 1, "un joueur connecté");
 			check(e.getAsJsonObject("memoire").get("maxMo").getAsLong() > 0, "mémoire");
 			check(e.get("tps").getAsDouble() > 0, "TPS");
-			check(e.getAsJsonArray("mondes").isEmpty(), "pas encore de mondes");
+			check(e.get("mondes").isJsonArray(), "liste des mondes");
+
+			// Mondes : la liste du gestionnaire de mondes. Un monde d'essai créé pour l'occasion y apparaît, chargé et
+			// vide, puis il est supprimé (mondes.json est commun à toutes les sauvegardes du dossier de jeu).
+			var server = world.getServer();
+			var manager = fr.valcombe.mc.ValcombeMod.worlds();
+			check(manager != null, "gestionnaire de mondes démarré");
+			String worldName = "Essai admin " + (System.currentTimeMillis() % 100000);
+			String worldId = server.computeOnServer(s -> manager.create(fr.valcombe.mc.worlds.WorldKind.ESSAI, worldName).id());
+			var withWorld = get(ctx, "/admin/etat", key());
+			status(withWorld, 200, "état avec un monde d'essai");
+			JsonArray mondes = json(withWorld).getAsJsonArray("mondes");
+			JsonObject listed = null;
+			for (var w : mondes) {
+				if (w.getAsJsonObject().get("id").getAsString().equals(worldId)) {
+					listed = w.getAsJsonObject();
+				}
+			}
+			check(listed != null && listed.get("nom").getAsString().equals(worldName) && listed.get("sorte").getAsString().equals("essai")
+				&& listed.get("etat").getAsString().equals("charge") && listed.get("joueurs").getAsInt() == 0,
+				"monde d'essai listé : " + mondes);
+			check(mondes.size() == server.computeOnServer(s -> manager.list().size()), "tous les mondes du registre listés");
+			var deleted = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>>();
+			server.runOnServer(s -> deleted.set(manager.delete(worldId)));
+			for (int i = 0; i < 600 && !deleted.get().isDone(); i++) {
+				ctx.waitTick();
+			}
+			check(deleted.get().isDone() && !deleted.get().isCompletedExceptionally(), "monde d'essai supprimé");
+			JsonArray after = json(get(ctx, "/admin/etat", key())).getAsJsonArray("mondes");
+			check(after.size() == mondes.size() - 1 && !after.toString().contains("\"" + worldId + "\""), "monde d'essai retiré de la liste");
+			System.out.println("[valcombe-test] admin/etat : mondes du gestionnaire listés, " + mondes.size() + " avec l'essai");
 
 			// Joueurs
 			var joueurs = get(ctx, "/admin/joueurs", key());
