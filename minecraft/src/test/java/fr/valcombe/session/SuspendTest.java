@@ -147,6 +147,14 @@ class SuspendTest {
 		assertTrue(pause.getMessage().contains("suspens"), pause.getMessage());
 		assertThrows(GameException.class, s::suspend);
 		assertThrows(GameException.class, () -> s.discussion(3), "rien ne se relance pendant le suspens");
+		// Ni les gestes des joueurs, lancés depuis le hub (leur commande vise encore leur table) : main levée, choix de
+		// nuit, réponse au réveil, décision du Conteur.
+		for (org.junit.jupiter.api.function.Executable gesture : List.<org.junit.jupiter.api.function.Executable>of(
+				() -> s.vote("Alba", true), () -> s.choose("Alba", "Brune"), () -> s.validate("Alba"), () -> s.sleep("Alba"),
+				() -> s.decide(CONTEUR, 0))) {
+			GameException refused = assertThrows(GameException.class, gesture);
+			assertTrue(refused.getMessage().contains("suspens"), refused.getMessage());
+		}
 
 		// Un joueur qui se reconnecte reste au hub, prévenu.
 		s.onJoin("Brune");

@@ -308,6 +308,12 @@ public partial class MainWindow
         {
             GmNotify("Le serveur n'a pas répondu à temps : relisez le tableau dans un instant.", ok: false);
         }
+        catch (Exception ex)
+        {
+            // Connexion coupée ou remplacée pendant la requête, ou imprévu : jamais d'exception hors d'un async void, elle
+            // fermerait le launcher.
+            GmNotify("Le serveur n'a pas pu être joint : " + ex.Message, ok: false);
+        }
         finally
         {
             _gmBusy = false;

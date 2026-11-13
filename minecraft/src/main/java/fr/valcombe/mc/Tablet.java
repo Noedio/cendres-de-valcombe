@@ -371,7 +371,8 @@ public final class Tablet {
 					throw new GameException("Aucune partie sur ce serveur.");
 				}
 				Session session = room.session();
-				boolean leader = who.equals(session.storyteller()) || (p != null && room.isLeader(p));
+				// Qui regarde depuis le tableau des parties ne voit jamais les rôles, même opérateur (comme dans le jeu, ViewSync).
+				boolean leader = !session.isWatcher(who) && (who.equals(session.storyteller()) || (p != null && room.isLeader(p)));
 				JsonObject v = GSON.toJsonTree(session.view(who, leader)).getAsJsonObject();
 				v.addProperty("online", p != null);
 				v.addProperty("partie", room.name());

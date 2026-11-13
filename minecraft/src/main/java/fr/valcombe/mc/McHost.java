@@ -2168,7 +2168,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	/** Fin des messages qui lancent un chantier : valable dans le jeu comme sur la page de l'Atelier. */
-	public static final String PROGRESS =" Dans le jeu, une barre en haut de l'écran suit le chantier.";
+	public static final String PROGRESS = " Dans le jeu, une barre en haut de l'écran suit le chantier.";
 
 	/** Le village généré v vient d'être bâti : sa salle de convocation, sa salle d'attente, et il devient la carte. */
 	private void adoptGenerated(Village v) {

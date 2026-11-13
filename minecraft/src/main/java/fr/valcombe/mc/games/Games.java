@@ -149,11 +149,14 @@ public final class Games implements WorldManager.Listener {
 		if (g == null) {
 			return null;
 		}
-		GameRoom r = g.mainId == null ? null : g.rooms.get(g.mainId);
-		if (r != null) {
-			return r;
-		}
+		// Par la copie de la liste, jamais par la table elle-même : lue aussi hors du fil du serveur.
 		List<GameRoom> list = g.snapshot;
+		String id = g.mainId;
+		for (GameRoom r : list) {
+			if (r.id().equals(id)) {
+				return r;
+			}
+		}
 		return list.isEmpty() ? null : list.get(0);
 	}
 
@@ -308,11 +311,11 @@ public final class Games implements WorldManager.Listener {
 		}
 		WorldEntry main = worlds.find(mainWorldId);
 		if (main != null) {
-			open(main, true); // la partie principale a toujours où se jouer : son village est bâti s'il manque
+			openSafely(main, true); // la partie principale a toujours où se jouer : son village est bâti s'il manque
 		}
 		for (WorldEntry e : worlds.list()) {
 			if (hosts(e.sorte()) && !rooms.containsKey(e.id())) {
-				open(e, false); // une partie d'essai garde son monde tel qu'on l'a laissé (vide, s'il l'était)
+				openSafely(e, false); // une partie d'essai garde son monde tel qu'on l'a laissé (vide, s'il l'était)
 			}
 		}
 		worlds.addListener(this);
@@ -324,6 +327,15 @@ public final class Games implements WorldManager.Listener {
 		}
 		LOG.info("Parties de Valcombe : {}.", String.join(", ", snapshot.stream()
 			.map(r -> r.id() + (r.suspended() ? " (en suspens)" : r.inProgress() ? " (en cours)" : "")).toList()));
+	}
+
+	/** Au démarrage : une partie qui ne s'ouvre pas est journalisée, et n'empêche pas les autres de s'ouvrir. */
+	private void openSafely(WorldEntry e, boolean build) {
+		try {
+			open(e, build);
+		} catch (RuntimeException | LinkageError ex) {
+			LOG.error("Partie « " + e.id() + " » non ouverte au démarrage", ex);
+		}
 	}
 
 	/**

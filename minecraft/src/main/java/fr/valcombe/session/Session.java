@@ -880,10 +880,18 @@ public final class Session {
 	 */
 	Game requireLive() {
 		Game g = requireGame();
+		requireAwake();
+		return g;
+	}
+
+	/**
+	 * Un geste de joueur qui fait avancer la partie (main levée, choix et réponse de nuit, décision du Conteur) : refusé
+	 * tant qu'elle est en suspens. Ses joueurs sont au hub, mais une commande lancée de là vise encore leur table.
+	 */
+	private void requireAwake() {
 		if (suspended) {
 			throw new GameException("La partie est en suspens : reprenez-la d'abord (/vc partie reprendre).");
 		}
-		return g;
 	}
 
 	int requireSeat(String name) {
@@ -1874,6 +1882,7 @@ public final class Session {
 
 	/** Bascule la sélection d'un joueur pendant un choix de nuit. */
 	public String choose(String name, String target) {
+		requireAwake();
 		if (desk.asking(name)) {
 			return desk.choose(name, target);
 		}
@@ -1897,6 +1906,7 @@ public final class Session {
 	}
 
 	public String validate(String name) {
+		requireAwake();
 		if (desk.asking(name)) {
 			return desk.validate(name);
 		}
@@ -1939,6 +1949,7 @@ public final class Session {
 
 	/** Réponse du Conteur à une décision en direct. */
 	public String decide(String name, int option) {
+		requireAwake();
 		if (pendingDecision == null || !name.equals(decisionAsked)) {
 			throw new GameException("Aucune décision en attente.");
 		}
@@ -2104,6 +2115,7 @@ public final class Session {
 	}
 
 	public String sleep(String name) {
+		requireAwake();
 		if (!name.equals(waitingAck)) {
 			throw new GameException("Tu n'es pas réveillé.");
 		}
@@ -2714,6 +2726,7 @@ public final class Session {
 
 	/** Lever ou baisser la main, tant que l'aiguille n'est pas passée. */
 	public String vote(String name, boolean yes) {
+		requireAwake();
 		if (voteNom == null) {
 			throw new GameException("Aucun vote en cours.");
 		}
