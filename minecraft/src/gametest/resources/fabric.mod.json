@@ -10,7 +10,8 @@
 			"fr.valcombe.gametest.WorldEditGameTest",
 			"fr.valcombe.gametest.WorldsGameTest",
 			"fr.valcombe.gametest.AdminApiGameTest",
-			"fr.valcombe.gametest.TexturesGameTest"
+			"fr.valcombe.gametest.TexturesGameTest",
+			"fr.valcombe.gametest.HdGameTest"
 		]
 	},
 	"depends": {

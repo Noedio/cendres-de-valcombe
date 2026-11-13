@@ -17,7 +17,8 @@ Avec le mod côté client (modpack), les joueurs ont des écrans sur mesure. San
 | `src/main/java/fr/valcombe/net/` | Paquets serveur ↔ client |
 | `src/main/java/fr/valcombe/mc/` | Serveur : commandes, menus coffre, village, vocal, scripts enregistrés |
 | `src/client/java/fr/valcombe/client/` | Client : écrans sur mesure, affichage en jeu, sons |
-| `src/client/resources/assets/valcombe/` | Textures originales (générées par `tools/make_assets.py`, `make_models.py` et `make_tools.py`) |
+| `src/client/java/fr/valcombe/client/hd/` | Boîte à outils d'interface haute résolution : écrans nets à la résolution de l'écran, police lisse (voir `docs/UI-HD.md` à la racine) |
+| `src/client/resources/assets/valcombe/` | Textures originales (générées par `tools/make_assets.py`, `make_models.py` et `make_tools.py` ; interface haute résolution et polices par `tools/make_ui.py`) |
 | `src/test/java/` | Tests JUnit des règles et de la table de jeu |
 | `src/gametest/java/` | Test en jeu : partie complète avec captures d'écran |
 | `tools/` | Génération des textures et du modpack |
@@ -32,6 +33,7 @@ Il faut Java 25.
 | `./gradlew runClientGameTest` | Joue une partie en jeu et enregistre des captures dans `build/run/clientGameTest/screenshots/` |
 | `./gradlew runServer`, `./gradlew runClient` | Serveur et client de développement (Simple Voice Chat inclus) |
 | `python tools/make_assets.py`, puis `make_models.py` et `make_tools.py` | Régénèrent les textures en 128 px (moteur de dessin `tools/dessin.py`, sans dépendance) ; `make_assets.py --cadres` redessine aussi le parchemin, le cadre et les boutons |
+| `python tools/make_ui.py` | Régénère les textures d'interface haute résolution et les polices déclarées (`--polices` : retélécharge les polices libres) |
 | `python tools/make_modpack.py` | Fabrique `dist/Valcombe-<version>.mrpack` et `dist/serveur-valcombe/` |
 
 ## Commandes `/vc`

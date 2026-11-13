@@ -1,0 +1,18 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "valcombe:hd/cinzel.ttf",
+      "size": 62,
+      "oversample": 1.0,
+      "shift": [
+        0.0,
+        55.0
+      ]
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:default"
+    }
+  ]
+}

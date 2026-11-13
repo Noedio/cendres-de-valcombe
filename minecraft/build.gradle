@@ -16,6 +16,15 @@ loom {
 	}
 }
 
+// Les tests JUnit vérifient aussi la logique pure de l'interface haute résolution (fr.valcombe.client.hd :
+// échelle des polices, défilement, édition de texte, dimensions des textures), qui ne dépend pas de Minecraft.
+sourceSets {
+	test {
+		compileClasspath += sourceSets.client.output
+		runtimeClasspath += sourceSets.client.output
+	}
+}
+
 repositories {
 	maven {
 		name = 'Henkel (Simple Voice Chat)'
