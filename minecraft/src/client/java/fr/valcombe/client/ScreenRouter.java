@@ -41,6 +41,8 @@ public final class ScreenRouter {
 			case "atelier" -> new fr.valcombe.client.screen.AtelierScreen();
 			case "sheets" -> new SheetsScreen();
 			case "mondes" -> new fr.valcombe.client.screen.WorldsScreen();
+			case "atelier-carte" -> new fr.valcombe.client.screen.MapWorkshopScreen();
+			case "atelier-carte-ouvrir" -> new fr.valcombe.client.screen.MapWorkshopOpenScreen();
 			case "prompt" -> ClientState.obj(ClientState.view(), "prompt") != null ? promptScreen() : new MainScreen();
 			default -> new MainScreen();
 		};

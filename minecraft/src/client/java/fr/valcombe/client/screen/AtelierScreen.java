@@ -263,6 +263,13 @@ public class AtelierScreen extends BaseScreen {
 			chat(bx, row(1), bw, "Renommer…", "vc carte renommer " + map + " ");
 			action(bx, row(2), bw, "Dupliquer", "vc carte copier " + map);
 			confirm(bx, row(3), bw, "Supprimer", "vc carte supprimer " + map);
+			// L'atelier carte : un monde à elle, où on la retouche (un seul par carte ; ouvert, on y retourne).
+			JsonObject chosen = maps.stream().filter(m -> map.equals(ClientState.str(m, "id"))).findFirst().orElse(null);
+			boolean open = chosen != null && ClientState.str(chosen, "atelier") != null && !ClientState.str(chosen, "atelier").isEmpty();
+			button(bx, row(4) + 4, bw, open ? "Rouvrir son atelier" : "Ouvrir dans un atelier", () -> {
+				go("vc atelier carte ouvrir " + map);
+				onClose();
+			});
 		}
 	}
 
@@ -387,6 +394,11 @@ public class AtelierScreen extends BaseScreen {
 		if (ClientState.bool(a, "chantier")) {
 			gen.disabled();
 		}
+		// Ou dans son propre atelier carte, pour le retoucher avant de le ranger dans la bibliothèque.
+		button(cx - 100, row(4) + 1, 200, "Générer dans un atelier", () -> {
+			go("vc atelier carte village " + seats + " " + SIZES[size] + " " + themeName + " " + (houses ? "oui" : "non"));
+			onClose();
+		});
 	}
 
 	private void drawVillage(GuiGraphicsExtractor g) {

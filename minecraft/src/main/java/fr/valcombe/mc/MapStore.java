@@ -80,6 +80,27 @@ public final class MapStore {
 	public MapStore(Path creationsDir, McHost host) {
 		this.dir = creationsDir.resolve("cartes");
 		this.host = host;
+		this.versions = new MapVersions(dir);
+	}
+
+	/** Les versions gardées des cartes (enregistrements de l'atelier carte), dans {@code cartes/versions}. */
+	private final MapVersions versions;
+
+	public MapVersions versions() {
+		return versions;
+	}
+
+	/**
+	 * Remet dans la bibliothèque la version versionId de la carte mapId (voir {@link MapVersions#restore}) ; la liste des
+	 * cartes la relit aussitôt.
+	 */
+	MapVersions.Version restoreVersion(String mapId, String versionId) {
+		changed();
+		try {
+			return versions.restore(mapId, versionId);
+		} finally {
+			changed();
+		}
 	}
 
 	public void setServer(MinecraftServer server) {
@@ -362,6 +383,7 @@ public final class MapStore {
 		} catch (IOException e) {
 			throw new GameException("Suppression impossible : " + e.getMessage());
 		}
+		versions.forget(id); // ses versions gardées partent avec elle
 		return "Carte « " + d.nom + " » supprimée de la bibliothèque.";
 	}
 

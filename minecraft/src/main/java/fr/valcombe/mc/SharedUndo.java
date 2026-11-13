@@ -309,7 +309,15 @@ public final class SharedUndo {
 			journal.syncWorldEdit(p.getUUID(), worldEdit.history(p));
 		}
 		journal.syncCount(Stack.STRUCTURES, editor.undoable());
-		journal.syncCount(Stack.MARKERS, host.markerUndoDepth());
+		// Les repères : ceux du village de la partie, et ceux des ateliers carte (chacun défait dans son monde).
+		MapWorkshop atelier = ValcombeMod.mapWorkshop();
+		journal.syncCount(Stack.MARKERS, host.markerUndoDepth() + (atelier == null ? 0 : atelier.markerUndoDepth()));
+	}
+
+	/** Ce joueur est-il dans un atelier carte où il construit ? Les repères de sa carte s'y défont. */
+	private static boolean inMapWorkshop(ServerPlayer p) {
+		MapWorkshop atelier = ValcombeMod.mapWorkshop();
+		return atelier != null && atelier.buildsHere(p);
 	}
 
 	private static boolean operator(ServerPlayer p) {
@@ -323,7 +331,7 @@ public final class SharedUndo {
 	 * joueur est bien là où elle travaille ({@link #checkPlace}).
 	 */
 	private boolean valcombeHere(ServerPlayer p) {
-		return operator(p) && server != null && (host.isGameLevel(p.level()) || editor.worksIn(p.level()));
+		return server != null && (inMapWorkshop(p) || operator(p) && (host.isGameLevel(p.level()) || editor.worksIn(p.level())));
 	}
 
 	/**
@@ -332,8 +340,15 @@ public final class SharedUndo {
 	 * retoucherait les repères de la partie à distance, ou l'éditeur oublierait son historique en changeant de monde.
 	 */
 	private void checkPlace(ServerPlayer p, Stack stack) {
-		if (stack == Stack.MARKERS && !host.isGameLevel(p.level())) {
-			throw new GameException("les repères se défont dans le monde de la partie (Menu J › Mondes).");
+		if (stack == Stack.MARKERS && !host.isGameLevel(p.level()) && !inMapWorkshop(p)) {
+			throw new GameException("les repères se défont là où ils ont été posés : le monde de la partie ou l'atelier de la carte "
+				+ "(Menu J › Mondes).");
+		}
+		if (stack == Stack.MARKERS && inMapWorkshop(p) && ValcombeMod.mapWorkshop().markerUndoDepth(p.level()) == 0) {
+			throw new GameException("les derniers repères modifiés sont ceux d'une autre carte : ils se défont dans son monde.");
+		}
+		if (stack == Stack.MARKERS && host.isGameLevel(p.level()) && host.markerUndoDepth() == 0) {
+			throw new GameException("les derniers repères modifiés sont ceux d'un atelier carte : ils se défont dans son monde.");
 		}
 		if (stack == Stack.STRUCTURES && !editor.worksIn(p.level())) {
 			throw new GameException("les structures se défont dans le monde où elles ont été posées.");
@@ -398,7 +413,7 @@ public final class SharedUndo {
 				msg = switch (e.stack()) {
 					case WORLDEDIT -> worldEdit.undo(p);
 					case STRUCTURES -> editor.undo(p, n);
-					case MARKERS -> host.undoMarker();
+					case MARKERS -> inMapWorkshop(p) ? ValcombeMod.mapWorkshop().undoMarker(p) : host.undoMarker();
 				};
 			} catch (GameException refused) {
 				if (said.isEmpty()) {

@@ -177,6 +177,38 @@ public final class BuildAccess {
 		}
 	}
 
+	/**
+	 * Ce joueur peut-il casser <b>et poser</b> des blocs dans ce monde ? La même règle pour les deux gestes : dans un monde
+	 * de Valcombe, {@link #canBuild} ; ailleurs (monde principal de Minecraft) ou sans accès installé, celle de Minecraft.
+	 * C'est ce que vérifient la casse (événement de Fabric) et la pose (ItemStack.useOn, seaux : voir les mixins
+	 * {@code PlaceGuardMixin} et {@code BucketGuardMixin}).
+	 */
+	public static boolean mayModify(ServerPlayer p, Level level) {
+		BuildAccess a = current;
+		return a == null || a.entryOf(level) == null || a.canBuild(p);
+	}
+
+	/** Dernière fois qu'on a dit à un joueur qu'il ne pose rien ici (nanosecondes), pour ne le dire qu'une fois toutes les 2 s. */
+	private static final java.util.Map<java.util.UUID, Long> HINTED = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Une pose refusée : le joueur l'apprend au-dessus de sa barre d'objets (au plus une fois toutes les deux secondes), et
+	 * son inventaire lui est renvoyé (son jeu avait déjà retiré le bloc de sa main).
+	 */
+	public static void placeRefused(ServerPlayer p) {
+		long now = System.nanoTime();
+		Long last = HINTED.get(p.getUUID());
+		if (last == null || now - last > 2_000_000_000L) {
+			HINTED.put(p.getUUID(), now);
+			BuildAccess a = current;
+			String why = a == null ? null : a.buildRefusal(p);
+			if (why != null) {
+				p.sendSystemMessage(net.minecraft.network.chat.Component.literal(why).withStyle(net.minecraft.ChatFormatting.GOLD), true);
+			}
+		}
+		p.containerMenu.sendAllDataToRemote();
+	}
+
 	/** Ce joueur a-t-il au moins une invitation ? Les commandes de construction lui sont alors proposées partout. */
 	public boolean guestSomewhere(ServerPlayer p) {
 		return invitations.invitedSomewhere(p.getUUID(), p.getScoreboardName());

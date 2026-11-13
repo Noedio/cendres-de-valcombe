@@ -64,7 +64,8 @@ public final class MapPlacer {
 	/** Remise à plat sans rien faire tomber : ni le contenu d'un coffre, ni la torche dont le support disparaît. */
 	private static final int FLAT_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SUPPRESS_DROPS | Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
 	/** Décors en entités d'une carte (trônes sculptés, scène, panneaux...) : retirés avec elle. */
-	private static final Set<String> DECOR = Set.of("vc_trone", "vc_scene", "valcombe_salle", "vc_presentoir", "vc_repere", "vc_chair");
+	private static final Set<String> DECOR = Set.of("vc_trone", "vc_scene", "valcombe_salle", "vc_presentoir", "vc_repere", "vc_chair",
+		MapWorkshop.TAG);
 
 	/**
 	 * Une pose lancée.
@@ -441,6 +442,30 @@ public final class MapPlacer {
 	 * et à tous les repères. Le monde note ensuite qu'il porte cette carte.
 	 */
 	public Capture capture(ServerLevel level, PlacedMap layout, String id, String nom) {
+		MapMarks marks = layout.marks();
+		if (marks.seats().size() < MIN_SEATS) {
+			requireServerThread();
+			entry(level);
+			throw new GameException("La carte n'a que " + marks.seats().size() + " trône(s) : il en faut au moins " + MIN_SEATS + ".");
+		}
+		return keep(level, shoot(level, layout, id, nom, MapStore.MAX_RADIUS));
+	}
+
+	/**
+	 * Une capture préparée, rien n'étant encore écrit : la carte telle qu'elle serait rangée, ses blocs, et si des blocs
+	 * montaient plus haut que la plus grande hauteur enregistrée. L'atelier carte s'en sert pour savoir si quelque chose a
+	 * changé depuis le dernier enregistrement ({@link #signature}) avant d'écrire quoi que ce soit.
+	 */
+	record Shot(PlacedMap map, Clip clip, boolean cutTop) {
+	}
+
+	/**
+	 * Prépare la capture de la carte bâtie dans ce monde autour des repères de layout (voir
+	 * {@link #capture(ServerLevel, PlacedMap, String, String)}), sans l'écrire ni exiger de trônes : l'atelier carte
+	 * enregistre aussi une carte inachevée. La zone bâtie est cherchée jusqu'à scanRadius blocs du centre (au plus
+	 * MapStore.MAX_RADIUS) : un monde d'atelier n'a pas à faire charger 600 tronçons pour un enregistrement automatique.
+	 */
+	Shot shoot(ServerLevel level, PlacedMap layout, String id, String nom, int scanRadius) {
 		requireServerThread();
 		WorldEntry e = entry(level);
 		MapStore.checkId(id);
@@ -448,15 +473,12 @@ public final class MapPlacer {
 			throw new GameException("Une carte est en train d'être posée dans « " + e.nom() + " » : capturez-la à la fin de la barre.");
 		}
 		MapMarks marks = layout.marks();
-		if (marks.seats().size() < MIN_SEATS) {
-			throw new GameException("La carte n'a que " + marks.seats().size() + " trône(s) : il en faut au moins " + MIN_SEATS + ".");
-		}
 		if (marks.reach() > MapStore.MAX_RADIUS) {
 			throw new GameException("Un repère est à plus de " + (MapStore.MAX_RADIUS - MapMarks.MARGIN) + " blocs de la place : "
 				+ "rapprochez-le ou retirez-le avant de capturer la carte.");
 		}
 		BlockPos c = marks.center();
-		int[] built = builtZone(level, c, MapStore.MAX_RADIUS);
+		int[] built = builtZone(level, c, Math.max(MapMarks.MIN_REACH, Math.min(MapStore.MAX_RADIUS, scanRadius)));
 		int rayon = captureRadius(layout.rayon(), marks.reach(), built[0]);
 		int wanted = captureHeight(layout.hauteur(), c.getY(), built[1], Integer.MAX_VALUE);
 		// Jamais plus haut que le monde (ni que la plus grande hauteur enregistrée).
@@ -469,12 +491,49 @@ public final class MapPlacer {
 		PlacedMap map = new PlacedMap(id, name, level.dimension(), marks, layout.genere(), layout.theme(), layout.places(),
 			layout.taille(), layout.maisons(), layout.salle(), rayon, hauteur);
 		checkInside(level, map);
-		boolean replaced = maps.exists(id);
+		MapStore.checkDef(map.toDef()); // une carte qu'on ne pourrait pas recharger n'est pas préparée
 		int side = 2 * rayon + 1;
-		Clip clip = Clip.capture(level, map.min(), side, hauteur, side);
-		maps.writeMap(map.toDef(), clip, McHost.topView(level, c, rayon));
+		return new Shot(map, Clip.capture(level, map.min(), side, hauteur, side), wanted > hauteur);
+	}
+
+	/** Range dans la bibliothèque une capture préparée par {@link #shoot}, puis note que ce monde porte cette carte. */
+	Capture keep(ServerLevel level, Shot shot) {
+		requireServerThread();
+		WorldEntry e = entry(level);
+		PlacedMap map = shot.map();
+		boolean replaced = maps.exists(map.mapId());
+		maps.writeMap(map.toDef(), shot.clip(), McHost.topView(level, map.center(), map.rayon()));
 		remember(level, e, map);
-		return new Capture(map, wanted > hauteur, replaced);
+		return new Capture(map, shot.cutTop(), replaced);
+	}
+
+	/**
+	 * L'empreinte d'une capture préparée : la fiche (repères, réglages, emprise) et chaque bloc, contenu des coffres
+	 * compris. Deux captures du même état donnent la même ; un seul bloc changé en donne une autre.
+	 */
+	static String signature(Shot shot) {
+		try {
+			java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+			md.update(GSON.toJson(shot.map().toDef()).getBytes(StandardCharsets.UTF_8));
+			Clip clip = shot.clip();
+			java.nio.ByteBuffer dims = java.nio.ByteBuffer.allocate(12).putInt(clip.width).putInt(clip.height).putInt(clip.length);
+			md.update(dims.array());
+			java.nio.ByteBuffer cells = java.nio.ByteBuffer.allocate(clip.cells.length * 4);
+			for (int cell : clip.cells) {
+				cells.putInt(cell);
+			}
+			md.update(cells.array());
+			for (BlockState s : clip.palette) {
+				md.update(s.toString().getBytes(StandardCharsets.UTF_8));
+				md.update((byte) 0);
+			}
+			for (var d : new java.util.TreeMap<>(clip.data).entrySet()) {
+				md.update((d.getKey() + "=" + d.getValue()).getBytes(StandardCharsets.UTF_8));
+			}
+			return java.util.HexFormat.of().formatHex(md.digest());
+		} catch (java.security.NoSuchAlgorithmException ex) {
+			throw new IllegalStateException(ex);
+		}
 	}
 
 	/**
