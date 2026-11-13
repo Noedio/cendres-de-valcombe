@@ -14,15 +14,24 @@ import fr.valcombe.admin.AdminSettings;
 import fr.valcombe.admin.ConsoleBuffer;
 import fr.valcombe.admin.RestartFlag;
 import fr.valcombe.admin.WorldsView;
+import fr.valcombe.backup.BackupKind;
+import fr.valcombe.backup.BackupManifest;
+import fr.valcombe.backup.BackupName;
+import fr.valcombe.backup.BackupSettings;
+import fr.valcombe.backup.BackupStore;
+import fr.valcombe.backup.Restorer;
 import fr.valcombe.mixin.DedicatedServerAccessor;
 import fr.valcombe.mixin.SettingsAccessor;
 import fr.valcombe.rules.GameException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -159,6 +168,10 @@ final class AdminApi {
 			path = path.substring(0, path.length() - 1);
 		}
 		String method = ex.getRequestMethod();
+		if (path.equals("sauvegardes") || path.startsWith("sauvegardes/")) {
+			backups(ex, path.equals("sauvegardes") ? "" : path.substring("sauvegardes/".length()), method, from);
+			return;
+		}
 		switch (path) {
 			case "etat" -> {
 				only(ex, method, "GET");
@@ -725,6 +738,277 @@ final class AdminApi {
 		// La réponse part d'abord : l'arrêt ferme le serveur web, et la requête avec.
 		json(ex, 202, out);
 		s.execute(() -> s.halt(false)); // comme /stop : les mondes et la partie sont enregistrés
+	}
+
+	// ------------------------------------------------------------------
+	// /admin/sauvegardes : liste, sauvegarde, réglages, restauration, téléchargement, suppression
+	// ------------------------------------------------------------------
+	private void backups(HttpExchange ex, String sub, String method, InetAddress from) throws IOException {
+		BackupService b = ValcombeMod.backups();
+		if (b == null) {
+			throw new AdminException(503, "Le serveur n'est pas prêt (démarrage ou arrêt en cours).");
+		}
+		String by = "API d'administration (" + from.getHostAddress() + ")";
+		switch (sub) {
+			case "" -> {
+				if (method.equals("GET")) {
+					json(ex, 200, backupList(b));
+				} else if (method.equals("POST")) {
+					noFields(ex);
+					BackupService.Job job = b.start(BackupKind.MANUELLE, by, null);
+					Map<String, Object> out = new LinkedHashMap<>();
+					out.put("ok", true);
+					out.put("message", "Sauvegarde " + job.name + " lancée : suivez-la dans GET /admin/sauvegardes (enCours).");
+					out.put("nom", job.name);
+					out.put("enCours", job.toMap());
+					json(ex, 202, out);
+				} else {
+					throw notAllowed(ex, method, "GET, POST");
+				}
+			}
+			case "reglages" -> {
+				if (method.equals("GET")) {
+					json(ex, 200, backupSettings(b));
+				} else if (method.equals("POST")) {
+					BackupSettings.Change change = BackupSettings.parse(readJson(ex));
+					BackupSettings.Values v;
+					try {
+						v = b.settings().apply(change);
+					} catch (IOException e) {
+						throw new AdminException(500, "Réglages des sauvegardes impossibles à enregistrer : " + e.getMessage());
+					}
+					ValcombeMod.LOG.info("API d'administration ({}) : réglages des sauvegardes {}", from.getHostAddress(), v);
+					Map<String, Object> out = new LinkedHashMap<>();
+					out.put("ok", true);
+					out.put("message", v.actives() ? "Sauvegardes automatiques : " + BackupService.describe(v) + "."
+						: "Sauvegardes automatiques désactivées : seulement à la demande.");
+					out.putAll(backupSettings(b));
+					json(ex, 200, out);
+				} else {
+					throw notAllowed(ex, method, "GET, POST");
+				}
+			}
+			case "restaurer" -> {
+				if (method.equals("POST")) {
+					restore(ex, b, readJson(ex), from, by);
+				} else if (method.equals("DELETE")) {
+					boolean had;
+					try {
+						had = b.cancelRestore();
+					} catch (IOException e) {
+						throw new AdminException(500, "Demande de restauration impossible à retirer : " + e.getMessage());
+					}
+					Map<String, Object> out = new LinkedHashMap<>();
+					out.put("ok", true);
+					out.put("annulee", had);
+					out.put("message", had ? "Restauration prévue annulée." : "Aucune restauration n'était prévue.");
+					json(ex, 200, out);
+				} else {
+					throw notAllowed(ex, method, "POST, DELETE");
+				}
+			}
+			default -> {
+				if (!BackupName.valid(sub)) {
+					throw new AdminException(404, "Point d'accès inconnu : /admin/sauvegardes/" + sub);
+				}
+				if (method.equals("GET")) {
+					download(ex, b, sub, from);
+				} else if (method.equals("DELETE")) {
+					boolean done;
+					try {
+						done = b.delete(sub, by);
+					} catch (IOException e) {
+						throw new AdminException(500, "Sauvegarde impossible à effacer : " + e.getMessage());
+					}
+					if (!done) {
+						throw new AdminException(404, "Aucune sauvegarde ne s'appelle « " + sub + " ».");
+					}
+					Map<String, Object> out = new LinkedHashMap<>();
+					out.put("ok", true);
+					out.put("message", "Sauvegarde « " + sub + " » effacée.");
+					json(ex, 200, out);
+				} else {
+					throw notAllowed(ex, method, "GET, DELETE");
+				}
+			}
+		}
+	}
+
+	/** Corps vide ou {} : ce point d'accès ne prend aucun champ. */
+	private static void noFields(HttpExchange ex) throws IOException {
+		String body = AdminJson.readBody(ex.getRequestBody(), declaredLength(ex), 1024);
+		if (!body.isBlank()) {
+			JsonObject o = AdminJson.parseObject(body);
+			if (!o.keySet().isEmpty()) {
+				throw new AdminException(400, "Aucun champ attendu ici (« " + o.keySet().iterator().next() + " » reçu).");
+			}
+		}
+	}
+
+	/** GET /admin/sauvegardes */
+	private static Map<String, Object> backupList(BackupService b) {
+		List<BackupStore.Backup> all;
+		try {
+			all = b.store().list();
+		} catch (IOException e) {
+			throw new AdminException(500, "Dossier des sauvegardes illisible : " + e.getMessage());
+		}
+		List<Map<String, Object>> list = new ArrayList<>();
+		long total = 0;
+		for (BackupStore.Backup bk : all) {
+			total += bk.size();
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("nom", bk.name());
+			m.put("sorte", bk.kind().id());
+			m.put("date", bk.parsed().at(b.zone()).toOffsetDateTime().toString());
+			m.put("octets", bk.size());
+			m.put("rotation", bk.kind().rotated());
+			try {
+				BackupManifest man = b.store().manifest(bk);
+				m.put("lisible", true);
+				m.put("par", man.par);
+				m.put("versionMod", man.versionMod);
+				m.put("fichiers", man.fichiers);
+				m.put("octetsDecompresses", man.octets);
+				m.put("mondes", man.mondes);
+			} catch (IOException e) {
+				m.put("lisible", false);
+				m.put("erreur", e.getMessage());
+			}
+			list.add(m);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("dossier", BackupStore.DIR_NAME);
+		out.put("sauvegardes", list);
+		out.put("nombre", list.size());
+		out.put("octetsTotal", total);
+		out.put("espaceLibre", b.store().freeSpace());
+		BackupService.Job job = b.running();
+		out.put("enCours", job == null ? null : job.toMap());
+		BackupService.Outcome last = b.last();
+		out.put("derniere", last == null ? null : last.toMap());
+		BackupSettings.Values v = b.settings().get();
+		Instant next = b.nextAutomatic(v);
+		out.put("prochaineAuto", next == null ? null : next.toString());
+		out.put("reportee", b.postponed());
+		out.put("restaurationPossible", b.canRestore());
+		out.put("restaurationPrevue", b.pendingRestore().map(r -> {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("nom", r.nom());
+			m.put("demandeLe", r.demandeLe().toString());
+			m.put("par", r.par());
+			return m;
+		}).orElse(null));
+		out.put("derniereRestauration", Restorer.lastReport(b.store().dir()).map(Restorer.Report::toMap).orElse(null));
+		out.put("reglages", v.toMap());
+		return out;
+	}
+
+	/** GET /admin/sauvegardes/reglages (et la fin de la réponse au POST). */
+	private static Map<String, Object> backupSettings(BackupService b) {
+		BackupSettings.Values v = b.settings().get();
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("reglages", v.toMap());
+		Map<String, Object> bounds = new LinkedHashMap<>();
+		bounds.put("intervalleMinutes", List.of(BackupSettings.MIN_INTERVAL, BackupSettings.MAX_INTERVAL));
+		bounds.put("garder", List.of(BackupSettings.MIN_KEEP, BackupSettings.MAX_KEEP));
+		out.put("bornes", bounds);
+		out.put("parDefaut", BackupSettings.DEFAULTS.toMap());
+		out.put("automatiquesPossibles", b.canRestore()); // serveur dédié : mêmes conditions que la restauration
+		Instant next = b.nextAutomatic(v);
+		out.put("prochaineAuto", next == null ? null : next.toString());
+		return out;
+	}
+
+	/** POST /admin/sauvegardes/restaurer : {"nom": "...", "redemarrer": true} */
+	private void restore(HttpExchange ex, BackupService b, JsonObject o, InetAddress from, String by) throws IOException {
+		List<String> errors = new ArrayList<>();
+		for (String k : o.keySet()) {
+			if (!k.equals("nom") && !k.equals("redemarrer")) {
+				errors.add("champ inconnu « " + k + " »");
+			}
+		}
+		JsonElement n = o.get("nom");
+		String name = n != null && n.isJsonPrimitive() && n.getAsJsonPrimitive().isString() ? n.getAsString() : null;
+		if (name == null) {
+			errors.add("« nom » : nom de la sauvegarde attendu (texte)");
+		} else if (!BackupName.valid(name)) {
+			errors.add("« nom » : « " + name + " » n'est pas un nom de sauvegarde (valcombe-AAAA-MM-JJ_HH-MM-SS-sorte.zip)");
+		}
+		JsonElement r = o.get("redemarrer");
+		boolean restart = false;
+		if (r != null) {
+			if (r.isJsonPrimitive() && r.getAsJsonPrimitive().isBoolean()) {
+				restart = r.getAsBoolean();
+			} else {
+				errors.add("« redemarrer » : vrai ou faux attendu (true / false)");
+			}
+		}
+		if (!errors.isEmpty()) {
+			throw new AdminException(400, "Restauration refusée : " + String.join(" ; ", errors) + ".");
+		}
+		if (!b.canRestore()) {
+			throw new AdminException(409, "La restauration ne se fait que sur un serveur dédié.");
+		}
+		MinecraftServer s = server;
+		if (restart && (s == null || !s.isRunning())) {
+			throw new AdminException(503, "Le serveur n'est pas prêt (démarrage ou arrêt en cours).");
+		}
+		String message;
+		try {
+			if (b.store().find(name).isEmpty()) {
+				throw new AdminException(404, "Aucune sauvegarde ne s'appelle « " + name + " ».");
+			}
+			message = b.scheduleRestore(name, by);
+		} catch (IOException e) {
+			throw new AdminException(500, "Restauration impossible à prévoir : " + e.getMessage());
+		}
+		ValcombeMod.LOG.info("API d'administration ({}) : restauration de {} prévue{}", from.getHostAddress(), name,
+			restart ? ", redémarrage demandé" : "");
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("nom", name);
+		out.put("redemarrage", restart);
+		if (!restart) {
+			out.put("message", message + " Redémarrez le serveur pour l'appliquer (POST /admin/redemarrer).");
+			out.put("drapeau", null);
+			json(ex, 200, out);
+			return;
+		}
+		try {
+			RestartFlag.write(valcombeDir, "restauration de " + name + " (" + by + ")", Instant.now());
+		} catch (IOException e) {
+			throw new AdminException(500, "Drapeau de redémarrage impossible à écrire : " + e.getMessage()
+				+ ". La restauration reste prévue au prochain démarrage ; le serveur n'est pas arrêté.");
+		}
+		out.put("message", message + " Le serveur s'arrête proprement, puis celui qui l'a lancé le relance.");
+		out.put("drapeau", "config/valcombe/" + RestartFlag.FILE_NAME);
+		json(ex, 202, out);
+		s.execute(() -> s.halt(false)); // comme /admin/redemarrer
+	}
+
+	/** GET /admin/sauvegardes/<nom> : l'archive elle-même. */
+	private static void download(HttpExchange ex, BackupService b, String name, InetAddress from) throws IOException {
+		Path f = b.store().resolve(name);
+		long size;
+		InputStream in;
+		try {
+			size = Files.size(f);
+			in = Files.newInputStream(f);
+		} catch (NoSuchFileException e) {
+			throw new AdminException(404, "Aucune sauvegarde ne s'appelle « " + name + " ».");
+		}
+		ValcombeMod.LOG.info("API d'administration ({}) : téléchargement de la sauvegarde {}", from.getHostAddress(), name);
+		try (in) {
+			ex.getResponseHeaders().set("Content-Type", "application/zip");
+			ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + name + "\"");
+			ex.getResponseHeaders().set("Cache-Control", "no-store");
+			ex.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+			ex.sendResponseHeaders(200, size);
+			try (OutputStream os = ex.getResponseBody()) {
+				in.transferTo(os);
+			}
+		}
 	}
 
 	// ------------------------------------------------------------------

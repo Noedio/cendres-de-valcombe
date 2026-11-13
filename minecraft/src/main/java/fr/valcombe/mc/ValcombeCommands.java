@@ -818,6 +818,7 @@ public final class ValcombeCommands {
 
 		registerEditor(root, registry, admin);
 		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds);
+		BackupCommands.register(root, admin);
 		var node = dispatcher.register(root);
 		dispatcher.register(Commands.literal("valcombe").redirect(node));
 	}

@@ -290,8 +290,8 @@ def main():
             "ExecStart=/opt/valcombe/demarrer.sh\n"
             "Restart=on-failure\n"
             "RestartSec=10\n"
-            "# Le temps d'enregistrer les mondes et la partie en cours à l'arrêt.\n"
-            "TimeoutStopSec=120\n"
+            "# Le temps d'enregistrer les mondes et la partie en cours, puis de faire la sauvegarde d'arrêt.\n"
+            "TimeoutStopSec=600\n"
             "\n"
             "[Install]\n"
             "WantedBy=multi-user.target\n"),
