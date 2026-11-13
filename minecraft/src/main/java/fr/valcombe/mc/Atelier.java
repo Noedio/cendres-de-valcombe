@@ -70,6 +70,15 @@ final class Atelier {
 		return p;
 	}
 
+	/** WorldEdit et l'« annuler » commun (prêts une fois le serveur démarré). */
+	private static WorldEditGate gate() {
+		WorldEditGate g = WorldEditGate.current();
+		if (g == null) {
+			throw new GameException("La construction n'est pas disponible sur ce serveur.");
+		}
+		return g;
+	}
+
 	void setServer(MinecraftServer server) {
 		this.server = server;
 	}
@@ -337,15 +346,17 @@ final class Atelier {
 						o.has("theme") ? o.get("theme").getAsString() : "gothique", !o.has("maisons") || o.get("maisons").getAsBoolean(),
 						world(o), player(owner)), 120)));
 				}
-				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure et /vc edit).
+				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure) ; la sélection est
+				// celle de WorldEdit, et « annuler » est l'« annuler » commun (/vc annuler).
 				case "structure/prendre" -> text(ex, 200, onServer(() -> editor.choose(online(owner), body.trim()), 10));
 				case "structure/tourner" -> text(ex, 200, onServer(() -> editor.rotate(online(owner)), 5));
 				case "structure/retourner" -> text(ex, 200, onServer(() -> editor.mirror(online(owner)), 5));
 				case "structure/poser" -> text(ex, 200, logged(owner, onServer(() -> editor.placeHere(online(owner)), 10)));
 				case "structure/enregistrer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
-					text(ex, 200, logged(owner, onServer(() -> editor.saveSelection(online(owner), o.get("id").getAsString(),
-						o.has("nom") ? o.get("nom").getAsString() : "", o.has("repere") ? o.get("repere").getAsString() : ""), 30)));
+					text(ex, 200, logged(owner, onServer(() -> SelectionToStructure.save(gate().link(), structures, online(owner),
+						o.get("id").getAsString(), o.has("nom") ? o.get("nom").getAsString() : "", null,
+						o.has("repere") ? o.get("repere").getAsString() : ""), 30)));
 				}
 				case "structure/importer" -> {
 					// Un fichier .schem, .litematic ou .nbt ajouté au catalogue : la carte n'est pas touchée.
@@ -364,8 +375,8 @@ final class Atelier {
 						o.get("repere").getAsString()), 5)));
 				}
 				case "structure/supprimer" -> text(ex, 200, logged(owner, onServer(() -> structures.delete(body.trim()), 5)));
-				case "edition/annuler" -> text(ex, 200, logged(owner, onServer(() -> editor.undo(online(owner), 1), 10)));
-				case "edition/retablir" -> text(ex, 200, logged(owner, onServer(() -> editor.redo(online(owner), 1), 10)));
+				case "edition/annuler" -> text(ex, 200, logged(owner, onServer(() -> gate().undo().undo(online(owner), 1), 10)));
+				case "edition/retablir" -> text(ex, 200, logged(owner, onServer(() -> gate().undo().redo(online(owner), 1), 10)));
 				case "exporter" -> exportPack(ex);
 				case "importer" -> text(ex, 200, logged(owner, onServer(() -> creations.importPack(body), 120)));
 				case "fermer" -> {

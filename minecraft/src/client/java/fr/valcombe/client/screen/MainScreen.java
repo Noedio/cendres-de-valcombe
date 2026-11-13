@@ -113,7 +113,7 @@ public class MainScreen extends HdScreen {
 		}
 		JsonObject worlds = ClientState.obj(v, "mondes");
 		if (worlds != null && ClientState.str(worlds, "bloque") == null) {
-			// Le hub, le village actuel et les mondes de partie (tous les mondes pour un opérateur) ; pas pendant sa partie.
+			// Le hub, le village de la partie et les autres mondes de partie (tous les mondes pour un opérateur) ; pas pendant sa partie.
 			actions.add(new Action("Mondes", () -> minecraft.gui.setScreen(new WorldsScreen())));
 		}
 		actions.add(new Action("Fiches des rôles", () -> minecraft.gui.setScreen(new SheetsScreen())));

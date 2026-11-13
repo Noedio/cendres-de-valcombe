@@ -292,26 +292,16 @@ public class ScreensGameTest implements FabricClientGameTest {
 		press(ctx, "Les vôtres");
 		shot(ctx, "28j-atelier-structures-de-l-utilisateur");
 
-		// Sélection : deux coins, puis copier depuis l'écran.
-		var corner = village.get().center().offset(0, 20, 0);
-		server.runOnServer(s -> {
-			var p = s.getPlayerList().getPlayerByName(me);
-			fr.valcombe.mc.ValcombeMod.editor().setCorner(p, 1, corner);
-			fr.valcombe.mc.ValcombeMod.editor().setCorner(p, 2, corner.offset(2, 1, 3));
-		});
+		// WorldEdit : hors des ateliers, l'onglet montre le chemin vers eux (la sélection, c'est WorldEdit, dans les ateliers).
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(4));
-		press(ctx, "Copier");
-		check(server.computeOnServer(s -> (Boolean) fr.valcombe.mc.ValcombeMod.editor().state(me).get("pressePapiers")),
-			"sélection copiée depuis l'écran : " + reply(ctx));
-		shot(ctx, "28k-atelier-selection");
-		press(ctx, "Désélectionner");
+		shot(ctx, "28k-atelier-worldedit-hors-atelier");
 		ctx.setScreen(() -> null);
 		send(ctx, "vc carte construction"); // sortie du mode construction
 		check(village.get().modified(), "carte tenue pour retouchée après le mode construction");
-		// Un refus arrive à l'écran comme un refus (affiché en rouge) : hors du mode construction, l'éditeur ne copie rien.
-		send(ctx, "vc edit copier");
+		// Un refus arrive à l'écran comme un refus (affiché en rouge) : hors des ateliers, pas de sélection vers structure.
+		send(ctx, "vc structures depuis-selection essai-ecran Essai");
 		ctx.waitTicks(12);
-		check(reply(ctx).startsWith("ERREUR ") && reply(ctx).contains("mode construction"), "refus signalé à l'écran : " + reply(ctx));
+		check(reply(ctx).startsWith("ERREUR ") && reply(ctx).contains("ateliers"), "refus signalé à l'écran : " + reply(ctx));
 
 		// Créations : un scénario lié à la carte « village-test ». Elle a été retouchée : le choisir la recharge, ce
 		// qui se confirme ; la partie d'essai attend la fin du chantier, puis démarre d'elle-même.
@@ -385,8 +375,9 @@ public class ScreensGameTest implements FabricClientGameTest {
 	}
 
 	/**
-	 * Éditeur du mode construction : le catalogue, une maison posée tournée (avec son repère), l'aperçu, puis une
-	 * sélection remplie, remplacée, murée, copiée, collée, déplacée, empilée — et tout cela annulé, puis les fichiers.
+	 * Éditeur du mode construction : le catalogue, une maison posée tournée (avec son repère), l'aperçu, deux structures
+	 * posées puis défaites par l'« annuler » commun, les fichiers importés comme structures. Sélectionner, remplir,
+	 * copier, coller : c'est WorldEdit, dans les ateliers (WorldEditGameTest, BuildWorkshopGameTest).
 	 */
 	private void checkEditor(ClientGameTestContext ctx, TestSingleplayerContext world, String me,
 			net.minecraft.core.BlockPos port, net.minecraft.core.BlockPos spot) {
@@ -449,77 +440,22 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(40);
 		shot(ctx, "27b-structure-apercu");
 
-		// Sélection de 5 × 3 × 4 en l'air, puis les opérations une à une.
-		var a = spot.above(12);
-		var b = a.offset(4, 2, 3);
-		String selected = world.getServer().computeOnServer(server -> {
-			var p = server.getPlayerList().getPlayerByName(me);
-			fr.valcombe.mc.ValcombeMod.editor().setCorner(p, 1, b);
-			return fr.valcombe.mc.ValcombeMod.editor().setCorner(p, 2, a);
-		});
-		check(selected.contains("5 × 3 × 4") && selected.contains("60 blocs"), "sélection : " + selected);
-		edit(ctx, world, me, (ed, p) -> ed.fill(p, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()));
-		check(count(world, a, b, net.minecraft.world.level.block.Blocks.STONE) == 60, "sélection remplie");
-		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d facing %d %d %d", me,
-			a.getX() + 2, spot.getY() + 1, a.getZ() - 14, a.getX() + 2, a.getY() + 1, a.getZ() + 2));
-		ctx.runOnClient(mc -> {
-			var inv = mc.player.getInventory();
-			for (int i = 0; i < 9; i++) {
-				if (inv.getItem(i).is(net.minecraft.world.item.Items.WOODEN_AXE)) {
-					inv.setSelectedSlot(i);
-				}
-			}
-		});
-		ctx.waitTicks(40);
-		shot(ctx, "27c-selection-remplie");
-		edit(ctx, world, me, (ed, p) -> ed.replace(p, s -> s.is(net.minecraft.world.level.block.Blocks.STONE), "stone",
-			net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState()));
-		check(count(world, a, b, net.minecraft.world.level.block.Blocks.GLASS) == 60, "pierre remplacée par du verre");
-		edit(ctx, world, me, (ed, p) -> ed.walls(p, net.minecraft.world.level.block.Blocks.BRICKS.defaultBlockState(), false));
-		check(count(world, a, b, net.minecraft.world.level.block.Blocks.GLASS) == 3 * 2 * 3
-			&& count(world, a, b, net.minecraft.world.level.block.Blocks.BRICKS) == 60 - 18, "murs de la sélection");
-		// Copier, se déplacer de huit blocs, coller : la copie arrive huit blocs plus loin.
+		// Deux structures posées en l'air (un puits, un banc retourné) : elles entrent dans l'« annuler » commun.
+		var a = spot.above(14);
+		var low = a.offset(-9, -2, -9);
+		var high = a.offset(20, 18, 9);
+		int before = nonAir(world, low, high);
 		edit(ctx, world, me, (ed, p) -> {
-			ed.copy(p);
-			p.teleportTo(p.level(), p.getX() + 8, p.getY(), p.getZ(), java.util.Set.of(), p.getYRot(), p.getXRot(), false);
-			return ed.paste(p, false);
+			ed.choose(p, "puits");
+			return ed.place(p, a);
 		});
-		check(count(world, a.offset(8, 0, 0), b.offset(8, 0, 0), net.minecraft.world.level.block.Blocks.BRICKS) == 42
-			&& count(world, a, b, net.minecraft.world.level.block.Blocks.BRICKS) == 42, "copier puis coller");
-		String turned = world.getServer().computeOnServer(server -> {
-			var p = server.getPlayerList().getPlayerByName(me);
-			return fr.valcombe.mc.ValcombeMod.editor().rotateClipboard(p, 1) + " " + fr.valcombe.mc.ValcombeMod.editor().flipClipboard(p);
-		});
-		check(turned.contains("4 × 3 × 5"), "presse-papiers tourné : " + turned);
-		edit(ctx, world, me, (ed, p) -> ed.move(p, 4, "haut"));
-		check(count(world, a, b, net.minecraft.world.level.block.Blocks.BRICKS) == 0
-			&& count(world, a.above(4), b.above(4), net.minecraft.world.level.block.Blocks.BRICKS) == 42, "sélection déplacée");
-		edit(ctx, world, me, (ed, p) -> ed.stack(p, 2, "est"));
-		check(count(world, a.offset(5, 4, 0), b.offset(10, 4, 0), net.minecraft.world.level.block.Blocks.BRICKS) == 84, "sélection empilée");
-
-		// La sélection devient une structure du catalogue ; elle voyage dans un pack .valcombe.
-		String shared = world.getServer().computeOnServer(server -> {
-			var p = server.getPlayerList().getPlayerByName(me);
-			var store = fr.valcombe.mc.ValcombeMod.structures();
-			String saved = fr.valcombe.mc.ValcombeMod.editor().saveSelection(p, "essai-mur", "Mur d'essai", "");
-			var def = store.def("essai-mur");
-			String pack = fr.valcombe.mc.ValcombeMod.creations().exportPack(java.util.List.of(), java.util.List.of(), java.util.List.of(),
-				java.util.List.of("essai-mur", "puits"));
-			store.delete("essai-mur");
-			String back = fr.valcombe.mc.ValcombeMod.creations().importPack(pack);
-			var again = store.def("essai-mur");
-			return saved + " | " + def.taille[0] + "×" + def.taille[1] + "×" + def.taille[2] + " | " + back + " | " + again.blocs;
-		});
-		System.out.println("[valcombe-test] structure enregistrée et partagée : " + shared);
-		check(shared.contains("5×3×4") && shared.contains("Importé : structure « Mur d'essai »") && shared.endsWith("| 60"),
-			"structure enregistrée puis reçue d'un pack : " + shared);
-		// La structure reçue se pose comme les autres, retournée.
 		edit(ctx, world, me, (ed, p) -> {
-			ed.choose(p, "essai-mur");
+			ed.choose(p, "banc");
 			ed.mirror(p);
-			return ed.place(p, a.offset(0, 12, 0));
+			return ed.place(p, a.offset(10, 0, 0));
 		});
-		check(count(world, a.offset(-4, 13, -3), a.offset(4, 15, 3), net.minecraft.world.level.block.Blocks.BRICKS) == 42, "structure de l'utilisateur posée");
+		int placedBlocks = nonAir(world, low, high) - before;
+		check(placedBlocks > 0, "puits et banc posés en l'air : " + placedBlocks + " blocs");
 
 		// Fichiers importés comme structures : une schématique passe, un fichier piégé est refusé, la carte n'est pas touchée.
 		String files = world.getServer().computeOnServer(server -> {
@@ -569,7 +505,6 @@ public class ScreensGameTest implements FabricClientGameTest {
 				String result = ok + " | " + def.taille[0] + "×" + def.taille[1] + "×" + def.taille[2] + " | " + refused + " | carte intacte "
 					+ (fr.valcombe.mc.ValcombeMod.host().village() == village && !fr.valcombe.mc.ValcombeMod.host().busy());
 				store.delete("petite-dalle");
-				store.delete("essai-mur");
 				return result;
 			} catch (java.io.IOException e) {
 				throw new AssertionError(e);
@@ -579,79 +514,47 @@ public class ScreensGameTest implements FabricClientGameTest {
 		check(files.contains("2×1×2") && files.contains("hors de ses dimensions") && files.endsWith("carte intacte true"),
 			"import de fichiers comme structures : " + files);
 
-		// Tout annuler d'un coup : il ne reste rien de ce que l'éditeur a posé.
-		int steps = world.getServer().computeOnServer(server -> (Integer) fr.valcombe.mc.ValcombeMod.editor().state(me).get("annulables"));
-		edit(ctx, world, me, (ed, p) -> ed.undo(p, 40));
+		// Tout annuler d'un coup, par l'« annuler » commun : il ne reste rien de ce que l'éditeur a posé.
+		String journal = world.getServer().computeOnServer(server -> fr.valcombe.mc.WorldEditGate.current().undo().order().toString());
+		check(journal.endsWith("STRUCTURES, STRUCTURES]"), "les deux poses sont les derniers gestes du journal : " + journal);
+		edit(ctx, world, me, (ed, p) -> fr.valcombe.mc.WorldEditGate.current().undo().undo(p, 2));
 		String undone = world.getServer().computeOnServer(server -> {
-			int left = 0;
-			for (var pos : net.minecraft.core.BlockPos.betweenClosed(a.offset(-6, 0, -6), a.offset(20, 20, 8))) {
-				if (!fr.valcombe.mc.ValcombeMod.host().level().getBlockState(pos).isAir()) {
-					left++;
-				}
-			}
-			var state = fr.valcombe.mc.ValcombeMod.editor().state(me);
-			return "blocs restants " + left + " | à annuler " + state.get("annulables") + " | à rétablir " + state.get("retablissables")
-				+ " | maisons " + fr.valcombe.mc.ValcombeMod.host().village().houseCount();
+			var p = server.getPlayerList().getPlayerByName(me);
+			var shared = fr.valcombe.mc.WorldEditGate.current().undo();
+			return "à rétablir " + shared.redoable(p) + " | maisons " + fr.valcombe.mc.ValcombeMod.host().village().houseCount();
 		});
-		System.out.println("[valcombe-test] tout annulé (" + steps + " opérations) : " + undone);
-		check(steps >= 7 && undone.equals("blocs restants 0 | à annuler 0 | à rétablir " + steps + " | maisons 16"), "tout annuler : " + undone);
+		int leftBlocks = nonAir(world, low, high) - before;
+		System.out.println("[valcombe-test] annuler commun : " + undone + " | blocs restants " + leftBlocks);
+		check(leftBlocks == 0 && undone.equals("à rétablir 2 | maisons 16"), "tout annuler : " + undone + ", blocs restants " + leftBlocks);
+		edit(ctx, world, me, (ed, p) -> fr.valcombe.mc.WorldEditGate.current().undo().redo(p, 1));
+		check(nonAir(world, low, high) - before > 0, "/vc retablir repose la dernière structure annulée");
+		edit(ctx, world, me, (ed, p) -> fr.valcombe.mc.WorldEditGate.current().undo().undo(p, 1));
+		check(nonAir(world, low, high) == before, "et /vc annuler la retire de nouveau");
 
-		// De vrais clics avec l'outil de sélection : le clic gauche pose le premier coin sans casser le bloc, le clic droit le second.
+		// Les mêmes gestes par les commandes : /vc structure et /vc annuler.
 		inGame(world, String.format(java.util.Locale.ROOT, "tp %s %d %d %d", me, port.getX() + 2, port.getY() + 1, port.getZ() + 8));
 		ctx.waitTicks(20);
-		var left = port.offset(2, 0, 9);
-		var right = port.offset(4, 0, 10);
-		var ground = world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().level().getBlockState(left));
-		ctx.runOnClient(mc -> {
-			var inv = mc.player.getInventory();
-			for (int i = 0; i < 9; i++) {
-				if (inv.getItem(i).is(net.minecraft.world.item.Items.WOODEN_AXE)) {
-					inv.setSelectedSlot(i);
-				}
-			}
-		});
-		ctx.waitTicks(5);
-		ctx.runOnClient(mc -> mc.gameMode.startDestroyBlock(left, net.minecraft.core.Direction.UP));
-		ctx.waitTicks(10);
-		ctx.runOnClient(mc -> mc.gameMode.useItemOn(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND,
-			new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(right), net.minecraft.core.Direction.UP, right, false)));
-		ctx.waitTicks(10);
-		String clicks = world.getServer().computeOnServer(server -> {
-			var p = server.getPlayerList().getPlayerByName(me);
-			var ed = fr.valcombe.mc.ValcombeMod.editor();
-			return "coin 1 " + ed.isCorner(p, 1, left) + " | coin 2 " + ed.isCorner(p, 2, right) + " | bloc intact "
-				+ (fr.valcombe.mc.ValcombeMod.host().level().getBlockState(left) == ground);
-		});
-		check(clicks.equals("coin 1 true | coin 2 true | bloc intact true"), "clics de l'outil de sélection : " + clicks);
-
-		// Les mêmes opérations par les commandes : /vc edit et /vc structure.
-		send(ctx, "vc edit deselectionner");
 		send(ctx, "vc structure liste");
-		var high = port.offset(2, 1, 8); // là où se tient le joueur, sur la place
-		send(ctx, "vc edit coin1");
-		send(ctx, "vc edit coin2");
-		send(ctx, "vc edit etendre 2 est");
-		send(ctx, "vc edit remplir minecraft:glass");
-		ctx.waitTicks(10);
-		check(count(world, high, high.offset(2, 0, 0), net.minecraft.world.level.block.Blocks.GLASS) == 3, "/vc edit remplir");
-		send(ctx, "vc edit remplacer glass oak_fence");
-		ctx.waitTicks(10);
-		check(world.getServer().computeOnServer(server -> {
-			var fence = fr.valcombe.mc.ValcombeMod.host().level().getBlockState(high.offset(1, 0, 0));
-			// Une barrière posée par l'éditeur se raccorde à ses voisines.
-			return fence.is(net.minecraft.world.level.block.Blocks.OAK_FENCE) && fence.getValue(net.minecraft.world.level.block.FenceBlock.EAST)
-				&& fence.getValue(net.minecraft.world.level.block.FenceBlock.WEST);
-		}), "/vc edit remplacer, barrières raccordées");
-		send(ctx, "vc edit annuler 2");
-		ctx.waitTicks(20);
-		check(count(world, high, high.offset(2, 0, 0), net.minecraft.world.level.block.Blocks.AIR) == 3, "/vc edit annuler 2");
+		var foot = port.offset(2, 1, 8); // là où se tient le joueur, sur la place
 		send(ctx, "vc structure poser banc ici");
 		ctx.waitTicks(10);
-		check(count(world, high.offset(-2, -1, -2), high.offset(2, 1, 2), net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS) == 3, "/vc structure poser banc ici");
-		send(ctx, "vc edit annuler");
+		check(count(world, foot.offset(-2, -1, -2), foot.offset(2, 1, 2), net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS) == 3, "/vc structure poser banc ici");
+		send(ctx, "vc annuler");
 		ctx.waitTicks(10);
-		check(count(world, high.offset(-2, -1, -2), high.offset(2, 1, 2), net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS) == 0, "banc annulé");
-		send(ctx, "vc edit deselectionner");
+		check(count(world, foot.offset(-2, -1, -2), foot.offset(2, 1, 2), net.minecraft.world.level.block.Blocks.SPRUCE_STAIRS) == 0, "banc annulé par /vc annuler");
+	}
+
+	/** Combien de blocs qui ne sont pas de l'air dans le pavé (coins compris), dans le monde de la partie. */
+	private static int nonAir(TestSingleplayerContext world, net.minecraft.core.BlockPos a, net.minecraft.core.BlockPos b) {
+		return world.getServer().computeOnServer(server -> {
+			int n = 0;
+			for (var pos : net.minecraft.core.BlockPos.betweenClosed(a, b)) {
+				if (!fr.valcombe.mc.ValcombeMod.host().level().getBlockState(pos).isAir()) {
+					n++;
+				}
+			}
+			return n;
+		});
 	}
 
 	/** Répond à l'invite en cours en passant par l'écran d'invite (capture au premier passage de chaque type). */
@@ -1450,7 +1353,7 @@ public class ScreensGameTest implements FabricClientGameTest {
 				return gone && there && back && v.houseCount() == 16 && v.seatCount() == 16 && png.length > 1000 && v.convocation() != null;
 			});
 			check(edited, "gomme, déplacement d'un trône, plan de l'Atelier et vue de dessus");
-			// Éditeur du mode construction : catalogue de structures, pose tournée, sélection, opérations, annuler et rétablir
+			// Éditeur du mode construction : catalogue de structures, pose tournée, « annuler » commun, fichiers
 			checkEditor(ctx, world, me, port, spot);
 			send(ctx, "vc carte construction");
 			ctx.waitTicks(10);

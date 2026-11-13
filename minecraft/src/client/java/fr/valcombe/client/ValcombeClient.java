@@ -27,9 +27,12 @@ public final class ValcombeClient implements ClientModInitializer {
 			(payload, context) -> context.client().execute(() -> ScreenRouter.open(payload.screen())));
 		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.PreviewPayload.TYPE,
 			(payload, context) -> context.client().execute(() -> ClientState.applyPreview(payload.json())));
+		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.SelectionPayload.TYPE,
+			(payload, context) -> context.client().execute(() -> BuildSelection.received(payload)));
 
 		Hud.register();
 		Ghost.register();
+		BuildSelection.register();
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("valcombe", "main"));
 		menuKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.menu", InputConstants.KEY_J, category));
 		handKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.hand", InputConstants.KEY_H, category));

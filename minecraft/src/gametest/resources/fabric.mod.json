@@ -18,6 +18,7 @@
 			"fr.valcombe.gametest.StorytellerHdGameTest",
 			"fr.valcombe.gametest.PartieWorldGameTest",
 			"fr.valcombe.gametest.EnvoiPartieGameTest",
+			"fr.valcombe.gametest.BuildWorkshopGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

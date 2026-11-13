@@ -15,9 +15,10 @@ import java.util.Set;
 /**
  * Un outil de Valcombe en main ne déclenche que Valcombe, même avec WorldEdit installé.
  *
- * <p>WorldEdit réagit aux clics avec deux objets de Minecraft : la hache en bois (sa baguette de sélection) et la
- * boussole (sa baguette de navigation, qui téléporte). Ce sont aussi les objets de base de deux outils de carte :
- * « Carte : sélection » et « Carte : centre de la place ». Deux protections, sans dépendre de WorldEdit :
+ * <p>WorldEdit réagit aux clics avec deux objets de Minecraft : sa baguette de sélection (la baguette de construction
+ * de Valcombe, qui est à lui : voir WorldEditGate) et la boussole (sa baguette de navigation, qui téléporte). La
+ * boussole est aussi l'objet de base de l'outil de carte « Carte : centre de la place ». Deux protections, sans
+ * dépendre de WorldEdit :
  * <ul>
  *   <li>les écouteurs de clic de Valcombe sont inscrits dans une phase qui passe avant la phase par défaut, celle où
  *   WorldEdit (et tout autre mod) inscrit les siens : un outil de Valcombe consomme son clic avant eux ;</li>
@@ -25,7 +26,7 @@ import java.util.Set;
  *   refuse donc à WorldEdit, par l'API de permissions de Fabric qu'il interroge, ses deux actions de navigation par
  *   objet tant qu'un outil de carte est en main. Ses commandes (/jumpto, /thru, //pos1...) restent permises.</li>
  * </ul>
- * La hache en bois que donne //wand, sans nom, reste la baguette de WorldEdit.
+ * La baguette de construction n'est pas un outil de carte : ses clics vont à WorldEdit, là où il est permis.
  */
 final class ToolPriority {
 	/** Phase des écouteurs de clic de Valcombe, avant {@link Event#DEFAULT_PHASE}. */

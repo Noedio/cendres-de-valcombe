@@ -101,7 +101,7 @@ class HubHallTest {
 		assertTrue(WorldKind.HUB.openToAll());
 		assertTrue(WorldKind.PARTIE.openToAll());
 		assertTrue(WorldKind.ESSAI.openToAll());
-		assertFalse(WorldKind.ATELIER_CARTE.openToAll(), "les ateliers : opérateurs (et leurs invités, plus tard)");
+		assertFalse(WorldKind.ATELIER_CARTE.openToAll(), "les ateliers : opérateurs et leurs invités seulement");
 		assertFalse(WorldKind.ATELIER_STRUCTURES.openToAll());
 		assertEquals("village", Travel.GAME_KIND, "le monde de la partie garde l'emblème du village dans le menu « Mondes »");
 		assertEquals("principal", Travel.MAIN);

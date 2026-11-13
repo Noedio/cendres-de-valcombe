@@ -263,6 +263,37 @@ public final class ValcombeMod implements ModInitializer {
 		}
 	}
 
+	/**
+	 * La construction : qui construit où (BuildAccess, invitations de config/valcombe/ateliers.json), WorldEdit limité aux
+	 * ateliers et complété (WorldEditGate : baguette, sélection montrée en 3D), « annuler » commun (SharedUndo). Sans les
+	 * mondes de Valcombe, les règles valent quand même (WorldEdit n'est alors permis nulle part).
+	 */
+	private static void setUpBuilding(net.minecraft.server.MinecraftServer server) {
+		try {
+			var invitations = new fr.valcombe.mc.worlds.BuildInvitations(
+				fr.valcombe.mc.worlds.BuildInvitations.fileIn(server.getServerDirectory()));
+			invitations.load();
+			var access = new fr.valcombe.mc.worlds.BuildAccess(ValcombeMod::worlds, invitations);
+			fr.valcombe.mc.worlds.BuildAccess.install(access);
+			if (worlds != null) {
+				// Un atelier supprimé emporte ses invitations.
+				worlds.addListener(new fr.valcombe.mc.worlds.WorldManager.Listener() {
+					@Override
+					public void deleted(fr.valcombe.mc.worlds.WorldEntry entry) {
+						invitations.forgetWorld(entry.id());
+					}
+				});
+			}
+			WorldEditLink link = WorldEditGate.loadLink();
+			link.start(server);
+			SharedUndo undo = new SharedUndo(link, HOST, editor);
+			undo.setServer(server);
+			WorldEditGate.install(new WorldEditGate(server, access, link, undo));
+		} catch (RuntimeException | LinkageError e) {
+			LOG.error("Construction (ateliers, WorldEdit, invitations) indisponible", e);
+		}
+	}
+
 	/** Ce que l'Atelier montre des cartes et des structures, pour la page web et l'écran en jeu ; null avant le démarrage du serveur. */
 	public static Workshop workshop() {
 		return workshop;
@@ -404,6 +435,7 @@ public final class ValcombeMod implements ModInitializer {
 				LOG.error("Mondes de Valcombe indisponibles : la partie ne pourra pas se jouer (elle se joue dans un monde de partie)", e);
 			}
 			HOST.prepareWorld();
+			setUpBuilding(server);
 			String saved = HOST.savedGame();
 			if (saved != null) {
 				try {
@@ -459,6 +491,8 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.setBring(null);
 			hub = null;
 			travel = null;
+			WorldEditGate.install(null);
+			fr.valcombe.mc.worlds.BuildAccess.install(null);
 			if (worlds != null) {
 				setWorldsView(null);
 				worlds.stop();
@@ -504,6 +538,10 @@ public final class ValcombeMod implements ModInitializer {
 			if (h != null) {
 				guarded("le hub", h::tick);
 			}
+			var gate = WorldEditGate.current();
+			if (gate != null) {
+				guarded("les ateliers", gate::tick);
+			}
 			if (server.getTickCount() % 5 == 0) {
 				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village(), HOST.levelIfReady()));
 			}
@@ -525,6 +563,10 @@ public final class ValcombeMod implements ModInitializer {
 			// Arrivée au hub, sauf pour qui la partie en cours retient au village : sa place, ou le Conteur.
 			boolean stay = seated || (g != null && g.winner() == null && p.getScoreboardName().equals(SESSION.storyteller()));
 			HOST.onJoin(p, seated, stay);
+			var gate = WorldEditGate.current();
+			if (gate != null) {
+				guarded("les ateliers", () -> gate.onJoin(p));
+			}
 			// Une seconde plus tard : le client a eu le temps de s'annoncer (écrans du mod ou menus coffre).
 			String joined = p.getScoreboardName();
 			HOST.schedule(20, () -> SESSION.onJoin(joined));
@@ -536,6 +578,10 @@ public final class ValcombeMod implements ModInitializer {
 				guarded("les voyages", () -> t.onDisconnect(handler.getPlayer()));
 			}
 			SYNC.forget(name);
+			var gate = WorldEditGate.current();
+			if (gate != null) {
+				gate.onDisconnect(handler.getPlayer());
+			}
 			if (workshop != null) {
 				workshop.forget(name);
 			}
@@ -593,6 +639,14 @@ public final class ValcombeMod implements ModInitializer {
 		// Les objets et outils de Valcombe passent avant les autres mods (WorldEdit réagit aussi à la hache en bois
 		// et à la boussole) : les trois écouteurs de clic ci-dessous sont inscrits dans la phase ToolPriority.PHASE.
 		ToolPriority.install();
+		// WorldEdit seulement dans les ateliers, pour les opérateurs et leurs invités (après ToolPriority, dont le refus passe d'abord).
+		WorldEditGate.installPermissions();
+		net.fabricmc.fabric.api.entity.event.v1.ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, from, to) -> {
+			WorldEditGate g = WorldEditGate.current();
+			if (g != null) {
+				guarded("les ateliers", () -> g.onLevelChange(player, from, to));
+			}
+		});
 		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
 		UseItemCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand) -> {
 			// Plume d'accusation : pendant un vote, lever ou baisser la main ; sinon accuser le joueur visé, même de loin.
@@ -664,6 +718,10 @@ public final class ValcombeMod implements ModInitializer {
 			return InteractionResult.SUCCESS;
 		});
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, hit) -> {
+			// Baguette de construction hors des ateliers : WorldEdit n'y répond pas, le joueur l'apprend et rien ne se passe.
+			if (ValcombeUi.isWand(player.getItemInHand(hand)) && player instanceof ServerPlayer sp && WorldEditGate.wandRefused(sp)) {
+				return InteractionResult.SUCCESS;
+			}
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == null) {
 				// Un bloc posé à la main sur la carte : elle ne sera plus remplacée sans sauvegarde.
@@ -686,12 +744,11 @@ public final class ValcombeMod implements ModInitializer {
 				if (hand != net.minecraft.world.InteractionHand.MAIN_HAND) {
 					return InteractionResult.SUCCESS;
 				}
-				// Outils de l'éditeur : second coin de la sélection ; poser la structure en main, ou la tourner (accroupi).
-				if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
+				// Outil de structure : poser la structure en main, ou la tourner (accroupi).
+				if (tool == ValcombeUi.MapTool.STRUCTURE) {
 					var clicked = hit.getBlockPos();
 					if (editor != null) {
-						editorClick(sp, () -> tool == ValcombeUi.MapTool.SELECT ? editor.setCorner(sp, 2, clicked)
-							: sp.isShiftKeyDown() ? editor.rotate(sp) : editor.place(sp, clicked));
+						editorClick(sp, () -> sp.isShiftKeyDown() ? editor.rotate(sp) : editor.place(sp, clicked));
 					}
 					return InteractionResult.SUCCESS;
 				}
@@ -710,26 +767,31 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			return InteractionResult.SUCCESS;
 		});
-		// Clic gauche avec un outil de l'éditeur : premier coin de la sélection, ou miroir de la structure en main.
-		// Le bloc visé n'est pas cassé (des deux côtés : le client n'a pas à le voir disparaître puis revenir).
+		// Clic gauche avec l'outil de structure : miroir de la structure en main. Le bloc visé n'est pas cassé (des deux
+		// côtés : le client n'a pas à le voir disparaître puis revenir). La baguette de construction, elle, est à WorldEdit
+		// (premier coin de la sélection) là où il est permis ; ailleurs elle ne casse rien non plus.
 		net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, pos, direction) -> {
+			if (ValcombeUi.isWand(player.getItemInHand(hand)) && player instanceof ServerPlayer sp && WorldEditGate.wandRefused(sp)) {
+				return InteractionResult.SUCCESS;
+			}
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
 			if (tool == ValcombeUi.MapTool.HAND) {
 				return InteractionResult.SUCCESS; // la main ne casse rien : elle ne fait que prendre
 			}
-			if (tool != ValcombeUi.MapTool.SELECT && tool != ValcombeUi.MapTool.STRUCTURE) {
+			if (tool != ValcombeUi.MapTool.STRUCTURE) {
 				return InteractionResult.PASS;
 			}
 			if (player instanceof ServerPlayer sp && editor != null && hand == net.minecraft.world.InteractionHand.MAIN_HAND
 				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
-				var clicked = pos.immutable();
-				if (tool == ValcombeUi.MapTool.STRUCTURE) {
-					editorClick(sp, () -> editor.mirror(sp));
-				} else if (!editor.isCorner(sp, 1, clicked)) { // un clic maintenu redemande le même coin : une seule réponse
-					editorClick(sp, () -> editor.setCorner(sp, 1, clicked));
-				}
+				editorClick(sp, () -> editor.mirror(sp));
 			}
 			return InteractionResult.SUCCESS;
+		});
+		// Dans les mondes de Valcombe, ne casse que qui construit là (BuildAccess) : l'opérateur en mode créatif au hub et dans
+		// les parties, comme avant ; les opérateurs et leurs invités dans les ateliers.
+		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
+			var access = fr.valcombe.mc.worlds.BuildAccess.current();
+			return !(player instanceof ServerPlayer sp) || access == null || access.entryOf(level) == null || access.canBuild(sp);
 		});
 		// Un bloc cassé à la main sur la carte, hors partie : même suivi que pour un bloc posé.
 		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {

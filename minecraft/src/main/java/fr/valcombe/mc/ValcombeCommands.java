@@ -19,8 +19,6 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.commands.arguments.blocks.BlockInput;
-import net.minecraft.commands.arguments.blocks.BlockStateArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
@@ -183,76 +181,14 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ValcombeMod.maps().duplicate(arg(x, "id"), arg(x, "nouvel_id"), arg(x, "nom")))))));
 	}
 
-	/** Les commandes de l'éditeur de carte : /vc edit (sélection, opérations, annulation) et /vc structure (catalogue). */
+	/**
+	 * Les commandes de l'éditeur de carte : /vc structure (catalogue) et /vc objet (menu de la main). Sélectionner,
+	 * remplir, copier, coller, annuler les blocs : WorldEdit dans les ateliers, et /vc annuler (voir BuildCommands).
+	 */
 	private static void registerEditor(LiteralArgumentBuilder<CommandSourceStack> root, CommandBuildContext registry,
 			Predicate<CommandSourceStack> admin) {
-		SuggestionProvider<CommandSourceStack> directions = (c, b) -> SharedSuggestionProvider.suggest(MapEditor.DIRECTIONS, b);
 		SuggestionProvider<CommandSourceStack> all = (c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().ids(false), b);
 		SuggestionProvider<CommandSourceStack> mine = (c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().ids(true), b);
-		root.then(Commands.literal("edit").requires(admin)
-			.then(Commands.literal("coin1").executes(c -> exec(c, x -> ValcombeMod.editor().setCorner(player(x), 1,
-				player(x).blockPosition()))))
-			.then(Commands.literal("coin2").executes(c -> exec(c, x -> ValcombeMod.editor().setCorner(player(x), 2,
-				player(x).blockPosition()))))
-			.then(Commands.literal("deselectionner").executes(c -> exec(c, x -> ValcombeMod.editor().deselect(player(x)))))
-			.then(Commands.literal("infos").executes(c -> exec(c, x -> ValcombeMod.editor().selectionInfo(player(x)))))
-			.then(Commands.literal("etendre")
-				.then(Commands.argument("blocs", IntegerArgumentType.integer(1, 256))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().expand(player(x), number(x, "blocs"), null)))
-					.then(Commands.argument("direction", StringArgumentType.word()).suggests(directions)
-						.executes(c -> exec(c, x -> ValcombeMod.editor().expand(player(x), number(x, "blocs"), arg(x, "direction")))))))
-			.then(Commands.literal("remplir")
-				.then(Commands.argument("bloc", BlockStateArgument.block(registry))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().fill(player(x), BlockStateArgument.getBlock(x, "bloc").getState())))))
-			.then(Commands.literal("remplacer")
-				.then(Commands.argument("de", BlockStateArgument.block(registry))
-					.then(Commands.argument("par", BlockStateArgument.block(registry))
-						.executes(c -> exec(c, x -> {
-							BlockInput from = BlockStateArgument.getBlock(x, "de");
-							var state = from.getState();
-							// « stone » : la pierre sous toutes ses formes ; « oak_stairs[facing=north] » : cet état précis.
-							return ValcombeMod.editor().replace(player(x),
-								from.getDefinedProperties().isEmpty() ? s -> s.is(state.getBlock()) : s -> s == state,
-								net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath(),
-								BlockStateArgument.getBlock(x, "par").getState());
-						})))))
-			.then(Commands.literal("vider").executes(c -> exec(c, x -> ValcombeMod.editor().clear(player(x)))))
-			.then(Commands.literal("murs")
-				.then(Commands.argument("bloc", BlockStateArgument.block(registry))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().walls(player(x), BlockStateArgument.getBlock(x, "bloc").getState(),
-						false)))))
-			.then(Commands.literal("contour")
-				.then(Commands.argument("bloc", BlockStateArgument.block(registry))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().walls(player(x), BlockStateArgument.getBlock(x, "bloc").getState(),
-						true)))))
-			.then(Commands.literal("copier").executes(c -> exec(c, x -> ValcombeMod.editor().copy(player(x)))))
-			.then(Commands.literal("couper").executes(c -> exec(c, x -> ValcombeMod.editor().cut(player(x)))))
-			.then(Commands.literal("coller")
-				.executes(c -> exec(c, x -> ValcombeMod.editor().paste(player(x), false)))
-				.then(Commands.literal("sansair").executes(c -> exec(c, x -> ValcombeMod.editor().paste(player(x), true)))))
-			.then(Commands.literal("tourner")
-				.executes(c -> exec(c, x -> ValcombeMod.editor().rotateClipboard(player(x), 1)))
-				.then(Commands.argument("quarts", IntegerArgumentType.integer(1, 3))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().rotateClipboard(player(x), number(x, "quarts"))))))
-			.then(Commands.literal("miroir").executes(c -> exec(c, x -> ValcombeMod.editor().flipClipboard(player(x)))))
-			.then(Commands.literal("deplacer")
-				.then(Commands.argument("blocs", IntegerArgumentType.integer(1, 256))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().move(player(x), number(x, "blocs"), null)))
-					.then(Commands.argument("direction", StringArgumentType.word()).suggests(directions)
-						.executes(c -> exec(c, x -> ValcombeMod.editor().move(player(x), number(x, "blocs"), arg(x, "direction")))))))
-			.then(Commands.literal("empiler")
-				.then(Commands.argument("fois", IntegerArgumentType.integer(1, 64))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().stack(player(x), number(x, "fois"), null)))
-					.then(Commands.argument("direction", StringArgumentType.word()).suggests(directions)
-						.executes(c -> exec(c, x -> ValcombeMod.editor().stack(player(x), number(x, "fois"), arg(x, "direction")))))))
-			.then(Commands.literal("annuler")
-				.executes(c -> exec(c, x -> ValcombeMod.editor().undo(player(x), 1)))
-				.then(Commands.argument("fois", IntegerArgumentType.integer(1, MapEditor.HISTORY_DEPTH))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().undo(player(x), number(x, "fois"))))))
-			.then(Commands.literal("retablir")
-				.executes(c -> exec(c, x -> ValcombeMod.editor().redo(player(x), 1)))
-				.then(Commands.argument("fois", IntegerArgumentType.integer(1, MapEditor.HISTORY_DEPTH))
-					.executes(c -> exec(c, x -> ValcombeMod.editor().redo(player(x), number(x, "fois")))))));
 		// Menu de l'outil « Carte : main » : déplacer, tourner ou retirer un repère ou une structure posée.
 		root.then(Commands.literal("objet").requires(admin)
 			.then(Commands.argument("sorte", StringArgumentType.word())
@@ -283,11 +219,12 @@ public final class ValcombeCommands {
 			.then(Commands.literal("tourner").executes(c -> exec(c, x -> ValcombeMod.editor().rotate(player(x)))))
 			.then(Commands.literal("miroir").executes(c -> exec(c, x -> ValcombeMod.editor().mirror(player(x)))))
 			.then(Commands.literal("fin").executes(c -> exec(c, x -> ValcombeMod.editor().stopPlacing(player(x)))))
+			// La sélection WorldEdit vers le catalogue (même chose que /vc structures depuis-selection, nom en clair).
 			.then(Commands.literal("enregistrer")
 				.then(Commands.argument("id", StringArgumentType.word())
-					.executes(c -> exec(c, x -> ValcombeMod.editor().saveSelection(player(x), arg(x, "id"), arg(x, "id"), "")))
+					.executes(c -> exec(c, x -> saveSelection(x, arg(x, "id"))))
 					.then(Commands.argument("nom", StringArgumentType.greedyString())
-						.executes(c -> exec(c, x -> ValcombeMod.editor().saveSelection(player(x), arg(x, "id"), arg(x, "nom"), ""))))))
+						.executes(c -> exec(c, x -> saveSelection(x, arg(x, "nom")))))))
 			.then(Commands.literal("repere")
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(mine)
 					.then(Commands.argument("repere", StringArgumentType.word())
@@ -308,6 +245,15 @@ public final class ValcombeCommands {
 				ValcombeMod.structures().reload();
 				return "Catalogue relu : " + ValcombeMod.structures().list().size() + " structures.";
 			}))));
+	}
+
+	/** /vc structure enregistrer : la sélection WorldEdit du joueur devient une structure du catalogue. */
+	private static String saveSelection(CommandContext<CommandSourceStack> ctx, String nom) throws Exception {
+		WorldEditGate gate = WorldEditGate.current();
+		if (gate == null || ValcombeMod.structures() == null) {
+			throw new GameException("La construction n'est pas disponible sur ce serveur.");
+		}
+		return SelectionToStructure.save(gate.link(), ValcombeMod.structures(), player(ctx), arg(ctx, "id"), nom, null, "");
 	}
 
 	/** /vc admin : où en est l'API d'administration. */
@@ -853,6 +799,8 @@ public final class ValcombeCommands {
 
 		registerEditor(root, registry, admin);
 		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds, ValcombeMod::travel);
+		// Construction : invitations aux ateliers, « annuler » commun, baguette, sélection vers structure.
+		BuildCommands.register(root, admin);
 		BackupCommands.register(root, admin);
 		var node = dispatcher.register(root);
 		dispatcher.register(Commands.literal("valcombe").redirect(node));

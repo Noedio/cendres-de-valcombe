@@ -37,7 +37,7 @@ public final class LastPositions {
 
 	/** Version du format de {@code positions.json}. */
 	public static final int FORMAT = 1;
-	/** Le monde principal de Minecraft, où se joue le village actuel. */
+	/** L'ancienne clé du monde principal de Minecraft, où se jouait la partie avant les mondes de partie (voir Travel#MAIN). */
 	public static final String MAIN = "principal";
 	/** Une clé de monde : {@link #MAIN} ou l'identifiant d'un monde de Valcombe. */
 	private static final String WORLD = "[a-z0-9-]{2,30}";

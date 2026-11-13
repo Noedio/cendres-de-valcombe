@@ -999,6 +999,11 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		markersChanged();
 	}
 
+	/** Combien de modifications des repères on peut annuler (pour l'« annuler » commun, voir SharedUndo). */
+	int markerUndoDepth() {
+		return markerUndo.size();
+	}
+
 	/** L'éditeur a posé ou retiré un repère avec une structure : il a sa propre annulation, celle des repères repart de zéro. */
 	void editorMarkersChanged() {
 		markerUndo.clear();
@@ -1352,7 +1357,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	/** Un constructeur clique sur un bloc avec un outil de carte ; renvoie ce qui s'est passé. */
 	public String useTool(ServerPlayer p, ValcombeUi.MapTool tool, BlockPos clicked, boolean sneak) {
-		if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
+		if (tool == ValcombeUi.MapTool.STRUCTURE) {
 			throw new IllegalArgumentException("Outil de l'éditeur : voir MapEditor.");
 		}
 		requireGameWorld(p);
@@ -2147,9 +2152,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		refreshLabels();
 		return "Mode construction : construisez librement. Cinq outils de repères (trône, maison, centre, salle de convocation, "
 			+ "gomme) : clic droit pour poser, ou pour prendre un repère et le déplacer ; accroupi, maison et salle sont bâties "
-			+ "d'un coup. Outil de sélection : clic gauche et clic droit posent deux coins. Outil de structure : il pose la "
-			+ "structure choisie dans le catalogue. L'Atelier en jeu (/vc atelier jeu) réunit le catalogue, les opérations "
-			+ "sur la sélection et l'annulation.";
+			+ "d'un coup. Outil de structure : il pose la structure choisie dans le catalogue. L'Atelier en jeu (/vc atelier jeu) "
+			+ "réunit le catalogue et l'annulation (/vc annuler). Sélectionner, remplir, copier, coller : WorldEdit, dans les "
+			+ "ateliers.";
 	}
 
 	private void showMarkers() {

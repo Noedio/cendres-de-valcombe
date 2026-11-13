@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Set;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
@@ -176,37 +175,34 @@ class MapEditorTest {
 	}
 
 	// ------------------------------------------------------------------
-	// Sélection et limites
+	// Zones et limites (la sélection elle-même est celle de WorldEdit)
 	// ------------------------------------------------------------------
 	@Test
-	void laSelectionNeDependPasDeLOrdreDesCoins() {
+	void unPaveNeDependPasDeLOrdreDeSesCoins() {
 		MapEditor.Box b = MapEditor.Box.of(new BlockPos(5, 70, -3), new BlockPos(1, 64, 2));
 		assertEquals(new BlockPos(1, 64, -3), b.min());
-		assertEquals(new BlockPos(5, 70, 2), b.max());
+		assertEquals(5, b.x1());
+		assertEquals(70, b.y1());
+		assertEquals(2, b.z1());
 		assertEquals(5, b.width());
 		assertEquals(7, b.height());
 		assertEquals(6, b.length());
 		assertEquals(210, b.volume());
-		assertEquals("5 × 7 × 6", b.dims());
 		assertTrue(b.contains(new BlockPos(1, 64, -3)));
 		assertFalse(b.contains(new BlockPos(6, 64, 0)));
 		assertEquals(b, MapEditor.Box.at(b.min(), 5, 7, 6));
 	}
 
 	@Test
-	void etirerDeplacerEmpiler() {
-		MapEditor.Box b = MapEditor.Box.of(new BlockPos(0, 64, 0), new BlockPos(2, 66, 4));
-		assertEquals(3, b.along(Direction.EAST));
-		assertEquals(5, b.along(Direction.NORTH));
-		assertEquals(3, b.along(Direction.UP));
-		MapEditor.Box up = b.grown(Direction.UP, 4);
-		assertEquals(7, up.height());
-		assertEquals(64, up.y0());
-		MapEditor.Box north = b.grown(Direction.NORTH, 10);
-		assertEquals(-10, north.z0());
-		assertEquals(4, north.z1());
-		MapEditor.Box moved = b.moved(-3, 0, 0);
-		assertEquals(6, b.union(moved).width());
+	void lUnionDeDeuxZonesLesContientToutes() {
+		// Tourner une structure posée touche son ancienne zone et la nouvelle : l'annulation garde les deux.
+		MapEditor.Box before = MapEditor.Box.of(new BlockPos(0, 64, 0), new BlockPos(2, 66, 4));
+		MapEditor.Box after = MapEditor.Box.at(new BlockPos(-3, 64, 1), 5, 3, 3);
+		MapEditor.Box all = before.union(after);
+		assertEquals(new BlockPos(-3, 64, 0), all.min());
+		assertEquals(6, all.width());
+		assertEquals(5, all.length());
+		assertTrue(all.contains(new BlockPos(2, 66, 4)) && all.contains(new BlockPos(-3, 64, 1)));
 	}
 
 	@Test

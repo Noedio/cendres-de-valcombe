@@ -55,7 +55,7 @@ public enum WorldKind {
 
 	/**
 	 * Monde ouvert à tous les joueurs : le hub et les mondes de partie (vraies parties et parties d'essai). Les
-	 * ateliers sont réservés aux opérateurs (les invitations à construire viendront avec les ateliers).
+	 * ateliers sont réservés aux opérateurs et aux joueurs qu'ils y invitent (voir {@link BuildAccess}).
 	 */
 	public boolean openToAll() {
 		return this == HUB || this == PARTIE || this == ESSAI;

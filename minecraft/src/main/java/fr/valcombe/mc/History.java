@@ -7,6 +7,9 @@ import java.util.Deque;
  * Pile d'annulation à plusieurs niveaux, avec sa pile « rétablir ». Chaque élément a un poids (le
  * nombre de blocs qu'il garde en mémoire) : au-delà d'un nombre de niveaux ou d'un poids total,
  * les plus anciens sont oubliés.
+ * <p>
+ * C'est la pile d'une seule sorte de gestes (les structures du catalogue, dans MapEditor). L'« annuler » commun, qui
+ * défait dans l'ordre les modifications WorldEdit et les gestes de Valcombe, est {@link SharedUndo}.
  */
 final class History<T> {
 	private record Entry<T>(T item, long weight) {

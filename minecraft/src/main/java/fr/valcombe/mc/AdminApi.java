@@ -172,6 +172,10 @@ final class AdminApi {
 			backups(ex, path.equals("sauvegardes") ? "" : path.substring("sauvegardes/".length()), method, from);
 			return;
 		}
+		if (path.equals("ateliers") || path.startsWith("ateliers/")) {
+			workshops(ex, path, method, from);
+			return;
+		}
 		switch (path) {
 			case "etat" -> {
 				only(ex, method, "GET");
@@ -208,6 +212,75 @@ final class AdminApi {
 			case "redemarrer" -> {
 				only(ex, method, "POST");
 				stop(ex, from, true);
+			}
+			default -> throw new AdminException(404, "Point d'accès inconnu : /admin/" + path);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// /admin/ateliers : invitations à construire
+	// ------------------------------------------------------------------
+	/** Un champ texte du corps, obligatoire ou non. */
+	private static String text(JsonObject o, String key, boolean required) {
+		if (o.has(key) && o.get(key).isJsonPrimitive()) {
+			String v = o.get(key).getAsString().strip();
+			if (!v.isEmpty()) {
+				return v;
+			}
+		}
+		if (required) {
+			throw new AdminException(400, "Champ « " + key + " » attendu.");
+		}
+		return null;
+	}
+
+	private void workshops(HttpExchange ex, String path, String method, InetAddress from) throws IOException {
+		switch (path) {
+			case "ateliers" -> {
+				if (method.equals("GET")) {
+					json(ex, 200, onServer(BuildCommands::view, 5));
+				} else if (method.equals("POST")) {
+					// Réglages des ateliers : pour l'instant, WorldEdit dans les parties d'essai.
+					JsonObject o = readJson(ex);
+					if (!o.has("worldEditEssais") || !o.get("worldEditEssais").isJsonPrimitive()
+						|| !o.get("worldEditEssais").getAsJsonPrimitive().isBoolean()) {
+						throw new AdminException(400, "Champ « worldEditEssais » (vrai ou faux) attendu.");
+					}
+					boolean on = o.get("worldEditEssais").getAsBoolean();
+					ValcombeMod.LOG.info("API d'administration ({}) : WorldEdit dans les parties d'essai {}", from.getHostAddress(),
+						on ? "ouvert" : "fermé");
+					json(ex, 200, onServer(() -> {
+						var access = fr.valcombe.mc.worlds.BuildAccess.current();
+						if (access == null) {
+							throw new GameException("La construction n'est pas disponible sur ce serveur.");
+						}
+						access.invitations().setWorldEditInTrials(on);
+						WorldEditGate g = WorldEditGate.current();
+						if (g != null) {
+							g.invitationsChanged();
+						}
+						return BuildCommands.view();
+					}, 5));
+				} else {
+					throw notAllowed(ex, method, "GET, POST");
+				}
+			}
+			case "ateliers/inviter", "ateliers/retirer" -> {
+				only(ex, method, "POST");
+				JsonObject o = readJson(ex);
+				String player = text(o, "joueur", true);
+				String workshop = text(o, "atelier", path.endsWith("inviter"));
+				boolean invite = path.endsWith("inviter");
+				ValcombeMod.LOG.info("API d'administration ({}) : {} {} ({})", from.getHostAddress(), invite ? "invite" : "retire l'invitation de",
+					player, workshop == null ? "tous ses ateliers" : workshop);
+				json(ex, 200, onServer(() -> {
+					MinecraftServer s = server;
+					String said = invite ? BuildCommands.invite(s, "l'API d'administration", null, player, workshop)
+						: BuildCommands.uninvite(s, player, workshop);
+					Map<String, Object> m = new LinkedHashMap<>(BuildCommands.view());
+					m.put("message", said);
+					return m;
+				}, 5));
 			}
 			default -> throw new AdminException(404, "Point d'accès inconnu : /admin/" + path);
 		}
@@ -311,6 +384,11 @@ final class AdminApi {
 				m.put("sorte", w.kind());
 				m.put("etat", w.state());
 				m.put("joueurs", w.players());
+				var access = fr.valcombe.mc.worlds.BuildAccess.current();
+				var kind = fr.valcombe.mc.worlds.WorldKind.parse(w.kind());
+				if (access != null && kind != null && kind.workshop()) {
+					m.put("invites", access.invitations().guests(w.id())); // qui y construit, en plus des opérateurs
+				}
 				out.add(m);
 			}
 		} catch (RuntimeException e) {
