@@ -107,8 +107,8 @@ public final class WorldManager {
 	}
 
 	/**
-	 * Où envoyer un joueur qui se trouve dans un monde sur le point d'être recréé ou supprimé. Le hub remplacera
-	 * le monde principal ({@link #MAIN_WORLD}) : {@link #setFallback(Fallback)}.
+	 * Où envoyer un joueur qui se trouve dans un monde sur le point d'être recréé ou supprimé. Par défaut le monde
+	 * principal ({@link #MAIN_WORLD}) ; le hub prend sa place au démarrage : {@link #setFallback(Fallback)}.
 	 */
 	@FunctionalInterface
 	public interface Fallback {
@@ -127,10 +127,25 @@ public final class WorldManager {
 	/** Au plus combien de tâches de tronçons on traite par tick pour un monde retiré du serveur. */
 	private static final int DRAIN_TASKS = 10_000;
 
+	/**
+	 * Ce qui veut savoir qu'un monde a été remis à neuf ou supprimé (fil du serveur, une fois l'opération
+	 * terminée) : le hub y rebâtit sa salle d'accueil, les voyages y oublient les positions gardées dans ce monde.
+	 */
+	public interface Listener {
+		/** Ce monde vient d'être recréé, plat et vide ; {@code level} est le nouveau monde, déjà ouvert. */
+		default void recreated(WorldEntry entry, ServerLevel level) {
+		}
+
+		/** Ce monde vient d'être supprimé, fichiers compris. */
+		default void deleted(WorldEntry entry) {
+		}
+	}
+
 	private final MinecraftServer server;
 	private final WorldRegistry registry;
 	/** Recréations et suppressions en cours, par identifiant. */
 	private final Map<String, Pending> pending = new LinkedHashMap<>();
+	private final List<Listener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
 	private volatile Fallback fallback = MAIN_WORLD;
 
 	/**
@@ -395,6 +410,12 @@ public final class WorldManager {
 	 * @return complété (sur le fil du serveur) quand les fichiers sont effacés
 	 */
 	public CompletableFuture<Void> delete(String id) {
+		WorldEntry e = registry.get(id);
+		if (e.sorte() == WorldKind.HUB) {
+			// Le hub est le point d'arrivée de tous les joueurs et le repli des autres mondes : il ne disparaît pas.
+			throw new GameException("Le hub ne se supprime pas : /vc monde recreer " + e.id()
+				+ " le remet à neuf, avec une salle d'accueil rebâtie.");
+		}
 		return remove(id, false).thenApply(level -> null);
 	}
 
@@ -528,6 +549,13 @@ public final class WorldManager {
 		registry.clearWipe(id);
 		if (!p.recreate) {
 			LOG.info("Monde de Valcombe supprimé : {}.", id);
+			for (Listener l : listeners) {
+				try {
+					l.deleted(p.entry);
+				} catch (RuntimeException ex) {
+					LOG.error("Suite de la suppression du monde " + id + " en échec", ex);
+				}
+			}
 			p.done.complete(null);
 			return;
 		}
@@ -535,6 +563,13 @@ public final class WorldManager {
 			WorldEntry e = registry.find(id) != null ? registry.touch(id) : p.entry;
 			ServerLevel fresh = open(e);
 			LOG.info("Monde de Valcombe recréé à neuf : {}.", id);
+			for (Listener l : listeners) {
+				try {
+					l.recreated(e, fresh);
+				} catch (RuntimeException ex) {
+					LOG.error("Suite de la recréation du monde " + id + " en échec", ex);
+				}
+			}
 			p.done.complete(fresh);
 		} catch (RuntimeException ex) {
 			LOG.error("Recréation du monde " + id + " impossible", ex);
@@ -548,11 +583,16 @@ public final class WorldManager {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Remplace le monde de repli, où vont les joueurs d'un monde recréé ou supprimé. Le hub s'y branchera ;
-	 * null remet le monde principal.
+	 * Remplace le monde de repli, où vont les joueurs d'un monde recréé ou supprimé. Le hub s'y branche au
+	 * démarrage (voir {@code fr.valcombe.mc.hub.Travel}) ; null remet le monde principal.
 	 */
 	public void setFallback(Fallback fallback) {
 		this.fallback = fallback == null ? MAIN_WORLD : fallback;
+	}
+
+	/** Ajoute un {@link Listener} prévenu des recréations et suppressions terminées. */
+	public void addListener(Listener listener) {
+		listeners.add(listener);
 	}
 
 	/**

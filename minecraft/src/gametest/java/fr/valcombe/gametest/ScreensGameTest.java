@@ -917,6 +917,9 @@ public class ScreensGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
 			ctx.waitTicks(40);
+			// On arrive au hub (voir HubGameTest) : ce test se passe au village actuel, dans le monde principal.
+			send(ctx, "vc monde aller principal");
+			ctx.waitTicks(30);
 			if ("1".equals(System.getenv("VALCOMBE_SEANCE"))) {
 				seance(ctx, world, me);
 				return;

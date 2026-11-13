@@ -24,7 +24,7 @@ import net.minecraft.world.level.block.Blocks;
 /**
  * Gestionnaire de mondes, en jeu : créer un monde plat, y aller, y poser un bloc, le remettre à neuf (le bloc
  * disparaît, le sol plat est de nouveau à {@link WorldManager#SURFACE_Y}), relire le registre, le renommer et le
- * supprimer avec un joueur dedans (il est renvoyé au monde principal, les fichiers sont effacés).
+ * supprimer avec un joueur dedans (il est renvoyé au hub, les fichiers sont effacés).
  */
 public class WorldsGameTest implements FabricClientGameTest {
 	/** Au plus 10 s (200 ticks) pour remettre à neuf ou supprimer un monde. */
@@ -133,8 +133,8 @@ public class WorldsGameTest implements FabricClientGameTest {
 			// secondes au plus (WorldManager.DRAIN_TICKS), même si le serveur gardait des tronçons chargés.
 			check(waitFor(ctx, world, LIMIT, s -> recreated.get().isDone()), "remise à neuf terminée");
 			check(!recreated.get().isCompletedExceptionally(), "remise à neuf sans erreur");
-			check(server.computeOnServer(s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
-				"joueur renvoyé au monde principal");
+			String hubDim = "valcombe:" + server.computeOnServer(s -> ValcombeMod.hub().id());
+			check(server.computeOnServer(s -> dimensionOf(s, me).equals(hubDim)), "joueur renvoyé au hub");
 			check(server.computeOnServer(s -> {
 				ServerLevel fresh = worlds().level(id);
 				return fresh != old.get() && fresh == recreated.get().join() && s.getLevel(WorldManager.key(id)) == fresh;
@@ -172,8 +172,7 @@ public class WorldsGameTest implements FabricClientGameTest {
 			send(ctx, "vc monde supprimer " + id);
 			check(waitFor(ctx, world, LIMIT, s -> worlds().find(id) == null && !worlds().busy(id)
 				&& s.getLevel(WorldManager.key(id)) == null), "monde supprimé du serveur et du registre");
-			check(server.computeOnServer(s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
-				"joueur renvoyé au monde principal");
+			check(server.computeOnServer(s -> dimensionOf(s, me).equals(hubDim)), "joueur renvoyé au hub");
 			check(!Files.exists(folder), "fichiers du monde effacés : " + folder);
 			check(server.computeOnServer(s -> {
 				WorldRegistry reread = new WorldRegistry(WorldManager.defaultFile(s));

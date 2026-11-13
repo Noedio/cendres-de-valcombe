@@ -146,6 +146,11 @@ public final class MapPlacer {
 	public Placement place(String mapId, ServerLevel level, BlockPos center, ServerPlayer watcher) {
 		requireServerThread();
 		WorldEntry e = entry(level);
+		if (e.sorte() == fr.valcombe.mc.worlds.WorldKind.HUB) {
+			// Le hub porte la salle d'accueil (portes, dalles, mur des rôles) que le hub rebâtit lui-même : une carte
+			// posée par-dessus l'écraserait. Les cartes vont dans les mondes de partie et les ateliers.
+			throw new GameException("Le hub garde sa salle d'accueil : posez la carte dans un monde de partie ou un atelier.");
+		}
 		if (queue.busy(level)) {
 			throw new GameException("Une carte est déjà en train d'être posée dans « " + e.nom() + " » : attendez la fin de la barre.");
 		}
