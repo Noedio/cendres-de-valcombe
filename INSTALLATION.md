@@ -12,8 +12,8 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - Modrinth App : bouton « + » puis « Importer » ;
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
-   Le launcher installe Minecraft 26.3, Fabric, Fabric API, Simple Voice Chat et le mod Valcombe, ainsi que les mods
-   graphiques des joueurs (Sodium, Iris, Continuity, LambDynamicLights, EntityCulling). Les textures HD (Faithful 64x)
+   Le launcher installe Minecraft 26.3, Fabric, Fabric API, Simple Voice Chat, WorldEdit (la construction dans les
+   ateliers, réservée aux opérateurs) et le mod Valcombe, ainsi que les mods graphiques des joueurs (Sodium, Iris, Continuity, LambDynamicLights, EntityCulling). Les textures HD (Faithful 64x)
    et les shaders (Complementary Reimagined) sont proposés en option : activez-les dans les packs de ressources et
    dans les réglages d'Iris (touche O). Le launcher Valcombe, lui, les installe et les active tout seul.
 4. Lancez l'instance, puis Multijoueur → « Ajouter un serveur », avec l'adresse donnée par l'hôte.
@@ -75,7 +75,8 @@ Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port
    python tools/make_modpack.py
    ```
 
-   Vous obtenez `dist/Valcombe-<version>.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`.
+   Vous obtenez `dist/Valcombe-<version>.mrpack` (à envoyer aux joueurs) et `dist/serveur-valcombe/`, dont le dossier
+   `mods/` contient Fabric API, Simple Voice Chat, WorldEdit et le mod Valcombe, chacun vérifié par son empreinte.
 3. Téléchargez le lanceur de serveur Fabric pour Minecraft 26.3 (Loader 0.20.1) sur https://fabricmc.net/use/server/ et placez-le dans `serveur-valcombe/` sous le nom `fabric-server-launch.jar`.
 4. Lancez `demarrer.bat` une première fois. Le serveur s'arrête et crée `eula.txt` : lisez le contrat https://aka.ms/MinecraftEULA, puis mettez `eula=true` si vous l'acceptez.
 5. Relancez `demarrer.bat`. Dans la console du serveur, tapez :

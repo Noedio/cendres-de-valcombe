@@ -167,7 +167,9 @@ public sealed class LocalServer
             File.WriteAllText(StampFile, stamp);
         }
 
-        // Mods du serveur : jamais les mods graphiques des joueurs.
+        // Mods du serveur : tous ceux du manifeste marqués « both » (Fabric API, Simple Voice Chat, WorldEdit,
+        // Valcombe...), jamais les mods graphiques des joueurs. Rien n'est écrit ici : un mod ajouté au manifeste
+        // par tools/make_modpack.py arrive tout seul. Fantasy est incluse dans le jar de Valcombe.
         var mods = manifest.Mods.Where(m => m.Side.Length > 0 ? m.Side != "client" : ServerModNames.Contains(m.Name)).ToList();
         var keep = mods.Select(m => m.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (string old in Directory.GetFiles(ModsDir, "*.jar"))
