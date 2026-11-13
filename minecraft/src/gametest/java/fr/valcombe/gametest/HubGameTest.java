@@ -271,6 +271,7 @@ public class HubGameTest implements FabricClientGameTest {
 			check(server.computeOnServer(s -> ValcombeMod.travel().destinations(player(s, me)).stream()
 				.anyMatch(d -> d.id().equals(id))), "la partie d'essai reste visible");
 			send(ctx, "vc monde aller " + atelier);
+			ctx.waitTicks(40); // le temps qu'un voyage, s'il était accepté, ait lieu
 			check(server.computeOnServer(s -> dimensionOf(s, me).equals("valcombe:" + id)), "aller dans l'atelier refusé");
 			server.runCommand("op " + me);
 			ctx.waitTicks(20);

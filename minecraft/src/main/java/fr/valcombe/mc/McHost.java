@@ -2821,9 +2821,22 @@ public final class McHost implements Host {
 		if (center == null) {
 			return;
 		}
-		ServerLevel level = center.level();
-		double cx = Math.floor(center.getX()) + 0.5;
-		double cz = Math.floor(center.getZ()) + 0.5;
+		// Sans carte, le cercle se forme autour du meneur, dans le monde principal : s'il attend au hub (ou dans un
+		// autre monde de Valcombe), le cercle se forme au point d'apparition du monde principal, jamais au hub.
+		ServerLevel level = server != null ? server.overworld() : center.level();
+		double cx;
+		double cz;
+		double cy;
+		if (center.level() == level) {
+			cx = Math.floor(center.getX()) + 0.5;
+			cz = Math.floor(center.getZ()) + 0.5;
+			cy = center.getY();
+		} else {
+			BlockPos s = server.getRespawnData().pos();
+			cx = s.getX() + 0.5;
+			cz = s.getZ() + 0.5;
+			cy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, s.getX(), s.getZ());
+		}
 		int n = players.size();
 		double radius = Math.max(4, Math.ceil(n * 0.75));
 		seats.clear();
@@ -2843,7 +2856,7 @@ public final class McHost implements Host {
 				p.teleportTo(level, x, y, z, Set.of(), yaw, 0, false);
 			}
 		}
-		setupStage(new Vec3(cx, center.getY(), cz), center.getY() + 3.5, players, false);
+		setupStage(new Vec3(cx, cy, cz), cy + 3.5, players, false);
 	}
 
 	/** Lanternes du village : la nuit, elles virent une à une à la flamme d'âme. */

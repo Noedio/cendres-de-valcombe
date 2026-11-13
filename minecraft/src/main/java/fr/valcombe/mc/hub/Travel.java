@@ -245,6 +245,22 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 		return level.noCollision(p, box);
 	}
 
+	/**
+	 * Une position gardée au village actuel vaut-elle encore ? Le monde principal n'est jamais remis à neuf, mais sa
+	 * carte peut être remplacée (ailleurs, ou plus petite) : une position hors du village en service renverrait le
+	 * joueur dans un champ vide, loin de la partie. Il arrive alors au point d'arrivée du village. Les autres
+	 * mondes oublient leurs positions quand ils sont remis à neuf ({@link #recreated}).
+	 */
+	private boolean nearVillage(String key, LastPositions.Spot s) {
+		fr.valcombe.mc.Village v = MAIN.equals(key) ? host.village() : null;
+		if (v == null) {
+			return true;
+		}
+		BlockPos c = v.center();
+		int reach = v.extent() + 8;
+		return Math.abs(s.x() - c.getX()) <= reach && Math.abs(s.z() - c.getZ()) <= reach;
+	}
+
 	/** Le point d'arrivée d'une destination, pour une première visite (ou une position gardée devenue inutilisable). */
 	private LastPositions.Spot arrival(ServerPlayer p, String key) {
 		if (MAIN.equals(key)) {
@@ -302,7 +318,7 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 			positions.put(p.getUUID(), p.getScoreboardName(), from, leaveAt != null ? leaveAt : spotOf(p));
 		}
 		LastPositions.Spot saved = positions.get(p.getUUID(), key);
-		LastPositions.Spot to = saved != null && free(p, level, saved) ? saved : arrival(p, key);
+		LastPositions.Spot to = saved != null && free(p, level, saved) && nearVillage(key, saved) ? saved : arrival(p, key);
 		teleport(p, level, to);
 		positions.save();
 		if (MAIN.equals(key)) {
