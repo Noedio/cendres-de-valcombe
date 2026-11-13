@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Valcombe.Launcher.Services.Admin;
 
 namespace Valcombe.Launcher.Services;
 
@@ -57,6 +58,12 @@ public sealed class LauncherConfig
     public List<string> HostGuests { get; set; } = new();
     /// <summary>Pseudo Minecraft de l'hôte (il devient opérateur du serveur) ; rempli à la connexion.</summary>
     public string HostName { get; set; } = "";
+
+    // --- Page Serveur ---
+    /// <summary>Serveurs distants à administrer depuis ce PC (clé d'administration chiffrée avec DPAPI).</summary>
+    public List<RemoteServer> RemoteServers { get; set; } = new();
+    /// <summary>Serveur choisi en dernier sur la page Serveur : « local » (ce PC) ou l'identifiant d'un serveur distant.</summary>
+    public string AdminTarget { get; set; } = "local";
 
     /// <summary>Braises animées sur le fond du launcher.</summary>
     public bool Embers { get; set; } = true;

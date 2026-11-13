@@ -49,6 +49,9 @@
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE774;"/><TextBlock Text="Héberger une partie"/>
                 <Ellipse x:Name="NavHostDot" Width="8" Height="8" Fill="{StaticResource Good}" Margin="8,1,0,0" Visibility="Collapsed"/></StackPanel>
             </RadioButton>
+            <RadioButton Style="{StaticResource Nav}" x:Name="NavServer" Checked="Navigate" Tag="Server">
+              <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE968;"/><TextBlock Text="Serveur"/></StackPanel>
+            </RadioButton>
             <RadioButton Style="{StaticResource Nav}" x:Name="NavAtelier" Checked="Navigate" Tag="Atelier">
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE70F;"/><TextBlock Text="L'Atelier"/></StackPanel>
             </RadioButton>
@@ -271,6 +274,308 @@
               </Border>
             </StackPanel>
           </ScrollViewer>
+
+          <!-- Serveur : piloter le serveur de ce PC ou un serveur distant, par l'API d'administration du mod -->
+          <Grid x:Name="PageServer" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Titre et choix du serveur -->
+            <DockPanel Margin="0,0,0,12">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <ComboBox x:Name="SrvPicker" Width="290" SelectionChanged="SrvPicked" ToolTip="Le serveur à piloter"/>
+                <Button x:Name="SrvEditButton" Style="{StaticResource Ghost}" Content="&#xE70F;" FontFamily="{StaticResource Icons}" FontSize="13"
+                        Click="SrvEdit" Margin="8,0,0,0" Padding="11,9" ToolTip="Modifier ce serveur distant"/>
+                <Button x:Name="SrvAddButton" Style="{StaticResource Ghost}" Click="SrvAdd" Margin="8,0,0,0" Padding="12,8"
+                        ToolTip="Enregistrer un serveur distant à piloter depuis ce PC">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Serveur distant"/>
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Serveur" Margin="0" VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- État et commandes de marche -->
+            <Border x:Name="SrvStateCard" Grid.Row="1" Style="{StaticResource CardBox}" Padding="20,14">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                  <Ellipse x:Name="SrvDot" DockPanel.Dock="Left" Width="12" Height="12" Fill="#8A8080" Margin="0,8,12,0" VerticalAlignment="Top"/>
+                  <StackPanel>
+                    <TextBlock x:Name="SrvTitle" FontFamily="{StaticResource Title}" FontSize="20" Foreground="{StaticResource Ink}" Text="Serveur arrêté"/>
+                    <TextBlock x:Name="SrvDetail" Style="{StaticResource Hint}" Margin="0,3,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+                  <Button x:Name="SrvStartButton" Style="{StaticResource Wax}" Click="SrvStart" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="SrvStartText" Text="Démarrer"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvRestartButton" Style="{StaticResource Ghost}" Click="SrvRestart" Margin="8,0,0,0"
+                          ToolTip="Arrêt propre (le monde et la partie sont enregistrés), puis relance">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="Redémarrer"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvStopButton" Style="{StaticResource Ghost}" Click="SrvStop" Margin="8,0,0,0"
+                          ToolTip="Arrêt propre : le monde et la partie en cours sont enregistrés">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="Arrêter"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvRetryButton" Style="{StaticResource Ghost}" Content="Réessayer" Click="SrvRetry" Margin="8,0,0,0"
+                          Visibility="Collapsed"/>
+                </WrapPanel>
+              </Grid>
+            </Border>
+
+            <!-- Onglets -->
+            <WrapPanel x:Name="SrvTabs" Grid.Row="2" Margin="0,0,0,12">
+              <RadioButton GroupName="srvtab" Tag="apercu" Content="Vue d'ensemble" IsChecked="True" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="console" Content="Console" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="reglages" Content="Réglages" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="sauvegardes" Content="Sauvegardes" Checked="SrvTabChanged"/>
+            </WrapPanel>
+
+            <!-- Vue d'ensemble : chiffres, joueurs connectés, mondes -->
+            <ScrollViewer x:Name="SrvOverview" Grid.Row="3" VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="0,0,10,0">
+                <UniformGrid x:Name="SrvTiles" Columns="5" Margin="-6,0,-6,0"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock x:Name="SrvPlayersTitle" Style="{StaticResource H2}" Text="Joueurs connectés"/>
+                      <StackPanel x:Name="SrvPlayersList"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Mondes"/>
+                      <StackPanel x:Name="SrvWorldsList"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Console en direct -->
+            <Border x:Name="SrvConsolePanel" Grid.Row="3" Style="{StaticResource CardBox}" Margin="0" Padding="16,12" Visibility="Collapsed">
+              <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource Ghost}" Content="Copier" Click="SrvCopyConsole" Padding="12,4" Margin="8,0,0,0"
+                            ToolTip="Copie les lignes choisies (ou toute la console) dans le presse-papiers"/>
+                    <Button Style="{StaticResource Ghost}" Content="Vider l'affichage" Click="SrvClearConsole" Padding="12,4" Margin="8,0,0,0"
+                            ToolTip="Efface les lignes affichées ici ; la console du serveur n'est pas touchée"/>
+                  </StackPanel>
+                  <TextBlock x:Name="SrvConsoleInfo" Style="{StaticResource Hint}" Margin="0" VerticalAlignment="Center"/>
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="/" FontFamily="Consolas" FontSize="15" Foreground="{StaticResource Gold}" VerticalAlignment="Center" Margin="2,0,8,0"/>
+                    <TextBox x:Name="SrvCommandBox" Grid.Column="1" FontFamily="Consolas" PreviewKeyDown="SrvCommandKey"
+                             ToolTip="Une commande du serveur (list, say, whitelist, vc…). Flèches haut et bas : commandes précédentes."/>
+                    <Button Grid.Column="2" Style="{StaticResource Wax}" Content="Envoyer" Click="SrvSendCommand" Margin="10,0,0,0" Padding="16,7"/>
+                  </Grid>
+                  <TextBlock x:Name="SrvCommandResult" Style="{StaticResource Hint}" Margin="0,6,0,0" Visibility="Collapsed" FontFamily="Consolas" FontSize="12"/>
+                </StackPanel>
+                <ListBox x:Name="SrvConsoleList" Style="{StaticResource ConsoleList}" PreviewKeyDown="SrvConsoleKey">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock TextWrapping="Wrap" LineHeight="17">
+                        <Run Text="{Binding Time, Mode=OneWay}" Foreground="#7D7068"/>
+                        <Run Text="{Binding Text, Mode=OneWay}" Foreground="{Binding Brush, Mode=OneWay}"/>
+                      </TextBlock>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
+            </Border>
+
+            <!-- Réglages -->
+            <ScrollViewer x:Name="SrvSettingsPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <!-- Résultat du dernier changement, point par point (en haut : on le voit sans défiler) -->
+                <Border x:Name="SrvResultsBox" Style="{StaticResource CardBox}" Padding="20,10" Visibility="Collapsed">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="10" Background="Transparent"
+                            Foreground="{StaticResource ParchDark}" BorderThickness="0" Cursor="Hand" Width="28" VerticalAlignment="Top"
+                            Click="SrvHideResults" ToolTip="Masquer"/>
+                    <StackPanel x:Name="SrvResults"/>
+                  </DockPanel>
+                </Border>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource CardBox}">
+                    <StackPanel x:Name="SrvAccessBox">
+                      <TextBlock Style="{StaticResource H2}" Text="Qui peut entrer"/>
+                      <TextBlock x:Name="SrvAccessHint" Style="{StaticResource Hint}" Visibility="Collapsed"/>
+                      <CheckBox x:Name="SrvWhitelistBox" Margin="0,2,0,0" Click="SrvWhitelistToggled">
+                        <TextBlock>Seuls les joueurs de la liste blanche entrent</TextBlock>
+                      </CheckBox>
+                      <TextBlock Style="{StaticResource Label}" Text="Liste blanche"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SrvWhitelistName" MaxLength="16" KeyDown="SrvWhitelistKey" ToolTip="Pseudo Minecraft à inscrire"/>
+                        <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Ajouter" Click="SrvWhitelistAdd" Margin="10,0,0,0"/>
+                      </Grid>
+                      <WrapPanel x:Name="SrvWhitelistPanel" Margin="0,10,0,0"/>
+                      <TextBlock Style="{StaticResource Label}" Text="Opérateurs"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SrvOpName" MaxLength="16" KeyDown="SrvOpKey" ToolTip="Pseudo Minecraft du nouvel opérateur"/>
+                        <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Ajouter" Click="SrvOpAdd" Margin="10,0,0,0"/>
+                      </Grid>
+                      <WrapPanel x:Name="SrvOpsPanel" Margin="0,10,0,0"/>
+                      <TextBlock Style="{StaticResource Hint}" Text="Un opérateur peut devenir Conteur, lancer les parties, construire et taper les commandes du serveur."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Annonce et capacité"/>
+                      <TextBlock Style="{StaticResource Label}" Margin="0,0,0,5" Text="Message d'accueil"/>
+                      <TextBox x:Name="SrvWelcomeBox" MaxLength="60"/>
+                      <TextBlock x:Name="SrvWelcomeHint" Style="{StaticResource Hint}"/>
+                      <TextBlock Style="{StaticResource Label}" Text="Prochaine soirée"/>
+                      <TextBox x:Name="SrvEveningBox" MaxLength="60" ToolTip="Par exemple : vendredi 21 h"/>
+                      <TextBlock Style="{StaticResource Hint}" Text="Annoncée dans la liste des serveurs de Minecraft et sur l'accueil du launcher. Vide : rien d'annoncé."/>
+                      <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="14"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource Label}" Text="Joueurs au plus"/>
+                          <TextBox x:Name="SrvMaxPlayersBox" MaxLength="4"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Style="{StaticResource Label}" Text="Port du jeu"/>
+                          <TextBox x:Name="SrvPortBox" MaxLength="5"/>
+                        </StackPanel>
+                      </Grid>
+                      <StackPanel x:Name="SrvMemoryBox">
+                        <TextBlock Style="{StaticResource Label}" x:Name="SrvMemoryLabel"/>
+                        <Slider x:Name="SrvMemorySlider" Minimum="2" Maximum="8" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="SrvMemoryChanged"/>
+                      </StackPanel>
+                      <TextBlock x:Name="SrvSettingsNote" Style="{StaticResource Hint}"/>
+                      <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="SrvSaveButton" Style="{StaticResource Wax}" Content="Enregistrer" Click="SrvSaveSettings" Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource Ghost}" Content="Annuler les changements" Click="SrvResetSettings"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Sauvegardes : en attente des points d'accès du serveur -->
+            <ScrollViewer x:Name="SrvBackupsPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <Border Style="{StaticResource CardBox}" VerticalAlignment="Top" Margin="0,0,10,14">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Text="&#xE81C;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="{StaticResource Gold}"
+                             Margin="0,2,20,0" VerticalAlignment="Top"/>
+                  <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                      <TextBlock Style="{StaticResource H2}" Text="Sauvegardes" Margin="0,0,10,0"/>
+                      <Border Style="{StaticResource Badge}">
+                        <TextBlock Text="Bientôt" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource Gold}"/>
+                      </Border>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" FontSize="13.5" Foreground="{StaticResource Parch}"
+                               Text="Des sauvegardes automatiques des mondes et de vos créations, à intervalle réglable, et leur restauration d'un clic. Elles arrivent avec une prochaine version du serveur, et s'afficheront ici pour ce PC comme pour un serveur distant."/>
+                    <TextBlock Style="{StaticResource Label}" Text="En attendant"/>
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="La commande save-all, dans la console, enregistre le monde tout de suite. Sur ce PC, le monde et les créations sont dans le dossier du serveur : copiez-le quand le serveur est arrêté."/>
+                    <Button x:Name="SrvBackupFolderButton" Style="{StaticResource Ghost}" Content="Ouvrir le dossier du serveur" Click="OpenHostFolder"
+                            HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </ScrollViewer>
+
+            <!-- Ajouter ou modifier un serveur distant -->
+            <ScrollViewer x:Name="SrvFormPanel" Grid.Row="1" Grid.RowSpan="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <Border Style="{StaticResource CardBox}">
+                  <StackPanel MaxWidth="680" HorizontalAlignment="Left">
+                    <TextBlock x:Name="SrvFormTitle" Style="{StaticResource H2}" Text="Ajouter un serveur distant"/>
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="Le launcher pilote le serveur par l'API d'administration du mod Valcombe (version 0.14 ou plus récente). Elle répond sur le port de la tablette du serveur."/>
+                    <TextBlock Style="{StaticResource Label}" Text="Nom"/>
+                    <TextBox x:Name="SrvFormName" MaxLength="40" ToolTip="Par exemple : VPS de la guilde"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="150"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Style="{StaticResource Label}" Text="Adresse du serveur"/>
+                        <TextBox x:Name="SrvFormHost" ToolTip="Nom ou adresse IP, sans port (par exemple : vps.exemple.fr)"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Label}" Text="Port de l'API"/>
+                        <TextBox x:Name="SrvFormPort" MaxLength="5" ToolTip="Le port de la tablette du serveur : 25570 s'il n'a pas été changé"/>
+                      </StackPanel>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Label}" Text="Clé d'administration"/>
+                    <PasswordBox x:Name="SrvFormKey"/>
+                    <TextBlock x:Name="SrvFormKeyHint" Style="{StaticResource Hint}"/>
+                    <Border Background="#1AE2BD63" BorderBrush="#40E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,10,0,0">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{StaticResource Gold}"
+                                   Margin="0,2,12,0" VerticalAlignment="Top"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0" Foreground="{StaticResource Parch}"
+                                   Text="Accès direct. Par défaut, un serveur n'accepte l'API que depuis sa propre machine : l'accès direct n'aboutit que si ce PC le rejoint par un réseau privé ou un VPN, et que adminLocalOnly vaut false dans config/valcombe/admin.json. L'API parle HTTP sans chiffrement : la clé circule en clair, n'enregistrez donc jamais ainsi une adresse joignable par Internet. En attendant le tunnel SSH du launcher, ouvrez-en un vous-même vers le port de l'API du serveur, puis enregistrez ici l'adresse localhost avec le port choisi sur ce PC (25571 par exemple)."/>
+                      </DockPanel>
+                    </Border>
+                    <WrapPanel Margin="0,16,0,0">
+                      <Button Style="{StaticResource Wax}" Content="Enregistrer" Click="SrvFormSave" Margin="0,0,10,8"/>
+                      <Button x:Name="SrvFormTestButton" Style="{StaticResource Ghost}" Content="Tester la connexion" Click="SrvFormTest" Margin="0,0,10,8"/>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler" Click="SrvFormCancel" Margin="0,0,10,8"/>
+                      <Button x:Name="SrvFormRemoveButton" Style="{StaticResource Ghost}" Content="Retirer ce serveur" Click="SrvFormRemove" Margin="0,0,10,8"
+                              Foreground="{StaticResource Bad}"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="SrvFormResult" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
 
           <!-- L'Atelier -->
           <ScrollViewer x:Name="PageAtelier" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">

@@ -127,7 +127,7 @@ Une partie en cours est sauvegardée automatiquement et reprend après le redém
 
 ## 8. Piloter le serveur : l'API d'administration
 
-Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage, sauvegardes (liste, téléchargement, restauration d'un clic). Le launcher s'en servira pour piloter le serveur ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
+Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage, sauvegardes (liste, téléchargement, restauration d'un clic). La page **Serveur** du launcher s'en sert pour piloter le serveur (voir plus bas) ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
 
 - **La clé** s'affiche dans le journal au premier démarrage (`sudo journalctl -u valcombe | grep "Clé d'administration"`). Elle est gardée dans `/opt/valcombe/config/valcombe/admin.json`. Ensuite : `/vc admin cle` (console, ou opérateur en jeu) la réaffiche, `/vc admin nouvellecle` la remplace. Elle donne tout pouvoir sur le serveur : ne la partagez pas.
 - **Elle n'accepte que la machine elle-même** (une requête venue d'ailleurs est refusée, même avec la clé) : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :
@@ -138,6 +138,14 @@ Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du
 
 - **Redémarrer par l'API** : le serveur s'arrête proprement après avoir posé le drapeau `config/valcombe/redemarrer` ; `demarrer.sh` (donc le service systemd) le relance aussitôt, sans passer par `systemctl`. Un arrêt par l'API, lui, est définitif jusqu'au prochain `sudo systemctl start valcombe`. Si vous lancez le serveur autrement qu'avec `demarrer.sh` ou `demarrer.bat`, relancez-le vous-même.
 - **La couper** : mettez `"enabled": false` dans `admin.json`, puis redémarrez. `/vc admin` dit si elle est ouverte et sur quel port.
+- **Depuis le launcher** : page **Serveur**, bouton « Serveur distant ». Donnez un nom, l'adresse, le port de l'API (25570 s'il n'a pas changé) et la clé ; « Tester la connexion » vérifie le tout. La clé est gardée chiffrée sur votre PC (DPAPI de Windows). La page montre alors l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct avec l'envoi de commandes, les réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max, port), et les boutons Arrêter et Redémarrer.
+  - En attendant le tunnel SSH intégré au launcher, ouvrez-le vous-même, sur un port libre de votre PC (25571 ici, pour ne pas gêner un serveur qui tournerait sur votre PC), et enregistrez le serveur avec l'adresse `localhost` et le port 25571 :
+
+    ```bash
+    ssh -N -L 25571:localhost:25570 utilisateur@adresse-du-vps
+    ```
+
+  - « Ce PC », dans la même liste, est le serveur que le launcher héberge sur votre PC (page Héberger) : la page Serveur le démarre, l'arrête et le redémarre aussi, et y règle en plus la mémoire et le port du jeu.
 
 ## Vie de la communauté
 

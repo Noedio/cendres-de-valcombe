@@ -13,10 +13,11 @@ Un seul `ValcombeLauncher.exe`, portable : il range tout dans le dossier `Valcom
 
 5. **Héberger une partie** : il installe et démarre le serveur de Valcombe sur le PC de l'hôte (`ValcombeData/serveur` : Java de Mojang, lanceur du serveur Fabric, mods du serveur), suit son journal, donne les adresses à transmettre, tient la liste des invités et l'arrête proprement. L'hôte accepte lui-même le contrat de Minecraft dans la page.
 6. **L'Atelier** : un bouton démarre ce serveur si besoin et ouvre l'Atelier dans le navigateur. Le launcher dépose pour cela un lien secret (`config/valcombe-hote.json`), que le mod lit puis efface au démarrage ; ce lien ne vaut que tant que le serveur tourne.
+7. **Serveur** : pilote le serveur de ce PC ou un serveur distant enregistré, par l'API d'administration du mod ([docs/ADMIN-API.md](../docs/ADMIN-API.md)). État (version, durée, TPS, mémoire, joueurs), démarrer, arrêter, redémarrer, joueurs connectés (opérateur, expulser), mondes, console en direct avec envoi de commandes, réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max ; port et mémoire pour ce PC). Les sauvegardes y arriveront avec le serveur qui les fait. Un serveur distant est enregistré avec son adresse, le port de son API et sa clé, gardée chiffrée (DPAPI). Le code est dans `Services/Admin` : la page ne parle qu'à `IServerConnection`, que le tunnel SSH implémentera à son tour.
 
-Pages : Accueil (nouvelles, serveur), Guide du joueur, Mon carnet, Héberger une partie, L'Atelier, Options du jeu, Apparence (couleur d'accent, ambiance, braises), Réglages (serveurs, mémoire, réparation, avancé), Compte.
+Pages : Accueil (nouvelles, serveur), Guide du joueur, Mon carnet, Héberger une partie, Serveur, L'Atelier, Options du jeu, Apparence (couleur d'accent, ambiance, braises), Réglages (serveurs, mémoire, réparation, avancé), Compte.
 
-Le fond est une illustration originale dessinée par `tools/make_hero.py` (`Assets/hero.png`). Deux vérifications sans fenêtre à manipuler : `ValcombeLauncher.exe --capture <dossier>` (une capture par page) et `--verifier-serveur <rapport.txt>` (installe le serveur local sans le démarrer).
+Le fond est une illustration originale dessinée par `tools/make_hero.py` (`Assets/hero.png`). Trois vérifications sans fenêtre à manipuler : `ValcombeLauncher.exe --capture <dossier>` (une capture par page, et une par onglet de la page Serveur, avec un serveur fictif), `--verifier-serveur <rapport.txt>` (installe le serveur local sans le démarrer) et `--verifier-admin <rapport.txt>` (essaie le client de l'API d'administration contre un serveur HTTP fictif, sur un port libre de ce PC).
 
 ## Premier lancement
 

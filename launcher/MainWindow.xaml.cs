@@ -63,6 +63,7 @@ public partial class MainWindow : Window
         };
         hostTimer.Start();
         RefreshHost();
+        InitServerPage();
         Closing += OnClosing;
         SizeChanged += (_, _) => BuildEmbers();
         var statusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
@@ -78,9 +79,18 @@ public partial class MainWindow : Window
             }
             // Le launcher est portable : il se range lui-même dans le menu Démarrer (et une fois sur le Bureau).
             // Pas pendant une vérification : un exe d'essai ne doit jamais détourner les raccourcis du joueur.
-            if (!args.Any(a => a is "--verifier-moteur" or "--verifier-serveur" or "--essai-serveur"))
+            if (!args.Any(a => a is "--verifier-moteur" or "--verifier-serveur" or "--essai-serveur" or "--verifier-admin"))
             {
                 Shortcuts.Ensure(_config);
+            }
+            // Vérification du client de l'API d'administration contre un serveur fictif (page Serveur) :
+            // ValcombeLauncher.exe --verifier-admin rapport.txt
+            int adminCheck = Array.IndexOf(args, "--verifier-admin");
+            if (adminCheck >= 0 && adminCheck + 1 < args.Length)
+            {
+                await File.WriteAllLinesAsync(args[adminCheck + 1], await Services.Admin.AdminSelfCheck.RunAsync());
+                Close();
+                return;
             }
             int trial = Array.IndexOf(args, "--essai-serveur");
             if (trial >= 0 && trial + 1 < args.Length)
@@ -137,7 +147,7 @@ public partial class MainWindow : Window
         }
         var pages = new (string Name, FrameworkElement View)[]
         {
-            ("Home", PageHome), ("Host", PageHost), ("Atelier", PageAtelier), ("Guide", PageGuide), ("Carnet", PageCarnet),
+            ("Home", PageHome), ("Host", PageHost), ("Server", PageServer), ("Atelier", PageAtelier), ("Guide", PageGuide), ("Carnet", PageCarnet),
             ("Game", PageGame), ("Look", PageLook), ("Settings", PageSettings), ("Account", PageAccount),
         };
         foreach (var (name, view) in pages)
@@ -165,6 +175,10 @@ public partial class MainWindow : Window
         {
             _shownHostState = null;
             RefreshHost();
+        }
+        if (page == "Server")
+        {
+            SrvOnShown();
         }
     }
 
@@ -1469,6 +1483,7 @@ public partial class MainWindow : Window
     {
         if (_server.Current == LocalServer.State.Stopped)
         {
+            _server.CancelRelaunch(); // une relance en attente ne doit pas survivre au launcher
             return;
         }
         if (MessageBox.Show(this, "Le serveur de Valcombe tourne sur ce PC. Fermer le launcher l'arrête : la soirée s'interrompt pour tous "
@@ -1530,7 +1545,12 @@ public partial class MainWindow : Window
         _config.HostGuests = new List<string> { "Lea", "Hugo", "Ines" };
         _config.HostName = "Yoann";
         HostNameBox.Text = "Yoann";
-        foreach (string page in new[] { "Home", "Host", "Atelier", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
+        // Page Serveur : ce PC et un serveur distant, tous deux fictifs (aucune requête ne sort).
+        _config.RemoteServers = new List<Services.Admin.RemoteServer>
+        {
+            new() { Id = "apercu-vps", Name = "VPS de la guilde", Host = "vps.exemple.fr", ApiPort = Services.Admin.AdminClient.DefaultPort },
+        };
+        foreach (string page in new[] { "Home", "Host", "Server", "Atelier", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
         {
             foreach (var rb in FindNav(this))
             {
@@ -1541,14 +1561,25 @@ public partial class MainWindow : Window
             }
             ShowPage(page);
             await Task.Delay(450);
-            UpdateLayout();
-            var bmp = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
-            bmp.Render(this);
-            var enc = new PngBitmapEncoder();
-            enc.Frames.Add(BitmapFrame.Create(bmp));
-            await using var fs = File.Create(Path.Combine(dir, $"launcher-{page}.png"));
-            enc.Save(fs);
+            if (page == "Server")
+            {
+                await CaptureServerPageAsync(dir); // plusieurs images : chaque onglet, le serveur distant, l'ajout
+                continue;
+            }
+            await SnapshotAsync(dir, page);
         }
         Close();
+    }
+
+    /// <summary>Enregistre la fenêtre telle qu'elle est dans launcher-{nom}.png.</summary>
+    private async Task SnapshotAsync(string dir, string name)
+    {
+        UpdateLayout();
+        var bmp = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(this);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(bmp));
+        await using var fs = File.Create(Path.Combine(dir, $"launcher-{name}.png"));
+        enc.Save(fs);
     }
 }
