@@ -3,18 +3,25 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
 import fr.valcombe.client.ui.Theme;
 
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 
 /**
  * Nuit pas à pas : l'ordre de la nuit à gauche, la carte de l'étape en cours à droite
  * (qui se réveille, ce qu'il faut faire et dire, les mises en garde), et les actions à la main.
  */
-public class NightScreen extends BaseScreen {
+public class NightScreen extends HdScreen {
+	/** Texte de l'ordre de la nuit : une ligne toutes les 10 unités, comme avant. */
+	private static final HdStyle ORDER = HdStyle.TEXTE.size(9.5f);
+	private static final int ORDER_PITCH = 10;
+
 	public NightScreen() {
 		super("Nuit pas à pas");
 	}
@@ -59,19 +66,21 @@ public class NightScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		JsonObject v = view();
 		if (!ClientState.phase().equals("NIGHT")) {
-			Theme.ink(g, font, "Le jour s'est levé.", px + 14, py + 14, Theme.WINE);
+			hd.text(HdStyle.SECTION, "Le jour s'est levé.", hd.px(px + 14), hd.px(py + 12), Hd.WINE);
 			return;
 		}
+		HdStyle dense = HdText.SERRE;
+		int pitch = hd.u(HdText.PAS);
 		// Ordre de la nuit
 		int x = px + 14;
 		int y = py + 14;
-		Theme.ink(g, font, "Ordre de la nuit " + ClientState.num(v, "night", 0), x, y, Theme.WINE);
+		hd.text(HdStyle.SECTION, "Ordre de la nuit " + ClientState.num(v, "night", 0), hd.px(x), hd.px(y - 3), Hd.WINE);
 		y += 13;
 		List<JsonObject> order = objects(v, "nightOrder");
-		int max = (ph - 44) / 10;
+		int max = (ph - 44) / ORDER_PITCH;
 		int current = 0;
 		for (int i = 0; i < order.size(); i++) {
 			if (ClientState.num(order.get(i), "state", 1) == 0) {
@@ -83,49 +92,54 @@ public class NightScreen extends BaseScreen {
 			JsonObject e = order.get(i);
 			int state = ClientState.num(e, "state", 1);
 			String who = ClientState.str(e, "player");
+			// En cours : flèche et surlignage ; fait : coche (dessinée) ; à venir : point.
 			String line = (state == 0 ? "▶ " : state < 0 ? "✔ " : "· ") + ClientState.str(e, "title")
 				+ (who == null || who.isEmpty() ? "" : " · " + who);
-			if (font.width(line) > 128) {
-				line = font.plainSubstrByWidth(line, 124) + "…";
-			}
+			int ly = hd.px(y) - hd.u(1.5);
 			if (state == 0) {
-				g.fill(x - 2, y - 1, x + 130, y + font.lineHeight, 0x30B08D57);
+				hd.fill(hd.px(x - 2), ly, hd.px(x + 130), ly + hd.u(ORDER_PITCH), 0x30B08D57);
 			}
-			Theme.ink(g, font, line, x, y, state == 0 ? Theme.WINE : state < 0 ? Theme.ASH : Theme.INK);
-			y += 10;
+			HdText.line(hd, ORDER, line, hd.px(x), ly + (hd.u(ORDER_PITCH) - hd.lineHeight(ORDER)) / 2, hd.px(128),
+				state == 0 ? Theme.WINE : state < 0 ? Theme.ASH : Theme.INK);
+			y += ORDER_PITCH;
 		}
 		if (order.isEmpty()) {
-			Theme.ink(g, font, "Plus aucun réveil.", x, y, Theme.ASH);
+			hd.text(dense, "Plus aucun réveil.", hd.px(x), hd.px(y), Hd.INK_SOFT);
 		}
 
-		// Carte de l'étape
+		// Carte de l'étape, à droite d'un filet
 		int cx = px + 150;
 		int cw = pw - 164;
-		int cy = py + 14;
+		hd.fill(hd.px(cx - 4), hd.px(py + 12), hd.px(cx - 4) + Math.max(1, hd.u(0.5)), hd.px(py + ph - 12), 0x60B08D57);
+		int cy = hd.px(py + 11);
 		JsonObject ns = ClientState.obj(v, "nightStep");
+		int px0 = hd.px(cx);
+		int pwPx = hd.px(cw);
 		if (ns == null) {
-			Theme.paragraph(g, font, "Aucune étape en cours : la nuit s'achève, ou le prochain réveil arrive.", cx, cy, cw, Theme.ASH);
+			HdText.paragraph(hd, dense, "Aucune étape en cours : la nuit s'achève, ou le prochain réveil arrive.", px0, cy, pwPx,
+				Hd.INK_SOFT, pitch);
 			return;
 		}
 		String who = ClientState.str(ns, "player");
-		Theme.ink(g, font, ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " · " + who), cx, cy, Theme.WINE);
-		cy += 12;
+		HdText.line(hd, HdStyle.FORT, ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " · " + who), px0, cy, pwPx,
+			Hd.WINE);
+		cy += hd.u(14);
 		String wait = ClientState.str(ns, "waiting");
 		if (wait != null && !wait.isEmpty()) {
-			Theme.ink(g, font, "On attend : " + wait, cx, cy, Theme.BRONZE);
-			cy += 12;
+			HdText.line(hd, dense, "On attend : " + wait, px0, cy, pwPx, Theme.BRONZE);
+			cy += pitch + hd.u(1);
 		}
 		if (ClientState.bool(v, "paused")) {
-			Theme.ink(g, font, "Partie en pause.", cx, cy, Theme.BLOOD);
-			cy += 12;
+			hd.text(dense, "Partie en pause.", px0, cy, Theme.BLOOD);
+			cy += pitch + hd.u(1);
 		}
+		int limit = hd.px(py + ph - 98);
 		for (String a : strings(ns, "alerts")) {
-			cy += Theme.paragraph(g, font, "⚠ " + a, cx, cy, cw, Theme.BLOOD) + 2;
+			cy += HdText.paragraph(hd, dense, "⚠ " + a, px0, cy, pwPx, Theme.BLOOD, pitch, Math.max(pitch, limit - cy)) + hd.u(2);
 		}
-		cy += 2;
-		Theme.ink(g, font, "À faire et à dire", cx, cy, Theme.INK);
-		cy += 11;
-		int room = py + ph - 100 - cy;
-		Theme.paragraph(g, font, ClientState.str(ns, "todo"), cx, cy, cw, Theme.INK, Math.max(10, room));
+		cy += hd.u(2);
+		hd.text(HdStyle.FORT.size(10), "À faire et à dire", px0, cy, Hd.INK);
+		cy += hd.u(13);
+		HdText.paragraph(hd, dense, ClientState.str(ns, "todo"), px0, cy, pwPx, Hd.INK, pitch, Math.max(hd.lineHeight(dense), limit - cy));
 	}
 }

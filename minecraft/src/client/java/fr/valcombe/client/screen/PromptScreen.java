@@ -3,17 +3,25 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdButton;
+import fr.valcombe.client.hd.HdFonts;
+import fr.valcombe.client.hd.HdGlyphs;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
+import fr.valcombe.client.hd.HdToken;
+import fr.valcombe.client.hd.HdTokenArt;
 import fr.valcombe.client.ui.Theme;
-import fr.valcombe.client.ui.TokenWidget;
-import fr.valcombe.client.ui.WaxButton;
 
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 
 /** L'invite en cours : choix de nuit, information, vote, relecture du Conteur, grimoire du Mouchard. */
-public class PromptScreen extends BaseScreen {
+public class PromptScreen extends HdScreen {
+	/** Place des noms au-dessus et au-dessous d'un cercle de jetons, en unités. */
+	private static final int LABEL = 13;
 
 	public PromptScreen() {
 		super("Valcombe");
@@ -31,6 +39,19 @@ public class PromptScreen extends BaseScreen {
 	/** Rayon du cercle de vote, réduit pour laisser la place au texte et au bouton sur un petit écran. */
 	private int voteRadius() {
 		return Math.max(48, Math.min(82, (ph - 100) / 2));
+	}
+
+	/**
+	 * Demi-hauteur d'un cercle de jetons de cette taille qui tient entre le haut du panneau et le bouton du bas, nom
+	 * du jeton du bas compris : sur un petit écran, le cercle se resserre au lieu de passer sous le bouton.
+	 */
+	private int fitRadius(int size, int max) {
+		return Math.max(40, Math.min(max, (ph - 38 - size - LABEL) / 2));
+	}
+
+	/** Centre vertical du cercle de fitRadius. */
+	private int fitCenter(int size, int radius) {
+		return py + 8 + size / 2 + radius;
 	}
 
 	/** Appelé par le routeur quand l'invite change sans changer d'écran. */
@@ -84,13 +105,18 @@ public class PromptScreen extends BaseScreen {
 				List<JsonObject> opts = objects(p, "options");
 				int count = ClientState.num(p, "count", 1);
 				long chosen = opts.stream().filter(o -> ClientState.bool(o, "selected")).count();
-				circle(opts.size(), cx, py + 108, 82, (i, x, y) -> {
+				// Une ellipse plutôt qu'un cercle : plus large que haute, elle garde de la place entre les jetons.
+				int size = 24;
+				int ry = fitRadius(size, 82);
+				int rx = Math.max(ry, Math.min(110, pw / 2 - size / 2 - 40));
+				int n = opts.size();
+				ellipse(n, cx, fitCenter(size, ry), rx, ry, (i, x, y) -> {
 					JsonObject o = opts.get(i);
 					String name = ClientState.str(o, "name");
-					token(new TokenWidget(x, y, 24, name, null, null, ClientState.bool(o, "alive"),
+					token(new HdToken(x, y, size, name, null, null, ClientState.bool(o, "alive"),
 						ClientState.bool(o, "selected"), () -> send("vc choisir " + name)));
 				});
-				WaxButton ok = button(cx - 55, py + ph - 26, 110, "Valider (" + chosen + "/" + count + ")",
+				HdButton ok = button(cx - 55, py + ph - 26, 110, "Valider (" + chosen + "/" + count + ")",
 					() -> send("vc valider"));
 				if (chosen != count) {
 					ok.disabled();
@@ -103,7 +129,8 @@ public class PromptScreen extends BaseScreen {
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "grimoire" -> {
-				Grimoire.place(this, cx, py + 112, 84, 24, null);
+				int r = fitRadius(24, 84);
+				Grimoire.place(this, cx, fitCenter(24, r), r, 24, null);
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "vote" -> {
@@ -114,7 +141,7 @@ public class PromptScreen extends BaseScreen {
 				int vr = voteRadius();
 				circle(seats.size(), cx, py + 34 + vr, vr, (i, x, y) -> {
 					JsonObject s = seats.get(i);
-					token(new TokenWidget(x, y, 22, ClientState.str(s, "name"), null, null, ClientState.bool(s, "alive"),
+					token(new HdToken(x, y, 22, ClientState.str(s, "name"), null, null, ClientState.bool(s, "alive"),
 						locked.contains(String.valueOf(i)), null));
 				});
 				boolean up = ClientState.bool(vote, "myHand");
@@ -130,7 +157,10 @@ public class PromptScreen extends BaseScreen {
 					int col = cols == 2 ? i % 2 : 0;
 					int row = cols == 2 ? i / 2 : i;
 					int bx = cols == 2 ? cx - bw - 3 + col * (bw + 6) : cx - bw / 2;
-					button(bx, py + 52 + row * 21, bw, options.get(i), () -> send("vc decider " + choice));
+					// Une option trop longue pour son bouton se lit en entier dans l'infobulle.
+					boolean cut = HdFonts.width(HdStyle.BOUTON, Hd.guiScale(), options.get(i)) > (bw - 10) * Hd.guiScale();
+					button(bx, py + 52 + row * 21, bw, options.get(i), () -> send("vc decider " + choice))
+						.tooltip(cut ? options.get(i) : null);
 				}
 			}
 			case "confirm" -> {
@@ -145,72 +175,100 @@ public class PromptScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		JsonObject p = prompt();
+		HdStyle dense = HdText.SERRE;
+		int pitch = hd.u(HdText.PAS);
 		if (p == null) {
-			Theme.ink(g, font, "Rien ne t'attend pour l'instant.", px + 16, py + 20, Theme.INK);
+			hd.text(HdStyle.TEXTE, "Rien ne t'attend pour l'instant.", hd.px(px + 16), hd.px(py + 18), Hd.INK);
 			return;
 		}
 		int x = px + 16;
+		int bottom = hd.px(py + ph - 30);
 		switch (type()) {
 			case "choose" -> {
+				// Au centre de l'ellipse : combien désigner, et la règle d'un pouvoir à usage unique.
 				int count = ClientState.num(p, "count", 1);
-				Theme.centered(g, font, "Désigne " + count + " joueur" + (count > 1 ? "s" : "") + ".", px + pw / 2, py + 104,
-					Theme.WINE);
+				int cy = fitCenter(24, fitRadius(24, 82));
+				int ry = fitRadius(24, 82);
+				int rx = Math.max(ry, Math.min(110, pw / 2 - 12 - 40));
+				int cx = hd.px(px + pw / 2);
+				hd.textCentered(HdStyle.FORT, "Désigne " + count + " joueur" + (count > 1 ? "s" : "") + ".", cx, hd.px(cy - 12), Hd.WINE);
 				if (ClientState.bool(p, "optional")) {
 					// Pouvoir à usage unique : valider sans personne le garde pour une autre nuit.
-					Theme.centered(g, font, "Une seule fois : valide sans personne pour le garder.", px + pw / 2, py + 116, Theme.ASH);
+					List<String> lines = hd.wrap(dense, "Une seule fois : valide sans personne pour le garder.", hd.px(2 * rx - 48));
+					for (int i = 0; i < Math.min(3, lines.size()); i++) {
+						hd.textCentered(dense, lines.get(i), cx, hd.px(cy + 3) + i * pitch, Hd.INK_SOFT);
+					}
 				}
 			}
 			case "info" -> {
 				JsonObject role = ClientState.obj(view(), "role");
 				if (role != null) {
-					Theme.token(g, x + 16, py + 34, 32, ClientState.str(role, "id"), ClientState.str(role, "team"),
+					HdTokenArt.draw(hd, hd.px(x), hd.px(py + 18), hd.u(32), ClientState.str(role, "id"), ClientState.str(role, "team"),
 						true, false, false);
 				}
-				Theme.paragraph(g, font, ClientState.str(p, "text"), x + 40, py + 22, pw - 72, Theme.INK);
+				HdText.paragraph(hd, HdStyle.TEXTE, ClientState.str(p, "text"), hd.px(x + 40), hd.px(py + 18), hd.px(pw - 72), Hd.INK,
+					hd.u(13), bottom - hd.px(py + 18));
 			}
-			case "vote" -> {
-				JsonObject vote = ClientState.obj(view(), "vote");
-				int cx = px + pw / 2;
-				int vr = voteRadius();
-				int cy = py + 34 + vr;
-				int n = objects(view(), "seats").size();
-				// L'aiguille : une suite de points du centre vers le siège en cours.
-				int seat = ClientState.num(vote, "clockSeat", -1);
-				if (seat >= 0 && n > 0) {
-					double a = -Math.PI / 2 + 2 * Math.PI * seat / n;
-					for (int r = 6; r < vr - 18; r += 3) {
-						int x2 = cx + (int) Math.round(r * Math.cos(a));
-						int y2 = cy + (int) Math.round(r * Math.sin(a));
-						g.fill(x2 - 1, y2 - 1, x2 + 2, y2 + 2, r > vr - 30 ? Theme.GOLD : Theme.WINE);
-					}
-				}
-				g.fill(cx - 3, cy - 3, cx + 4, cy + 4, Theme.BRONZE);
-				Theme.centered(g, font, "Exécuter " + ClientState.str(p, "nominee") + " ?", cx, py + 14, Theme.WINE);
-				// Le compte, sur un cartouche : lisible même quand l'aiguille passe dessous.
-				String count = ClientState.num(vote, "count", 0) + " voix / seuil " + ClientState.num(vote, "threshold", 0);
-				int cw = font.width(count) / 2 + 5;
-				g.fill(cx - cw - 1, cy + 7, cx + cw + 1, cy + 21, Theme.BRONZE);
-				g.fill(cx - cw, cy + 8, cx + cw, cy + 20, Theme.PARCH);
-				Theme.centered(g, font, count, cx, cy + 10, Theme.INK);
-				String hint = ClientState.bool(vote, "myHand") ? "Ta main est levée." : "Ta main est baissée.";
-				if (ClientState.bool(p, "ghost")) {
-					hint += " (vote de fantôme)";
-				}
-				Theme.centered(g, font, hint, cx, py + ph - 40, Theme.ASH);
-			}
-			case "decide" -> Theme.paragraph(g, font, ClientState.str(p, "question"), x, py + 18, pw - 32, Theme.WINE);
+			case "vote" -> drawVote(hd, p);
+			case "decide" -> HdText.paragraph(hd, dense, ClientState.str(p, "question"), hd.px(x), hd.px(py + 13), hd.px(pw - 32),
+				Hd.WINE, pitch, hd.px(38));
 			case "confirm" -> {
-				Theme.ink(g, font, "Pour " + ClientState.str(p, "to") + " :", x, py + 16, Theme.WINE);
-				int h = Theme.paragraph(g, font, ClientState.str(p, "text"), x, py + 30, pw - 32, Theme.INK);
+				hd.text(HdStyle.FORT, "Pour " + ClientState.str(p, "to") + " :", hd.px(x), hd.px(py + 12), Hd.WINE);
+				int top = hd.px(py + 28);
 				String truth = ClientState.str(p, "truth");
+				// Le message, puis la vérité (pour le Conteur) : chacun coupé avant les boutons.
+				int truthRoom = truth == null ? 0 : Math.min(3, HdText.lines(hd, dense, "Vérité : " + truth, hd.px(pw - 32))) * pitch
+					+ hd.u(6);
+				int h = HdText.paragraph(hd, dense, ClientState.str(p, "text"), hd.px(x), top, hd.px(pw - 32), Hd.INK, pitch,
+					bottom - top - truthRoom);
 				if (truth != null) {
-					Theme.paragraph(g, font, "Vérité : " + truth, x, py + 36 + h, pw - 32, Theme.BLOOD);
+					HdText.paragraph(hd, dense, "Vérité : " + truth, hd.px(x), top + h + hd.u(6), hd.px(pw - 32), Theme.BLOOD, pitch,
+						bottom - top - h - hd.u(6));
 				}
 			}
 			default -> {
 			}
 		}
+	}
+
+	/** Le vote : la question, l'aiguille qui va du centre au siège en cours, le compte des voix et l'état de ta main. */
+	private void drawVote(Hd hd, JsonObject p) {
+		JsonObject vote = ClientState.obj(view(), "vote");
+		int cx = hd.px(px + pw / 2);
+		int vr = voteRadius();
+		int cy = hd.px(py + 34 + vr);
+		int n = objects(view(), "seats").size();
+		// L'aiguille : un trait du centre vers le siège en cours, doré à la pointe.
+		int seat = ClientState.num(vote, "clockSeat", -1);
+		if (seat >= 0 && n > 0) {
+			double a = -Math.PI / 2 + 2 * Math.PI * seat / n;
+			double c = Math.cos(a);
+			double s = Math.sin(a);
+			int t = Math.max(2, hd.u(1.5));
+			double mid = hd.u(vr - 30);
+			double tip = hd.u(vr - 18);
+			HdGlyphs.line(hd, cx + c * hd.u(5), cy + s * hd.u(5), cx + c * mid, cy + s * mid, t, Theme.WINE);
+			HdGlyphs.line(hd, cx + c * mid, cy + s * mid, cx + c * tip, cy + s * tip, t, Theme.GOLD);
+		}
+		hd.disc(cx, cy, hd.u(3.5), Theme.BRONZE);
+		String question = hd.ellipsize(HdStyle.FORT, "Exécuter " + ClientState.str(p, "nominee") + " ?", hd.px(pw - 28));
+		hd.textCentered(HdStyle.FORT, question, cx, hd.px(py + 9), Hd.WINE);
+		// Le compte, sur un cartouche : lisible même quand l'aiguille passe dessous.
+		String count = ClientState.num(vote, "count", 0) + " voix / seuil " + ClientState.num(vote, "threshold", 0);
+		HdStyle st = HdText.SERRE;
+		int cw = hd.width(st, count) / 2 + hd.u(6);
+		int top = cy + hd.u(7);
+		int h = hd.lineHeight(st) + hd.u(1);
+		int b = Math.max(1, hd.u(0.75));
+		hd.fill(cx - cw, top, cx + cw, top + h, Theme.PARCH);
+		hd.frame(cx - cw, top, 2 * cw, h, b, Theme.BRONZE);
+		hd.textCentered(st, count, cx, top + (h - hd.lineHeight(st)) / 2, Hd.INK);
+		String hint = ClientState.bool(vote, "myHand") ? "Ta main est levée." : "Ta main est baissée.";
+		if (ClientState.bool(p, "ghost")) {
+			hint += " (vote de fantôme)";
+		}
+		hd.textCentered(st, hint, cx, hd.px(py + ph - 41), Hd.INK_SOFT);
 	}
 }

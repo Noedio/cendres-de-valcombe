@@ -3,17 +3,23 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdFonts;
+import fr.valcombe.client.hd.HdGlyphs;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
+import fr.valcombe.client.hd.HdToken;
+import fr.valcombe.client.hd.HdTokenArt;
 import fr.valcombe.client.ui.Theme;
-import fr.valcombe.client.ui.TokenWidget;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 
 /** Menu principal : salon, carte de rôle, cercle, actions du jour, journal. */
-public class MainScreen extends BaseScreen {
+public class MainScreen extends HdScreen {
 	private int buttonsTop;
 
 	public MainScreen() {
@@ -133,7 +139,10 @@ public class MainScreen extends BaseScreen {
 			int col = i % 3;
 			int row = i / 3;
 			Action a = actions.get(i);
-			button(px + 12 + col * (bw + 6), buttonsTop + row * 22, bw, a.label(), a.run());
+			// Un libellé raccourci (« … ») sur le bouton se lit en entier dans son infobulle.
+			int scale = Hd.guiScale();
+			boolean cut = HdFonts.width(HdStyle.BOUTON, scale, a.label()) > (bw - 10) * scale;
+			button(px + 12 + col * (bw + 6), buttonsTop + row * 22, bw, a.label(), a.run()).tooltip(cut ? a.label() : null);
 		}
 		// Cercle des joueurs (jetons fermés : on ne voit pas les rôles des autres), à droite, dans la
 		// place laissée au-dessus du journal et des boutons : une ellipse qui ne déborde jamais.
@@ -152,7 +161,7 @@ public class MainScreen extends BaseScreen {
 			final int n = seats.size();
 			ellipse(n, cx, cy, rx, ry, (i, x, y) -> {
 				JsonObject s = seats.get(i);
-				TokenWidget t = new TokenWidget(x, y, sz, ClientState.str(s, "name"),
+				HdToken t = new HdToken(x, y, sz, ClientState.str(s, "name"),
 					i == me && role != null ? ClientState.str(role, "id") : null,
 					i == me && role != null ? ClientState.str(role, "team") : null,
 					ClientState.bool(s, "alive"), false, null);
@@ -175,40 +184,48 @@ public class MainScreen extends BaseScreen {
 	}
 
 	private int feedHeight() {
-		return feedLines() * 10 + 4;
+		return feedLines() * HdText.PAS + 4;
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		JsonObject v = view();
 		String phase = ClientState.phase();
 		boolean night = phase.equals("NIGHT");
-		Theme.image(g, Theme.tex(night ? "moon" : "sun"), px + 12, py + 12, 12, 12, Theme.HUD_TEX, Theme.HUD_TEX);
-		Theme.ink(g, font, phaseLabel(), px + 28, py + 14, Theme.WINE);
+		HdStyle dense = HdText.SERRE;
+		int pitch = hd.u(HdText.PAS);
+		// Phase : lune ou soleil, puis son nom, en intertitre.
+		hd.image(Theme.tex(night ? "moon" : "sun"), hd.px(px + 12), hd.px(py + 11), hd.u(13), hd.u(13), -1);
+		hd.textMiddle(HdStyle.SECTION, phaseLabel(), hd.px(px + 29), hd.px(py + 11), hd.u(13), Hd.WINE);
 
 		JsonObject role = ClientState.obj(v, "role");
 		int x = px + 14;
 		int y = py + 32;
 		if (role != null) {
-			Theme.token(g, x + 18, y + 18, 36, ClientState.str(role, "id"), ClientState.str(role, "team"), true, false, false);
-			Theme.ink(g, font, ClientState.str(role, "name"), x + 42, y + 8, Theme.INK);
+			// Carte de rôle : jeton, nom, camp, puis le texte du rôle jusqu'au journal.
+			HdTokenArt.draw(hd, hd.px(x), hd.px(y), hd.u(36), ClientState.str(role, "id"), ClientState.str(role, "team"), true,
+				false, false);
+			hd.text(HdStyle.FORT, ClientState.str(role, "name"), hd.px(x + 42), hd.px(y + 3), Hd.INK);
 			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
-			Theme.ink(g, font, (evil ? "Camp du mal" : "Camp du bien"), x + 42, y + 20, evil ? Theme.EVIL : Theme.GOOD);
-			Theme.paragraph(g, font, ClientState.str(role, "text"), x, y + 42, 172, Theme.INK,
-				buttonsTop - feedHeight() - 6 - (y + 42));
+			hd.text(dense, evil ? "Camp du mal" : "Camp du bien", hd.px(x + 42), hd.px(y + 18), evil ? Theme.EVIL : Theme.GOOD);
+			HdText.paragraph(hd, dense, ClientState.str(role, "text"), hd.px(x), hd.px(y + 42), hd.px(172), Hd.INK, pitch,
+				hd.px(buttonsTop - feedHeight() - 6 - (y + 42)));
 		} else {
-			Theme.ink(g, font, phase.equals("LOBBY") ? "Inscrits :" : "Tu observes la partie.", x, y, Theme.INK);
+			hd.text(HdStyle.FORT, phase.equals("LOBBY") ? "Inscrits :" : "Tu observes la partie.", hd.px(x), hd.px(y - 2), Hd.INK);
 			List<String> lobby = strings(v, "lobby");
+			HdStyle names = HdStyle.TEXTE.size(9.5f);
 			for (int i = 0; i < Math.min(lobby.size(), 12); i++) {
-				Theme.ink(g, font, "• " + lobby.get(i), x + 4 + (i / 6) * 86, y + 12 + (i % 6) * 10, Theme.WINE);
+				int lx = hd.px(x + 4 + (i / 6) * 86);
+				int ly = hd.px(y + 12 + (i % 6) * 10);
+				HdGlyphs.text(hd, names, "• " + hd.ellipsize(names, lobby.get(i), hd.u(76)), lx, ly, Hd.WINE);
 			}
 			String st = ClientState.str(v, "storyteller");
 			String teller = "Conteur : " + (st == null ? "automatique" : st);
 			if (phase.equals("LOBBY")) {
 				// Au salon, sur la ligne du haut : le journal, qui remonte quand les boutons prennent quatre rangées, ne le recouvre pas.
-				Theme.ink(g, font, teller, px + pw - 14 - font.width(teller), py + 14, Theme.ASH);
+				hd.textRight(dense, teller, hd.px(px + pw - 14), hd.px(py + 13), Hd.INK_SOFT);
 			} else {
-				Theme.ink(g, font, teller, x, y + 76, Theme.ASH);
+				hd.text(dense, teller, hd.px(x), hd.px(y + 76), Hd.INK_SOFT);
 			}
 		}
 
@@ -217,15 +234,12 @@ public class MainScreen extends BaseScreen {
 		int fy = buttonsTop - feedHeight();
 		if (inGameView() && !feed.isEmpty()) {
 			// En partie : la dernière annonce, repliée dans la colonne de gauche (le cercle est à droite).
-			Theme.paragraph(g, font, feed.get(feed.size() - 1), px + 14, fy, 176, Theme.ASH, feedHeight() - 2);
+			HdText.paragraph(hd, dense, feed.get(feed.size() - 1), hd.px(px + 14), hd.px(fy), hd.px(176), Hd.INK_SOFT, pitch,
+				hd.px(feedHeight() - 2));
 		} else {
 			for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
-				String line = feed.get(i);
-				if (font.width(line) > pw - 30) {
-					line = font.plainSubstrByWidth(line, pw - 34) + "…";
-				}
-				Theme.ink(g, font, line, px + 14, fy, Theme.ASH);
-				fy += 10;
+				HdText.line(hd, dense, feed.get(i), hd.px(px + 14), hd.px(fy), hd.px(pw - 30), Hd.INK_SOFT);
+				fy += HdText.PAS;
 			}
 		}
 	}

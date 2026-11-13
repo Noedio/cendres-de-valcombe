@@ -89,6 +89,19 @@ Dans `drawHd` ou un dessin de ligne de liste, le contexte `Hd` offre :
 | `clip`, `unclip` | Découpe (alignée sur les unités d'interface, c'est la précision de Minecraft) |
 | `mouseX`, `mouseY`, `hovered` | Souris en pixels réels, précise au pixel |
 
+### Symboles, texte serré, jetons dessinés
+
+Ajoutés avec le passage des écrans des joueurs et de l'affichage en jeu :
+
+| Outil | Rôle |
+| --- | --- |
+| `HdGlyphs` | Dessine net les symboles absents des polices (`✔ ✘ ✋ ⚠ ☠ ⏸ • ×`) : `HdGlyphs.text`, `width`, `textCentered`, `textShadow`, `ellipsize` écrivent une ligne où ils sont remplacés par leur forme, à la taille du texte. Le libellé reste le même (narration, tests). |
+| `HdGlyphButton` | `HdButton` dont le libellé contient un de ces symboles (« ✔ Oui », « × ») : `addRenderableWidget(new HdGlyphButton(x, y, w, 18, libellé, action))`. |
+| `HdText` | Paragraphe serré (`HdText.SERRE`, une ligne toutes les `HdText.PAS` = 11 unités) pour les écrans chargés : `paragraph(hd, style, texte, x, y, largeur, couleur, interligne, hauteurMax)`, `line(...)` raccourcie par « … ». Symboles dessinés compris. |
+| `HdTokenArt` | Jeton dessiné (pas un widget), même dessin que `HdToken` : `HdTokenArt.draw(hd, x, y, taille, rôle, camp, vivant, choisi, survolé)` en pixels réels, et `drawWithAlpha` pour un jeton qui apparaît ou s'efface. Remplace `Theme.token` dans `drawHd`. |
+
+Écrans des joueurs passés en haute résolution : `MainScreen`, `SheetsScreen`, `NotebookScreen`, `NotebookGuessScreen`, `PromptScreen`, `NightScreen`, `GuessScreen`, `ClaimScreen`, `SignScreen`, `TokenScreen`, `ChronicleScreen`, `FiguresScreen`, `PrefsScreen`, `PickerScreen`, `RolePickerScreen`, ainsi que l'affichage en jeu (`Hud` : bandeau de phase, vote et horloge, tableau du jour, voix, carte de rôle, messages). Test en jeu : `PlayerScreensHdGameTest` (captures `valcombe-hd-joueurs-*.png`).
+
 ### Textes
 
 Les tailles sont en unités d'interface (la taille réelle vaut taille × échelle). Styles nommés, à préférer :

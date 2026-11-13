@@ -3,16 +3,20 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdGlyphButton;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
 import fr.valcombe.client.ui.Theme;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 
 /** Jetons de rappel à poser sur un joueur : ceux des rôles en jeu, puis les jetons communs. Un clic pose ou retire. */
-public class TokenScreen extends BaseScreen {
+public class TokenScreen extends HdScreen {
 	private record Head(int x, int y, String text, boolean evil) {
 	}
 
@@ -61,12 +65,13 @@ public class TokenScreen extends BaseScreen {
 			if (y + rows * 20 > limit) {
 				break;
 			}
-			heads.add(new Head(px + 14, y + 5, ClientState.str(group, "role"), ClientState.bool(group, "evil")));
+			heads.add(new Head(px + 14, y, ClientState.str(group, "role"), ClientState.bool(group, "evil")));
 			for (int i = 0; i < items.size(); i++) {
 				String item = items.get(i);
 				boolean on = worn.contains(item);
-				button(left + (i % cols) * (bw + 4), y + (i / cols) * 20, bw, (on ? "✔ " : "") + item,
-					() -> send("vc rappel " + name + " " + (on ? "retirer " : "") + item));
+				// Un rappel posé porte une coche (dessinée net par HdGlyphButton) ; son libellé reste « ✔ nom ».
+				addRenderableWidget(new HdGlyphButton(left + (i % cols) * (bw + 4), y + (i / cols) * 20, bw, 18, (on ? "✔ " : "") + item,
+					() -> send("vc rappel " + name + " " + (on ? "retirer " : "") + item)));
 			}
 			y += rows * 20 + 2;
 		}
@@ -78,16 +83,14 @@ public class TokenScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		List<String> worn = worn();
-		Theme.ink(g, font, worn.isEmpty() ? "Aucun rappel posé sur " + name + "." : "Posés : " + String.join(" · ", worn),
-			px + 14, py + 12, Theme.BRONZE);
+		HdText.line(hd, HdText.SERRE, worn.isEmpty() ? "Aucun rappel posé sur " + name + "." : "Posés : " + String.join(" · ", worn),
+			hd.px(px + 14), hd.px(py + 10), hd.px(pw - 28), Theme.BRONZE);
 		for (Head h : heads) {
-			String label = h.text();
-			if (font.width(label) > 100) {
-				label = font.plainSubstrByWidth(label, 96) + "…";
-			}
-			Theme.ink(g, font, label, h.x(), h.y(), h.evil() ? Theme.BLOOD : Theme.WINE);
+			// Nom du rôle, à la hauteur de sa première rangée de jetons.
+			HdText.line(hd, HdStyle.FORT.size(10), h.text(), hd.px(h.x()), hd.px(h.y()) + (hd.u(18) - hd.lineHeight(HdStyle.FORT.size(10))) / 2,
+				hd.px(100), h.evil() ? Theme.BLOOD : Theme.WINE);
 		}
 	}
 }
