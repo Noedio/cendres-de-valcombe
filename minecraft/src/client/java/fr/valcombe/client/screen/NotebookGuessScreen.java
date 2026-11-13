@@ -3,16 +3,16 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.ui.Theme;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdText;
 import fr.valcombe.rules.Role;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-
 /** Carnet : choisir le rôle que l'on prête à un joueur, parmi les rôles du script en cours. */
-public class NotebookGuessScreen extends BaseScreen {
+public class NotebookGuessScreen extends HdScreen {
 	private final String name;
 
 	public NotebookGuessScreen(String name) {
@@ -44,6 +44,7 @@ public class NotebookGuessScreen extends BaseScreen {
 		int cols = 4;
 		int bw = (pw - 28 - (cols - 1) * 4) / cols;
 		int rows = Math.max(1, (ph - 70) / 20);
+		// Un bouton par rôle du script, quatre par rangée ; le rôle déjà prêté est grisé.
 		for (int i = 0; i < roles.size() && i < cols * rows; i++) {
 			Role r = roles.get(i);
 			int x = px + 14 + (i % cols) * (bw + 4);
@@ -64,7 +65,8 @@ public class NotebookGuessScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-		Theme.ink(g, font, "Quel rôle penses-tu que " + name + " a vraiment ?", px + 14, py + 12, Theme.ASH);
+	protected void drawHd(Hd hd) {
+		HdText.line(hd, HdText.SERRE, "Quel rôle penses-tu que " + name + " a vraiment ?", hd.px(px + 14), hd.px(py + 11),
+			hd.px(pw - 28), Hd.INK_SOFT);
 	}
 }

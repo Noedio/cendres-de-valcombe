@@ -1,5 +1,10 @@
 package fr.valcombe.client.screen;
 
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
+import fr.valcombe.client.hd.HdTokenArt;
 import fr.valcombe.client.ui.Theme;
 import fr.valcombe.rules.Role;
 import fr.valcombe.rules.RoleType;
@@ -8,10 +13,8 @@ import fr.valcombe.rules.Team;
 import java.util.ArrayList;
 import java.util.List;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-
 /** Fiches des 22 rôles : jetons rangés par type, détail au survol. */
-public class SheetsScreen extends BaseScreen {
+public class SheetsScreen extends HdScreen {
 	private record Spot(Role role, int x, int y) {
 	}
 
@@ -50,6 +53,8 @@ public class SheetsScreen extends BaseScreen {
 
 	private static final int PER_ROW = 7;
 	private static final int STEP = 26;
+	/** Taille d'un jeton de la grille, en unités. */
+	private static final int SIZE = 24;
 
 	/** Une rangée (ou plusieurs) de jetons ; renvoie le haut de la rangée suivante. */
 	private int row(List<Role> roles, int x0, int y) {
@@ -61,27 +66,37 @@ public class SheetsScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
+		// Le jeton survolé devient la fiche affichée (au pixel près : la souris est lue en pixels réels).
+		for (Spot s : spots) {
+			if (Math.abs(hd.mouseX() - hd.px(s.x())) < hd.u(SIZE / 2.0) && Math.abs(hd.mouseY() - hd.px(s.y())) < hd.u(SIZE / 2.0)) {
+				shown = s.role();
+			}
+		}
 		RoleType last = null;
+		int half = hd.u(SIZE / 2.0);
 		for (Spot s : spots) {
 			if (s.role().type != last) {
 				last = s.role().type;
 				String head = last == RoleType.DEMON ? "Démon" : last.displayName + "s";
-				Theme.ink(g, font, head, s.x() - 12, s.y() - 24, Theme.WINE);
+				hd.text(HdStyle.SECTION.size(9), head, hd.px(s.x() - 12), hd.px(s.y() - 25), Hd.WINE);
 			}
-			boolean hover = Math.abs(mouseX - s.x()) < 12 && Math.abs(mouseY - s.y()) < 12;
-			if (hover) {
-				shown = s.role();
-			}
-			Theme.token(g, s.x(), s.y(), 24, s.role().name(), Team.of(s.role()).name(), true, s.role() == shown, hover);
+			boolean hover = hd.hovered(hd.px(s.x()) - half, hd.px(s.y()) - half, 2 * half, 2 * half);
+			HdTokenArt.draw(hd, hd.px(s.x()) - half, hd.px(s.y()) - half, 2 * half, s.role().name(), Team.of(s.role()).name(),
+				true, s.role() == shown, hover);
 		}
+		// Fiche du rôle, à droite : grand jeton, nom, type et camp, texte.
 		int dx = px + 24 + PER_ROW * STEP + 6;
 		int dw = px + pw - 12 - dx;
 		int dy = py + 22;
-		Theme.token(g, dx + dw / 2, dy + 24, 44, shown.name(), Team.of(shown).name(), true, false, false);
-		Theme.centered(g, font, shown.displayName, dx + dw / 2, dy + 52, Theme.INK);
-		Theme.centered(g, font, shown.type.displayName + ", " + Team.of(shown).displayName, dx + dw / 2, dy + 64,
+		int big = hd.u(44);
+		HdTokenArt.draw(hd, hd.px(dx + dw / 2) - big / 2, hd.px(dy + 24) - big / 2, big, shown.name(), Team.of(shown).name(), true,
+			false, false);
+		hd.textCentered(HdStyle.FORT, shown.displayName, hd.px(dx + dw / 2), hd.px(dy + 50), Hd.INK);
+		hd.textCentered(HdText.SERRE, shown.type.displayName + ", " + Team.of(shown).displayName, hd.px(dx + dw / 2), hd.px(dy + 64),
 			shown.evil() ? Theme.EVIL : Theme.GOOD);
-		Theme.paragraph(g, font, shown.text, dx, dy + 80, dw, Theme.INK, py + ph - 32 - (dy + 80));
+		hd.separator(hd.px(dx + 8), hd.px(dy + 79), hd.px(dw - 16));
+		HdText.paragraph(hd, HdText.SERRE, shown.text, hd.px(dx), hd.px(dy + 84), hd.px(dw), Hd.INK, hd.u(HdText.PAS),
+			hd.px(py + ph - 32 - (dy + 84)));
 	}
 }
