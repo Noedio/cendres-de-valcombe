@@ -43,7 +43,7 @@ public partial class MainWindow : Window
         int i = Array.IndexOf(args, "--capture");
         _captureDir = i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 
-        VersionText.Text = "Launcher " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+        ShowVersions();
         Updater.CleanUp();
         BuildLookChoices();
         LoadControls();
@@ -404,6 +404,23 @@ public partial class MainWindow : Window
     // ------------------------------------------------------------------
     // Version publiée, nouvelles, compte
     // ------------------------------------------------------------------
+    /// <summary>
+    /// Bas de la barre latérale : la version du launcher et celle du jeu installé. Elles ont chacune leur numéro :
+    /// le jeu change à chaque version publiée, le launcher seulement quand son propre code change.
+    /// </summary>
+    private void ShowVersions()
+    {
+        string text = "Launcher " + Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+        string? game = Integrated ? Instance.EngineVersion : Instance.InstalledVersion;
+        if (!string.IsNullOrWhiteSpace(game))
+        {
+            text += " · Jeu " + game.TrimStart('v', 'V');
+        }
+        VersionText.Text = text;
+        VersionText.ToolTip = "Le launcher et le jeu ont chacun leur numéro : le jeu se met à jour à chaque version publiée, "
+            + "le launcher seulement quand il change lui-même.";
+    }
+
     private async Task RefreshReleaseAsync()
     {
         if (string.IsNullOrWhiteSpace(_config.Repository))
@@ -457,6 +474,7 @@ public partial class MainWindow : Window
             }
             SetStatus(installed == _release.Tag ? $"Version {_release.Tag} installée. Prêt."
                 : $"Version {_release.Tag} disponible (installée : {installed}).", 0);
+            ShowVersions();
         }
         catch (Exception ex)
         {
@@ -852,6 +870,7 @@ public partial class MainWindow : Window
             if (_release != null && Instance.InstalledVersion != _release.Tag)
             {
                 await Instance.SyncAsync(_release, _config, progress, repair: false);
+                ShowVersions();
             }
             else if (Instance.InstalledVersion == null)
             {
@@ -908,6 +927,7 @@ public partial class MainWindow : Window
         var plan = await Engine.PrepareAsync(release.Manifest.Minecraft, release.Manifest.Loader);
         await Engine.DownloadAsync(plan, progress);
         await Instance.SyncEngineAsync(release, progress);
+        ShowVersions();
         Instance.PrepareOptions(_config.Minecraft, Engine.GameDir);
         await Instance.SyncExtrasAsync(release, Engine.GameDir, _config, progress);
         SetStatus("Lancement de Minecraft…", 1);
