@@ -73,7 +73,7 @@ Les écrans de Valcombe sont dessinés à la résolution réelle de votre écran
 
 | Touche ou geste | Effet |
 | --- | --- |
-| **J** | Menu du jeu : votre rôle, vos actions, votre carnet ; au hub, les parties et les mondes |
+| **J** | Menu du jeu : votre rôle, vos actions, votre carnet, les mondes ; au hub, les parties |
 | **H** | Lever ou baisser la main pendant un vote |
 | **G** | Faire un signe au-dessus de sa tête (oui, non, question…) |
 | **K** | Revoir sa carte de rôle |
@@ -471,7 +471,7 @@ Chaque carte en travail a son propre monde, l'**atelier carte** : plat, paisible
 4. **L'écran de l'atelier** : menu J › Mondes › **Atelier de la carte** (ou `/vc atelier carte`, ou le lien du message d'accueil). À gauche, la fiche : le compte des repères, ce qui manque, les conseils (trônes sans maison, pas de salle de convocation), le dernier enregistrement. À droite :
    - **Enregistrer** : la carte va dans la bibliothèque (toute la zone bâtie autour de la place, repères compris) et une **version** est gardée. Si rien n'a changé, rien n'est réécrit.
    - **Enregistrer sous…** : une copie sous un autre nom ; l'atelier continue sur la copie, l'originale reste telle qu'enregistrée.
-   - **Versions…** : les enregistrements gardés ; « Revenir à cette version » la remet dans la bibliothèque et dans l'atelier. L'état présent est d'abord gardé, lui aussi : un retour en arrière se défait.
+   - **Versions (n)…** : les enregistrements gardés ; « Revenir à cette version » la remet dans la bibliothèque et dans l'atelier. L'état présent est d'abord gardé, lui aussi : un retour en arrière se défait.
    - **Envoyer à la partie…** : choisissez le monde de partie (la Partie principale ou une partie d'essai) ; la carte est enregistrée, puis envoyée (son monde est remis à neuf). L'atelier reste ouvert. Une carte qui n'est pas jouable n'est pas envoyée.
    - **Fermer l'atelier…** (avec confirmation) : la carte est enregistrée, puis le monde de l'atelier est supprimé ; ceux qui s'y trouvent vont au hub. Une carte vierge où rien n'a été fait n'est pas rangée.
 
@@ -574,9 +574,9 @@ Toutes les actions des écrans existent aussi en commandes `/vc` ; la liste des 
 | `/vc atelier`, `/vc atelier jeu`, `/vc atelier fermer` | Opérateurs | Lien de l'Atelier web, Atelier en jeu, fermer son lien |
 | `/vc atelier carte …` | Opérateurs | Ouvrir, enregistrer, envoyer, fermer un atelier carte (partie 12) |
 | `/vc structures …` | Opérateurs, invités | L'atelier structures (partie 13) |
-| `/vc atelier inviter|retirer <joueur> [atelier|tous]`, `/vc atelier liste` | Opérateurs | Invitations à construire |
+| `/vc atelier inviter\|retirer <joueur> [atelier\|tous]`, `/vc atelier liste` | Opérateurs | Invitations à construire |
 | `/vc annuler [fois]`, `/vc retablir [fois]`, `/vc baguette` | Opérateurs, invités | Annuler et rétablir, baguette de construction |
-| `/vc monde creer|recreer|renommer|supprimer …` | Opérateurs | Gérer les mondes à la main |
+| `/vc monde creer\|recreer\|renommer\|supprimer …` | Opérateurs | Gérer les mondes à la main |
 | `/vc sauvegarde …` | Console, opérateurs de niveau 4 | Sauvegardes (partie 16) |
 | `/vc admin`, `/vc admin cle`, `/vc admin nouvellecle` | Console, opérateurs de niveau 4 | API d'administration |
 | `/vc tablette`, `/vc soiree <texte>`, `/vc discord <URL>`, `/vc stats` | Selon le cas | Tablette, soirée, Discord, statistiques |

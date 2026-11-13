@@ -21,7 +21,7 @@
 
 ## Les ateliers et WorldEdit
 
-- **Atelier carte** : chaque carte en travail a son propre monde. On y bâtit avec WorldEdit et les outils de repères ; la carte s'**enregistre toute seule** (toutes les 5 minutes, à la fermeture, à l'arrêt) avec ses **versions** (« Revenir à cette version »). Écran « Atelier de la carte » : Enregistrer, Enregistrer sous…, Versions…, Envoyer à la partie…, Fermer l'atelier…
+- **Atelier carte** : chaque carte en travail a son propre monde. On y bâtit avec WorldEdit et les outils de repères ; la carte s'**enregistre toute seule** (toutes les 5 minutes, à la fermeture, à l'arrêt) avec ses **versions** (« Revenir à cette version »). Écran « Atelier de la carte » : Enregistrer, Enregistrer sous…, Versions (n)…, Envoyer à la partie…, Fermer l'atelier…
 - **Atelier structures** : toutes les structures, fournies et les vôtres, chacune sur sa parcelle avec son pupitre. On la modifie sur place, puis « Enregistrer ». **Une structure fournie modifiée remplace l'originale partout** (villages générés compris) ; « Revenir à l'originale » la restaure. « Nouvelle structure » ouvre une parcelle vide.
 - **WorldEdit** (7.4.6) est livré avec le modpack, le serveur et le launcher, et **réservé aux ateliers**, pour les opérateurs et les joueurs qu'ils **invitent** (`/vc atelier inviter <joueur> [atelier|tous]`). Un invité laisse son inventaire à l'entrée et le retrouve en sortant.
 - Valcombe le complète : la **baguette de construction** dessinée pour le mod, la **sélection affichée en 3D** avec ses dimensions, **« Sélection → structure du catalogue »**, et un **« annuler » commun** (`/vc annuler`) qui défait dans l'ordre les gestes WorldEdit, les poses de structures et les repères.

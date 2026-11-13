@@ -16,7 +16,7 @@ Pour installer le jeu, voir [INSTALLATION.md](INSTALLATION.md). Pour héberger u
 8. [Les 26 rôles de la table](#8-les-26-rôles-de-la-table)
 9. [Ce que le jeu fait autrement que la feuille](#9-ce-que-le-jeu-fait-autrement-que-la-feuille)
 10. [Conseils pour bien jouer](#10-conseils-pour-bien-jouer)
-11. [Pour le MJ : préparer une partie de la table](#11-pour-le-mj-préparer-une-partie-de-la-table)
+11. [Pour le MJ : préparer une partie de la table](#11-pour-le-mj--préparer-une-partie-de-la-table)
 
 ## 1. Le jeu en une minute
 
@@ -62,7 +62,7 @@ Il y a toujours **un seul Diablotin** ; les autres « Démons » sont des Sbires
 
 | Touche ou objet | À quoi ça sert |
 | --- | --- |
-| **J** | Le menu de Valcombe : s'inscrire, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique ; au hub, « Parties » et « Mondes » |
+| **J** | Le menu de Valcombe : s'inscrire, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique, « Mondes » ; au hub, « Parties » |
 | **K** | Revoir sa carte de rôle |
 | **H** | Lever ou baisser la main pendant un vote |
 | **G** | Faire un signe (oui, non, question…) |
