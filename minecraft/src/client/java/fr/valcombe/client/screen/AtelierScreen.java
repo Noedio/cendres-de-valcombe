@@ -422,9 +422,17 @@ public class AtelierScreen extends BaseScreen {
 		action(x + 79, row(1), 77, "Maison ici", "vc carte maison");
 		action(x, row(2), 77, "Centre ici", "vc carte centre");
 		action(x + 79, row(2), 77, "Mes outils", "vc carte outils");
-		action(x, row(3), 156, "Renuméroter (sens horaire)", "vc carte ordonner");
-		action(x, row(4), 156, "Annuler le dernier geste", "vc carte annuler");
-		action(x, row(5), 156, "Rebâtir la salle d'attente", "vc carte salle");
+		// La main : un seul outil pour déplacer, tourner ou retirer ce que l'on vise (repère ou structure posée).
+		button(x, row(3), 156, "Prendre la main", () -> {
+			if (!building) {
+				send("vc carte construction");
+			}
+			go("vc structure tenir");
+			onClose();
+		});
+		action(x, row(4), 156, "Renuméroter (sens horaire)", "vc carte ordonner");
+		action(x, row(5), 77, "Annuler", "vc carte annuler");
+		action(x + 79, row(5), 77, "Salle d'attente", "vc carte salle");
 	}
 
 	private void drawMarkers(GuiGraphicsExtractor g, JsonObject a) {
@@ -443,6 +451,8 @@ public class AtelierScreen extends BaseScreen {
 			boolean ok = ClientState.bool(c, "ok");
 			y += Theme.paragraph(g, font, (ok ? "✔ " : "⚠ ") + ClientState.str(c, "texte"), x, y, w, ok ? Theme.INK : Theme.BLOOD, 20) + 2;
 		}
+		Theme.paragraph(g, font, "Avec la main, clic droit sur un trône, une maison, la salle ou une structure posée : "
+			+ "un menu propose de la déplacer, la tourner ou la retirer.", x, Math.max(y + 6, row(5)), w, Theme.ASH, 30);
 	}
 
 	// ------------------------------------------------------------------
@@ -481,8 +491,10 @@ public class AtelierScreen extends BaseScreen {
 		}
 		int x = px + 12 + lw + 6;
 		int w = pw - 12 - x + px;
+		// À droite : la maquette 3D de la structure choisie (rangées 1 à 4), un clic l'ouvre en grand.
 		if (chosen != null) {
 			String id = structure;
+			fr.valcombe.client.Maquette.request(id);
 			button(x, row(0), w, "Prendre en main", () -> {
 				// La pose se fait en mode construction : on y entre au besoin, puis l'écran laisse la place au monde.
 				if (!building) {
@@ -491,19 +503,23 @@ public class AtelierScreen extends BaseScreen {
 				go("vc structure poser " + id);
 				onClose();
 			});
-			if (!ClientState.bool(chosen, "fournie")) {
-				chat(x, row(1), w / 2 - 1, "Renommer…", "vc structure renommer " + id + " ");
-				confirm(x + w / 2 + 1, row(1), w - w / 2 - 1, "Supprimer", "vc structure supprimer " + id);
-			}
+			button(x, row(4) + 2, w, "Voir en grand", () -> minecraft.gui.setScreen(new StructureViewerScreen(id)));
 		}
 		if (held != null) {
-			action(x, row(2), w / 2 - 1, "Tourner", "vc structure tourner");
-			action(x + w / 2 + 1, row(2), w - w / 2 - 1, "Retourner", "vc structure miroir");
-			action(x, row(3), w, "Poser à mes pieds", "vc structure ici");
-			action(x, row(4), w, "Ranger la structure", "vc structure fin");
+			// Structure en main : ce qu'on en fait passe avant le rangement du catalogue.
+			action(x, row(5), w / 2 - 1, "Tourner", "vc structure tourner");
+			action(x + w / 2 + 1, row(5), w - w / 2 - 1, "Retourner", "vc structure miroir");
+			action(x, row(6), w / 2 - 1, "À mes pieds", "vc structure ici");
+			action(x + w / 2 + 1, row(6), w - w / 2 - 1, "Ranger", "vc structure fin");
+			return;
 		}
-		chat(x, row(5), w, "Enregistrer la sélection…", "vc structure enregistrer ");
-		chat(x, row(6), w, "Importer un fichier…", "vc structure importer ");
+		if (chosen != null && !ClientState.bool(chosen, "fournie")) {
+			String id = structure;
+			chat(x, row(5), w / 2 - 1, "Renommer…", "vc structure renommer " + id + " ");
+			confirm(x + w / 2 + 1, row(5), w - w / 2 - 1, "Supprimer", "vc structure supprimer " + id);
+		}
+		chat(x, row(6), w / 2 - 1, "Enregistrer…", "vc structure enregistrer ");
+		chat(x + w / 2 + 1, row(6), w - w / 2 - 1, "Importer…", "vc structure importer ");
 	}
 
 	/** La ligne du haut de l'onglet Structures : la structure choisie (taille, repère) et celle qu'on a en main. */
@@ -531,6 +547,22 @@ public class AtelierScreen extends BaseScreen {
 	}
 
 	private void drawStructures(GuiGraphicsExtractor g, JsonObject a) {
+		int x = px + 12 + 224 + 6;
+		int w = pw - 12 - x + px;
+		if (structure != null) {
+			fr.valcombe.client.Maquette m = fr.valcombe.client.Maquette.get(structure);
+			int top = row(1);
+			int h = row(4) - top;
+			g.fill(x, top, x + w, top + h, 0x22000000);
+			if (m == null) {
+				Theme.centered(g, font, "Maquette…", x + w / 2, top + h / 2 - 4, Theme.ASH);
+			} else if (m.tooBig) {
+				Theme.centered(g, font, "Trop grande", x + w / 2, top + h / 2 - 4, Theme.ASH);
+			} else {
+				// La maquette tourne d'un quart de tour toutes les deux secondes.
+				m.draw(g, x + 2, top + 2, w - 4, h - 4, (int) (System.currentTimeMillis() / 2000));
+			}
+		}
 		boolean empty = objects(a, "structures").stream().noneMatch(s -> SHELVES[shelf].equals(ClientState.str(s, "categorie")));
 		if (empty) {
 			Theme.paragraph(g, font, "Aucune structure ici : enregistrez une sélection, ou importez un fichier .schem, .litematic ou .nbt.",

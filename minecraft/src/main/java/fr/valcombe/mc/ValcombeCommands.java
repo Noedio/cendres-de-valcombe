@@ -217,8 +217,25 @@ public final class ValcombeCommands {
 				.executes(c -> exec(c, x -> ValcombeMod.editor().redo(player(x), 1)))
 				.then(Commands.argument("fois", IntegerArgumentType.integer(1, MapEditor.HISTORY_DEPTH))
 					.executes(c -> exec(c, x -> ValcombeMod.editor().redo(player(x), number(x, "fois")))))));
+		// Menu de l'outil « Carte : main » : déplacer, tourner ou retirer un repère ou une structure posée.
+		root.then(Commands.literal("objet").requires(admin)
+			.then(Commands.argument("sorte", StringArgumentType.word())
+				.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("trone", "maison", "salle", "centre", "structure"), b))
+				.then(Commands.argument("numero", IntegerArgumentType.integer(0))
+					.then(Commands.argument("action", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(
+							List.of("deplacer", "gauche", "droite", "centre", "tourner", "retourner", "retirer"), b))
+						.executes(c -> exec(c, x -> ValcombeMod.host().objectAction(player(x), arg(x, "sorte"),
+							IntegerArgumentType.getInteger(x, "numero"), arg(x, "action"))))))));
 		root.then(Commands.literal("structure").requires(admin)
 			.then(Commands.literal("liste").executes(c -> exec(c, x -> lines(x, catalog()))))
+			.then(Commands.literal("tenir").executes(c -> exec(c, x -> {
+				ValcombeUi.holdMapTool(player(x), ValcombeUi.MapTool.HAND);
+				return "Outil « Carte : main » en main : clic droit sur ce que vous voulez déplacer, tourner ou retirer.";
+			})))
+			.then(Commands.literal("maquette")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(all)
+					.executes(c -> exec(c, x -> ValcombeMod.editor().sendModel(player(x), arg(x, "id"))))))
 			.then(Commands.literal("poser")
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(all)
 					.executes(c -> exec(c, x -> ValcombeMod.editor().choose(player(x), arg(x, "id"))))

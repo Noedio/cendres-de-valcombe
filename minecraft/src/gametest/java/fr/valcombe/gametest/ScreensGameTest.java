@@ -201,22 +201,57 @@ public class ScreensGameTest implements FabricClientGameTest {
 		press(ctx, "Trône ici");
 		check(village.get().seatCount() == 17, "trône posé depuis l'écran : " + reply(ctx));
 		press(ctx, "Renuméroter (sens horaire)");
-		press(ctx, "Annuler le dernier geste");
-		press(ctx, "Annuler le dernier geste");
+		press(ctx, "Annuler");
+		press(ctx, "Annuler");
 		check(village.get().seatCount() == 16, "les deux derniers gestes annulés : " + reply(ctx));
 		shot(ctx, "28g-atelier-reperes-en-construction");
 
 		// Structures : une maison du catalogue prise en main depuis l'écran, puis rangée.
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
 		press(ctx, "Maison gothique");
+		ctx.waitTicks(20); // la maquette arrive du serveur
+		check(ctx.computeOnClient(mc -> fr.valcombe.client.Maquette.get("maison-gothique") != null
+			&& !fr.valcombe.client.Maquette.get("maison-gothique").cells.isEmpty()), "maquette 3D de la structure reçue");
 		shot(ctx, "28h-atelier-structures");
+		press(ctx, "Voir en grand");
+		ctx.waitTicks(5);
+		shot(ctx, "28h2-structure-en-3d");
+		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
 		press(ctx, "Prendre en main");
 		check("maison-gothique".equals(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.editor().state(me).get("structure"))),
 			"structure prise en main");
+		// Le fantôme de la structure, là où l'on vise (le sol, devant soi)
+		ctx.runOnClient(mc -> mc.player.setXRot(22));
+		ctx.waitTicks(30);
+		check(ctx.computeOnClient(mc -> fr.valcombe.client.Ghost.active()), "fantôme de la structure en main, là où l'on vise");
+		shot(ctx, "28h3-fantome-de-la-structure");
 		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
 		press(ctx, "Tourner");
 		shot(ctx, "28i-atelier-structure-en-main");
-		press(ctx, "Ranger la structure");
+		// Posée à ses pieds, puis reprise avec la main : tournée, puis retirée (le terrain et le repère reviennent).
+		int housesBefore = village.get().houseCount();
+		press(ctx, "À mes pieds");
+		ctx.waitTicks(80);
+		check(village.get().houseCount() == housesBefore + 1, "maison posée avec son repère : " + reply(ctx));
+		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().objectAction(s.getPlayerList().getPlayerByName(me),
+			"structure", 0, "tourner")).contains("Maison gothique"), "structure posée tournée avec la main");
+		ctx.waitTicks(80);
+		ctx.setScreen(() -> new fr.valcombe.client.screen.ObjectScreen("structure", 0, "Maison gothique"));
+		shot(ctx, "28i2-menu-de-la-main");
+		ctx.setScreen(() -> null);
+		server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().objectAction(s.getPlayerList().getPlayerByName(me),
+			"structure", 0, "retirer"));
+		ctx.waitTicks(80);
+		check(village.get().houseCount() == housesBefore, "structure retirée avec son repère");
+		// Un trône tourné avec la main
+		server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().objectAction(s.getPlayerList().getPlayerByName(me),
+			"trone", 0, "droite"));
+		check(village.get().seatTurned(0), "trône tourné d'un huitième de tour");
+		server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.host().objectAction(s.getPlayerList().getPlayerByName(me),
+			"trone", 0, "centre"));
+		check(!village.get().seatTurned(0), "trône de nouveau tourné vers le centre");
+		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
+		press(ctx, "Ranger");
 		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.editor().state(me).get("structure")) == null, "structure rangée");
 		press(ctx, "Les vôtres");
 		shot(ctx, "28j-atelier-structures-de-l-utilisateur");

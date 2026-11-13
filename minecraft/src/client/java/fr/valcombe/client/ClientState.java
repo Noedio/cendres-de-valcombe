@@ -86,6 +86,17 @@ public final class ClientState {
 
 	public static void applyPreview(String json) {
 		JsonObject o = JsonParser.parseString(json).getAsJsonObject();
+		// Maquettes et fantôme des structures passent par le même canal que l'aperçu des cartes.
+		String kind = str(o, "kind");
+		if ("maquette".equals(kind)) {
+			Maquette.received(o);
+			version++;
+			return;
+		}
+		if ("fantome".equals(kind) || "fantomeA".equals(kind)) {
+			Ghost.received(o);
+			return;
+		}
 		int[] colors = new int[0];
 		String pixels = str(o, "pixels");
 		if (pixels != null) {

@@ -18,6 +18,14 @@ public final class ScreenRouter {
 
 	public static void open(String which) {
 		Minecraft mc = Minecraft.getInstance();
+		if (which.startsWith("objet:")) {
+			// Outil « Carte : main » : le menu de l'objet visé (sorte, numéro, nom affiché)
+			String[] parts = which.split(":", 4);
+			if (parts.length == 4) {
+				mc.gui.setScreen(new fr.valcombe.client.screen.ObjectScreen(parts[1], Integer.parseInt(parts[2]), parts[3]));
+			}
+			return;
+		}
 		if (which.startsWith("seat:")) {
 			// Bâton du Conteur : la ligne du grimoire du joueur visé
 			mc.gui.setScreen(new fr.valcombe.client.screen.SeatScreen(which.substring(5)));

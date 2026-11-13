@@ -61,6 +61,8 @@ public final class MapStore {
 		}
 		public List<int[]> sieges = new ArrayList<>();
 		public List<int[]> logis = new ArrayList<>();
+		/** Trônes tournés à la main : {dx, dy, dz, angle} (absent : tous regardent le centre). */
+		public List<double[]> orientations;
 		/** Salle de convocation (où le Conteur reçoit un joueur à l'écart), ou null. */
 		public int[] convocation;
 	}
@@ -274,6 +276,7 @@ public final class MapStore {
 		d.hauteur = height;
 		d.sieges = v.relSeats();
 		d.logis = v.relHouses();
+		d.orientations = v.relSeatYaws();
 		d.convocation = v.relConvocation();
 		checkDef(d); // avant d'écrire : une carte qu'on ne pourrait pas recharger n'est pas enregistrée
 		changed();
@@ -317,6 +320,7 @@ public final class MapStore {
 			true, () -> {
 				Village v = Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis, d.convocation);
 				v.setLibrary(d.id, d.nom);
+				v.setRelSeatYaws(d.orientations);
 				v.placeThrones(server);
 				host.useVillage(v);
 				host.announceAll("Carte « " + d.nom + " » chargée.");

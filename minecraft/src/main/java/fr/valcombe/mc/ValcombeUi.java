@@ -135,8 +135,11 @@ public final class ValcombeUi {
 			"Puis /vc edit remplir, remplacer, vider, murs, copier, couper, coller, déplacer, empiler.",
 			"/vc edit annuler et /vc edit retablir reviennent sur chaque opération."),
 		STRUCTURE(Items.BRICK, "Carte : structure", "Choisir une structure du catalogue : /vc structure poser <id>.",
-			"Clic droit sur un bloc : la poser là où le contour la montre.",
-			"Accroupi + clic droit : la tourner d'un quart de tour. Clic gauche : la retourner.");
+			"Clic droit sur un bloc : la poser là où le fantôme la montre.",
+			"Accroupi + clic droit : la tourner d'un quart de tour. Clic gauche : la retourner."),
+		HAND(Items.STICK, "Carte : main", "Clic droit sur un trône, une maison, la salle, le centre",
+			"ou une structure posée : un menu pour la déplacer, la tourner ou la retirer.",
+			"Après « Déplacer » : clic droit là où la reposer.");
 
 		final net.minecraft.world.item.Item item;
 		final String title;
@@ -146,6 +149,24 @@ public final class ValcombeUi {
 			this.item = item;
 			this.title = title;
 			this.lore = lore;
+		}
+
+		/** Modèle dessiné par le mod pour cet outil (assets/valcombe/items/outil_*.json). */
+		String model() {
+			return "outil_" + switch (this) {
+				case SEAT -> "trone";
+				case HOUSE -> "maison";
+				case CENTER -> "centre";
+				case ROOM -> "salle";
+				case ERASE -> "gomme";
+				case SELECT -> "selection";
+				case STRUCTURE -> "structure";
+				case HAND -> "main";
+			};
+		}
+
+		ItemStack stack() {
+			return ValcombeUi.model(Gui.icon(item, title, lore), model());
 		}
 	}
 
@@ -173,7 +194,7 @@ public final class ValcombeUi {
 		}
 		if (on) {
 			for (MapTool t : MapTool.values()) {
-				inv.add(Gui.icon(t.item, t.title, t.lore));
+				inv.add(t.stack());
 			}
 		}
 	}
@@ -188,7 +209,7 @@ public final class ValcombeUi {
 			}
 		}
 		if (slot < 0) {
-			inv.add(Gui.icon(tool.item, tool.title, tool.lore));
+			inv.add(tool.stack());
 			for (int i = 0; i < inv.getContainerSize() && slot < 0; i++) {
 				if (mapTool(inv.getItem(i)) == tool) {
 					slot = i;

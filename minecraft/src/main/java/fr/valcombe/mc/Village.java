@@ -156,6 +156,8 @@ public final class Village {
 		/** Carte de la bibliothèque dont celle-ci vient : identifiant et nom (absents : aucune). */
 		String carte;
 		String carteNom;
+		/** Trônes tournés à la main : {x, y, z, angle} absolus (les autres regardent le centre). */
+		List<double[]> orientations;
 		/** Tout ce que l'éditeur a bâti sur cette carte : {x0, y0, z0, x1, y1, z1} absolus (absent : rien hors des repères). */
 		int[] built;
 	}
@@ -393,6 +395,70 @@ public final class Village {
 		seats.add(p);
 	}
 
+	// ------------------------------------------------------------------
+	// Orientation des trônes : par défaut vers le centre, ou tournée à la main par huitièmes de tour
+	// ------------------------------------------------------------------
+	/** Trônes tournés à la main : position → angle (degrés, comme le regard d'un joueur). */
+	private final java.util.Map<BlockPos, Float> seatYaw = new java.util.HashMap<>();
+
+	/** Vers où regarde le trône k (numéro dans la carte). */
+	public float seatYaw(int k) {
+		BlockPos s = seats.get(k);
+		Float y = seatYaw.get(s);
+		return y != null ? y : yawToCenter(feet(s));
+	}
+
+	/** Vers où regarde le trône du joueur i (sur n), comme seat(i, n). */
+	public float seatYaw(int i, int n) {
+		return seats.isEmpty() ? 0 : seatYaw(spread(i, n, seats.size()));
+	}
+
+	public boolean seatTurned(int k) {
+		return seatYaw.containsKey(seats.get(k));
+	}
+
+	/** Tourne le trône k d'un huitième de tour (sens : +1 vers la droite, -1 vers la gauche). */
+	public float turnSeat(int k, int sense) {
+		float y = Math.round((seatYaw(k) + 45 * sense) / 45f) * 45f;
+		y = ((y % 360) + 540) % 360 - 180;
+		seatYaw.put(seats.get(k), y);
+		return y;
+	}
+
+	/** Le trône k regarde de nouveau le centre de la place. */
+	public void faceCenter(int k) {
+		seatYaw.remove(seats.get(k));
+	}
+
+	/** Orientations relatives au centre, pour la bibliothèque de cartes : {dx, dy, dz, angle}. */
+	public List<double[]> relSeatYaws() {
+		List<double[]> out = new ArrayList<>();
+		for (var e : seatYaw.entrySet()) {
+			if (seats.contains(e.getKey())) {
+				BlockPos p = e.getKey();
+				out.add(new double[] {p.getX() - center.getX(), p.getY() - center.getY(), p.getZ() - center.getZ(), e.getValue()});
+			}
+		}
+		return out;
+	}
+
+	public void setRelSeatYaws(List<double[]> list) {
+		seatYaw.clear();
+		if (list != null) {
+			for (double[] o : list) {
+				if (o.length == 4) {
+					seatYaw.put(center.offset((int) o[0], (int) o[1], (int) o[2]), (float) o[3]);
+				}
+			}
+		}
+	}
+
+	/** « nord », « nord-est »… : vers où regarde un trône, pour les messages. */
+	public static String compass(float yaw) {
+		String[] names = {"sud", "sud-ouest", "ouest", "nord-ouest", "nord", "nord-est", "est", "sud-est"};
+		return names[Math.floorMod(Math.round(yaw / 45f), 8)];
+	}
+
 	public void addHouse(BlockPos p) {
 		houses.add(p);
 	}
@@ -468,7 +534,13 @@ public final class Village {
 	/** Déplace un repère sans changer son numéro. */
 	public void moveMarker(Hit h, BlockPos to) {
 		switch (h.type()) {
-			case SEAT -> seats.set(h.index(), to);
+			case SEAT -> {
+				Float y = seatYaw.remove(seats.get(h.index()));
+				seats.set(h.index(), to);
+				if (y != null) {
+					seatYaw.put(to, y);
+				}
+			}
 			case HOUSE -> houses.set(h.index(), to);
 			case ROOM -> convocation = to;
 			case CENTER -> setCenter(to.below());
@@ -478,7 +550,7 @@ public final class Village {
 	/** Retire un repère ; les suivants de la même sorte reculent d'un numéro. */
 	public void removeMarker(Hit h) {
 		switch (h.type()) {
-			case SEAT -> seats.remove(h.index());
+			case SEAT -> seatYaw.remove(seats.remove(h.index()));
 			case HOUSE -> houses.remove(h.index());
 			case ROOM -> convocation = null;
 			case CENTER -> throw new fr.valcombe.rules.GameException("Le centre de la place ne se retire pas : déplacez-le.");
@@ -1302,12 +1374,16 @@ public final class Village {
 
 	/** La commande qui pose un trône sculpté de la génération en cours, les pieds du joueur en f. */
 	private String throneDisplay(Vec3 f) {
+		return throneDisplay(f, yawToCenter(f));
+	}
+
+	private String throneDisplay(Vec3 f, float yaw) {
 		return String.format(java.util.Locale.ROOT,
 			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_trone\",\"vc_tr_%d\"],Rotation:[%.1ff,0f],"
 				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:trone\"}},"
 				+ "view_range:2f,transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],"
 				+ "right_rotation:[0f,0f,0f,1f],scale:[1.15f,1.15f,1.15f]}}",
-			f.x, f.y + 0.5, f.z, decorGen, yawToCenter(f));
+			f.x, f.y + 0.5, f.z, decorGen, yaw);
 	}
 
 	/**
@@ -1319,8 +1395,8 @@ public final class Village {
 			return;
 		}
 		decorGen++;
-		for (BlockPos s : seats) {
-			WorldSetup.run(server, throneDisplay(feet(s)));
+		for (int k = 0; k < seats.size(); k++) {
+			WorldSetup.run(server, throneDisplay(feet(seats.get(k)), seatYaw(k)));
 		}
 	}
 
@@ -1549,6 +1625,12 @@ public final class Village {
 		seats.forEach(p -> d.seats.add(arr(p)));
 		houses.forEach(p -> d.houses.add(arr(p)));
 		d.convocation = convocation == null ? null : arr(convocation);
+		d.orientations = new ArrayList<>();
+		for (var e : seatYaw.entrySet()) {
+			if (seats.contains(e.getKey())) {
+				d.orientations.add(new double[] {e.getKey().getX(), e.getKey().getY(), e.getKey().getZ(), e.getValue()});
+			}
+		}
 		try {
 			// Écrite à côté puis mise en place d'un coup, avec une copie de secours : une coupure pendant
 			// l'écriture ne doit pas faire croire au démarrage suivant qu'il n'y a jamais eu de village.
@@ -1614,6 +1696,13 @@ public final class Village {
 				d.seats.forEach(a -> v.seats.add(pos(a)));
 				d.houses.forEach(a -> v.houses.add(pos(a)));
 				v.convocation = d.convocation == null ? null : pos(d.convocation);
+				if (d.orientations != null) {
+					for (double[] o : d.orientations) {
+						if (o.length == 4) {
+							v.seatYaw.put(new BlockPos((int) o[0], (int) o[1], (int) o[2]), (float) o[3]);
+						}
+					}
+				}
 				// Fiche d'avant ce suivi : on ne sait pas ce qui a été bâti dessus à la main, la carte est donc à protéger.
 				v.modified = d.modified == null || d.modified;
 				v.setLibrary(d.carte, d.carteNom);

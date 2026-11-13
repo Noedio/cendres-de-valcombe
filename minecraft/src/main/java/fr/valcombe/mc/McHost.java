@@ -218,7 +218,7 @@ public final class McHost implements Host {
 			return true;
 		}
 		String tag = "vc_chair_" + (++chairCount);
-		float yaw = village.yawToCenter(feet);
+		float yaw = village.seatYaw(k);
 		WorldSetup.run(server, String.format(java.util.Locale.ROOT,
 			"summon minecraft:item_display %.3f %.3f %.3f {Tags:[\"vc_chair\",\"%s\"],Rotation:[%.1ff,0f]}",
 			feet.x, feet.y + 0.45, feet.z, tag, yaw));
@@ -883,11 +883,178 @@ public final class McHost implements Host {
 		return participle + (h.type() == Village.Mark.HOUSE || h.type() == Village.Mark.ROOM ? "e" : "");
 	}
 
+	// ------------------------------------------------------------------
+	// L'outil « Carte : main » : un menu pour déplacer, tourner ou retirer ce que l'on vise
+	// ------------------------------------------------------------------
+	/** Constructeurs qui ont pris un repère avec l'outil « Carte : main » (le prochain clic le repose). */
+	private final Set<String> handCarry = new java.util.HashSet<>();
+
+	private static String typeName(Village.Mark m) {
+		return switch (m) {
+			case SEAT -> "trone";
+			case HOUSE -> "maison";
+			case ROOM -> "salle";
+			case CENTER -> "centre";
+		};
+	}
+
+	private static Village.Mark markOf(String type) {
+		return switch (type) {
+			case "trone" -> Village.Mark.SEAT;
+			case "maison" -> Village.Mark.HOUSE;
+			case "salle" -> Village.Mark.ROOM;
+			case "centre" -> Village.Mark.CENTER;
+			default -> throw new fr.valcombe.rules.GameException("Sorte d'objet inconnue : " + type + ".");
+		};
+	}
+
+	/** Clic droit avec l'outil « Carte : main » : reposer ce qu'on porte, ou ouvrir le menu de ce qu'on vise. */
+	public String handClick(ServerPlayer p, BlockPos clicked) {
+		Village v = requireEditable();
+		String who = p.getScoreboardName();
+		BlockPos at = clicked.above();
+		Village.Hit held = handCarry.contains(who) ? carrying.get(who) : null;
+		if (held != null) {
+			Village.Marks before = v.marks();
+			if (held.type() != Village.Mark.CENTER) {
+				requireNear(v, at);
+			}
+			if (held.type() == Village.Mark.CENTER) {
+				moveCenter(v, clicked);
+				applySpawn();
+			} else {
+				moveMarker(v, held, at);
+			}
+			carrying.remove(who);
+			handCarry.remove(who);
+			markersChanged(before);
+			if (held.type() == Village.Mark.SEAT) {
+				refreshThrones();
+			}
+			return held.label() + done(held, " déplacé") + " ici.";
+		}
+		Village.Hit h = v.markerAt(at, null, 1);
+		if (h == null && Math.abs(v.center().getX() - clicked.getX()) <= 1 && Math.abs(v.center().getZ() - clicked.getZ()) <= 1
+			&& Math.abs(v.center().getY() - clicked.getY()) <= 2) {
+			h = new Village.Hit(Village.Mark.CENTER, 0);
+		}
+		if (h != null) {
+			String extra = h.type() == Village.Mark.SEAT ? " (regarde vers le " + Village.compass(v.seatYaw(h.index())) + ")" : "";
+			openObject(p, typeName(h.type()), h.index(), h.label() + extra);
+			return "";
+		}
+		int s = editor == null ? -1 : editor.placedAt(clicked);
+		if (s >= 0) {
+			openObject(p, "structure", s, editor.placedName(s));
+			return "";
+		}
+		throw new fr.valcombe.rules.GameException("Rien à prendre ici : visez un trône, une maison, la salle, le centre, "
+			+ "ou une structure posée depuis le catalogue.");
+	}
+
+	/** Le menu d'un objet : l'écran du mod, ou à défaut des liens dans le chat. */
+	private void openObject(ServerPlayer p, String type, int index, String label) {
+		if (ViewSync.hasClientMod(p)) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p,
+				new fr.valcombe.net.ValcombeNet.OpenPayload("objet:" + type + ":" + index + ":" + label));
+			return;
+		}
+		List<String[]> actions = new ArrayList<>();
+		actions.add(new String[] {"Déplacer", "deplacer"});
+		if (type.equals("trone")) {
+			actions.add(new String[] {"⟲", "gauche"});
+			actions.add(new String[] {"⟳", "droite"});
+			actions.add(new String[] {"Vers le centre", "centre"});
+		}
+		if (type.equals("structure")) {
+			actions.add(new String[] {"Tourner", "tourner"});
+			actions.add(new String[] {"Retourner", "retourner"});
+		}
+		if (!type.equals("centre")) {
+			actions.add(new String[] {"Retirer", "retirer"});
+		}
+		net.minecraft.network.chat.MutableComponent c = Component.literal(label + " : ").withStyle(ChatFormatting.GOLD);
+		for (String[] a : actions) {
+			String cmd = "/vc objet " + type + " " + index + " " + a[1];
+			c.append(Component.literal("[" + a[0] + "] ").withStyle(st -> st.withClickEvent(new ClickEvent.RunCommand(cmd))
+				.withColor(ChatFormatting.AQUA)));
+		}
+		p.sendSystemMessage(c);
+	}
+
+	/** Une action du menu d'un objet (repère ou structure posée). */
+	public String objectAction(ServerPlayer p, String type, int index, String action) {
+		if (type.equals("structure")) {
+			if (editor == null) {
+				throw new fr.valcombe.rules.GameException("L'éditeur de carte n'est pas prêt.");
+			}
+			return editor.actOnPlaced(p, index, action);
+		}
+		Village v = requireEditable();
+		Village.Mark mark = markOf(type);
+		boolean numbered = mark == Village.Mark.SEAT || mark == Village.Mark.HOUSE;
+		if (numbered ? index < 0 || index >= (mark == Village.Mark.SEAT ? v.seatCount() : v.houseCount())
+			: mark == Village.Mark.ROOM && v.convocation() == null) {
+			throw new fr.valcombe.rules.GameException("Ce repère n'existe plus : visez-le de nouveau.");
+		}
+		Village.Hit h = new Village.Hit(mark, numbered ? index : 0);
+		String who = p.getScoreboardName();
+		switch (action) {
+			case "deplacer" -> {
+				carrying.put(who, h);
+				handCarry.add(who);
+				ValcombeUi.holdMapTool(p, ValcombeUi.MapTool.HAND);
+				return h.label() + " en main : clic droit (outil « Carte : main ») là où le reposer.";
+			}
+			case "gauche", "droite", "centre" -> {
+				if (mark != Village.Mark.SEAT) {
+					throw new fr.valcombe.rules.GameException("Seuls les trônes se tournent.");
+				}
+				if (action.equals("centre")) {
+					v.faceCenter(h.index());
+				} else {
+					v.turnSeat(h.index(), action.equals("droite") ? 1 : -1);
+				}
+				markersChanged();
+				refreshThrones();
+				return h.label() + " regarde vers le " + Village.compass(v.seatYaw(h.index()))
+					+ (action.equals("centre") ? " (le centre de la place)." : ".");
+			}
+			case "retirer" -> {
+				Village.Marks before = v.marks();
+				BlockPos pos = v.markerPos(h);
+				v.removeMarker(h);
+				var built = prefabs.remove(pos);
+				if (built != null) {
+					built.forEach((b, s) -> p.level().setBlock(b, s, Clip.EXACT));
+				}
+				markersChanged(before);
+				if (mark == Village.Mark.SEAT) {
+					refreshThrones();
+				}
+				return h.label() + done(h, " retiré") + (built != null ? ", et sa construction avec." : ".");
+			}
+			default -> throw new fr.valcombe.rules.GameException("Action inconnue : " + action + ".");
+		}
+	}
+
+	/** Trônes sculptés d'un village généré : reposés pour suivre les trônes déplacés ou tournés. */
+	private void refreshThrones() {
+		if (village != null && village.isGenerated() && server != null) {
+			WorldSetup.run(server, "kill @e[type=minecraft:item_display,tag=vc_trone]");
+			village.placeThrones(server);
+		}
+	}
+
 	/** Un constructeur clique sur un bloc avec un outil de carte ; renvoie ce qui s'est passé. */
 	public String useTool(ServerPlayer p, ValcombeUi.MapTool tool, BlockPos clicked, boolean sneak) {
 		if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
 			throw new IllegalArgumentException("Outil de l'éditeur : voir MapEditor.");
 		}
+		if (tool == ValcombeUi.MapTool.HAND) {
+			return handClick(p, clicked);
+		}
+		handCarry.remove(p.getScoreboardName());
 		Village v = requireEditable();
 		Village.Marks before = v.marks();
 		String who = p.getScoreboardName();
@@ -2545,7 +2712,7 @@ public final class McHost implements Host {
 			for (int i = 0; i < n; i++) {
 				Vec3 seat = village.seat(i, n);
 				Vec3 house = village.house(i, n);
-				seats.put(players.get(i), new SeatPos(level, seat, village.yawToCenter(seat)));
+				seats.put(players.get(i), new SeatPos(level, seat, village.seatYaw(i, n)));
 				houses.put(players.get(i), new SeatPos(level, house, village.yawToCenter(house) + 180));
 				ServerPlayer p = player(players.get(i));
 				if (p != null) {

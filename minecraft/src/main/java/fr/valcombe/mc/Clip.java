@@ -326,6 +326,52 @@ final class Clip {
 		return new Cut(new Clip(w, h, l, palette, cells, new HashMap<>()), new BlockPos(x0, y0, z0));
 	}
 
+	/**
+	 * Ce volume (coin en myCorner) avec, là où ils se recouvrent, les cases de patch (coin en patchCorner) :
+	 * de quoi savoir ce que deviendra une zone une fois une ancienne pose effacée.
+	 */
+	Clip withPatch(BlockPos myCorner, Clip patch, BlockPos patchCorner) {
+		List<BlockState> pal = new ArrayList<>(palette);
+		Map<BlockState, Integer> rank = new HashMap<>();
+		for (int i = 0; i < pal.size(); i++) {
+			rank.putIfAbsent(pal.get(i), i);
+		}
+		int[] out = cells.clone();
+		Map<Integer, CompoundTag> outData = new HashMap<>(data);
+		for (int y = 0; y < patch.height; y++) {
+			for (int z = 0; z < patch.length; z++) {
+				for (int x = 0; x < patch.width; x++) {
+					int mx = patchCorner.getX() + x - myCorner.getX();
+					int my = patchCorner.getY() + y - myCorner.getY();
+					int mz = patchCorner.getZ() + z - myCorner.getZ();
+					if (mx < 0 || my < 0 || mz < 0 || mx >= width || my >= height || mz >= length) {
+						continue;
+					}
+					int from = patch.index(x, y, z);
+					int to = index(mx, my, mz);
+					int c = patch.cells[from];
+					if (c == EMPTY) {
+						continue;
+					}
+					BlockState s = patch.palette.get(c);
+					Integer r = rank.get(s);
+					if (r == null) {
+						r = pal.size();
+						pal.add(s);
+						rank.put(s, r);
+					}
+					out[to] = r;
+					outData.remove(to);
+					CompoundTag d = patch.data.get(from);
+					if (d != null) {
+						outData.put(to, d);
+					}
+				}
+			}
+		}
+		return new Clip(width, height, length, pal, out, outData);
+	}
+
 	// ------------------------------------------------------------------
 	// Orienter et poser
 	// ------------------------------------------------------------------

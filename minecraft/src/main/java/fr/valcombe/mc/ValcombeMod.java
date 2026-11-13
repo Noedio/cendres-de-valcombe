@@ -435,6 +435,9 @@ public final class ValcombeMod implements ModInitializer {
 				var at = hit.getBlockPos().above();
 				try {
 					String msg = HOST.useTool(sp, tool, hit.getBlockPos(), sp.isShiftKeyDown());
+					if (msg.isEmpty()) {
+						return InteractionResult.SUCCESS; // le menu de l'objet visé s'est ouvert
+					}
 					sp.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
 					WorldSetup.run(sp.level().getServer(), String.format(java.util.Locale.ROOT,
 						"particle minecraft:happy_villager %d %d %d 0.3 0.3 0.3 0 12", at.getX(), at.getY(), at.getZ()));
@@ -448,6 +451,9 @@ public final class ValcombeMod implements ModInitializer {
 		// Le bloc visé n'est pas cassé (des deux côtés : le client n'a pas à le voir disparaître puis revenir).
 		net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
 			ValcombeUi.MapTool tool = ValcombeUi.mapTool(player.getItemInHand(hand));
+			if (tool == ValcombeUi.MapTool.HAND) {
+				return InteractionResult.SUCCESS; // la main ne casse rien : elle ne fait que prendre
+			}
 			if (tool != ValcombeUi.MapTool.SELECT && tool != ValcombeUi.MapTool.STRUCTURE) {
 				return InteractionResult.PASS;
 			}
