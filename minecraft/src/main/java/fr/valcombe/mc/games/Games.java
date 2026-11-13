@@ -80,6 +80,11 @@ import org.slf4j.LoggerFactory;
  * laissées par un arrêt sont retirées au démarrage.</li>
  * <li>Hub, API et launcher : {@link #all()}, {@link GameRoom#state()}, {@code GET /admin/etat} (champ {@code parties}),
  * portes du hub (état de chaque partie) ; les dalles du hub inscrivent à la partie principale.</li>
+ * <li>Tableau des parties : la fiche de chaque partie ({@link GameCard}, {@link GameRoom#card()}), au hub (deux panneaux,
+ * {@code Hub}), dans l'écran « Parties » du menu J ({@link #board}, champ {@code parties} de la vue), à l'API
+ * ({@code GET/POST /admin/parties}) et au launcher. On y rejoint une partie ({@link #join}) ou on la regarde
+ * ({@link #watch}) : spectateur sans les rôles, dans les gradins du vocal ({@link VoiceZones#gallery}), sorti des gradins
+ * en quittant son monde ({@link #onLevelChange}, {@link #stopWatching}).</li>
  * </ul>
  * Fil du serveur, sauf les lectures de {@link #current()}.
  */
@@ -453,6 +458,234 @@ public final class Games implements WorldManager.Listener {
 		for (GameRoom r : snapshot) {
 			guarded("la partie « " + r.id() + " »", r.host()::onTick);
 		}
+		if (++ticks % 20 == 0) {
+			guarded("les spectateurs du hub", this::pruneWatchers);
+		}
+	}
+
+	private int ticks;
+
+	/**
+	 * Chaque seconde : qui regardait une partie et n'est plus dans son monde (parti par le menu « Mondes », par une
+	 * commande, déconnecté) cesse de la regarder. Le changement de monde le fait déjà sur le moment ({@link #onLevelChange}) ;
+	 * ceci rattrape le reste.
+	 */
+	private void pruneWatchers() {
+		for (GameRoom r : snapshot) {
+			for (String name : r.session().watchers()) {
+				ServerPlayer p = server.getPlayerList().getPlayerByName(name);
+				if (p == null || !r.here(p)) {
+					r.session().stopWatching(name, p == null);
+				}
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Tableau des parties : rejoindre, regarder
+	// ------------------------------------------------------------------
+
+	private static fr.valcombe.mc.hub.Travel travel() {
+		var t = ValcombeMod.travel();
+		if (t == null) {
+			throw new GameException("Les voyages entre les mondes ne sont pas disponibles sur ce serveur.");
+		}
+		return t;
+	}
+
+	/** Pourquoi une partie en cours ailleurs retient ce joueur loin de cette table, ou null. */
+	private static String heldElsewhere(GameRoom target, String player) {
+		return GameSeats.heldElsewhere(all().stream().map(GameRoom::table).toList(), target.table(), player);
+	}
+
+	/**
+	 * « Rejoindre » (tableau des parties, écran « Parties », {@code /vc partie rejoindre}) : s'inscrire au salon d'une
+	 * partie ouverte, et y aller ; ou retourner à sa place dans une partie qu'on joue, qu'on conte ou où l'on est inscrit.
+	 * Renvoie le message pour le joueur ; une GameException avec la raison s'il ne le peut pas.
+	 */
+	public static String join(ServerPlayer p, GameRoom room) {
+		String name = p.getScoreboardName();
+		Session s = room.session();
+		String why = GameCard.joinRefusal(s, name, room.seats());
+		if (why == null) {
+			why = heldElsewhere(room, name);
+		}
+		if (why != null) {
+			throw new GameException(why);
+		}
+		String seat = GameCard.seat(s, name);
+		boolean back = "joueur".equals(seat) || "conteur".equals(seat) || "inscrit".equals(seat);
+		String said;
+		if (back) {
+			said = "Tu retournes à « " + room.name() + " ».";
+		} else {
+			// Il la regardait : il quitte les gradins pour le salon.
+			s.stopWatching(name, true);
+			if (s.isSpectator(name)) {
+				s.spectate(name);
+			}
+			s.join(name); // l'emmène si le monde est ouvert
+			said = "Te voilà inscrit à « " + room.name() + " ».";
+		}
+		if (!room.here(p)) {
+			said += " " + travel().toGame(p, room.id()); // ouvre le monde au besoin (partie d'essai jamais visitée)
+		}
+		return said;
+	}
+
+	/**
+	 * « Regarder » : le joueur va dans le monde de la partie en spectateur (mode spectateur de Minecraft), sans voir les
+	 * rôles ni entendre le vocal des joueurs ({@link Session#watch}). Il en sort par « Arrêter de regarder »
+	 * ({@link #stopWatching}), ou en quittant le monde. Renvoie le message pour lui.
+	 */
+	public static String watch(ServerPlayer p, GameRoom room) {
+		String name = p.getScoreboardName();
+		Session s = room.session();
+		if (s.isWatcher(name) && room.here(p)) {
+			return "Tu regardes déjà « " + room.name() + " ».";
+		}
+		String why = s.watchRefusal(name);
+		if (why == null) {
+			why = heldElsewhere(room, name);
+		}
+		if (why != null) {
+			throw new GameException(why);
+		}
+		if (!room.here(p)) {
+			travel().toGame(p, room.id()); // d'abord le voyage : en mode spectateur au hub, il n'aurait rien à faire
+		}
+		try {
+			return "« " + room.name() + " » : " + s.watch(name);
+		} catch (GameException e) {
+			travel().toHub(p); // la table a changé entre-temps : il n'a rien à faire là
+			throw e;
+		}
+	}
+
+	/** La partie que ce joueur regarde depuis le tableau des parties, ou null. */
+	public static GameRoom watching(String player) {
+		for (GameRoom r : all()) {
+			if (r.session().isWatcher(player)) {
+				return r;
+			}
+		}
+		return null;
+	}
+
+	/** « Arrêter de regarder » : il quitte les gradins et revient au hub, à sa dernière place. */
+	public static String stopWatching(ServerPlayer p) {
+		String name = p.getScoreboardName();
+		GameRoom r = watching(name);
+		if (r == null) {
+			throw new GameException("Tu ne regardes aucune partie. Pour revenir au hub : /vc hub.");
+		}
+		r.session().stopWatching(name, false);
+		return "Tu ne regardes plus « " + r.name() + " ». " + travel().toHub(p);
+	}
+
+	/** Un joueur change de monde : s'il regardait la partie du monde qu'il quitte, il ne la regarde plus. */
+	public void onLevelChange(ServerPlayer p, ServerLevel from) {
+		GameRoom r = of(from);
+		if (r != null && !r.here(p)) {
+			r.session().stopWatching(p.getScoreboardName(), false);
+		}
+	}
+
+	/**
+	 * Le tableau des parties tel que ce joueur le voit (écran « Parties » du menu J) : chaque partie avec sa fiche, ce
+	 * qu'il y est, s'il peut la rejoindre ou la regarder (sinon pourquoi), s'il la mène ; et s'il est opérateur (il crée,
+	 * met en suspens, reprend et supprime les parties).
+	 */
+	public static Map<String, Object> board(ServerPlayer p) {
+		String name = p.getScoreboardName();
+		boolean op = p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+		List<Map<String, Object>> list = new ArrayList<>();
+		for (GameRoom r : all()) {
+			Session s = r.session();
+			Map<String, Object> m = r.card().view();
+			m.put("ici", r.here(p));
+			m.put("place", GameCard.seat(s, name));
+			String held = heldElsewhere(r, name);
+			String join = GameCard.joinRefusal(s, name, r.seats());
+			join = join != null ? join : held;
+			m.put("rejoindre", join == null);
+			m.put("rejoindreTexte", GameCard.joinLabel(s, name));
+			m.put("rejoindreRaison", join);
+			String watch;
+			if (s.isWatcher(name)) {
+				watch = r.here(p) ? "Tu la regardes déjà." : null;
+			} else {
+				watch = s.watchRefusal(name);
+				watch = watch != null ? watch : held;
+			}
+			m.put("regarder", watch == null);
+			m.put("regarderRaison", watch);
+			m.put("mener", r.isLeader(p));
+			list.add(m);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("liste", list);
+		out.put("operateur", op);
+		GameRoom w = watching(name);
+		out.put("regarde", w == null ? null : w.id());
+		return out;
+	}
+
+	/**
+	 * La fiche d'une partie dans le chat, avec ses liens [Rejoindre] [Regarder] (tableau du hub cliqué sans le mod client,
+	 * {@code /vc partie voir}).
+	 */
+	public static void tellCard(ServerPlayer p, GameRoom r) {
+		GameCard c = r.card();
+		ChatFormatting color = switch (c.status()) {
+			case OUVERTE -> ChatFormatting.GREEN;
+			case EN_COURS -> ChatFormatting.RED;
+			case EN_PAUSE -> ChatFormatting.GOLD;
+			case SUSPENDUE -> ChatFormatting.GRAY;
+		};
+		p.sendSystemMessage(net.minecraft.network.chat.Component.literal("« " + c.name() + " »").withStyle(ChatFormatting.GOLD,
+				ChatFormatting.BOLD)
+			.append(net.minecraft.network.chat.Component.literal("  " + c.status().label).withStyle(color))
+			.append(net.minecraft.network.chat.Component.literal(" · " + c.kindLabel()).withStyle(ChatFormatting.GRAY)));
+		String watchers = c.watchersLine();
+		p.sendSystemMessage(Gui.plain(c.phaseLine() + " · " + c.playersLine() + " · " + c.storytellerLine()
+			+ (watchers.isEmpty() ? "" : " · " + watchers), ChatFormatting.WHITE));
+		net.minecraft.network.chat.MutableComponent links = net.minecraft.network.chat.Component.empty();
+		String name = p.getScoreboardName();
+		String join = GameCard.joinRefusal(r.session(), name, r.seats());
+		join = join != null ? join : heldElsewhere(r, name);
+		links.append(link("[" + GameCard.joinLabel(r.session(), name) + "]", "/vc partie rejoindre " + r.id(), join,
+			"S'inscrire à cette partie (ou retrouver ta place), et y aller"));
+		links.append(" ");
+		String watch = r.session().watchRefusal(name);
+		watch = watch != null ? watch : heldElsewhere(r, name);
+		links.append(link("[Regarder]", "/vc partie regarder " + r.id(), watch,
+			"La regarder en spectateur, sans voir les rôles ni entendre les joueurs"));
+		p.sendSystemMessage(links);
+	}
+
+	/** Un lien du chat : actif (souligné, une commande au clic), ou grisé avec la raison au survol. */
+	private static net.minecraft.network.chat.MutableComponent link(String label, String command, String refusal, String hint) {
+		var text = net.minecraft.network.chat.Component.literal(label);
+		if (refusal != null) {
+			return text.withStyle(st -> st.withColor(ChatFormatting.DARK_GRAY)
+				.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(net.minecraft.network.chat.Component.literal(refusal))));
+		}
+		return text.withStyle(st -> st.withColor(ChatFormatting.AQUA).withUnderlined(true)
+			.withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand(command))
+			.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(net.minecraft.network.chat.Component.literal(hint))));
+	}
+
+	/**
+	 * Ouvre la fiche de cette partie pour ce joueur : l'écran « Parties » du mod client, sur elle ; sans le mod, la fiche
+	 * dans le chat avec ses liens.
+	 */
+	public static void showCard(ServerPlayer p, GameRoom r) {
+		if (fr.valcombe.mc.ViewSync.hasClientMod(p)) {
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, new fr.valcombe.net.ValcombeNet.OpenPayload("parties:" + r.id()));
+		} else {
+			tellCard(p, r);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -582,6 +815,7 @@ public final class Games implements WorldManager.Listener {
 	public void onDisconnect(String name) {
 		for (GameRoom r : snapshot) {
 			try {
+				r.session().stopWatching(name, true); // il regardait : il ne regarde plus (il reviendra au hub)
 				r.session().onDisconnect(name);
 			} catch (RuntimeException e) {
 				LOG.error("Départ de " + name + " dans la partie « " + r.id() + " »", e);

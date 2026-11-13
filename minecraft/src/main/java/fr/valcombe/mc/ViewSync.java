@@ -21,7 +21,9 @@ import net.minecraft.server.permissions.Permissions;
  * d'attache (la partie où il est inscrit, assis, Conteur ou spectateur) ; s'il n'en a pas, une table vide (aucune
  * partie : le menu propose de s'inscrire). On ne reçoit jamais la vue d'une autre partie. Le champ {@code partie} dit
  * laquelle c'est ({@code id}, {@code nom}, {@code sorte}, {@code ici} : le joueur est dans son monde, {@code suspens} :
- * elle est en suspens et ses joueurs l'attendent au hub), ou null.
+ * elle est en suspens et ses joueurs l'attendent au hub, {@code regarde} : il la regarde depuis le tableau des parties),
+ * ou null. Hors des mondes de partie, le champ {@code parties} donne le tableau des parties du hub (voir
+ * {@code Games.board}) : la fiche publique de chacune, et ce que ce joueur peut y faire.
  */
 public final class ViewSync {
 	private static final Gson GSON = new GsonBuilder().serializeNulls().create();
@@ -63,13 +65,15 @@ public final class ViewSync {
 		fr.valcombe.mc.games.GameRoom room = seen(p);
 		Map<String, Object> view;
 		if (room != null) {
-			view = room.session().view(name, room.isLeader(p));
+			// Qui regarde depuis le tableau des parties ne voit jamais les rôles, même opérateur : vue de spectateur.
+			view = room.session().view(name, room.isLeader(p) && !room.session().isWatcher(name));
 			Map<String, Object> game = new java.util.LinkedHashMap<>();
 			game.put("id", room.id());
 			game.put("nom", room.name());
 			game.put("sorte", room.kind().code());
 			game.put("ici", room.here(p));
 			game.put("suspens", room.suspended());
+			game.put("regarde", room.session().isWatcher(name)); // dans les gradins : menu J, « Arrêter de regarder »
 			view.put("partie", game);
 		} else {
 			view = noTable.view(name, p.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER));
@@ -105,6 +109,11 @@ public final class ViewSync {
 			if (travel != null) {
 				// Menu J, « Mondes » : les mondes où ce joueur peut aller, celui où il est, et s'il peut partir.
 				view.put("mondes", travel.view(p));
+			}
+			if (fr.valcombe.mc.games.Games.current() != null && fr.valcombe.mc.games.Games.of(p) == null) {
+				// Hors des mondes de partie (hub, ateliers) : le tableau des parties (menu J, « Parties »). Dans une partie, on
+				// ne voit qu'elle.
+				view.put("parties", fr.valcombe.mc.games.Games.board(p));
 			}
 			StructureWorkshop structures = ValcombeMod.structureWorkshop();
 			if (structures != null && structures.isWorkshop(p.level())) {

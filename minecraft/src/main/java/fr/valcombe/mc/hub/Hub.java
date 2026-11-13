@@ -2,12 +2,12 @@ package fr.valcombe.mc.hub;
 
 import fr.valcombe.mc.McHost;
 import fr.valcombe.mc.Village;
+import fr.valcombe.mc.games.GameCard;
 import fr.valcombe.mc.games.GameRoom;
 import fr.valcombe.mc.games.Games;
 import fr.valcombe.mc.worlds.WorldEntry;
 import fr.valcombe.mc.worlds.WorldKind;
 import fr.valcombe.mc.worlds.WorldManager;
-import fr.valcombe.rules.Game;
 import fr.valcombe.rules.GameException;
 import fr.valcombe.rules.Role;
 import fr.valcombe.session.Session;
@@ -41,6 +41,9 @@ import org.slf4j.LoggerFactory;
  * dossier du monde).</li>
  * <li>Dalles d'inscription : les mêmes que dans la salle d'attente du village (branchées sur {@link McHost}).</li>
  * <li>Mur des rôles : le script de la prochaine partie, ses rôles en jetons, les inscrits et le Conteur.</li>
+ * <li>Tableau des parties : deux panneaux de part et d'autre de l'allée, une fiche par partie (nom, état, jour ou nuit,
+ * joueurs et places, Conteur, spectateurs), mise à jour en direct. Un clic sur une fiche ouvre l'écran « Parties » sur
+ * elle (sans le mod client : la fiche au chat, avec ses liens [Rejoindre] [Regarder]).</li>
  * <li>Portes : six portes portent le nom d'un monde (le monde de la partie, puis les autres mondes de partie) ; on y entre
  * pour y aller. Le menu J, entrée « Mondes », donne la liste complète.</li>
  * </ul>
@@ -65,7 +68,9 @@ public final class Hub implements WorldManager.Listener {
 		/** Le voile tourbillonnant des portes ouvertes. */
 		VOILES,
 		/** Mur des rôles : panneau de la prochaine partie et jetons. */
-		MUR;
+		MUR,
+		/** Tableau des parties : une fiche par partie, et la zone cliquable de chacune. */
+		TABLEAU;
 
 		String tag() {
 			return "vc_hub_" + name().toLowerCase(Locale.ROOT);
@@ -293,12 +298,18 @@ public final class Hub implements WorldManager.Listener {
 	 * {@code text} est un composant de texte en SNBT (liste ou objet).
 	 */
 	private void text(ServerLevel level, Group g, double x, double y, double z, Float yaw, int width, double scale, String text) {
+		text(level, g, x, y, z, yaw, width, scale, text, -1072689136);
+	}
+
+	/** Un texte flottant, avec son fond (ARGB ; 0 : transparent, pour les fiches du tableau posées sur leur fond). */
+	private void text(ServerLevel level, Group g, double x, double y, double z, Float yaw, int width, double scale, String text,
+			int background) {
 		run(level, String.format(Locale.ROOT,
-			"summon minecraft:text_display %.3f %.3f %.3f {%s,%sbillboard:\"%s\",line_width:%d,background:-1072689136,shadow:1b,"
+			"summon minecraft:text_display %.3f %.3f %.3f {%s,%sbillboard:\"%s\",line_width:%d,background:%d,shadow:1b,"
 				+ "brightness:{sky:15,block:15},transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],"
 				+ "translation:[0f,0f,0f],scale:[%.2ff,%.2ff,%.2ff]},text:%s}",
 			x, y, z, tags(g), yaw == null ? "" : String.format(Locale.ROOT, "Rotation:[%.1ff,0f],", yaw),
-			yaw == null ? "center" : "fixed", width, scale, scale, scale, text));
+			yaw == null ? "center" : "fixed", width, background, scale, scale, scale, text));
 	}
 
 	/** Un composant de texte : morceaux (texte, couleur, gras) mis bout à bout. */
@@ -329,6 +340,8 @@ public final class Hub implements WorldManager.Listener {
 		}
 		update(level, Group.NOMS, names.toString(), () -> doorNames(level, labels));
 		update(level, Group.VOILES, open.toString(), () -> veils(level));
+		List<GameCard> cards = Games.all().stream().map(GameRoom::card).toList();
+		update(level, Group.TABLEAU, cards.toString(), () -> board(level, cards));
 		GameRoom main = Games.main();
 		if (main != null) {
 			Session session = main.session();
@@ -351,10 +364,10 @@ public final class Hub implements WorldManager.Listener {
 	/** Accueil au-dessus de la dalle dorée, nom de chaque dalle, règles sur le mur sud. */
 	private void fixed(ServerLevel level) {
 		double feet = HubHall.FEET;
-		text(level, Group.FIXE, HubHall.JOIN_X + 0.5, feet + 3.2, HubHall.JOIN_Z + 0.5, null, 260, 1.1,
+		text(level, Group.FIXE, HubHall.JOIN_X + 0.5, feet + 3.2, HubHall.JOIN_Z + 0.5, null, 200, 1.1,
 			comp("Bienvenue à Valcombe", "gold", true,
-				"\nInscris-toi sur la dalle dorée : tu rejoins aussitôt le village de la partie.", "white", false,
-				"\nPasse une porte pour rejoindre un monde, ou ouvre le menu J, « Mondes ».", "gray", false));
+				"\nChoisis ta partie au tableau des parties : rejoins-la, ou regarde-la.", "white", false,
+				"\nLa dalle dorée inscrit à la partie principale. Menu J : « Parties », « Mondes ».", "gray", false));
 		text(level, Group.FIXE, HubHall.JOIN_X + 0.5, feet + 1.9, HubHall.JOIN_Z + 0.5, null, 120, 0.7,
 			comp("S'inscrire", "gold", true));
 		text(level, Group.FIXE, HubHall.LEAVE_X + 0.5, feet + 1.9, 0.5, null, 120, 0.7,
@@ -388,12 +401,10 @@ public final class Hub implements WorldManager.Listener {
 		}
 		GameRoom room = Games.byWorld(dest);
 		if (room != null) {
-			// Le village d'une partie : ce qui s'y passe en ce moment.
-			Session session = room.session();
-			Game g = session.game();
-			String state = g != null && g.winner() == null
-				? "partie en cours, " + (g.phase() == Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day())
-				: session.lobby().isEmpty() ? "salon ouvert" : session.lobby().size() + " inscrit(s)";
+			// Le village d'une partie : ce qui s'y passe en ce moment, comme sur sa fiche du tableau.
+			GameCard c = room.card();
+			String state = c.status() == GameCard.Status.OUVERTE ? c.playersLine()
+				: c.status().label + ", " + c.phaseLine().toLowerCase(Locale.ROOT);
 			return new String[] {e.nom(), state + " · " + count};
 		}
 		String label = e.sorte().label();
@@ -425,6 +436,171 @@ public final class Hub implements WorldManager.Listener {
 				}
 			}
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Tableau des parties
+	// ------------------------------------------------------------------
+
+	/** Les fiches que montre le tableau des parties en ce moment (pour les tests en jeu), ou null avant la première pose. */
+	public String boardShown() {
+		return keys.get(Group.TABLEAU);
+	}
+
+	/** L'étiquette qui porte l'identifiant de la partie d'une fiche du tableau (sa zone cliquable). */
+	static final String CARD_TAG = "vc_partie_";
+
+	/**
+	 * La partie dont cette entité est la fiche cliquable sur le tableau des parties du hub, ou null (ce n'est pas une
+	 * fiche du tableau).
+	 */
+	public static String boardCard(net.minecraft.world.entity.Entity e) {
+		if (e == null || !e.entityTags().contains(Group.TABLEAU.tag())) {
+			return null;
+		}
+		for (String t : e.entityTags()) {
+			if (t.startsWith(CARD_TAG)) {
+				return t.substring(CARD_TAG.length());
+			}
+		}
+		return null;
+	}
+
+	/** Le fond d'une fiche, selon l'état de la partie : un bloc teint, mat, posé à plat sur le panneau. */
+	private static String backdrop(GameCard.Status s) {
+		return switch (s) {
+			case OUVERTE -> "minecraft:green_terracotta";
+			case EN_COURS -> "minecraft:red_terracotta";
+			case EN_PAUSE -> "minecraft:orange_terracotta";
+			case SUSPENDUE -> "minecraft:cyan_terracotta";
+		};
+	}
+
+	/** La couleur de l'état, lisible sur son fond. */
+	private static String ink(GameCard.Status s) {
+		return switch (s) {
+			case OUVERTE -> "#B7EF8F";
+			case EN_COURS -> "#FFB4A2";
+			case EN_PAUSE -> "#FFE08A";
+			case SUSPENDUE -> "#CFE6EE";
+		};
+	}
+
+	/** L'emblème d'une fiche : la cloche du salon, le soleil ou la lune de la partie, la lanterne de la pause, l'ancre du suspens. */
+	private static String emblem(GameCard c) {
+		return switch (c.status()) {
+			case OUVERTE -> "icone_e_cloche";
+			case EN_PAUSE -> "icone_e_lanterne";
+			case SUSPENDUE -> "icone_e_ancre";
+			case EN_COURS -> "nuit".equals(c.phaseCode()) ? "icone_e_lune" : "jour".equals(c.phaseCode()) ? "icone_e_soleil" : "icone_e_etoile";
+		};
+	}
+
+	/** Un nom trop long pour une ligne de fiche, raccourci. */
+	private static String shorten(String s, int max) {
+		return s.length() <= max ? s : s.substring(0, max - 1).strip() + "…";
+	}
+
+	/** L'état et la phase, sur une ligne : « ● En cours · Nuit 2 », « ● Ouverte · salon ». */
+	private static String statusLine(GameCard c) {
+		String phase = c.status() == GameCard.Status.OUVERTE ? "salon" : c.phaseLine();
+		return "● " + c.status().label + " · " + phase;
+	}
+
+	/** Les places du village, une pastille chacune : dorées pour les joueurs, sombres pour les places libres. */
+	private static String dots(GameCard c) {
+		int taken = Math.min(c.players(), c.places());
+		return comp("●".repeat(taken), "#F2C14E", false, "●".repeat(Math.max(0, c.places() - taken)), "#5E5346", false);
+	}
+
+	/**
+	 * Le tableau des parties : l'en-tête de chaque panneau, puis une fiche par partie (six au plus ; au-delà, l'en-tête
+	 * renvoie au menu J), devant en entier, derrière en abrégé, chacune avec sa zone cliquable.
+	 */
+	private void board(ServerLevel level, List<GameCard> cards) {
+		double feet = HubHall.FEET;
+		double front = HubHall.BOARD_FRONT + 0.04;
+		double back = HubHall.BOARD_BACK - 0.04;
+		double westMid = -(HubHall.BOARD_INNER + HubHall.BOARD_OUTER) / 2.0 + 0.5;
+		double eastMid = (HubHall.BOARD_INNER + HubHall.BOARD_OUTER) / 2.0 + 0.5;
+		int more = cards.size() - HubHall.SLOTS;
+		// En-têtes, sur les poutres : le titre à l'ouest, le mode d'emploi (ou les parties en plus) à l'est.
+		text(level, Group.TABLEAU, westMid, feet + 4.2, front, 0f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
+		String hint = more > 0 ? "Et " + more + (more > 1 ? " autres parties" : " autre partie") + " : menu J, « Parties »"
+			: "Clique une fiche : rejoindre ou regarder";
+		text(level, Group.TABLEAU, eastMid, feet + 4.25, front, 0f, 300, 0.6, comp(hint, "#F2E6C9", false), 0);
+		text(level, Group.TABLEAU, westMid, feet + 4.2, back, 180f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
+		text(level, Group.TABLEAU, eastMid, feet + 4.2, back, 180f, 300, 0.75, comp("TABLEAU DES PARTIES", "#F2C14E", true), 0);
+		for (int slot = 0; slot < HubHall.SLOTS; slot++) {
+			double cx = HubHall.cardX(slot);
+			if (slot >= cards.size()) {
+				text(level, Group.TABLEAU, cx, feet + 2.3, front, 0f, 120, 0.6, comp("Place libre", "#8C7F74", false,
+					"\nune partie d'essai viendra ici", "#6E625A", false), 0);
+				continue;
+			}
+			GameCard c = cards.get(slot);
+			cardFront(level, c, cx, front);
+			cardBack(level, c, cx, back);
+			// La zone cliquable : toute la fiche, des deux côtés du panneau.
+			run(level, String.format(Locale.ROOT,
+				"summon minecraft:interaction %.3f %.3f %.3f {width:%.1ff,height:3.0f,response:1b,Tags:[\"vc_hub\",\"%s\",\"%s_%d\",\"%s\"]}",
+				cx, feet + 1.0, HubHall.BOARD_Z + 0.5, HubHall.CARD_WIDTH - 0.1, Group.TABLEAU.tag(), Group.TABLEAU.tag(),
+				gens.get(Group.TABLEAU), esc(CARD_TAG + c.id())));
+		}
+	}
+
+	/** Le fond de couleur d'une fiche, plaqué sur une face du panneau ({@code z} : la face). */
+	private void cardPlate(ServerLevel level, GameCard c, double cx, double z, boolean front) {
+		double depth = 0.02;
+		double at = front ? HubHall.BOARD_FRONT + 0.005 : HubHall.BOARD_BACK - 0.005 - depth;
+		double w = HubHall.CARD_WIDTH - 0.2;
+		run(level, String.format(Locale.ROOT,
+			"summon minecraft:block_display %.3f %.3f %.3f {%s,brightness:{sky:15,block:13},block_state:{Name:\"%s\"},"
+				+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
+				+ "scale:[%.2ff,2.8f,%.3ff]}}",
+			cx - w / 2, HubHall.FEET + 1.1, at, tags(Group.TABLEAU), backdrop(c.status()), w, depth));
+		if (c.main()) {
+			// La partie principale porte un liseré d'or en haut de sa fiche.
+			run(level, String.format(Locale.ROOT,
+				"summon minecraft:block_display %.3f %.3f %.3f {%s,brightness:{sky:15,block:15},block_state:{Name:\"minecraft:gold_block\"},"
+					+ "transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],"
+					+ "scale:[%.2ff,0.07f,%.3ff]}}",
+				cx - w / 2, HubHall.FEET + 3.83, front ? at + 0.002 : at - 0.002, tags(Group.TABLEAU), w, depth));
+		}
+	}
+
+	/** L'emblème d'une fiche : un jeton de Valcombe qui tourne vers celui qui regarde. */
+	private void cardEmblem(ServerLevel level, GameCard c, double cx, double y, double z) {
+		run(level, String.format(Locale.ROOT,
+			"summon minecraft:item_display %.3f %.3f %.3f {%s,billboard:\"vertical\",brightness:{sky:15,block:15},"
+				+ "item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:item_model\":\"valcombe:%s\"}},"
+				+ "transformation:{translation:[0f,0f,0f],left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[0.7f,0.7f,0.7f]}}",
+			cx, y, z, tags(Group.TABLEAU), emblem(c)));
+	}
+
+	/** La fiche entière, face à l'entrée : emblème, nom, état et phase, places, joueurs, Conteur, sorte et spectateurs. */
+	private void cardFront(ServerLevel level, GameCard c, double cx, double z) {
+		double feet = HubHall.FEET;
+		cardPlate(level, c, cx, z, true);
+		cardEmblem(level, c, cx, feet + 3.32, z + 0.12);
+		text(level, Group.TABLEAU, cx, feet + 2.5, z, 0f, 112, 0.95, comp(shorten(c.name(), 18), "#F7EBD0", true), 0);
+		text(level, Group.TABLEAU, cx, feet + 2.2, z, 0f, 150, 0.72, comp(statusLine(c), ink(c.status()), true), 0);
+		String kind = c.kindLabel() + (c.watchers() > 0 ? " · " + c.watchersLine() : "");
+		String body = "[" + dots(c) + ",{text:\"\\n" + esc(c.playersLine()) + "\",color:\"#F2E6C9\"},{text:\"\\n"
+			+ esc(c.storytellerLine()) + "\",color:\"#F2E6C9\"},{text:\"\\n" + esc(kind) + "\",color:\"#D9CBB0\"}]";
+		text(level, Group.TABLEAU, cx, feet + 1.42, z, 0f, 170, 0.62, body, 0);
+		text(level, Group.TABLEAU, cx, feet + 1.2, z, 0f, 220, 0.5, comp("Clic : rejoindre ou regarder", "#CFC3AE", false), 0);
+	}
+
+	/** La fiche abrégée, au dos du panneau (vue des dalles) : emblème, nom, état et phase, joueurs. */
+	private void cardBack(ServerLevel level, GameCard c, double cx, double z) {
+		double feet = HubHall.FEET;
+		cardPlate(level, c, cx, z, false);
+		cardEmblem(level, c, cx, feet + 3.25, z - 0.12);
+		text(level, Group.TABLEAU, cx, feet + 2.45, z, 180f, 112, 0.95, comp(shorten(c.name(), 18), "#F7EBD0", true), 0);
+		text(level, Group.TABLEAU, cx, feet + 2.1, z, 180f, 150, 0.72, comp(statusLine(c), ink(c.status()), true), 0);
+		text(level, Group.TABLEAU, cx, feet + 1.7, z, 180f, 170, 0.62, comp(c.playersLine(), "#F2E6C9", false), 0);
+		text(level, Group.TABLEAU, cx, feet + 1.25, z, 180f, 220, 0.5, comp("Clic : la fiche de la partie", "#CFC3AE", false), 0);
 	}
 
 	/** Le mur des rôles : le panneau de la prochaine partie, puis les jetons des rôles du script en rangées. */

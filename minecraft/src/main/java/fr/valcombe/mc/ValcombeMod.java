@@ -161,6 +161,17 @@ public final class ValcombeMod implements ModInitializer {
 		return r != null ? r : Games.forPlayer(p);
 	}
 
+	/** Une fiche du tableau des parties du hub, cliquée : l'écran « Parties » sur elle (sans le mod client, la fiche au chat). */
+	private static void openBoardCard(ServerPlayer sp, net.minecraft.world.entity.Entity card) {
+		String id = fr.valcombe.mc.hub.Hub.boardCard(card);
+		GameRoom room = id == null ? null : Games.byWorld(id);
+		if (room == null) {
+			sp.sendSystemMessage(Gui.plain("Cette partie n'existe plus : le tableau se met à jour.", net.minecraft.ChatFormatting.GRAY));
+			return;
+		}
+		guarded("le tableau des parties", () -> Games.showCard(sp, room));
+	}
+
 	/** Bâton du Conteur : grimoire du joueur visé, aparté (accroupi), ou panneau du Conteur, dans la partie de son monde. */
 	private static void useStaff(ServerPlayer sp, String target) {
 		GameRoom room = roomOf(sp);
@@ -652,6 +663,19 @@ public final class ValcombeMod implements ModInitializer {
 			if (g != null) {
 				guarded("les ateliers", () -> g.onLevelChange(player, from, to));
 			}
+			// Qui regardait la partie du monde qu'il quitte n'est plus dans ses gradins (son mode de jeu lui est rendu).
+			Games games = Games.current();
+			if (games != null) {
+				guarded("les spectateurs du hub", () -> games.onLevelChange(player, from));
+			}
+		});
+		// Tableau des parties du hub : un clic gauche sur une fiche l'ouvre aussi (sans rien frapper).
+		net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+			if (fr.valcombe.mc.hub.Hub.boardCard(entity) == null || !(player instanceof ServerPlayer sp)) {
+				return InteractionResult.PASS;
+			}
+			openBoardCard(sp, entity);
+			return InteractionResult.SUCCESS;
 		});
 		// Clic droit avec le grimoire « Menu de Valcombe » : ouvre le menu (le mod client ouvre le sien).
 		UseItemCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand) -> {
@@ -713,6 +737,13 @@ public final class ValcombeMod implements ModInitializer {
 				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
 					sp.level().getServer().getCommands().performPrefixedCommand(sp.createCommandSourceStack(),
 						"vc nominer " + target.getScoreboardName());
+				}
+				return InteractionResult.SUCCESS;
+			}
+			// Tableau des parties du hub : un clic sur la fiche d'une partie l'ouvre.
+			if (fr.valcombe.mc.hub.Hub.boardCard(entity) != null) {
+				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					openBoardCard(sp, entity);
 				}
 				return InteractionResult.SUCCESS;
 			}

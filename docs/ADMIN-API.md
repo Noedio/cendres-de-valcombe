@@ -20,6 +20,9 @@ Version du contrat : **1** (champ `api` de `GET /admin/etat`). Elle n'augmente q
 | POST | `/admin/ateliers` | Ouvre ou ferme WorldEdit aux opérateurs dans les parties d'essai |
 | POST | `/admin/ateliers/inviter` | Invite un joueur à construire dans un atelier (ou dans tous) |
 | POST | `/admin/ateliers/retirer` | Retire une invitation (ou toutes celles d'un joueur) |
+| GET | `/admin/parties` | Le tableau des parties : chaque partie, son état, où elle en est, ses joueurs et ses places |
+| POST | `/admin/parties` | Crée une partie d'essai (son monde, sa partie, le village qui s'y pose) |
+| POST | `/admin/parties/supprimer` | Supprime une partie d'essai et son monde |
 | POST | `/admin/parties/suspendre` | Met une partie en suspens : ses joueurs au hub, elle reprendra où elle en est |
 | POST | `/admin/parties/reprendre` | Reprend une partie en suspens : ses joueurs sont rappelés à leur place |
 | GET | `/admin/sauvegardes` | Les sauvegardes, celle en cours, la prochaine, la restauration prévue |
@@ -160,16 +163,19 @@ Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/
 {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "etat": "charge", "joueurs": 6}
 ```
 
-  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. Un atelier a en plus `invites` : les joueurs invités à y construire (invitations à cet atelier et à tous les ateliers), en plus des opérateurs, par exemple `"invites": ["Alice", "Bob"]`. D'autres champs pourront s'ajouter.
+  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. Un atelier a en plus `invites` : les joueurs invités à y construire (invitations à cet atelier et à tous les ateliers), en plus des opérateurs, par exemple `"invites": ["Alice", "Bob"]`. Un monde de partie (`partie`, `essai`) a en plus `partie` : l'état de sa partie, `{"statut": "en-cours", "etat": "nuit 2"}` (`statut` comme dans `parties`, `etat` en clair) ; le détail est dans `parties`. D'autres champs pourront s'ajouter.
 - `parties` : les parties du serveur, une par monde de partie (la partie principale d'abord, puis les parties d'essai). Elles se jouent en même temps, séparées : chacune a ses joueurs, son Conteur, ses minuteurs et sa sauvegarde. Liste vide si les mondes de Valcombe n'ont pas pu démarrer. Chaque partie a la forme :
 
 ```json
 {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "principale": true, "etat": "jour 2",
  "enCours": true, "enPause": false, "suspendue": false, "phase": "day", "inscrits": 7, "assis": 7, "conteur": "Alice",
- "joueurs": 8}
+ "joueurs": 8, "statut": "en-cours", "statutTexte": "En cours", "phaseTexte": "Jour 2", "numero": 2, "participants": 7,
+ "places": 12, "spectateurs": 1}
 ```
 
   `id` : l'identifiant de son monde (le même que dans `mondes`). `sorte` : `partie` ou `essai`. `etat` : ce qui s'y passe, en clair (`salon ouvert`, `3 inscrit(s)`, `nuit 1`, `jour 2, en pause`, `en suspens (jour 2)`, `mise en place`). `enCours` : des joueurs y sont assis, en suspens compris (les sauvegardes automatiques attendent la fin des parties qui se jouent, pas celles qui sont en suspens). `enPause` : la partie est en pause (par le Conteur, ou parce qu'elle est en suspens). `suspendue` : la partie est en suspens (voir `/admin/parties/suspendre`). `phase` : `setup`, `ready`, `night`, `day`, `ended`, ou `null` sans partie lancée. `inscrits` : joueurs au salon. `assis` : joueurs de la partie lancée (joueurs fictifs compris). `conteur` : le Conteur, ou `null` (Conteur automatique). `joueurs` : joueurs présents dans son monde.
+
+  La fiche du tableau des parties (le hub, l'écran « Parties » du menu J et le launcher la montrent) : `statut` : `ouverte` (pas de partie lancée, le salon est ouvert), `en-cours`, `en-pause` (par le Conteur) ou `suspendue` ; `statutTexte` : le même en clair (`Ouverte`, `En cours`, `En pause`, `En suspens`). `phaseTexte` : `Salon ouvert`, `Mise en place`, `Nuit 2`, `Jour 3`. `numero` : le numéro de la nuit ou du jour en cours (0 au salon). `participants` : les joueurs de la partie, assis si elle est lancée, sinon inscrits. `places` : les trônes de son village, jamais plus que les 16 joueurs qu'accepte une partie (16 tant qu'elle n'a pas de village). `spectateurs` : ceux qui la regardent depuis le tableau des parties du hub.
 - `redemarrageNecessaire` : un réglage enregistré n'agira qu'au prochain démarrage (voir `/admin/reglages`).
 
 ### GET /admin/joueurs
@@ -346,6 +352,49 @@ Le mod ne peut pas se relancer lui-même : c'est **celui qui a lancé le serveur
   - `demarrer.sh` et `demarrer.bat`, fournis avec le serveur (`tools/make_modpack.py`), relancent le serveur tant que le drapeau est posé. Le service systemd `valcombe.service` lance `demarrer.sh` : un redémarrage par l'API ne passe donc pas par systemd.
   - Le launcher, quand il lance lui-même le serveur (page Héberger ou Serveur), applique la même règle (`LocalServer`) : il relance le serveur avec les mêmes réglages. Un arrêt qu'il a lui-même demandé ne relance jamais rien, même si un drapeau traîne.
   - Un serveur lancé autrement (commande `java` à la main, hébergeur avec son propre panneau) s'arrête simplement : il faut le relancer soi-même.
+
+## Les parties : le tableau, la création, la suppression
+
+Plusieurs parties se jouent en même temps, séparées, chacune dans son monde : la **partie principale** (créée au premier démarrage, elle ne se supprime pas) et autant de **parties d'essai** qu'on veut. Au hub, le **tableau des parties** les montre toutes ; un joueur y choisit la sienne, la rejoint (inscription au salon d'une partie ouverte) ou la regarde en spectateur (mode spectateur de Minecraft, sans voir les rôles ni entendre le vocal des joueurs). En jeu : menu J, « Parties », ou `/vc partie liste|rejoindre|regarder|sortir|creer|supprimer`.
+
+### GET /admin/parties
+
+```json
+{
+  "parties": [
+    {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "principale": true, "etat": "nuit 2",
+     "enCours": true, "enPause": false, "suspendue": false, "phase": "night", "inscrits": 8, "assis": 8,
+     "conteur": "Alice", "joueurs": 9, "statut": "en-cours", "statutTexte": "En cours", "phaseTexte": "Nuit 2",
+     "numero": 2, "participants": 8, "places": 12, "spectateurs": 1},
+    {"id": "essai-du-mardi", "nom": "Essai du mardi", "sorte": "essai", "principale": false, "etat": "2 inscrit(s)",
+     "enCours": false, "enPause": false, "suspendue": false, "phase": null, "inscrits": 2, "assis": 0,
+     "conteur": null, "joueurs": 2, "statut": "ouverte", "statutTexte": "Ouverte", "phaseTexte": "Salon ouvert",
+     "numero": 0, "participants": 2, "places": 16, "spectateurs": 0}
+  ],
+  "enCours": 1,
+  "principale": "partie-principale",
+  "disponible": true
+}
+```
+
+- `parties` : les parties, la principale d'abord, de la forme décrite dans `/admin/etat`.
+- `enCours` : combien se jouent (en suspens comprises). `principale` : l'identifiant de la partie principale.
+- `disponible` : faux si les mondes de Valcombe n'ont pas pu démarrer (la liste est alors vide, et rien ne se crée).
+
+### POST /admin/parties
+
+Crée une partie d'essai : un monde plat neuf, sa partie, et le village de Valcombe qui s'y pose par petits lots (une à deux minutes), comme `/vc partie creer <nom>`. Corps : `{"nom": "Essai du mardi"}` (40 caractères au plus ; l'identifiant est tiré du nom). Réponse :
+
+```json
+{"partie": {"id": "essai-du-mardi", "nom": "Essai du mardi", "sorte": "essai", "statut": "ouverte", "...": "..."},
+ "message": "Partie d'essai « Essai du mardi » créée (essai-du-mardi). Son village est en route. ..."}
+```
+
+`400` sans `nom` ou avec un nom trop long ; `409` si le monde ne peut pas être créé (le message dit pourquoi).
+
+### POST /admin/parties/supprimer
+
+Corps : `{"partie": "essai-du-mardi"}`. La partie d'essai et son monde disparaissent ; ses joueurs vont au hub. La suppression du monde se termine juste après la réponse (la partie n'est déjà plus dans `parties`). Réponse : `{"ok": true, "message": "Partie « Essai du mardi » supprimée : ses joueurs vont au hub, son monde est effacé."}`. `404` si aucune partie n'a ce monde ; `409` pour la partie principale, une partie lancée, en suspens comprise (l'arrêter d'abord : `/vc arreter` dans son monde), ou un monde déjà en cours de suppression.
 
 ## Les parties : mise en suspens et reprise
 
@@ -612,6 +661,11 @@ curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
      -d '{"intervalleMinutes": 180, "garder": 20}' http://localhost:25570/admin/sauvegardes/reglages
 curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
      -d '{"nom": "valcombe-2026-11-13_15-12-44-auto.zip", "redemarrer": true}' http://localhost:25570/admin/sauvegardes/restaurer
+curl -s -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/parties
+curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
+     -d '{"nom": "Essai du mardi"}' http://localhost:25570/admin/parties
+curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
+     -d '{"partie": "essai-du-mardi"}' http://localhost:25570/admin/parties/supprimer
 ```
 
 ## Le client du launcher
@@ -622,9 +676,10 @@ La page **Serveur** du launcher est écrite contre ce contrat (`launcher/Service
 - `AdminClient` : un appel par point d'accès ; une erreur devient `AdminException`, avec le message `erreur` du serveur. Après un `401`, un `403` ou un `404`, la page cesse d'interroger le serveur jusqu'à « Réessayer » (insister avec une mauvaise clé mènerait au blocage) ; après un `429`, elle attend `Retry-After`.
 - `ConsoleFeed` : le suivi de `/admin/console` (une lecture par seconde sur l'onglet Console, `depuis`, changement d'`instance`, `plusLoin`).
 - Les sauvegardes (onglet Sauvegardes, `MainWindow.Backups.cs`) : `GET /admin/sauvegardes` toutes les cinq secondes sur l'onglet, chaque seconde pendant une sauvegarde (`enCours`), et quel que soit l'onglet pendant une restauration avec redémarrage, jusqu'à lire dans `derniereRestauration` le compte rendu de celle qu'il a demandée. Un `404` sur ces chemins (serveur plus ancien) est dit sur l'onglet sans arrêter la page. Le téléchargement passe par `IServerConnection.DownloadAsync` : lu au fil de l'eau dans un fichier `.partiel`, sans délai global mais interrompu après une minute sans données, taille comparée à `Content-Length`, puis l'archive est ouverte et sa fiche lue (`BackupArchive`) avant de prendre son nom. Un nom de sauvegarde hors du modèle n'est jamais envoyé.
+- Les parties (onglet Parties, `MainWindow.Parties.cs`) : `GET /admin/parties` toutes les deux secondes sur l'onglet ; chaque partie avec son état, sa phase, la jauge de ses places, son Conteur, qui est dans son monde et qui la regarde. « Suspendre » et « Reprendre » (`/admin/parties/suspendre|reprendre`), la suppression d'une partie d'essai après une confirmation qui dit ce qui disparaît (`/admin/parties/supprimer`), et la création d'une partie d'essai (`POST /admin/parties`). Le message du serveur s'affiche en avis en haut de l'onglet. Un identifiant de partie hors du modèle (`[a-z0-9-]{2,30}`) et un nom de plus de 40 caractères ne partent jamais. Un `404` (serveur plus ancien) est dit sur l'onglet sans arrêter la page ; un serveur qui n'envoie pas encore `statut` voit l'état déduit de `enCours`, `enPause` et `suspendue`. La vue d'ensemble donne, pour chaque monde de partie, l'état de sa partie (`mondes[].partie`).
 - Pour le serveur de ce PC, la clé est lue dans `config/valcombe/admin.json` et le port dans la ligne du journal « API d'administration prête sur le port … ». Une clé de serveur distant est gardée chiffrée avec DPAPI dans `launcher.json`.
 - `ValcombeLauncher.exe --verifier-admin rapport.txt` essaie le client contre un serveur HTTP fictif qui suit ce contrat (`DemoAdminApi`, refus et sauvegardes compris) ; `--capture` montre la page avec ce même serveur fictif.
 
 ## Ce qui viendra
 
-- L'état des parties dans `mondes` (sprint 12).
+- Rien d'annoncé pour l'instant : toute évolution du contrat sera décrite ici avant d'être livrée.

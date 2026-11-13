@@ -75,7 +75,8 @@ public final class VoiceRouter {
 			ServerLevel level = room.host().levelIfReady();
 			if (level != null) {
 				for (ServerPlayer p : level.players()) {
-					zoneOf.put(p.getUUID(), room.id());
+					// Qui regarde depuis le tableau des parties est dans les gradins : il n'entend pas la partie, elle ne l'entend pas.
+					zoneOf.put(p.getUUID(), room.session().isWatcher(p.getScoreboardName()) ? VoiceZones.gallery(room.id()) : room.id());
 				}
 			}
 			route(server, room.session(), room.host().village(), level, next, inNooks);
@@ -121,6 +122,9 @@ public final class VoiceRouter {
 		for (ServerPlayer p : players) {
 			if (p.level() != level) {
 				continue; // hors du monde de la partie : vocal de proximité ordinaire, dans son monde
+			}
+			if (session.isWatcher(p.getScoreboardName())) {
+				continue; // dans les gradins : vocal de proximité entre spectateurs du hub, à part de la partie (zones)
 			}
 			Session.VoiceRule rule = session.voiceRule(p.getScoreboardName());
 			if (rule != null && rule.targets() != null) {

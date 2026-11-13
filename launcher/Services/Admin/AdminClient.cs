@@ -80,6 +80,53 @@ public sealed class AdminClient
     public Task<AdminStopResult> RestartAsync(CancellationToken ct) => PostAsync<AdminStopResult>("/admin/redemarrer", "{}", ct);
 
     // ------------------------------------------------------------------
+    // Parties
+    // ------------------------------------------------------------------
+    private static readonly Regex GameId = new("^[a-z0-9-]{2,30}$", RegexOptions.Compiled);
+
+    /// <summary>Le plus long nom de partie que le serveur accepte.</summary>
+    public const int MaxGameName = 40;
+
+    /// <summary>Un identifiant de monde de partie tel que le mod les fabrique (lettres minuscules, chiffres, tirets).</summary>
+    public static bool IsGameId(string id) => GameId.IsMatch(id);
+
+    /// <summary>Le tableau des parties : chacune avec son état, ses joueurs et ses places.</summary>
+    public Task<AdminGames> GetGamesAsync(CancellationToken ct) => GetAsync<AdminGames>("/admin/parties", ct);
+
+    /// <summary>Crée une partie d'essai (son monde plat, sa partie, le village qui s'y pose par petits lots).</summary>
+    public Task<AdminGameCreated> CreateGameAsync(string name, CancellationToken ct)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || name.Length > MaxGameName)
+        {
+            throw new ArgumentException($"Le nom d'une partie fait de 1 à {MaxGameName} caractères.", nameof(name));
+        }
+        return PostAsync<AdminGameCreated>("/admin/parties", new JsonObject { ["nom"] = name }.ToJsonString(), ct);
+    }
+
+    /// <summary>Supprime une partie d'essai et son monde (409 pour la partie principale ou une partie lancée).</summary>
+    public Task<AdminMessage> DeleteGameAsync(string id, CancellationToken ct) =>
+        PostAsync<AdminMessage>("/admin/parties/supprimer", GameBody(id), ct);
+
+    /// <summary>Met une partie en suspens : horloge gelée, joueurs au hub ; elle reprendra où elle en est.</summary>
+    public Task<AdminGameChanged> SuspendGameAsync(string id, CancellationToken ct) =>
+        PostAsync<AdminGameChanged>("/admin/parties/suspendre", GameBody(id), ct);
+
+    /// <summary>Reprend une partie en suspens : ses joueurs sont rappelés à leur place.</summary>
+    public Task<AdminGameChanged> ResumeGameAsync(string id, CancellationToken ct) =>
+        PostAsync<AdminGameChanged>("/admin/parties/reprendre", GameBody(id), ct);
+
+    /// <summary>Le corps qui désigne une partie ; un identifiant hors du modèle ne part jamais.</summary>
+    private static string GameBody(string id)
+    {
+        if (!IsGameId(id))
+        {
+            throw new ArgumentException($"« {id} » n'est pas un identifiant de partie.", nameof(id));
+        }
+        return new JsonObject { ["partie"] = id }.ToJsonString();
+    }
+
+    // ------------------------------------------------------------------
     // Sauvegardes
     // ------------------------------------------------------------------
     /// <summary>Les sauvegardes, celle en cours, la dernière, la prochaine, la restauration prévue et la dernière faite.</summary>

@@ -111,6 +111,17 @@ public class MainScreen extends HdScreen {
 				onClose();
 			}));
 		}
+		if (ClientState.obj(v, "parties") != null) {
+			// Au hub (hors des mondes de partie) : le tableau des parties, pour en rejoindre ou en regarder une.
+			actions.add(new Action("Parties", () -> minecraft.gui.setScreen(new PartiesScreen())));
+		}
+		if (ClientState.bool(ClientState.obj(v, "partie"), "regarde")) {
+			// Dans les gradins d'une partie : en sortir, retour au hub.
+			actions.add(new Action("Arrêter de regarder", () -> {
+				send("vc partie sortir");
+				onClose();
+			}));
+		}
 		JsonObject worlds = ClientState.obj(v, "mondes");
 		if (worlds != null && ClientState.str(worlds, "bloque") == null) {
 			// Le hub, le village de la partie et les autres mondes de partie (tous les mondes pour un opérateur) ; pas pendant sa partie.

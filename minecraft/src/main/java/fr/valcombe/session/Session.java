@@ -57,6 +57,12 @@ public final class Session {
 	private int gatherToken;
 	/** Spectateurs : ils regardent la partie sans y jouer. */
 	final Set<String> spectators = new LinkedHashSet<>();
+	/**
+	 * Ceux qui regardent depuis le tableau des parties du hub (« Regarder ») : des spectateurs (ils sont aussi dans
+	 * {@link #spectators}) qui ne voient jamais le grimoire, quel que soit le réglage du Conteur, et que le vocal tient à
+	 * part des joueurs (ni entendus, ni entendant). Pas enregistrés : on cesse de regarder en quittant le monde.
+	 */
+	final Set<String> watchers = new LinkedHashSet<>();
 	/** Jetons de rappel posés par le Conteur sur les sièges (« ivre », « a choisi X »…). */
 	final Map<String, List<String>> reminders = new LinkedHashMap<>();
 	/** Partie d'entraînement : le joueur guidé, et les conseils déjà donnés. */
@@ -512,6 +518,7 @@ public final class Session {
 			: camp.startsWith("m") ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD;
 		g.addTraveller(name, team);
 		spectators.remove(name);
+		watchers.remove(name);
 		host.spectator(name, false);
 		host.addSeat(name);
 		boolean evil = team == fr.valcombe.rules.Team.EVIL;
@@ -955,6 +962,7 @@ public final class Session {
 	/** Devenir spectateur (ou redevenir joueur). */
 	public String spectate(String name) {
 		if (spectators.remove(name)) {
+			watchers.remove(name);
 			host.spectator(name, false);
 			announce(name + " ne regarde plus la partie.");
 			return "Tu n'es plus spectateur.";
@@ -978,6 +986,83 @@ public final class Session {
 	}
 
 	// ------------------------------------------------------------------
+	// Regarder depuis le tableau des parties du hub
+	// ------------------------------------------------------------------
+	/** Ce joueur regarde-t-il cette partie depuis le tableau des parties (voir {@link #watchers}) ? */
+	public boolean isWatcher(String name) {
+		return name != null && watchers.contains(name);
+	}
+
+	/** Ceux qui regardent cette partie depuis le tableau des parties, dans l'ordre d'arrivée. */
+	public List<String> watchers() {
+		return List.copyOf(watchers);
+	}
+
+	/**
+	 * Pourquoi ce joueur ne peut pas regarder cette partie, ou null s'il le peut. Il ne la regarde pas s'il y a déjà sa
+	 * place : inscrit, assis, Conteur ou élève. Sans effet : c'est la question que pose le tableau des parties avant
+	 * d'emmener le joueur.
+	 */
+	public String watchRefusal(String name) {
+		if (suspended) {
+			return "La partie est en suspens : elle reprendra où elle en est.";
+		}
+		if (lobby.contains(name)) {
+			return "Tu es inscrit à cette partie : tu y joueras, inutile de la regarder.";
+		}
+		if (game != null && game.seatOf(name) >= 0) {
+			return "Tu joues dans cette partie.";
+		}
+		if (name.equals(storyteller)) {
+			return "Tu contes cette partie.";
+		}
+		if (name.equals(trainee)) {
+			return "C'est ta partie d'entraînement.";
+		}
+		return null;
+	}
+
+	/**
+	 * Regarder la partie depuis le tableau des parties : spectateur (mode spectateur de Minecraft), sans jamais voir le
+	 * grimoire ni entendre le vocal des joueurs. Le joueur est d'abord libéré des autres tables où il attendait. Une
+	 * GameException avec la raison s'il ne le peut pas ({@link #watchRefusal}) ; rien ne change s'il regarde déjà.
+	 */
+	public String watch(String name) {
+		String why = watchRefusal(name);
+		if (why != null) {
+			throw new GameException(why);
+		}
+		if (watchers.contains(name)) {
+			host.toTable(name);
+			return "Tu regardes déjà cette partie.";
+		}
+		admit(name);
+		spectators.add(name);
+		watchers.add(name);
+		host.toTable(name); // on regarde la partie là où elle se joue
+		host.spectator(name, true);
+		announce(name + " regarde la partie depuis les gradins.");
+		return "Tu regardes la partie en spectateur : tu vas où tu veux, sans voir les rôles ni entendre les joueurs. "
+			+ "Pour revenir au hub : menu J, « Arrêter de regarder », ou /vc partie sortir.";
+	}
+
+	/**
+	 * Ce joueur cesse de regarder (il a quitté le monde de la partie, il s'est déconnecté, ou il le demande) : il n'est
+	 * plus spectateur et retrouve son mode de jeu. Faux s'il ne regardait pas. {@code quiet} : rien n'est annoncé à la table.
+	 */
+	public boolean stopWatching(String name, boolean quiet) {
+		if (!watchers.remove(name)) {
+			return false;
+		}
+		spectators.remove(name);
+		host.spectator(name, false);
+		if (!quiet) {
+			announce(name + " ne regarde plus la partie.");
+		}
+		return true;
+	}
+
+	// ------------------------------------------------------------------
 	// Partie d'entraînement guidée
 	// ------------------------------------------------------------------
 	public boolean isTrainee(String name) {
@@ -994,6 +1079,7 @@ public final class Session {
 			storyteller = null;
 		}
 		spectators.remove(name);
+		watchers.remove(name);
 		lobby.removeIf(n -> !n.equals(name) && !bots.contains(n));
 		if (!lobby.contains(name)) {
 			lobby.add(name);
@@ -3051,8 +3137,12 @@ public final class Session {
 		announce("La partie est mise en suspens : chacun retourne au hub. Elle reprendra où elle en est.");
 		host.freeze(true);
 		suspendedPlayers.clear();
+		// Ceux qui la regardaient depuis le hub y retournent aussi, mais ne sont pas rappelés à la reprise.
+		List<String> gallery = List.copyOf(this.watchers);
 		suspendedPlayers.addAll(host.sendAway());
 		int sent = suspendedPlayers.size();
+		gallery.forEach(suspendedPlayers::remove);
+		gallery.forEach(n -> stopWatching(n, true));
 		suspendedPlayers.addAll(watchers); // les absents aussi : ils retrouveront leur place à la reprise
 		save();
 		return "Partie mise en suspens : horloge arrêtée, " + sent + " joueur(s) renvoyé(s) au hub. Pour la reprendre : "

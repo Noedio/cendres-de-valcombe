@@ -42,11 +42,10 @@ public final class GameSeats {
 	}
 
 	/**
-	 * Ce joueur veut s'asseoir à la table {@code target} : renvoie pourquoi il ne le peut pas (une partie en cours le
-	 * retient ailleurs), ou null après l'avoir libéré des autres tables où il n'était qu'en attente (inscrit, Conteur
-	 * d'une partie pas encore lancée, spectateur). Chaque table quittée l'annonce à ses joueurs.
+	 * Pourquoi ce joueur ne peut pas venir à la table {@code target} (une partie en cours qu'il joue ou qu'il conte le
+	 * retient ailleurs), ou null. Sans effet : le tableau des parties la pose avant d'emmener le joueur.
 	 */
-	public static String admit(List<Table> tables, Table target, String player) {
+	public static String heldElsewhere(List<Table> tables, Table target, String player) {
 		for (Table t : tables) {
 			if (t == target || t.session() == target.session()) {
 				continue;
@@ -55,6 +54,19 @@ public final class GameSeats {
 				return "Tu es retenu par la partie en cours de « " + t.name() + " » : elle doit finir avant que tu ne rejoignes « "
 					+ target.name() + " ».";
 			}
+		}
+		return null;
+	}
+
+	/**
+	 * Ce joueur veut s'asseoir à la table {@code target} : renvoie pourquoi il ne le peut pas (une partie en cours le
+	 * retient ailleurs), ou null après l'avoir libéré des autres tables où il n'était qu'en attente (inscrit, Conteur
+	 * d'une partie pas encore lancée, spectateur). Chaque table quittée l'annonce à ses joueurs.
+	 */
+	public static String admit(List<Table> tables, Table target, String player) {
+		String held = heldElsewhere(tables, target, player);
+		if (held != null) {
+			return held;
 		}
 		for (Table t : tables) {
 			if (t == target || t.session() == target.session() || !t.session().belongs(player)) {

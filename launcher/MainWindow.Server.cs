@@ -287,6 +287,7 @@ public partial class MainWindow
         _srvPlayersShown = "\0";
         _srvWorldsShown = "\0";
         BkReset();
+        GmReset();
         SrvManagedReset();
         if (!_srvFormOpen)
         {
@@ -326,6 +327,7 @@ public partial class MainWindow
             bool readConsole = full || _srvTab == "console";
             bool readSettings = _srvSettingsStale || (_srvTab == "reglages" && _srvTick % 15 == 0);
             var (readBackups, readBackupSettings) = BkWanted(force);
+            bool readGames = GmWanted(force);
             _srvTick++;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             try
@@ -349,11 +351,13 @@ public partial class MainWindow
                 }
                 var backups = readBackups || readBackupSettings
                     ? await BkReadAsync(client, readBackups, readBackupSettings, cts.Token) : (null, null);
+                var games = readGames ? await GmReadAsync(client, cts.Token) : null;
                 if (gen != _srvGen)
                 {
                     return; // autre serveur choisi pendant la requête
                 }
                 BkReceived(backups.List, backups.Settings);
+                GmReceived(games);
                 if (state != null)
                 {
                     _srvState = state;
@@ -677,6 +681,7 @@ public partial class MainWindow
             : "La console s'affiche une fois le serveur joint.";
         SrvRenderManaged(st);
         BkRender();
+        GmRender();
     }
 
     private static string Describe(AdminState st)
@@ -834,7 +839,7 @@ public partial class MainWindow
     private void SrvRenderWorlds(AdminState? st)
     {
         string signature = st == null ? "rien:" + _srvConnId + (_srvClient == null)
-            : string.Join("|", st.Mondes.Select(w => $"{w.Id}/{w.Nom}/{w.Etat}/{w.Joueurs}"));
+            : string.Join("|", st.Mondes.Select(w => $"{w.Id}/{w.Nom}/{w.Etat}/{w.Joueurs}/{w.Partie?.Etat}"));
         if (signature == _srvWorldsShown)
         {
             return;
@@ -860,7 +865,7 @@ public partial class MainWindow
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var name = new StackPanel();
             name.Children.Add(new TextBlock { Text = w.Nom.Length > 0 ? w.Nom : w.Id, FontSize = 14, Foreground = Res("Ink"), TextTrimming = TextTrimming.CharacterEllipsis });
-            name.Children.Add(new TextBlock { Text = w.SorteTexte, Style = (Style)FindResource("Hint"), Margin = new Thickness(0, 1, 0, 0) });
+            name.Children.Add(new TextBlock { Text = w.SorteTexte + (w.Partie is { Etat.Length: > 0 } p ? " · " + p.Etat : ""), Style = (Style)FindResource("Hint"), Margin = new Thickness(0, 1, 0, 0) });
             row.Children.Add(name);
             var state = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             Brush color = w.Etat switch { "charge" => Res("Good"), "remise-a-neuf" => Res("Gold"), _ => Grey };
@@ -904,6 +909,12 @@ public partial class MainWindow
             _bkSettingsStale = _bkSettingsStale || !_bkDirty;
             BkRender();
         }
+        if (_srvTab == "parties")
+        {
+            _gmStale = true;
+            _gmShown = "\0";
+            GmRender();
+        }
         if (PageServer.Visibility == Visibility.Visible)
         {
             _ = SrvPollAsync(force: true);
@@ -921,6 +932,7 @@ public partial class MainWindow
         SrvConsolePanel.Visibility = !form && _srvTab == "console" ? Visibility.Visible : Visibility.Collapsed;
         SrvSettingsPanel.Visibility = !form && _srvTab == "reglages" ? Visibility.Visible : Visibility.Collapsed;
         SrvBackupsPanel.Visibility = !form && _srvTab == "sauvegardes" ? Visibility.Visible : Visibility.Collapsed;
+        SrvGamesPanel.Visibility = !form && _srvTab == "parties" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ------------------------------------------------------------------
@@ -1845,6 +1857,29 @@ public partial class MainWindow
         SrvBackupsPanel.ScrollToTop();
         await Task.Delay(250);
         await SnapshotAsync(dir, "Server-sauvegardes-restauree");
+
+        // Parties : le tableau, une partie d'essai créée, une suppression à confirmer, une partie mise en suspens.
+        await Tab("parties");
+        await Until(() => _gm != null && GmList.Children.Count == 3, "le tableau des parties");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-parties");
+        GmNameBox.Text = "Essai du samedi";
+        GmCreate(this, new RoutedEventArgs());
+        await Until(() => !_gmBusy && _gm is { Parties.Count: 4 } && GmList.Children.Count == 4, "la partie d'essai créée");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-parties-creee");
+        GmAskDelete(_gm!.Parties.First(p => p.Id == "essai-du-samedi"));
+        await Task.Delay(250);
+        await SnapshotAsync(dir, "Server-parties-supprimer");
+        GmConfirmDelete(this, new RoutedEventArgs());
+        await Until(() => !_gmBusy && _gm is { Parties.Count: 3 }, "la suppression de la partie d'essai");
+        await GmSuspendAsync(_gm!.Parties[0], suspend: true);
+        await Until(() => !_gmBusy && _gm!.Parties[0].Status == "suspendue", "la mise en suspens");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-parties-suspens");
+        await GmSuspendAsync(_gm!.Parties[0], suspend: false);
+        await Until(() => !_gmBusy && _gm!.Parties[0].Status == "en-cours", "la reprise");
+        GmNotice.Visibility = Visibility.Collapsed;
 
         // Serveur loué (tunnel SSH fictif) : en ligne avec une mise à jour proposée, puis arrêté et démarré d'ici.
         await Tab("apercu");

@@ -17,6 +17,14 @@ public final class VoiceZones {
 	/** La zone de qui n'est dans aucune partie (hub, atelier, monde principal de Minecraft). */
 	public static final String OUTSIDE = "";
 
+	/**
+	 * La zone des gradins d'une partie : ceux qui la regardent depuis le tableau des parties du hub. Ils s'entendent
+	 * entre eux, mais ni les joueurs ni le Conteur ne les entendent, et ils n'entendent pas la partie.
+	 */
+	public static String gallery(String gameId) {
+		return gameId + "#gradins";
+	}
+
 	/** Aucun joueur connu : tout le monde est hors des parties. */
 	public static final VoiceZones NONE = new VoiceZones(Map.of());
 

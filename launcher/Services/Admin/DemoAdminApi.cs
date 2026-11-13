@@ -77,6 +77,13 @@ public sealed class DemoAdminApi
         api._ops.Clear();
         api._backups.Clear();
         api._evening = "";
+        // Seule la partie principale, salon ouvert : rien ne s'y joue encore.
+        api._games.RemoveAll(g => g.Trial);
+        foreach (var g in api._games)
+        {
+            (g.Status, g.Phase, g.Number, g.Lobby, g.Seated, g.Storyteller, g.Present, g.Watchers) = ("ouverte", null, 0, 0, 0, null, 0, 0);
+            g.Places = 16;
+        }
         return api;
     }
 
@@ -142,6 +149,10 @@ public sealed class DemoAdminApi
             if (path == "/admin/sauvegardes" || path.StartsWith("/admin/sauvegardes/", StringComparison.Ordinal))
             {
                 return Backups(method, path == "/admin/sauvegardes" ? "" : path["/admin/sauvegardes/".Length..], body);
+            }
+            if (path == "/admin/parties" || path.StartsWith("/admin/parties/", StringComparison.Ordinal))
+            {
+                return Games(method, path, body);
             }
             string? expected = path switch
             {
@@ -246,19 +257,242 @@ public sealed class DemoAdminApi
         ["messageAccueil"] = _welcome.Length > 0 ? _welcome : "Les Cendres de Valcombe",
         ["prochaineSoiree"] = _evening,
         ["motd"] = $"Prochaine soirée : {_evening}\nPartie en cours · « Le Bal masqué »",
-        ["mondes"] = new JsonArray(
-            World("hub", "Le hub", "hub", "charge", 1),
-            World("partie-principale", "Partie principale", "partie", "charge", 4),
-            World("essai-1", "Essai du jeudi", "essai", "decharge", 0),
-            World("atelier-carte-moulin", "Le Moulin (carte)", "atelier-carte", "decharge", 0),
-            World("atelier-structures", "Atelier structures", "atelier-structures", "remise-a-neuf", 0)),
+        ["mondes"] = Worlds(),
+        ["parties"] = new JsonArray(_games.Select(g => (JsonNode)GameJson(g)).ToArray()),
         ["redemarrageNecessaire"] = _port != _savedPort,
     };
+
+    /// <summary>Les mondes : le hub, un monde par partie (avec l'état de sa partie), puis les ateliers.</summary>
+    private JsonArray Worlds()
+    {
+        var list = new JsonArray { World("hub", "Le hub", "hub", "charge", 1) };
+        foreach (var g in _games)
+        {
+            var w = World(g.Id, g.Name, g.Trial ? "essai" : "partie", g.Present > 0 || !g.Trial ? "charge" : "decharge", g.Present);
+            w["partie"] = new JsonObject { ["statut"] = g.Status, ["etat"] = g.StateLine };
+            list.Add(w);
+        }
+        list.Add(World("atelier-carte-moulin", "Le Moulin (carte)", "atelier-carte", "decharge", 0));
+        list.Add(World("atelier-structures", "Atelier structures", "atelier-structures", "remise-a-neuf", 0));
+        return list;
+    }
 
     private static JsonObject World(string id, string name, string kind, string state, int players) => new()
     {
         ["id"] = id, ["nom"] = name, ["sorte"] = kind, ["etat"] = state, ["joueurs"] = players,
     };
+
+    // ------------------------------------------------------------------
+    // Parties
+    // ------------------------------------------------------------------
+    /// <summary>Une partie du serveur fictif, avec ce que le tableau des parties en montre.</summary>
+    private sealed class DemoGame
+    {
+        public string Id = "";
+        public string Name = "";
+        public bool Trial;
+        /// <summary><c>ouverte</c>, <c>en-cours</c>, <c>en-pause</c>, <c>suspendue</c>.</summary>
+        public string Status = "ouverte";
+        /// <summary><c>night</c>, <c>day</c>, <c>setup</c>, ou null au salon.</summary>
+        public string? Phase;
+        public int Number;
+        public int Lobby;
+        public int Seated;
+        public int Places = 16;
+        public string? Storyteller;
+        public int Present;
+        public int Watchers;
+
+        public bool Launched => Status != "ouverte";
+
+        public string PhaseLine => Phase switch
+        {
+            "night" => "Nuit " + Number,
+            "day" => "Jour " + Number,
+            "setup" => "Mise en place",
+            _ => "Salon ouvert",
+        };
+
+        public string StateLine => Status switch
+        {
+            "suspendue" => "en suspens (" + PhaseLine.ToLowerInvariant() + ")",
+            "en-pause" => PhaseLine.ToLowerInvariant() + ", en pause",
+            "en-cours" => PhaseLine.ToLowerInvariant(),
+            _ => Lobby == 0 ? "salon ouvert" : Lobby + " inscrit(s)",
+        };
+
+        public string StatusText => Status switch
+        {
+            "suspendue" => "En suspens",
+            "en-pause" => "En pause",
+            "en-cours" => "En cours",
+            _ => "Ouverte",
+        };
+    }
+
+    private readonly List<DemoGame> _games = new()
+    {
+        new DemoGame
+        {
+            Id = "partie-principale", Name = "Partie principale", Status = "en-cours", Phase = "night", Number = 2, Lobby = 12, Seated = 12,
+            Places = 12, Storyteller = "Yoann", Present = 4, Watchers = 1,
+        },
+        new DemoGame { Id = "essai-1", Name = "Essai du jeudi", Trial = true, Lobby = 3, Places = 16 },
+        new DemoGame
+        {
+            Id = "essai-moulin", Name = "Répétition du Moulin", Trial = true, Status = "suspendue", Phase = "day", Number = 3, Lobby = 9,
+            Seated = 9, Places = 10, Storyteller = "Lea",
+        },
+    };
+
+    private static JsonObject GameJson(DemoGame g) => new()
+    {
+        ["id"] = g.Id, ["nom"] = g.Name, ["sorte"] = g.Trial ? "essai" : "partie", ["principale"] = !g.Trial, ["etat"] = g.StateLine,
+        ["enCours"] = g.Launched, ["enPause"] = g.Status is "en-pause" or "suspendue", ["suspendue"] = g.Status == "suspendue",
+        ["phase"] = g.Phase, ["inscrits"] = g.Lobby, ["assis"] = g.Launched ? g.Seated : 0, ["conteur"] = g.Storyteller,
+        ["joueurs"] = g.Present, ["statut"] = g.Status, ["statutTexte"] = g.StatusText, ["phaseTexte"] = g.PhaseLine,
+        ["numero"] = g.Launched && g.Phase is "night" or "day" ? g.Number : 0, ["participants"] = g.Launched ? g.Seated : g.Lobby,
+        ["places"] = g.Places, ["spectateurs"] = g.Watchers,
+    };
+
+    /// <summary>L'identifiant tiré d'un nom, comme le mod : minuscules sans accents, tirets, 30 caractères au plus.</summary>
+    private static string Slug(string name)
+    {
+        string flat = new string(name.Normalize(NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray()).ToLowerInvariant();
+        var s = new StringBuilder();
+        foreach (char c in flat)
+        {
+            s.Append(c is >= 'a' and <= 'z' or >= '0' and <= '9' ? c : '-');
+        }
+        string slug = Regex.Replace(s.ToString(), "-+", "-").Trim('-');
+        slug = slug.Length > 30 ? slug[..30].TrimEnd('-') : slug;
+        return slug.Length < 2 ? "essai" : slug;
+    }
+
+    /// <summary>/admin/parties et ses sous-chemins, comme le mod.</summary>
+    private AdminReply Games(string method, string path, string? body)
+    {
+        string? expected = path switch
+        {
+            "/admin/parties" => method is "GET" or "POST" ? method : "GET, POST",
+            "/admin/parties/supprimer" or "/admin/parties/suspendre" or "/admin/parties/reprendre" => "POST",
+            _ => null,
+        };
+        if (expected == null)
+        {
+            return Error(404, "Point d'accès inconnu : " + path);
+        }
+        if (expected != method)
+        {
+            return Error(405, $"Méthode {method} refusée ici : {expected} attendu.");
+        }
+        if (method == "GET")
+        {
+            return Ok(new JsonObject
+            {
+                ["parties"] = new JsonArray(_games.Select(g => (JsonNode)GameJson(g)).ToArray()),
+                ["enCours"] = _games.Count(g => g.Launched),
+                ["principale"] = _games.FirstOrDefault(g => !g.Trial)?.Id,
+                ["disponible"] = true,
+            });
+        }
+        JsonObject? request = null;
+        try
+        {
+            request = string.IsNullOrWhiteSpace(body) ? new JsonObject() : JsonNode.Parse(body) as JsonObject;
+        }
+        catch (JsonException)
+        {
+        }
+        if (request == null)
+        {
+            return Error(400, "JSON invalide : un objet est attendu.");
+        }
+        string? Text(string key) => request[key] is JsonValue v && v.TryGetValue(out string? t) && t.Trim().Length > 0 ? t.Trim() : null;
+        if (path == "/admin/parties")
+        {
+            string? name = Text("nom");
+            if (name == null)
+            {
+                return Error(400, "Champ « nom » attendu.");
+            }
+            if (name.Length > 40)
+            {
+                return Error(400, "Nom trop long : 40 caractères au plus.");
+            }
+            string id = Slug(name);
+            for (int i = 2; _games.Any(g => g.Id == id); i++)
+            {
+                id = Slug(name) + "-" + i;
+            }
+            var created = new DemoGame { Id = id, Name = name, Trial = true, Places = 16 };
+            _games.Add(created);
+            Log("INFO", "valcombe", $"Partie d'essai « {name} » créée ({id}).");
+            return Ok(new JsonObject
+            {
+                ["partie"] = GameJson(created),
+                ["message"] = $"Partie d'essai « {name} » créée ({id}). Son village est en route. Y aller : /vc partie aller {id}.",
+            });
+        }
+        string? wanted = Text("partie");
+        if (wanted == null)
+        {
+            return Error(400, "Champ « partie » attendu.");
+        }
+        var game = _games.FirstOrDefault(g => g.Id == wanted);
+        if (game == null)
+        {
+            return Error(404, $"Aucune partie dans le monde « {wanted} ».");
+        }
+        switch (path)
+        {
+            case "/admin/parties/supprimer":
+                if (!game.Trial)
+                {
+                    return Error(409, $"« {game.Name} » est le monde de la partie principale : il ne se supprime pas. /vc monde recreer {game.Id} le remet à neuf, plat et vide.");
+                }
+                if (game.Launched)
+                {
+                    return Error(409, $"Une partie se joue dans « {game.Name} » : arrêtez-la d'abord (/vc arreter), puis supprimez-le.");
+                }
+                _games.Remove(game);
+                Log("INFO", "valcombe", $"Partie fermée : « {game.Id} ».");
+                return Ok(new JsonObject { ["ok"] = true, ["message"] = $"Partie « {game.Name} » supprimée : ses joueurs vont au hub, son monde est effacé." });
+            case "/admin/parties/suspendre":
+                if (!game.Launched)
+                {
+                    return Error(409, "Aucune partie en cours.");
+                }
+                if (game.Status == "suspendue")
+                {
+                    return Error(409, "La partie est déjà en suspens. Pour la reprendre : /vc partie reprendre.");
+                }
+                int sent = game.Present;
+                game.Status = "suspendue";
+                game.Present = 0;
+                game.Watchers = 0;
+                Log("INFO", "valcombe", $"Partie « {game.Name} » mise en suspens.");
+                return Changed(game, $"Partie mise en suspens : horloge arrêtée, {sent} joueur(s) renvoyé(s) au hub. Pour la reprendre : /vc partie reprendre.");
+            default:
+                if (game.Status != "suspendue")
+                {
+                    return Error(409, "La partie n'est pas en suspens.");
+                }
+                game.Status = "en-cours";
+                Log("INFO", "valcombe", $"Partie « {game.Name} » reprise.");
+                return Changed(game, "Partie reprise : les joueurs sont rappelés (lien [Y aller] dans le chat) et retrouvent leur place en arrivant. "
+                    + "Elle repart dès que tout le monde est là, une minute au plus.");
+        }
+    }
+
+    private static AdminReply Changed(DemoGame g, string message)
+    {
+        var o = GameJson(g);
+        o["message"] = message;
+        return Ok(o);
+    }
 
     private JsonObject Players() => new()
     {

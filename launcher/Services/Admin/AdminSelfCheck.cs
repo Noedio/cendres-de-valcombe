@@ -44,7 +44,7 @@ public static class AdminSelfCheck
             var state = await client.GetStateAsync(ct);
             Check(state.Api == AdminClient.ContractVersion && state.Version.Length > 0 && state.DureeSecondes > 0,
                 $"GET /admin/etat : contrat {state.Api}, mod {state.Version}, en ligne depuis {state.DureeSecondes} s");
-            Check(state.Mondes.Count == 5 && state.Mondes[0].Sorte == "hub" && state.Memoire.MaxMo > 0,
+            Check(state.Mondes.Count == 6 && state.Mondes[0].Sorte == "hub" && state.Memoire.MaxMo > 0,
                 $"Mondes ({state.Mondes.Count}) et mémoire ({state.Memoire.UtiliseeMo}/{state.Memoire.MaxMo} Mo) lus");
 
             var players = await client.GetPlayersAsync(ct);
@@ -85,6 +85,7 @@ public static class AdminSelfCheck
             Check(refused?.Status == 400 && refused.Message.Contains("Nom de joueur invalide"),
                 "Demande fautive refusée en entier (400), avec toutes ses fautes");
 
+            await CheckGamesAsync(client, conn, Check, ct);
             await CheckBackupsAsync(client, api, Check, ct);
 
             var restart = await client.RestartAsync(ct);
@@ -175,6 +176,71 @@ public static class AdminSelfCheck
         }
         lines.Add(failures == 0 ? "RÉSULTAT : tout est bon." : $"RÉSULTAT : {failures} échec(s).");
         return lines;
+    }
+
+    /// <summary>
+    /// Les parties, par le vrai client HTTP : le tableau (et l'état de chaque partie dans /admin/etat), la création d'une
+    /// partie d'essai, la mise en suspens et la reprise, la suppression, et les refus (nom manquant, partie principale,
+    /// partie lancée, partie inconnue, identifiant hors du modèle).
+    /// </summary>
+    private static async Task CheckGamesAsync(AdminClient client, IServerConnection conn, Checker Check, CancellationToken ct)
+    {
+        var board = await client.GetGamesAsync(ct);
+        Check(board.Disponible && board.Parties.Count == 3 && board.Principale == "partie-principale" && board.EnCours == 2
+                && board.Parties[0].Principale && board.Parties[0].Status == "en-cours" && board.Parties[0].Places == 12
+                && board.Parties[1].Status == "ouverte" && board.Parties[1].JoueursTexte == "3 inscrits sur 16 places"
+                && board.Parties[2].Status == "suspendue" && board.Parties[2].StatusText == "En suspens",
+            $"GET /admin/parties : {board.Parties.Count} parties, la principale en cours, un essai ouvert, un en suspens");
+        Check(board.Parties[0].JoueursTexte == "12 joueurs sur 12 places" && board.Parties[0].PhaseTexte == "Nuit 2"
+                && board.Parties[0].Conteur == "Yoann" && board.Parties[0].Spectateurs == 1 && board.Parties[0].SorteTexte == "Partie principale",
+            "Fiche d'une partie : phase, joueurs et places, Conteur, spectateurs");
+        var state = await client.GetStateAsync(ct);
+        Check(state.Parties.Count == 3 && state.Mondes.First(w => w.Id == "partie-principale").Partie?.Statut == "en-cours"
+                && state.Mondes.First(w => w.Sorte == "hub").Partie == null,
+            "GET /admin/etat : les parties, et l'état de la partie de chaque monde de partie");
+        // Un serveur plus ancien n'envoie pas le statut : il se déduit des anciens champs.
+        var old = new AdminGame { EnCours = true, EnPause = true, Assis = 7, Places = 0 };
+        Check(old.Status == "en-pause" && old.StatusText == "En pause" && old.JoueursTexte == "7 joueurs",
+            "Fiche d'un serveur plus ancien : statut déduit");
+
+        var created = await client.CreateGameAsync("  Essai du samedi ", ct);
+        Check(created.Partie?.Id == "essai-du-samedi" && created.Partie.Status == "ouverte" && created.Message.Contains("créée"),
+            $"POST /admin/parties : partie d'essai créée ({created.Partie?.Id})");
+        Check((await client.GetGamesAsync(ct)).Parties.Count == 4, "Elle paraît au tableau");
+        var noName = await Expect(() => conn.SendAsync(System.Net.Http.HttpMethod.Post, "/admin/parties", "{}", ct)
+            .ContinueWith(t => AdminClient.Read<AdminGameCreated>(t.Result), ct));
+        Check(noName?.Status == 400 && noName.Message.Contains("nom"), "Créer sans nom : refusé (400)");
+        bool refusedLocally = false;
+        try
+        {
+            await client.CreateGameAsync(new string('x', AdminClient.MaxGameName + 1), ct);
+        }
+        catch (ArgumentException)
+        {
+            refusedLocally = true;
+        }
+        Check(refusedLocally && AdminClient.IsGameId("essai-1") && !AdminClient.IsGameId("../hub") && !AdminClient.IsGameId("Essai"),
+            "Nom trop long et identifiant hors du modèle : refusés avant l'envoi");
+
+        var suspended = await client.SuspendGameAsync("partie-principale", ct);
+        Check(suspended.Suspendue && suspended.Status == "suspendue" && suspended.Message.Contains("suspens"),
+            "POST /admin/parties/suspendre : la partie principale en suspens");
+        var twice = await Expect(() => client.SuspendGameAsync("partie-principale", ct));
+        Check(twice?.Status == 409, "Déjà en suspens : refusé (409)");
+        var resumed = await client.ResumeGameAsync("partie-principale", ct);
+        Check(!resumed.Suspendue && resumed.Status == "en-cours" && resumed.Message.Contains("rappelés"), "POST /admin/parties/reprendre : reprise");
+        var notSuspended = await Expect(() => client.ResumeGameAsync("essai-1", ct));
+        Check(notSuspended?.Status == 409, "Reprendre une partie qui n'est pas en suspens : refusé (409)");
+
+        var main = await Expect(() => client.DeleteGameAsync("partie-principale", ct));
+        Check(main?.Status == 409 && main.Message.Contains("ne se supprime pas"), "La partie principale ne se supprime pas (409)");
+        var launched = await Expect(() => client.DeleteGameAsync("essai-moulin", ct));
+        Check(launched?.Status == 409 && launched.Message.Contains("arrêtez-la"), "Une partie lancée, même en suspens, ne se supprime pas (409)");
+        var unknown = await Expect(() => client.DeleteGameAsync("aucune", ct));
+        Check(unknown?.Status == 404, "Partie inconnue : 404");
+        var deleted = await client.DeleteGameAsync("essai-du-samedi", ct);
+        Check(deleted.Ok && deleted.Message.Contains("supprimée") && (await client.GetGamesAsync(ct)).Parties.Count == 3,
+            "POST /admin/parties/supprimer : la partie d'essai et son monde supprimés");
     }
 
     /// <summary>

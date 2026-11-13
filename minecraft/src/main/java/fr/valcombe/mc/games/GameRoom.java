@@ -128,6 +128,23 @@ public final class GameRoom {
 		return said;
 	}
 
+	/** Les trônes du village de cette partie (0 tant qu'elle n'a pas de village). */
+	public int seats() {
+		var v = host.village();
+		return v == null ? 0 : v.seatCount();
+	}
+
+	/** Joueurs dans le monde de cette partie en ce moment. */
+	public int present() {
+		ServerLevel level = host.levelIfReady();
+		return level == null ? 0 : level.players().size();
+	}
+
+	/** La fiche de cette partie en ce moment (tableau du hub, écran « Parties », API, launcher). */
+	public GameCard card() {
+		return GameCard.of(worldId, name(), main(), kind() == WorldKind.ESSAI, session, seats(), present());
+	}
+
 	/** Cette partie vue par la logique des tables (voir {@link GameSeats}). */
 	public GameSeats.Table table() {
 		return new GameSeats.Table(worldId, name(), session);

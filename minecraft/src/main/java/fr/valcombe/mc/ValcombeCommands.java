@@ -277,6 +277,8 @@ public final class ValcombeCommands {
 				+ (st == null ? "" : ", Conteur " + st) + ".");
 		}
 		out.add("Y aller : /vc partie aller <id>. Créer une partie d'essai : /vc partie creer <nom> (opérateurs).");
+		out.add("La rejoindre : /vc partie rejoindre <id> ; la regarder en spectateur : /vc partie regarder <id> (en sortir : "
+			+ "/vc partie sortir). Au hub, le tableau des parties et le menu J, « Parties », font de même.");
 		out.add("Mettre une partie en suspens (ses joueurs au hub, elle reprendra où elle en est) : /vc partie suspendre [id] ; "
 			+ "la reprendre : /vc partie reprendre [id] (son Conteur ou un opérateur).");
 		return out;
@@ -313,6 +315,21 @@ public final class ValcombeCommands {
 						}
 						return travel.toGame(player(x), r.id());
 					}))))
+			// Tableau des parties du hub : la fiche d'une partie, la rejoindre (s'inscrire, ou retrouver sa place), la regarder
+			// en spectateur (sans les rôles ni le vocal des joueurs), et sortir des gradins.
+			.then(Commands.literal("voir")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> {
+						Games.tellCard(player(x), namedRoom(arg(x, "id")));
+						return "";
+					}))))
+			.then(Commands.literal("rejoindre")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> Games.join(player(x), namedRoom(arg(x, "id")))))))
+			.then(Commands.literal("regarder")
+				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
+					.executes(c -> exec(c, x -> Games.watch(player(x), namedRoom(arg(x, "id")))))))
+			.then(Commands.literal("sortir").executes(c -> exec(c, x -> Games.stopWatching(player(x)))))
 			// Mise en suspens et reprise : la partie du monde d'où part la commande (au hub : sa table d'attache), ou celle
 			// qu'on nomme. Le Conteur de la partie ou un opérateur.
 			.then(Commands.literal("suspendre")
@@ -323,6 +340,16 @@ public final class ValcombeCommands {
 				.executes(c -> exec(c, x -> suspendGame(x.getSource(), null, false)))
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
 					.executes(c -> exec(c, x -> suspendGame(x.getSource(), arg(x, "id"), false))))));
+	}
+
+	/** La partie de ce monde, nommée par son identifiant ; une GameException si elle n'existe pas. */
+	private static GameRoom namedRoom(String id) {
+		games();
+		GameRoom r = Games.byWorld(id);
+		if (r == null) {
+			throw new GameException("Aucune partie dans « " + id + " » (/vc partie liste).");
+		}
+		return r;
 	}
 
 	/**

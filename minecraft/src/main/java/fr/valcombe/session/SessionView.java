@@ -60,6 +60,7 @@ final class SessionView {
 			v.put("lobbyStatus", ready[1]);
 		}
 		v.put("spectator", ses.spectators.contains(me));
+		v.put("watching", ses.watchers.contains(me)); // regarde depuis le tableau des parties du hub
 		v.put("trainee", me.equals(ses.trainee));
 		Map<String, Object> sc = new LinkedHashMap<>();
 		sc.put("name", ses.scriptName);
@@ -276,7 +277,8 @@ final class SessionView {
 				v.put("today", day);
 			}
 			boolean spyAwake = ses.prompts.get(me) instanceof Prompt.Grimoire;
-			boolean watcher = ses.spectators.contains(me) && ses.settings.spectatorGrimoire;
+			// Ceux qui regardent depuis le tableau des parties du hub ne voient jamais les rôles, quel que soit le réglage.
+			boolean watcher = ses.spectators.contains(me) && !ses.watchers.contains(me) && ses.settings.spectatorGrimoire;
 			if (me.equals(ses.storyteller) || spyAwake || watcher) {
 				List<Map<String, Object>> grim = new ArrayList<>();
 				List<String> lines = g.grimoireLines();

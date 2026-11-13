@@ -131,6 +131,15 @@ Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 6. Une action qui reconstruit l'écran sur place (onglet, filtre local) appelle `rebuildSoon()`.
 7. Vérifier : `./gradlew build --offline -q`, puis une capture dans le test en jeu.
 
+## Écran « Parties » (tableau des parties)
+
+`PartiesScreen` (paquet `screen`) : menu J au hub, « Parties », ou une fiche cliquée sur le tableau des parties de la salle d'accueil (le serveur envoie `parties:<id>`, l'écran s'ouvre sur cette partie). À gauche, un `HdList` à vignettes ; à droite, la fiche de la partie choisie, sa vignette en bandeau, et ses boutons.
+
+- **Vignette peinte** (`PartiesScreen.vignette(hd, partie, x, y, w, h)`, en pixels réels, sans texture) : le ciel de la phase en dégradé (crépuscule et soleil couchant au salon, soleil du jour, lune en croissant et étoiles de la nuit, heure violette de la mise en place), la silhouette du village tirée de l'identifiant de la partie (toujours la même pour une partie, clocher au milieu, fenêtres allumées la nuit), une pastille par place (dorée si elle est prise), un voile et le signe pause en pause ou en suspens, un liseré d'or pour la partie principale, « ESSAI » dans un coin pour une partie d'essai.
+- **Boutons** : « Rejoindre » (ou « Y retourner ») et « Regarder », grisés avec la raison en infobulle quand le serveur les refuse ; « Suspendre » ou « Reprendre » pour qui mène la partie ; « Supprimer » (partie d'essai, opérateurs) qui demande « Confirmer » ou « Annuler » ; en bas, pour un opérateur, un `HdTextField` et « Créer une partie d'essai » (la nouvelle partie est choisie dès qu'elle paraît).
+- **Données** : le champ `parties` de la vue (`liste`, `operateur`, `regarde`), envoyé seulement hors des mondes de partie : dans une partie, on ne voit qu'elle. Chaque bouton est une commande `/vc partie rejoindre|regarder|suspendre|reprendre|supprimer|creer`.
+- **Test en jeu** : `PartiesGameTest` (mise en page à 427 × 240 et à l'échelle 3, captures `valcombe-parties-*.png`, vignettes de tous les états sur une vue fabriquée).
+
 ## Écrans du Conteur
 
 Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), éditeur de script, scénarios, durées et minuteurs, ordre de réveil et distribution des rôles sont passés à `HdScreen`, avec les mêmes boutons et les mêmes commandes. Ils tiennent tous dans une interface de 427 × 240.
