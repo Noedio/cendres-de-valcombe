@@ -136,6 +136,8 @@ public class RecetteGameTest implements FabricClientGameTest {
 		int seats;
 		String structure;
 		final String scenario = "recette-" + System.currentTimeMillis() % 100000;
+		/** Un rôle créé pour la recette : sans lui, le volet « Rôles créés » serait vide sur un dossier de jeu propre. */
+		final String role = "recette-role-" + stamp;
 		String roleAfter;
 		BlockPos hubMark;
 		String backup;
@@ -899,6 +901,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 
 		// Rôles et scénarios : un scénario de la table, choisi pour la partie d'essai.
 		String scName = "Scénario de recette " + st.stamp;
+		String roleName = "Sonneur de recette " + st.stamp;
 		server.runOnServer(s -> {
 			var d = new fr.valcombe.session.ScenarioDef();
 			d.id = st.scenario;
@@ -908,19 +911,26 @@ public class RecetteGameTest implements FabricClientGameTest {
 				d.roles.add(role.name().toLowerCase(Locale.ROOT));
 			}
 			ValcombeMod.creations().saveScenario(d);
+			var r = new fr.valcombe.rules.RoleDef();
+			r.id = st.role;
+			r.nom = roleName;
+			r.camp = "CITADIN";
+			r.embleme = "e_cle";
+			r.texte = "Le rôle du test de recette : chaque nuit, vous apprenez si la cloche du puits a sonné.";
+			ValcombeMod.creations().saveRole(r);
 		});
 		ctx.setScreen(AtelierHome::new);
 		ctx.waitTicks(5);
 		press(ctx, AtelierHome.ROLES);
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof RolesPage), "entrée Rôles et scénarios");
-		check(waitClient(ctx, 100, mc -> RolesPage.scenarios().stream().anyMatch(o -> st.scenario.equals(ClientState.str(o, "id")))),
-			"le scénario est dans la liste");
+		check(waitClient(ctx, 100, mc -> RolesPage.scenarios().stream().anyMatch(o -> st.scenario.equals(ClientState.str(o, "id")))
+			&& RolesPage.roles().stream().anyMatch(o -> st.role.equals(ClientState.str(o, "id")))), "le scénario et le rôle sont dans les listes");
 		ctx.setScreen(() -> new RolesPage(0));
 		ctx.waitTicks(10);
 		shot(ctx, "scenarios-liste");
 		ctx.setScreen(() -> new RolesPage(1));
 		ctx.waitTicks(10);
-		check(ctx.computeOnClient(mc -> grid(mc) != null && !grid(mc).labels().isEmpty()), "la liste des rôles");
+		check(ctx.computeOnClient(mc -> grid(mc) != null && grid(mc).labels().contains(roleName)), "la liste des rôles créés, celui de la recette compris");
 		shot(ctx, "roles-liste");
 		ctx.setScreen(() -> new RolesPage(0));
 		ctx.waitTicks(10);
@@ -1186,8 +1196,9 @@ public class RecetteGameTest implements FabricClientGameTest {
 			+ " | rôle " + ValcombeMod.creations().roles().stream().noneMatch(d -> d.id.equals(st.roleAfter))
 			+ " | carte " + ValcombeMod.maps().exists(st.mapId)
 			+ " | structure " + structures().exists(st.structure)
-			+ " | scénario " + ValcombeMod.creations().scenarios().stream().anyMatch(d -> d.id.equals(st.scenario)));
-		check(back.equals("bloc true | rôle true | carte true | structure true | scénario true"),
+			+ " | scénario " + ValcombeMod.creations().scenarios().stream().anyMatch(d -> d.id.equals(st.scenario))
+			+ " | rôle d'avant " + ValcombeMod.creations().roles().stream().anyMatch(d -> d.id.equals(st.role)));
+		check(back.equals("bloc true | rôle true | carte true | structure true | scénario true | rôle d'avant true"),
 			"après la restauration : le bloc posé au hub et le rôle créé après la sauvegarde ont disparu, le reste est là : " + back);
 		String games = server.computeOnServer(s -> {
 			GameRoom e = Games.byWorld(essai);
@@ -1299,8 +1310,10 @@ public class RecetteGameTest implements FabricClientGameTest {
 				if (creations.scenarios().stream().anyMatch(d -> d.id.equals(st.scenario))) {
 					creations.deleteScenario(st.scenario);
 				}
-				if (st.roleAfter != null && creations.roles().stream().anyMatch(d -> d.id.equals(st.roleAfter))) {
-					creations.deleteRole(st.roleAfter);
+				for (String role : new String[] {st.role, st.roleAfter}) {
+					if (role != null && creations.roles().stream().anyMatch(d -> d.id.equals(role))) {
+						creations.deleteRole(role);
+					}
 				}
 			});
 			TestKit.waitFor(ctx, world, 600, 5, s -> (st.essai == null || ValcombeMod.worlds().find(st.essai) == null)
