@@ -13,9 +13,10 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    - Prism Launcher : « Ajouter une instance », puis « Importer ».
 
    Le launcher installe Minecraft 26.3, Fabric, Fabric API, Simple Voice Chat, WorldEdit (la construction dans les
-   ateliers, réservée aux opérateurs) et le mod Valcombe, ainsi que les mods graphiques des joueurs (Sodium, Iris, Continuity, LambDynamicLights, EntityCulling). Les textures HD (Faithful 64x)
-   et les shaders (Complementary Reimagined) sont proposés en option : activez-les dans les packs de ressources et
-   dans les réglages d'Iris (touche O). Le launcher Valcombe, lui, les installe et les active tout seul.
+   ateliers, réservée aux opérateurs) et le mod Valcombe, ainsi que les mods graphiques des joueurs (Sodium, Iris,
+   Continuity, LambDynamicLights, EntityCulling). Les textures HD (Faithful 64x) et les shaders (Complementary
+   Reimagined) sont proposés en option : activez-les dans les packs de ressources et dans les réglages d'Iris
+   (touche O). Le launcher Valcombe, lui, les installe et les active tout seul.
 4. Lancez l'instance, puis Multijoueur → « Ajouter un serveur », avec l'adresse donnée par l'hôte.
 5. En jeu :
    - **J** ou le grimoire « Menu de Valcombe » (clic droit) : menu du jeu ;

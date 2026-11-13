@@ -107,7 +107,8 @@ def main():
     DIST.mkdir(exist_ok=True)
 
     # Mods des joueurs et du serveur (« both » dans le manifeste) : le launcher les installe des deux côtés.
-    # WorldEdit sert à construire dans les ateliers ; ses droits sont réglés par le mod Valcombe.
+    # WorldEdit sert à construire dans les ateliers ; il est réservé aux opérateurs par défaut, et le mod
+    # Valcombe lui retire la navigation par objet quand un outil de carte est en main (ToolPriority).
     mods = {
         "Fabric API": modrinth_file("fabric-api", mc, p["fabric_api_version"]),
         "Simple Voice Chat": modrinth_file("simple-voice-chat", mc, p["voicechat_version"]),
