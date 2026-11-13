@@ -18,9 +18,9 @@ public static class AdminSelfCheck
     {
         var lines = new List<string>();
         int failures = 0;
-        void Check(bool ok, string what)
+        void Check(bool ok, string what, string? detail = null)
         {
-            lines.Add((ok ? "OK     " : "ÉCHEC  ") + what);
+            lines.Add((ok ? "OK     " : "ÉCHEC  ") + what + (detail != null ? " : " + detail : ""));
             if (!ok)
             {
                 failures++;
@@ -84,6 +84,8 @@ public static class AdminSelfCheck
             var refused = await Expect(() => client.ChangeSettingsAsync(bad, ct));
             Check(refused?.Status == 400 && refused.Message.Contains("Nom de joueur invalide"),
                 "Demande fautive refusée en entier (400), avec toutes ses fautes");
+
+            await CheckBackupsAsync(client, api, Check, ct);
 
             var restart = await client.RestartAsync(ct);
             Check(restart.Ok && restart.Drapeau == "config/valcombe/redemarrer", "POST /admin/redemarrer : accepté (202), drapeau posé");
@@ -175,6 +177,144 @@ public static class AdminSelfCheck
         return lines;
     }
 
+    /// <summary>
+    /// Les sauvegardes, par le vrai client HTTP : liste, réglages (refus compris), sauvegarde suivie jusqu'au bout,
+    /// téléchargement contrôlé (zip, fiche, taille), restauration prévue, annulée, puis faite avec redémarrage.
+    /// </summary>
+    private static async Task CheckBackupsAsync(AdminClient client, DemoAdminApi api, Checker Check, CancellationToken ct)
+    {
+        api.BackupDuration = TimeSpan.FromSeconds(1.2);
+        var list = await client.GetBackupsAsync(ct);
+        Check(list.Nombre == 7 && list.Sauvegardes.Count == 7 && list.Sauvegardes.Count(b => !b.Lisible) == 1
+                && list.Sauvegardes.Zip(list.Sauvegardes.Skip(1)).All(p => p.First.When >= p.Second.When)
+                && list.RestaurationPossible && list.EnCours == null && list.EspaceLibre > 0,
+            $"GET /admin/sauvegardes : {list.Nombre} archives, de la plus récente à la plus ancienne, une illisible signalée");
+        var manual = list.Sauvegardes.First(b => b.Sorte == "manuelle");
+        Check(!manual.Rotation && manual.Mondes.Count == 5 && manual.When != null && manual.SorteTexte == "Manuelle",
+            "Archive manuelle : jamais effacée par la rotation, mondes et date lus");
+
+        var settings = await client.GetBackupSettingsAsync(ct);
+        Check(settings.IntervalBounds == (15, 10080) && settings.KeepBounds == (1, 500) && settings.Reglages.Actives
+                && settings.Reglages.ALArret && settings.ParDefaut.IntervalleMinutes == 360,
+            "GET /admin/sauvegardes/reglages : réglages, bornes et valeurs par défaut (champ aLArret compris)");
+        var badSettings = await Expect(() => client.ChangeBackupSettingsAsync(new AdminBackupSettingsChange { Garder = 0, IntervalleMinutes = 5 }, ct));
+        Check(badSettings?.Status == 400 && badSettings.Message.Contains("garder") && badSettings.Message.Contains("intervalleMinutes"),
+            "Réglages hors bornes refusés en entier (400), avec toutes leurs fautes");
+        var change = AdminBackupSettingsChange.Between(settings.Reglages,
+            new AdminBackupSettingsValues { Actives = true, IntervalleMinutes = 180, ALArret = false, Garder = 20, PendantPartie = false });
+        Check(change.ToJson() == "{\"intervalleMinutes\":180,\"aLArret\":false,\"garder\":20}", "Seuls les réglages changés partent", change.ToJson());
+        var changed = await client.ChangeBackupSettingsAsync(change, ct);
+        Check(changed.Ok && changed.Reglages.IntervalleMinutes == 180 && changed.Reglages.Garder == 20 && !changed.Reglages.ALArret
+                && changed.Message.Contains("toutes les 3 heures"),
+            "POST /admin/sauvegardes/reglages : appliqué, message rendu", changed.Message);
+
+        var started = await client.StartBackupAsync(ct);
+        Check(started.Ok && AdminBackupText.IsName(started.Nom) && started.EnCours != null, "POST /admin/sauvegardes : lancée (202), suivie par son nom", started.Nom);
+        var twice = await Expect(() => client.StartBackupAsync(ct));
+        Check(twice?.Status == 409, "Une seconde sauvegarde pendant la première : refusée (409)");
+        var phases = new HashSet<string>();
+        AdminBackups during;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        do
+        {
+            during = await client.GetBackupsAsync(ct);
+            if (during.EnCours != null)
+            {
+                phases.Add(during.EnCours.Phase);
+                await Task.Delay(100, ct);
+            }
+        }
+        while (during.EnCours != null && clock.Elapsed < TimeSpan.FromSeconds(10));
+        Check(during.EnCours == null && during.Derniere is { Ok: true } && during.Derniere.Nom == started.Nom && during.Nombre == 8
+                && phases.Contains("copie"),
+            $"Sauvegarde suivie jusqu'au bout (phases : {string.Join(", ", phases)}), puis rangée dans la liste", during.Derniere?.Message);
+
+        // Téléchargement, au fil de l'eau, puis contrôle de l'archive comme la page le fait.
+        string folder = Path.Combine(Path.GetTempPath(), "valcombe-verif-admin-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string file = Path.Combine(folder, started.Nom);
+            long reported = 0;
+            await using (var fs = File.Create(file))
+            {
+                await client.DownloadBackupAsync(started.Nom, fs, new Inline<(long Done, long? Total)>(p => reported = p.Done), ct);
+            }
+            var verdict = BackupArchive.Verify(file);
+            Check(verdict.Ok && verdict.Worlds.Count == 5 && reported == new FileInfo(file).Length,
+                "GET /admin/sauvegardes/<nom> : archive reçue en entier, zip et fiche contrôlés", verdict.Message);
+            string damaged = list.Sauvegardes.First(b => !b.Lisible).Nom;
+            string damagedFile = Path.Combine(folder, damaged);
+            await using (var fs = File.Create(damagedFile))
+            {
+                await client.DownloadBackupAsync(damaged, fs, null, ct);
+            }
+            Check(!BackupArchive.Verify(damagedFile).Ok, "Archive abîmée téléchargée : le contrôle la refuse", BackupArchive.Verify(damagedFile).Message);
+        }
+        finally
+        {
+            Directory.Delete(folder, true);
+        }
+        var missing = await Expect(() => client.DownloadBackupAsync("valcombe-2001-01-01_00-00-00-auto.zip", Stream.Null, null, ct));
+        Check(missing?.Status == 404 && missing.Message.Contains("Aucune sauvegarde"), "Archive inconnue : 404, sans rien écrire");
+        bool refusedName;
+        try
+        {
+            await client.DownloadBackupAsync("../admin.json", Stream.Null, null, ct);
+            refusedName = false;
+        }
+        catch (ArgumentException)
+        {
+            refusedName = true;
+        }
+        Check(refusedName && !AdminBackupText.IsName("valcombe-2026-11-13_15-12-44-auto.zip/../x") && AdminBackupText.IsName("valcombe-2026-11-13_15-12-44-manuelle-2.zip"),
+            "Nom hors modèle refusé avant l'envoi (chemin de l'API et du fichier protégés)");
+
+        // Restauration : prévue, protégée de l'effacement, annulée, puis faite avec redémarrage.
+        var target = during.Sauvegardes.First(b => b.Sorte == "auto" && b.Lisible);
+        var planned = await client.RestoreAsync(target.Nom, restart: false, ct);
+        var withPlan = await client.GetBackupsAsync(ct);
+        Check(planned.Ok && !planned.Redemarrage && withPlan.RestaurationPrevue?.Nom == target.Nom, "Restauration prévue au prochain démarrage (200)");
+        var locked = await Expect(() => client.DeleteBackupAsync(target.Nom, ct));
+        Check(locked?.Status == 409, "Archive dont la restauration est prévue : effacement refusé (409)");
+        var cancelled = await client.CancelRestoreAsync(ct);
+        Check(cancelled.Annulee && (await client.GetBackupsAsync(ct)).RestaurationPrevue == null, "Restauration prévue annulée");
+        var unreadable = await Expect(() => client.RestoreAsync(list.Sauvegardes.First(b => !b.Lisible).Nom, true, ct));
+        Check(unreadable?.Status == 409, "Archive illisible : restauration refusée (409)");
+        int restartsBefore = api.Restarts;
+        var asked = DateTime.UtcNow;
+        var restored = await client.RestoreAsync(target.Nom, restart: true, ct);
+        var after = await client.GetBackupsAsync(ct);
+        var report = after.DerniereRestauration;
+        Check(restored.Redemarrage && restored.Drapeau != null && api.Restarts == restartsBefore + 1 && report is { Ok: true } && report.Nom == target.Nom
+                && AdminBackupText.ParseDate(report.FaiteLe)?.UtcDateTime >= asked.AddSeconds(-1)
+                && report.Securite != null && after.Sauvegardes.Any(b => b.Nom == report.Securite && b.Sorte == "avant-restauration"),
+            "Restauration avec redémarrage (202) : compte rendu lu au retour, archive de sécurité présente", report?.Message);
+        var deleted = await client.DeleteBackupAsync(manual.Nom, ct);
+        Check(deleted.Ok && (await client.GetBackupsAsync(ct)).Sauvegardes.All(b => b.Nom != manual.Nom), "DELETE /admin/sauvegardes/<nom> : effacée");
+
+        Check(AdminBackupText.Interval(360) == "toutes les 6 heures" && AdminBackupText.Interval(1440) == "une fois par jour"
+                && AdminBackupText.Interval(90) == "toutes les 1 h 30" && AdminBackupText.Size(48_213_301) == "46 Mo"
+                && AdminBackupText.Size(5_000_000) == "4,8 Mo" && AdminBackupText.When(DateTimeOffset.Now.AddDays(-1), DateTime.Now).StartsWith("hier à"),
+            "Textes des sauvegardes : fréquence, taille et date en français");
+    }
+
+    /// <summary>Note une vérification : OK ou ÉCHEC, ce qui est vérifié, et un détail facultatif.</summary>
+    private delegate void Checker(bool ok, string what, string? detail = null);
+
+    /// <summary>Un suivi d'avancement appelé tout de suite, sur le fil qui rapporte (Progress&lt;T&gt; passerait par l'interface).</summary>
+    private sealed class Inline<T> : IProgress<T>
+    {
+        private readonly Action<T> _report;
+
+        public Inline(Action<T> report)
+        {
+            _report = report;
+        }
+
+        public void Report(T value) => _report(value);
+    }
+
     private static async Task<AdminException?> Expect(Func<Task> call)
     {
         try
@@ -221,7 +361,20 @@ public static class AdminSelfCheck
                 using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
                 body = await reader.ReadToEndAsync(ct);
             }
-            var reply = api.Handle(ctx.Request.HttpMethod, ctx.Request.RawUrl ?? "/", body, ctx.Request.Headers[DirectConnection.KeyHeader]);
+            string? key = ctx.Request.Headers[DirectConnection.KeyHeader];
+            // Une archive se télécharge comme le mod l'envoie : application/zip, taille exacte annoncée.
+            byte[]? archive = null;
+            AdminReply? refused = null;
+            if (ctx.Request.HttpMethod == "GET" && api.TryDownload(ctx.Request.RawUrl ?? "/", key, out archive, out refused) && archive != null)
+            {
+                ctx.Response.StatusCode = 200;
+                ctx.Response.ContentType = "application/zip";
+                ctx.Response.ContentLength64 = archive.Length;
+                await ctx.Response.OutputStream.WriteAsync(archive, ct);
+                ctx.Response.Close();
+                continue;
+            }
+            var reply = refused ?? api.Handle(ctx.Request.HttpMethod, ctx.Request.RawUrl ?? "/", body, key);
             ctx.Response.StatusCode = reply.Status;
             ctx.Response.ContentType = "application/json; charset=utf-8";
             if (reply.RetryAfter is { } wait)

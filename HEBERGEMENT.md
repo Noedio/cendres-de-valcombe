@@ -21,25 +21,31 @@ Les mots de passe, la clé privée et sa phrase de passe sont gardés **chiffré
 
 ### Pas à pas
 
-1. **Ajouter le serveur** dans la page Serveur du launcher : un nom, l'adresse, le port SSH (22 d'habitude), le compte, le mot de passe ou la clé.
-2. **Première connexion : l'empreinte.** Le launcher affiche l'empreinte de la clé du serveur (`SHA256:...`). Comparez-la à celle que donne votre hébergeur (ou, sur la console web de l'hébergeur, `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`), puis acceptez-la. Le launcher la retient (`ValcombeData/ssh-hotes-connus.json`) et **refuse ensuite toute autre clé** : si le serveur a été réinstallé, oubliez son ancienne empreinte dans le launcher ; sinon, quelqu'un se fait peut-être passer pour lui.
-3. **Le launcher examine le système** : Linux, processeur, distribution, systemd, mémoire, place libre, droits d'administration. Ce qui empêche l'installation est dit clairement ; le reste (peu de mémoire, système non essayé) est signalé.
-4. **Réglages du serveur**, tous modifiables : dossier (`/opt/valcombe`), compte du serveur (`valcombe`), nom du service (`valcombe`), port du jeu (**25565**, le port standard d'un serveur Minecraft : sur une machine louée, c'est le bon choix), port du chat vocal (24454, UDP), port de l'API d'administration (celui du mod, 25570, sauf choix contraire : il n'est jamais ouvert au public), mémoire donnée à Java (4 Go), ouverture du pare-feu.
-5. **Contrat de Minecraft** : lisez-le (https://aka.ms/MinecraftEULA) et acceptez-le pour ce serveur. Sans cela, le launcher n'installe rien.
-6. **Installer.** Le launcher envoie le script `install-valcombe.sh` et un plan d'installation par SFTP dans un dossier temporaire du VPS, puis le lance en root. Le script :
+Page **Serveur** du launcher, bouton **« Ajouter un serveur »**, puis **« Enregistrer un serveur loué »**. Un parcours guidé en six étapes, que l'on suit de haut en bas ; chaque attente (connexion, examen, installation) se fait sans figer le launcher, et « Arrêter » l'interrompt.
+
+1. **Adresse** : un nom pour la fiche, l'adresse du serveur et le port SSH (22 d'habitude), tels que l'hébergeur les donne. Une adresse collée avec son compte et son port (`ssh://debian@vps.exemple.fr:2222`) est remise en ordre toute seule.
+2. **Compte** : `root` ou le compte de l'hébergeur, puis le **mot de passe** ou la **clé privée** (bouton « Choisir... », qui ouvre `C:\Users\vous\.ssh`), avec sa phrase de passe s'il y en a une. La clé est lue et vérifiée tout de suite ; le launcher garde son texte (chiffré), pas son chemin. Si `sudo` demande un mot de passe à part, cochez la case et indiquez-le.
+3. **Empreinte** : à la première connexion, le launcher s'arrête et montre l'empreinte de la clé du serveur (`SHA256:...`), en grand, avec un bouton pour la copier. Comparez-la à celle que donne votre hébergeur (panneau, e-mail de livraison, ou sur sa console de secours `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`), puis acceptez-la. Le launcher la retient (`ValcombeData/ssh-hotes-connus.json`) et **refuse ensuite net toute autre clé**, en montrant l'ancienne et la nouvelle : si le serveur a été réinstallé, « J'ai réinstallé ce serveur : oublier l'ancienne empreinte » (après une confirmation) fait redemander la nouvelle ; sinon, n'allez pas plus loin, quelqu'un se fait peut-être passer pour lui. Le mot de passe n'est essayé qu'après l'empreinte, comme le fait SSH.
+4. **Système** : le launcher examine le serveur et l'affiche en liste cochée : Linux, processeur, distribution, systemd, droits d'administration (root, sudo sans ou avec mot de passe), mémoire, place libre, et Valcombe (absent, ou déjà là et à quelle version). Ce qui empêche l'installation est dit en rouge : un `sudo` refusé propose aussitôt d'indiquer le bon mot de passe sudo et de réessayer. Un Valcombe déjà installé et à jour passe directement au démarrage ; à une version plus ancienne, on choisit de le mettre à jour ou de le garder.
+5. **Installation** : la mémoire donnée à Java (4 Go proposés, moins sur une petite machine, qui garde toujours 1 Go pour elle), le port du jeu (**25565**, le port standard : sur une machine louée, c'est le bon choix), celui du chat vocal (24454, UDP) et l'ouverture du pare-feu ; en « Options avancées », le dossier (`/opt/valcombe`), le compte du serveur (`valcombe`), le nom du service (`valcombe`) et le port de l'API d'administration (celui du mod, 25570, sauf choix contraire : il n'est jamais ouvert au public). Puis le **contrat de Minecraft** : lisez-le (lien dans la case, https://aka.ms/MinecraftEULA) et cochez son acceptation ; sans elle, le bouton « Installer » reste éteint. L'installation montre sa progression et son journal en direct. Le launcher envoie le script `install-valcombe.sh` et un plan d'installation par SFTP dans un dossier temporaire du VPS, puis le lance en root. Le script :
    - crée le compte système `valcombe` (sans mot de passe ni connexion possible) et lui confie le dossier `/opt/valcombe` ;
    - passe ensuite la main à ce compte (`runuser`) pour tout ce qui va dans ce dossier : root n'y écrit rien et n'y lance rien, pour qu'un serveur détourné ne puisse pas s'en servir pour gagner les droits de root ;
    - télécharge le **Java officiel de Mojang** pour Linux (le même que celui du jeu ; sur un VPS ARM, Mojang n'en publie pas et c'est le Java d'Adoptium, de la même version), le **lanceur du serveur Fabric** et les **mods du serveur** (Fabric API, Simple Voice Chat, WorldEdit, Valcombe) : chaque fichier est vérifié par son empreinte, et seuls des sites connus sont acceptés (Mojang, Fabric, GitHub, Modrinth) ;
    - écrit `server.properties` (monde plat, liste blanche active au premier lancement ; un fichier existant n'est que retouché), `eula.txt`, `demarrer.sh` et `sauvegarder.sh` ;
    - installe le service `valcombe.service` (compte dédié, protections de systemd), l'active au démarrage de la machine, sans le démarrer ;
    - ouvre le port du jeu (TCP) et celui du chat vocal (UDP) dans `ufw` ou `firewalld` **s'ils sont déjà actifs** (il n'active jamais un pare-feu : cela pourrait couper SSH). Chez certains hébergeurs, ouvrez aussi ces ports dans leur interface web.
-7. **Démarrer.** Le premier démarrage télécharge Minecraft et crée le monde : une à deux minutes. La clé d'administration est tirée à ce moment-là ; le launcher la lit lui-même sur le serveur, il n'y a rien à copier.
-8. **Ajoutez-vous** à la liste blanche et aux opérateurs depuis le launcher (il passe par l'API d'administration), puis invitez vos amis.
+   Ensuite, le launcher **démarre** le service et attend que Minecraft écoute (le premier démarrage télécharge Minecraft et crée le monde : une à trois minutes), puis que l'API d'administration réponde par le tunnel. La clé d'administration est tirée à ce moment-là ; le launcher la lit lui-même sur le serveur, il n'y a rien à copier. **La fiche est enregistrée** dès l'installation finie : un premier démarrage très long ne fait pas perdre le serveur.
+6. **Joueurs** : votre pseudo comme **premier opérateur** (il est aussi mis sur la liste blanche, sinon il ne pourrait pas entrer), les pseudos de vos joueurs pour la **liste blanche** (séparés par des virgules, des espaces ou des retours à la ligne), et la liste blanche en service ou non. Le launcher les envoie par l'API (les pseudos inconnus du serveur sont cherchés chez Mojang) et montre le résultat point par point. Étape facultative : « Passer cette étape ».
+
+À la fin, la fiche est dans la liste des serveurs de la page Serveur, avec l'adresse à donner aux joueurs (bouton « Copier »).
+
+**Modifier une fiche** : choisissez le serveur dans la liste, puis le crayon. Le même parcours s'ouvre, prérempli ; un mot de passe, une clé ou une phrase de passe **laissés vides sont gardés**. Après la connexion, « Enregistrer » garde les changements, « Installer ou mettre à jour » repasse par l'installation. **Retirer ce serveur** (même écran) efface de ce PC la fiche, le compte SSH, ses secrets et l'empreinte retenue ; le serveur lui-même n'est pas touché.
 
 ### Ensuite
 
-- **Mettre à jour** : un clic quand une nouvelle version est publiée. Le launcher relance le même script : seul ce qui a changé est téléchargé, un mod qui n'est plus dans la version est retiré, les réglages changés entre-temps (port, joueurs max, liste blanche...) sont gardés. Si le serveur tournait et que quelque chose a changé, il est redémarré : la partie en cours est enregistrée et reprend.
-- **Démarrer, arrêter, redémarrer** : par systemd, même quand le serveur ne répond plus. L'arrêt laisse jusqu'à deux minutes à Minecraft pour enregistrer les mondes.
+- **État et pilotage** : la page Serveur montre l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct, les réglages et les sauvegardes, comme pour tout serveur ; tout passe par le tunnel SSH.
+- **Mettre à jour** : quand une nouvelle version est publiée, le bouton « Mettre à jour (vX) » apparaît à côté de Redémarrer et d'Arrêter (le launcher compare la version installée sur le serveur à la dernière publiée). Il relance le même script : seul ce qui a changé est téléchargé, un mod qui n'est plus dans la version est retiré, les réglages changés entre-temps (port, joueurs max, liste blanche...) sont gardés. Si le serveur tournait et que quelque chose a changé, il est redémarré : la partie en cours est enregistrée et reprend.
+- **Démarrer** : un serveur loué arrêté (ou en panne) se relance d'ici, bouton « Démarrer » : la page dit que le service est arrêté (ou en panne, avec où lire pourquoi), puis suit le démarrage jusqu'à ce que l'API réponde. **Arrêter et redémarrer** passent par l'API ; l'arrêt laisse jusqu'à deux minutes à Minecraft pour enregistrer les mondes.
 - **Journal** : les dernières lignes du service, ou en direct ; utile surtout quand le serveur ne démarre pas (la console de l'API d'administration prend le relais ensuite).
 - **API d'administration** : le launcher ouvre un tunnel SSH d'un port libre de votre PC (choisi par Windows, jamais 25565, 25570 ni 24454) vers l'API du serveur, et lui parle par là. Rien à ouvrir dans le pare-feu du VPS.
 
@@ -50,13 +56,16 @@ Les mots de passe, la clé privée et sa phrase de passe sont gardés **chiffré
 | « ne répond pas » | Adresse ou port SSH faux, serveur éteint, ou pare-feu de l'hébergeur qui bloque SSH. |
 | « a refusé la connexion » | Mot de passe faux, connexion par mot de passe désactivée sur le serveur, ou clé publique absente de `~/.ssh/authorized_keys`. |
 | « la clé a changé » | Serveur réinstallé : oubliez l'ancienne empreinte. Sinon, ne vous connectez pas. |
-| « n'a pas les droits d'administration » | Connectez-vous en `root`, ou avec un compte qui a `sudo` (indiquez son mot de passe sudo). |
+| « n'a pas les droits d'administration », « sudo refuse » | Connectez-vous en `root`, ou avec un compte qui a `sudo` (indiquez son mot de passe sudo à l'étape Système). |
+| « Clé privée illisible ou phrase de passe incorrecte » | Choisissez la clé **privée** (pas le `.pub`) et vérifiez sa phrase de passe. |
+| « La clé d'administration n'existe pas encore » | Le serveur n'a jamais démarré : démarrez-le une première fois (bouton Démarrer). |
+| « sans API d'administration » | Le serveur tourne une version de Valcombe sans API : mettez-le à jour (crayon, puis « Installer ou mettre à jour »). |
 | « Une autre installation est en cours » | Attendez la fin de l'autre (deux launchers sur le même serveur). |
 | Le serveur ne démarre pas | Lisez le journal du service dans le launcher, ou `sudo journalctl -u valcombe -n 100` sur le VPS. |
 
 ### Vérifier sans VPS, ou essayer sur un VPS en ligne de commande
 
-- `ValcombeLauncher.exe --verifier-vps rapport.txt` : contrôles internes, plan d'installation de la dernière version publiée, puis installation, mise à jour et pilotage du service **à blanc**, avec le vrai script, dans un dossier temporaire de votre PC (il faut Git pour Windows, dont le launcher emprunte `bash`). Rien n'est installé sur le PC, aucun port n'est ouvert. `--sans-telechargement` évite les 120 Mo de Java et des mods.
+- `ValcombeLauncher.exe --verifier-vps rapport.txt` : contrôles internes, le **parcours d'enregistrement** joué de bout en bout contre un serveur loué fictif (empreinte inconnue, fausse, acceptée, changée et oubliée ; hôte injoignable, mot de passe faux, sudo refusé ; installation avec contrat exigé ; démarrage jusqu'à l'API ; opérateur et liste blanche ; fiche enregistrée, modifiée, retirée), le plan d'installation de la dernière version publiée, puis installation, mise à jour et pilotage du service **à blanc**, avec le vrai script, dans un dossier temporaire de votre PC (il faut Git pour Windows, dont le launcher emprunte `bash`). Rien n'est installé sur le PC, aucun port n'est ouvert. `--sans-telechargement` évite les 120 Mo de Java et des mods.
 - `ValcombeLauncher.exe --essai-vps rapport.txt --hote adresse --utilisateur root --cle C:\chemin\id_ed25519` : essai sur un vrai VPS, en lecture seule (système, état du service, journal, et `GET /admin/etat` par le tunnel si le serveur tourne). Au premier contact, le rapport donne l'empreinte ; relancez avec `--empreinte SHA256:...` pour l'accepter. Ajoutez `--installer --contrat-accepte` pour installer ou mettre à jour, `--demarrer` pour démarrer. Mot de passe : `--mot-de-passe-env NOM` (lu dans la variable d'environnement `NOM`), phrase de passe : `--phrase-env NOM`.
 
 ## À la main
@@ -154,8 +163,19 @@ Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo u
 **Le mod sauvegarde tout seul** les mondes (le hub, les parties, les ateliers) et les créations de l'Atelier, dans `/opt/valcombe/backups/` : toutes les 6 heures et à chaque arrêt, en gardant les 10 dernières ; celle qui tombe pendant une partie attend la fin de la partie (24 heures au plus). Le jeu continue pendant la copie. Rien à installer :
 
 - `/vc sauvegarde` dit où elles en sont, `/vc sauvegarde maintenant` en fait une tout de suite, `/vc sauvegarde liste` les montre ;
-- **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. L'API d'administration le fait d'un clic (restauration puis redémarrage), et c'est par elle que le launcher le fera ;
+- **restaurer** : `/vc sauvegarde restaurer <nom>` (console ou opérateur de niveau 4), puis `sudo systemctl restart valcombe`. La restauration se fait au démarrage, avant l'ouverture du monde ; l'état d'avant est d'abord sauvegardé, de quoi revenir en arrière. L'API d'administration le fait d'un clic (restauration puis redémarrage) ;
 - les réglages (intervalle, nombre gardé...) : `/vc sauvegarde reglages`, ou `config/valcombe/sauvegardes.json`.
+
+**Depuis le launcher**, page Serveur, onglet **Sauvegardes** (pour ce PC comme pour un serveur distant ou loué) :
+
+- la liste des archives, de la plus récente à la plus ancienne : date (« aujourd'hui à 15:12 »), sorte (automatique, à l'arrêt, manuelle, avant restauration), taille, nombre de mondes ; une archive abîmée est signalée en rouge. En tête : le nombre d'archives, la place qu'elles prennent et celle qui reste sur le disque du serveur ;
+- **« Sauvegarder maintenant »** : une sauvegarde manuelle, suivie phase par phase (enregistrement des mondes, copie avec son pourcentage, rangement), sans arrêter le jeu ; la page dit quand elle est finie ;
+- **télécharger** une archive sur votre PC (flèche) : vous choisissez où l'enregistrer, elle arrive au fil de l'eau (rien en mémoire, même pour un gros monde), puis le launcher la **contrôle** (zip lisible, fiche de la sauvegarde, tous les fichiers annoncés) avant de lui donner son nom. Une archive coupée en route ne remplace jamais un fichier ;
+- **restaurer** : une confirmation dit clairement ce qui sera **perdu** (tout ce qui a changé depuis cette sauvegarde, avec le temps écoulé), ce qui est **gardé à part** (l'état actuel, sauvegardé d'abord), le **redémarrage** (et combien de joueurs seront déconnectés) et ce qui **ne change pas** (liste blanche, opérateurs, `server.properties`, clé d'administration). « Restaurer et redémarrer » fait tout d'un coup ; « Au prochain démarrage seulement » la prévoit (un bandeau la rappelle, avec « Redémarrer maintenant » et « Annuler la restauration »). Le launcher suit le redémarrage, puis montre le compte rendu de la restauration, avec **« Revenir à l'état d'avant »** ;
+- **effacer** une archive (corbeille), après confirmation ;
+- les **réglages** des sauvegardes automatiques : en marche ou non, fréquence (de 15 minutes à une semaine), nombre d'archives automatiques gardées, sauvegarde à chaque arrêt, et même pendant une partie ou non. La prochaine sauvegarde automatique est annoncée.
+
+Quand le serveur de ce PC est arrêté, l'onglet montre les archives de son dossier `backups/` (bouton « Afficher » dans l'Explorateur) : il faut le démarrer pour sauvegarder ou restaurer.
 
 Les archives ne contiennent ni la clé d'administration, ni le webhook Discord, ni `server.properties` et les listes de joueurs. Le détail (contenu, rotation, restauration) est dans [docs/ADMIN-API.md](docs/ADMIN-API.md#les-sauvegardes). L'arrêt du serveur attend la fin de la sauvegarde d'arrêt : le service systemd lui laisse 10 minutes.
 
@@ -173,7 +193,7 @@ Ajoutez la ligne :
 0 5 * * * /opt/valcombe/sauvegarder.sh
 ```
 
-Pour restaurer une archive brute : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC (celles du mod se téléchargent par l'API d'administration) : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
+Pour restaurer une archive brute : arrêtez le service, décompressez l'archive dans `/opt/valcombe/` (`tar -xzf sauvegardes/valcombe-AAAA-MM-JJ_HHMM.tar.gz`), puis relancez. Copiez de temps en temps une archive sur votre PC (celles du mod se téléchargent d'un clic dans l'onglet Sauvegardes du launcher) : une sauvegarde qui ne quitte jamais le serveur ne protège pas d'une panne du serveur.
 
 ## 7. Mettre à jour
 
@@ -196,13 +216,10 @@ Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du
 
 - **Redémarrer par l'API** : le serveur s'arrête proprement après avoir posé le drapeau `config/valcombe/redemarrer` ; `demarrer.sh` (donc le service systemd) le relance aussitôt, sans passer par `systemctl`. Un arrêt par l'API, lui, est définitif jusqu'au prochain `sudo systemctl start valcombe`. Si vous lancez le serveur autrement qu'avec `demarrer.sh` ou `demarrer.bat`, relancez-le vous-même.
 - **La couper** : mettez `"enabled": false` dans `admin.json`, puis redémarrez. `/vc admin` dit si elle est ouverte et sur quel port.
-- **Depuis le launcher** : page **Serveur**, bouton « Serveur distant ». Donnez un nom, l'adresse, le port de l'API (25570 s'il n'a pas changé) et la clé ; « Tester la connexion » vérifie le tout. La clé est gardée chiffrée sur votre PC (DPAPI de Windows). La page montre alors l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct avec l'envoi de commandes, les réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max, port), et les boutons Arrêter et Redémarrer.
-  - En attendant le tunnel SSH intégré au launcher, ouvrez-le vous-même, sur un port libre de votre PC (25571 ici, pour ne pas gêner un serveur qui tournerait sur votre PC), et enregistrez le serveur avec l'adresse `localhost` et le port 25571 :
-
-    ```bash
-    ssh -N -L 25571:localhost:25570 utilisateur@adresse-du-vps
-    ```
-
+- **Depuis le launcher** : page **Serveur**, bouton « Ajouter un serveur ».
+  - **Serveur loué** (conseillé) : le parcours guidé de la partie « Depuis le launcher (SSH) », en tête de ce guide. Le launcher ouvre lui-même le tunnel SSH et lit la clé sur le serveur : rien à copier.
+  - **Accès direct** : pour un serveur que votre PC joint par un réseau privé ou un VPN (avec `"adminLocalOnly": false` dans `admin.json`). Donnez un nom, l'adresse, le port de l'API (25570 s'il n'a pas changé) et la clé ; « Tester la connexion » vérifie le tout. La clé est gardée chiffrée sur votre PC (DPAPI de Windows). Un tunnel SSH ouvert à la main convient aussi (adresse `localhost`, et le port choisi sur votre PC, par exemple `ssh -N -L 25571:localhost:25570 utilisateur@adresse-du-vps`), mais la fiche de serveur loué le fait pour vous.
+  - Dans tous les cas, la page montre l'état (version, durée, TPS, mémoire, joueurs), les joueurs connectés, les mondes, la console en direct avec l'envoi de commandes, les réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs max, port), les sauvegardes (partie 6), et les boutons Arrêter et Redémarrer ; pour un serveur loué, aussi Démarrer et Mettre à jour.
   - « Ce PC », dans la même liste, est le serveur que le launcher héberge sur votre PC (page Héberger) : la page Serveur le démarre, l'arrête et le redémarre aussi, et y règle en plus la mémoire et le port du jeu.
 
 ## Vie de la communauté

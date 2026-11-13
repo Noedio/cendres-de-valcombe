@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -78,16 +79,84 @@ public sealed class AdminClient
     /// <summary>Arrêt propre avec le drapeau de redémarrage : celui qui a lancé le serveur le relance.</summary>
     public Task<AdminStopResult> RestartAsync(CancellationToken ct) => PostAsync<AdminStopResult>("/admin/redemarrer", "{}", ct);
 
-    private async Task<T> GetAsync<T>(string path, CancellationToken ct) where T : new()
+    // ------------------------------------------------------------------
+    // Sauvegardes
+    // ------------------------------------------------------------------
+    /// <summary>Les sauvegardes, celle en cours, la dernière, la prochaine, la restauration prévue et la dernière faite.</summary>
+    public Task<AdminBackups> GetBackupsAsync(CancellationToken ct) => GetAsync<AdminBackups>("/admin/sauvegardes", ct);
+
+    /// <summary>Lance une sauvegarde manuelle (202) ; elle continue ensuite : la suivre par <see cref="GetBackupsAsync"/>.</summary>
+    public Task<AdminBackupStarted> StartBackupAsync(CancellationToken ct) => PostAsync<AdminBackupStarted>("/admin/sauvegardes", "{}", ct);
+
+    public Task<AdminBackupSettings> GetBackupSettingsAsync(CancellationToken ct) =>
+        GetAsync<AdminBackupSettings>("/admin/sauvegardes/reglages", ct);
+
+    /// <summary>Change les réglages des sauvegardes automatiques ; une valeur hors bornes fait tout refuser (400).</summary>
+    public Task<AdminBackupSettings> ChangeBackupSettingsAsync(AdminBackupSettingsChange change, CancellationToken ct)
     {
-        await Connection.ConnectAsync(ct);
-        return Read<T>(await Connection.SendAsync(HttpMethod.Get, path, null, ct));
+        if (change.IsEmpty)
+        {
+            throw new ArgumentException("Aucun réglage à changer.", nameof(change));
+        }
+        return PostAsync<AdminBackupSettings>("/admin/sauvegardes/reglages", change.ToJson(), ct);
     }
 
-    private async Task<T> PostAsync<T>(string path, string json, CancellationToken ct) where T : new()
+    /// <summary>
+    /// Prévoit la restauration de la sauvegarde au prochain démarrage ; avec <paramref name="restart"/>, le serveur
+    /// s'arrête aussitôt proprement et celui qui l'a lancé le relance (202).
+    /// </summary>
+    public Task<AdminRestoreResult> RestoreAsync(string name, bool restart, CancellationToken ct)
+    {
+        CheckName(name);
+        string body = new JsonObject { ["nom"] = name, ["redemarrer"] = restart }.ToJsonString();
+        return PostAsync<AdminRestoreResult>("/admin/sauvegardes/restaurer", body, ct);
+    }
+
+    /// <summary>Annule la restauration prévue (<c>Annulee</c> faux s'il n'y en avait pas).</summary>
+    public Task<AdminMessage> CancelRestoreAsync(CancellationToken ct) =>
+        SendAsync<AdminMessage>(HttpMethod.Delete, "/admin/sauvegardes/restaurer", null, ct);
+
+    /// <summary>Efface une sauvegarde (409 si sa restauration est prévue).</summary>
+    public Task<AdminMessage> DeleteBackupAsync(string name, CancellationToken ct)
+    {
+        CheckName(name);
+        return SendAsync<AdminMessage>(HttpMethod.Delete, "/admin/sauvegardes/" + name, null, ct);
+    }
+
+    /// <summary>
+    /// Télécharge l'archive dans <paramref name="destination"/>, au fil de l'eau. Lève <see cref="AdminException"/>
+    /// avec le message du serveur (404 : elle n'existe plus) ou la panne de réseau.
+    /// </summary>
+    public async Task DownloadBackupAsync(string name, Stream destination, IProgress<(long Done, long? Total)>? progress,
+        CancellationToken ct)
+    {
+        CheckName(name);
+        await Connection.ConnectAsync(ct);
+        var reply = await Connection.DownloadAsync("/admin/sauvegardes/" + name, destination, progress, ct);
+        if (reply.Status != 200)
+        {
+            throw new AdminException(reply.Status, Explain(reply), reply.RetryAfter);
+        }
+    }
+
+    /// <summary>Un nom hors du modèle du mod ne part jamais : il finirait dans un chemin de l'API.</summary>
+    private static void CheckName(string name)
+    {
+        if (!AdminBackupText.IsName(name))
+        {
+            throw new ArgumentException($"« {name} » n'est pas un nom de sauvegarde (valcombe-AAAA-MM-JJ_HH-MM-SS-sorte.zip).", nameof(name));
+        }
+    }
+
+    private Task<T> GetAsync<T>(string path, CancellationToken ct) where T : new() => SendAsync<T>(HttpMethod.Get, path, null, ct);
+
+    private Task<T> PostAsync<T>(string path, string json, CancellationToken ct) where T : new() =>
+        SendAsync<T>(HttpMethod.Post, path, json, ct);
+
+    private async Task<T> SendAsync<T>(HttpMethod method, string path, string? json, CancellationToken ct) where T : new()
     {
         await Connection.ConnectAsync(ct);
-        return Read<T>(await Connection.SendAsync(HttpMethod.Post, path, json, ct));
+        return Read<T>(await Connection.SendAsync(method, path, json, ct));
     }
 
     /// <summary>Lit une réponse réussie, ou lève l'erreur qu'elle porte.</summary>

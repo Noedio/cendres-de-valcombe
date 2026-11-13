@@ -1,4 +1,7 @@
+using System.IO;
+using System.IO.Compression;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -44,13 +47,72 @@ public sealed class DemoAdminApi
     public DemoAdminApi()
     {
         SeedConsole();
+        SeedBackups();
     }
+
+    /// <summary>Durée d'une sauvegarde manuelle du serveur fictif (la page la suit phase par phase).</summary>
+    public TimeSpan BackupDuration { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Après un redémarrage, le serveur fictif répond 503 pendant ce temps (comme un vrai qui démarre).</summary>
+    public TimeSpan RestartDowntime { get; set; } = TimeSpan.Zero;
+
+    /// <summary>Nombre de redémarrages (par l'API ou pour une restauration) : les vérifications le comptent.</summary>
+    public int Restarts { get; private set; }
 
     /// <summary>Port de la tablette du serveur fictif (le port du jeu ne peut pas être le même).</summary>
     public int TabletPort { get; set; } = AdminClient.DefaultPort;
 
+    /// <summary>Version du mod que le serveur fictif annonce (GET /admin/etat).</summary>
+    public string Version { get; set; } = "0.14.0";
+
     /// <summary>Faux après POST /admin/arreter : le serveur fictif répond alors 503 à tout.</summary>
     public bool Online { get; private set; } = true;
+
+    /// <summary>Un serveur tout juste installé : personne de connecté, liste blanche et opérateurs vides, aucune sauvegarde.</summary>
+    public static DemoAdminApi Fresh()
+    {
+        var api = new DemoAdminApi();
+        api._players.Clear();
+        api._whitelist.Clear();
+        api._ops.Clear();
+        api._backups.Clear();
+        api._evening = "";
+        return api;
+    }
+
+    /// <summary>Les archives du serveur fictif comme un dossier backups/ les montre (serveur de ce PC arrêté, pour les captures).</summary>
+    public List<AdminBackup> DiskListing()
+    {
+        lock (_gate)
+        {
+            return _backups.Select(b => new AdminBackup
+            {
+                Nom = b.Name, Sorte = b.Kind, Date = b.At.ToString("O"), Octets = b.Bytes, Rotation = b.Kind != "manuelle",
+            }).ToList();
+        }
+    }
+
+    /// <summary>Démarre le serveur fictif arrêté (ce que fait systemd pour un serveur loué).</summary>
+    public void Start()
+    {
+        lock (_gate)
+        {
+            if (!Online)
+            {
+                Online = true;
+                Restart();
+            }
+        }
+    }
+
+    /// <summary>Arrête le serveur fictif sans passer par l'API (un serveur loué éteint, pour les captures).</summary>
+    public void Halt()
+    {
+        lock (_gate)
+        {
+            Online = false;
+        }
+    }
 
     /// <summary>Imite un serveur distant réglé par défaut (adminLocalOnly) : toute requête reçoit 403.</summary>
     public bool RefuseRemote { get; init; }
@@ -60,29 +122,11 @@ public sealed class DemoAdminApi
     {
         lock (_gate)
         {
-            if (RefuseRemote)
+            if (Gate(key) is { } refused)
             {
-                return Error(403, "L'API d'administration n'accepte que les requêtes de cette machine (adminLocalOnly) : "
-                    + "depuis un autre PC, passez par un tunnel SSH.");
+                return refused;
             }
-            if (_badKeys >= 5)
-            {
-                return Error(429, "Trop d'essais avec une mauvaise clé : réessayez dans 30 s.", TimeSpan.FromSeconds(30));
-            }
-            if (key == null)
-            {
-                return Error(401, "Clé d'administration absente (en-tête X-Valcombe-Admin).");
-            }
-            if (key != Key)
-            {
-                _badKeys++;
-                return Error(401, "Clé d'administration refusée.");
-            }
-            _badKeys = 0;
-            if (!Online)
-            {
-                return Error(503, "Le serveur s'arrête.");
-            }
+            AdvanceBackup();
             string path = pathAndQuery;
             var query = new Dictionary<string, string>();
             int q = path.IndexOf('?');
@@ -94,6 +138,10 @@ public sealed class DemoAdminApi
                     query[eq < 0 ? part : part[..eq]] = eq < 0 ? "" : Uri.UnescapeDataString(part[(eq + 1)..]);
                 }
                 path = path[..q];
+            }
+            if (path == "/admin/sauvegardes" || path.StartsWith("/admin/sauvegardes/", StringComparison.Ordinal))
+            {
+                return Backups(method, path == "/admin/sauvegardes" ? "" : path["/admin/sauvegardes/".Length..], body);
             }
             string? expected = path switch
             {
@@ -147,6 +195,35 @@ public sealed class DemoAdminApi
         }
     }
 
+    /// <summary>Les refus qui précèdent tout (adresse, blocage, clé, serveur arrêté), comme dans le mod ; null si la requête passe.</summary>
+    private AdminReply? Gate(string? key)
+    {
+        if (RefuseRemote)
+        {
+            return Error(403, "L'API d'administration n'accepte que les requêtes de cette machine (adminLocalOnly) : "
+                + "depuis un autre PC, passez par un tunnel SSH.");
+        }
+        if (_badKeys >= 5)
+        {
+            return Error(429, "Trop d'essais avec une mauvaise clé : réessayez dans 30 s.", TimeSpan.FromSeconds(30));
+        }
+        if (key == null)
+        {
+            return Error(401, "Clé d'administration absente (en-tête X-Valcombe-Admin).");
+        }
+        if (key != Key)
+        {
+            _badKeys++;
+            return Error(401, "Clé d'administration refusée.");
+        }
+        _badKeys = 0;
+        if (!Online || DateTime.UtcNow < _downUntil)
+        {
+            return Error(503, Online ? "Le serveur démarre." : "Le serveur s'arrête.");
+        }
+        return null;
+    }
+
     private static AdminReply Ok(JsonObject o, int status = 200) => new(status, o.ToJsonString());
 
     private static AdminReply Error(int status, string message, TimeSpan? retry = null) =>
@@ -155,7 +232,7 @@ public sealed class DemoAdminApi
     private JsonObject State() => new()
     {
         ["api"] = 1,
-        ["version"] = "0.14.0",
+        ["version"] = Version,
         ["minecraft"] = "26.3",
         ["dedie"] = true,
         ["demarreLe"] = _startedAt.ToString("O"),
@@ -408,12 +485,7 @@ public sealed class DemoAdminApi
         Log("INFO", "valcombe", restart ? "[admin] Redémarrage demandé par 127.0.0.1" : "[admin] Arrêt demandé par 127.0.0.1");
         if (restart)
         {
-            // Le serveur « revient » aussitôt : une nouvelle instance, et des numéros de console qui repartent de 1.
-            _instance = Guid.NewGuid().ToString();
-            _console.Clear();
-            _seq = 0;
-            _port = _savedPort;
-            SeedConsole();
+            Restart();
         }
         else
         {
@@ -425,6 +497,507 @@ public sealed class DemoAdminApi
             ["message"] = restart ? "Redémarrage : le serveur s'arrête proprement, puis celui qui l'a lancé le relance." : "Arrêt du serveur en cours.",
             ["drapeau"] = restart ? "config/valcombe/redemarrer" : null,
         }, 202);
+    }
+
+    /// <summary>Le serveur « revient » aussitôt : une nouvelle instance, des numéros de console qui repartent de 1, et la restauration prévue appliquée.</summary>
+    private void Restart()
+    {
+        Restarts++;
+        _instance = Guid.NewGuid().ToString();
+        _console.Clear();
+        _seq = 0;
+        _port = _savedPort;
+        _job = null; // une sauvegarde en cours est abandonnée par l'arrêt
+        SeedConsole();
+        if (_restorePlan is { } plan)
+        {
+            ApplyRestore(plan.Name, plan.At);
+        }
+        _downUntil = DateTime.UtcNow + RestartDowntime;
+    }
+
+    // ------------------------------------------------------------------
+    // Sauvegardes
+    // ------------------------------------------------------------------
+    private sealed class DemoBackup
+    {
+        public string Name = "";
+        public string Kind = "";
+        public DateTimeOffset At;
+        public long Bytes;
+        public bool Readable = true;
+        public string By = "automatique";
+        public int Files = 1873;
+        public long Unpacked = 61_400_211;
+    }
+
+    private static readonly string[] DemoWorlds = { "Le hub", "Partie principale", "Essai du jeudi", "Le Moulin (carte)", "Atelier structures" };
+    private const long FreeSpace = 81_604_378_624;
+    private readonly List<DemoBackup> _backups = new();
+    private (string Name, DateTime Start, string By)? _job;
+    private JsonObject? _lastOutcome;
+    private (string Name, DateTime At, string By)? _restorePlan;
+    private JsonObject? _lastRestore;
+    private bool _autoOn = true;
+    private int _interval = 360;
+    private bool _atStop = true;
+    private int _keep = 10;
+    private bool _duringGame;
+    private DateTime _downUntil = DateTime.MinValue;
+
+    private static string BackupName(DateTimeOffset at, string kind) => $"valcombe-{at:yyyy-MM-dd_HH-mm-ss}-{kind}.zip";
+
+    private string AddBackup(DateTimeOffset at, string kind, long bytes, string by, bool readable = true)
+    {
+        at = new DateTimeOffset(at.Year, at.Month, at.Day, at.Hour, at.Minute, at.Second, at.Offset);
+        string name = BackupName(at, kind);
+        for (int n = 2; _backups.Any(b => b.Name == name); n++)
+        {
+            name = BackupName(at, kind)[..^4] + "-" + n + ".zip";
+        }
+        _backups.Add(new DemoBackup { Name = name, Kind = kind, At = at, Bytes = bytes, By = by, Readable = readable });
+        _backups.Sort((a, b) => b.At.CompareTo(a.At));
+        return name;
+    }
+
+    /// <summary>Une semaine de sauvegardes, comme sur un serveur qui tourne depuis un moment, dont une archive abîmée.</summary>
+    private void SeedBackups()
+    {
+        var now = DateTimeOffset.Now;
+        AddBackup(now.AddHours(-1).AddMinutes(-12), "auto", 48_213_301, "automatique");
+        AddBackup(now.AddHours(-7).AddMinutes(-12), "auto", 47_902_118, "automatique");
+        AddBackup(now.AddHours(-15).AddMinutes(-31), "arret", 47_655_870, "arrêt du serveur");
+        AddBackup(now.AddHours(-21).AddMinutes(-12), "auto", 46_120_442, "automatique");
+        AddBackup(now.AddDays(-2).AddHours(-1).AddMinutes(-5), "manuelle", 45_877_013, "Yoann (en jeu)");
+        AddBackup(now.AddDays(-4).AddHours(-3), "avant-restauration", 44_310_552, "restauration");
+        AddBackup(now.AddDays(-6).AddHours(-2), "auto", 12_582_912, "automatique", readable: false);
+    }
+
+    private JsonObject? JobJson()
+    {
+        if (_job is not { } job)
+        {
+            return null;
+        }
+        double f = Math.Clamp((DateTime.UtcNow - job.Start).TotalSeconds / Math.Max(0.1, BackupDuration.TotalSeconds), 0, 1);
+        string phase = f < 0.08 ? "attente" : f < 0.2 ? "enregistrement" : f < 0.92 ? "copie" : "rotation";
+        int pct = phase switch { "attente" or "enregistrement" => 0, "copie" => (int)((f - 0.2) / 0.72 * 100), _ => 100 };
+        return new JsonObject
+        {
+            ["nom"] = job.Name,
+            ["sorte"] = "manuelle",
+            ["par"] = job.By,
+            ["debut"] = job.Start.ToString("O"),
+            ["phase"] = phase,
+            ["fichiers"] = 1873 * pct / 100,
+            ["fichiersTotal"] = 1873,
+            ["octets"] = 61_400_211L * pct / 100,
+            ["octetsTotal"] = 61_400_211L,
+            ["pourcent"] = pct,
+        };
+    }
+
+    /// <summary>La sauvegarde en cours se termine une fois sa durée écoulée.</summary>
+    private void AdvanceBackup()
+    {
+        if (_job is not { } job || DateTime.UtcNow - job.Start < BackupDuration)
+        {
+            return;
+        }
+        _job = null;
+        var at = new DateTimeOffset(job.Start.ToLocalTime());
+        string name = AddBackup(at, "manuelle", 48_602_775, job.By);
+        _lastOutcome = new JsonObject
+        {
+            ["nom"] = name, ["sorte"] = "manuelle", ["ok"] = true,
+            ["message"] = $"Sauvegarde {name} terminée : 46,4 Mo, 1873 fichiers, en {BackupDuration.TotalSeconds:0} s.",
+            ["octets"] = 48_602_775, ["fichiers"] = 1873, ["dureeSecondes"] = Math.Round(BackupDuration.TotalSeconds, 1),
+            ["fin"] = DateTime.UtcNow.ToString("O"), ["effacees"] = new JsonArray(),
+        };
+        Log("INFO", "valcombe", "[valcombe] " + _lastOutcome["message"]!.GetValue<string>());
+    }
+
+    private JsonObject BackupValues() => new()
+    {
+        ["actives"] = _autoOn, ["intervalleMinutes"] = _interval, ["aLArret"] = _atStop, ["garder"] = _keep, ["pendantPartie"] = _duringGame,
+    };
+
+    private string? NextAuto() => _autoOn && _backups.Count > 0
+        ? _backups.Max(b => b.At).ToUniversalTime().AddMinutes(_interval).UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        : null;
+
+    private JsonObject BackupList() => new()
+    {
+        ["dossier"] = "backups",
+        ["sauvegardes"] = new JsonArray(_backups.Select(b =>
+        {
+            var o = new JsonObject
+            {
+                ["nom"] = b.Name, ["sorte"] = b.Kind, ["date"] = b.At.ToString("yyyy-MM-ddTHH:mm:sszzz"), ["octets"] = b.Bytes,
+                ["rotation"] = b.Kind != "manuelle", ["lisible"] = b.Readable,
+            };
+            if (b.Readable)
+            {
+                o["par"] = b.By;
+                o["versionMod"] = "0.14.0";
+                o["fichiers"] = b.Files;
+                o["octetsDecompresses"] = b.Unpacked;
+                o["mondes"] = new JsonArray(DemoWorlds.Select(w => (JsonNode)JsonValue.Create(w)!).ToArray());
+            }
+            else
+            {
+                o["erreur"] = "Archive abîmée : fin de l'archive introuvable (copie interrompue ?).";
+            }
+            return (JsonNode)o;
+        }).ToArray()),
+        ["nombre"] = _backups.Count,
+        ["octetsTotal"] = _backups.Sum(b => b.Bytes),
+        ["espaceLibre"] = FreeSpace,
+        ["enCours"] = JobJson(),
+        ["derniere"] = _lastOutcome?.DeepClone(),
+        ["prochaineAuto"] = NextAuto(),
+        ["reportee"] = false,
+        ["restaurationPossible"] = true,
+        ["restaurationPrevue"] = _restorePlan is { } plan
+            ? new JsonObject { ["nom"] = plan.Name, ["demandeLe"] = plan.At.ToString("O"), ["par"] = plan.By }
+            : null,
+        ["derniereRestauration"] = _lastRestore?.DeepClone(),
+        ["reglages"] = BackupValues(),
+    };
+
+    private JsonObject BackupSettingsJson() => new()
+    {
+        ["reglages"] = BackupValues(),
+        ["bornes"] = new JsonObject { ["intervalleMinutes"] = new JsonArray(15, 10080), ["garder"] = new JsonArray(1, 500) },
+        ["parDefaut"] = new JsonObject
+        {
+            ["actives"] = true, ["intervalleMinutes"] = 360, ["aLArret"] = true, ["garder"] = 10, ["pendantPartie"] = false,
+        },
+        ["automatiquesPossibles"] = true,
+        ["prochaineAuto"] = NextAuto(),
+    };
+
+    private AdminReply Backups(string method, string sub, string? body)
+    {
+        JsonObject? request = null;
+        if (method == "POST")
+        {
+            try
+            {
+                request = string.IsNullOrWhiteSpace(body) ? new JsonObject() : JsonNode.Parse(body) as JsonObject;
+            }
+            catch (JsonException)
+            {
+            }
+            if (request == null)
+            {
+                return Error(400, "JSON invalide : un objet est attendu.");
+            }
+        }
+        switch (sub)
+        {
+            case "":
+                if (method == "GET")
+                {
+                    return Ok(BackupList());
+                }
+                if (method != "POST")
+                {
+                    return Error(405, $"Méthode {method} refusée : GET, POST attendu.");
+                }
+                if (request!.Count > 0)
+                {
+                    return Error(400, $"Aucun champ attendu ici (« {request.First().Key} » reçu).");
+                }
+                if (_job is { } running)
+                {
+                    return Error(409, $"Une sauvegarde est déjà en cours ({running.Name}) : attendez qu'elle se termine.");
+                }
+                var start = DateTime.UtcNow;
+                string name = BackupName(new DateTimeOffset(start.ToLocalTime()), "manuelle");
+                _job = (name, start, "API d'administration (127.0.0.1)");
+                Log("INFO", "valcombe", $"[valcombe] Sauvegarde {name} demandée par l'API d'administration (127.0.0.1)");
+                return Ok(new JsonObject
+                {
+                    ["ok"] = true,
+                    ["message"] = $"Sauvegarde {name} lancée : suivez-la dans GET /admin/sauvegardes (enCours).",
+                    ["nom"] = name,
+                    ["enCours"] = JobJson(),
+                }, 202);
+
+            case "reglages":
+                if (method == "GET")
+                {
+                    return Ok(BackupSettingsJson());
+                }
+                if (method != "POST")
+                {
+                    return Error(405, $"Méthode {method} refusée : GET, POST attendu.");
+                }
+                return ChangeBackupSettings(request!);
+
+            case "restaurer":
+                if (method == "DELETE")
+                {
+                    bool had = _restorePlan != null;
+                    _restorePlan = null;
+                    return Ok(new JsonObject
+                    {
+                        ["ok"] = true, ["annulee"] = had, ["message"] = had ? "Restauration prévue annulée." : "Aucune restauration n'était prévue.",
+                    });
+                }
+                if (method != "POST")
+                {
+                    return Error(405, $"Méthode {method} refusée : POST, DELETE attendu.");
+                }
+                return Restore(request!);
+
+            default:
+                if (!AdminBackupText.IsName(sub))
+                {
+                    return Error(404, "Point d'accès inconnu : /admin/sauvegardes/" + sub);
+                }
+                var backup = _backups.FirstOrDefault(b => b.Name == sub);
+                if (method == "DELETE")
+                {
+                    if (backup == null)
+                    {
+                        return Error(404, $"Aucune sauvegarde ne s'appelle « {sub} ».");
+                    }
+                    if (_restorePlan?.Name == sub)
+                    {
+                        return Error(409, $"La restauration de « {sub} » est prévue au prochain démarrage : annulez-la d'abord.");
+                    }
+                    _backups.Remove(backup);
+                    Log("INFO", "valcombe", $"[valcombe] Sauvegarde {sub} effacée par l'API d'administration (127.0.0.1)");
+                    return Ok(new JsonObject { ["ok"] = true, ["message"] = $"Sauvegarde « {sub} » effacée." });
+                }
+                if (method != "GET")
+                {
+                    return Error(405, $"Méthode {method} refusée : GET, DELETE attendu.");
+                }
+                // Une archive est binaire : le serveur fictif la rend par TryDownload, pas en JSON.
+                return backup == null ? Error(404, $"Aucune sauvegarde ne s'appelle « {sub} ».")
+                    : Error(501, "Le serveur fictif rend les archives par TryDownload.");
+        }
+    }
+
+    private AdminReply ChangeBackupSettings(JsonObject r)
+    {
+        var errors = new List<string>();
+        var known = new[] { "actives", "intervalleMinutes", "aLArret", "garder", "pendantPartie" };
+        foreach (var field in r)
+        {
+            if (!known.Contains(field.Key))
+            {
+                errors.Add($"champ inconnu « {field.Key} »");
+            }
+        }
+        if (r.Count == 0)
+        {
+            errors.Add("aucun réglage à changer");
+        }
+        bool? Flag(string name)
+        {
+            if (r[name] is not { } v)
+            {
+                return null;
+            }
+            if (v.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
+            {
+                return v.GetValue<bool>();
+            }
+            errors.Add($"« {name} » : vrai ou faux attendu (true / false)");
+            return null;
+        }
+        int? Number(string name, int min, int max)
+        {
+            if (r[name] is not { } v)
+            {
+                return null;
+            }
+            if (v.GetValueKind() == JsonValueKind.Number && v.AsValue().TryGetValue(out int n) && n >= min && n <= max)
+            {
+                return n;
+            }
+            errors.Add($"« {name} » : un nombre entier de {min} à {max}");
+            return null;
+        }
+        bool? on = Flag("actives");
+        bool? atStop = Flag("aLArret");
+        bool? during = Flag("pendantPartie");
+        int? interval = Number("intervalleMinutes", 15, 10080);
+        int? keep = Number("garder", 1, 500);
+        if (errors.Count > 0)
+        {
+            return Error(400, "Réglages refusés : " + string.Join(" ; ", errors) + ".");
+        }
+        _autoOn = on ?? _autoOn;
+        _atStop = atStop ?? _atStop;
+        _duringGame = during ?? _duringGame;
+        _interval = interval ?? _interval;
+        _keep = keep ?? _keep;
+        var o = new JsonObject
+        {
+            ["ok"] = true,
+            ["message"] = _autoOn ? $"Sauvegardes automatiques : {AdminBackupText.Interval(_interval)}, {_keep} gardées" + (_atStop ? ", et à chaque arrêt." : ".")
+                : "Sauvegardes automatiques désactivées : seulement à la demande.",
+        };
+        foreach (var field in BackupSettingsJson())
+        {
+            o[field.Key] = field.Value?.DeepClone();
+        }
+        return Ok(o);
+    }
+
+    private AdminReply Restore(JsonObject r)
+    {
+        var errors = new List<string>();
+        foreach (var field in r)
+        {
+            if (field.Key is not ("nom" or "redemarrer"))
+            {
+                errors.Add($"champ inconnu « {field.Key} »");
+            }
+        }
+        string? name = r["nom"] is JsonValue nv && nv.TryGetValue(out string? s) ? s : null;
+        if (name == null)
+        {
+            errors.Add("« nom » : nom de la sauvegarde attendu (texte)");
+        }
+        else if (!AdminBackupText.IsName(name))
+        {
+            errors.Add($"« nom » : « {name} » n'est pas un nom de sauvegarde (valcombe-AAAA-MM-JJ_HH-MM-SS-sorte.zip)");
+        }
+        bool restart = false;
+        if (r["redemarrer"] is { } rv)
+        {
+            if (rv.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
+            {
+                restart = rv.GetValue<bool>();
+            }
+            else
+            {
+                errors.Add("« redemarrer » : vrai ou faux attendu (true / false)");
+            }
+        }
+        if (errors.Count > 0)
+        {
+            return Error(400, "Restauration refusée : " + string.Join(" ; ", errors) + ".");
+        }
+        var backup = _backups.FirstOrDefault(b => b.Name == name);
+        if (backup == null)
+        {
+            return Error(404, $"Aucune sauvegarde ne s'appelle « {name} ».");
+        }
+        if (!backup.Readable)
+        {
+            return Error(409, $"« {name} » est illisible (archive abîmée) : elle ne peut pas être restaurée.");
+        }
+        _restorePlan = (name!, DateTime.UtcNow, "API d'administration (127.0.0.1)");
+        string message = $"Restauration de « {name} » prévue au prochain démarrage du serveur. L'état actuel sera d'abord sauvegardé.";
+        Log("INFO", "valcombe", "[admin] " + message);
+        if (!restart)
+        {
+            return Ok(new JsonObject
+            {
+                ["ok"] = true, ["nom"] = name, ["redemarrage"] = false,
+                ["message"] = message + " Redémarrez le serveur pour l'appliquer (POST /admin/redemarrer).", ["drapeau"] = null,
+            });
+        }
+        Restart();
+        return Ok(new JsonObject
+        {
+            ["ok"] = true, ["nom"] = name, ["redemarrage"] = true,
+            ["message"] = message + " Le serveur s'arrête proprement, puis celui qui l'a lancé le relance.",
+            ["drapeau"] = "config/valcombe/redemarrer",
+        }, 202);
+    }
+
+    /// <summary>Au « démarrage » : l'état actuel est sauvegardé (avant-restauration), puis l'archive prend sa place.</summary>
+    private void ApplyRestore(string name, DateTime askedAt)
+    {
+        _restorePlan = null;
+        string safety = AddBackup(DateTimeOffset.Now, "avant-restauration", 48_710_004, "restauration");
+        _lastRestore = new JsonObject
+        {
+            ["nom"] = name,
+            ["demandeLe"] = askedAt.ToString("O"),
+            ["faiteLe"] = DateTime.UtcNow.ToString("O"),
+            ["ok"] = true,
+            ["message"] = $"Sauvegarde « {name} » restaurée. L'état d'avant est gardé dans « {safety} ».",
+            ["securite"] = safety,
+        };
+        Log("INFO", "valcombe", "[valcombe] " + _lastRestore["message"]!.GetValue<string>());
+    }
+
+    /// <summary>
+    /// GET /admin/sauvegardes/&lt;nom&gt; : vrai si c'est un téléchargement d'archive. <paramref name="archive"/> porte
+    /// alors un vrai zip (avec sa fiche, en dernière entrée, comme le mod l'écrit), ou <paramref name="error"/> le refus.
+    /// Une archive abîmée est rendue telle quelle : des octets qui ne forment pas un zip.
+    /// </summary>
+    public bool TryDownload(string pathAndQuery, string? key, out byte[]? archive, out AdminReply? error)
+    {
+        archive = null;
+        error = null;
+        string path = pathAndQuery.Split('?')[0];
+        const string Prefix = "/admin/sauvegardes/";
+        if (!path.StartsWith(Prefix, StringComparison.Ordinal) || !AdminBackupText.IsName(path[Prefix.Length..]))
+        {
+            return false;
+        }
+        string name = path[Prefix.Length..];
+        lock (_gate)
+        {
+            error = Gate(key);
+            if (error != null)
+            {
+                return true;
+            }
+            var backup = _backups.FirstOrDefault(b => b.Name == name);
+            if (backup == null)
+            {
+                error = Error(404, $"Aucune sauvegarde ne s'appelle « {name} ».");
+                return true;
+            }
+            Log("INFO", "valcombe", $"[admin] Téléchargement de la sauvegarde {name} (127.0.0.1)");
+            archive = backup.Readable ? BuildArchive(backup) : Encoding.UTF8.GetBytes(new string('?', 4096));
+            return true;
+        }
+    }
+
+    /// <summary>Une petite archive de démonstration : quelques fichiers d'un monde, puis la fiche.</summary>
+    private static byte[] BuildArchive(DemoBackup backup)
+    {
+        using var memory = new MemoryStream();
+        using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var random = new Random(backup.Name.GetHashCode());
+            var files = new List<string> { "monde/level.dat", "config/valcombe/mondes.json" };
+            for (int i = 0; i < 6; i++)
+            {
+                files.Add($"monde/dimensions/valcombe/partie-principale/region/r.{i}.0.mca");
+            }
+            foreach (string f in files)
+            {
+                var entry = zip.CreateEntry(f, CompressionLevel.Fastest);
+                using var s = entry.Open();
+                byte[] data = new byte[f.EndsWith(".mca") ? 96 * 1024 : 512];
+                random.NextBytes(data);
+                s.Write(data);
+            }
+            var manifest = zip.CreateEntry(BackupArchive.ManifestName);
+            using (var s = new StreamWriter(manifest.Open()))
+            {
+                s.Write(new JsonObject
+                {
+                    ["sorte"] = backup.Kind, ["date"] = backup.At.ToString("O"), ["par"] = backup.By, ["versionMod"] = "0.14.0",
+                    ["minecraft"] = "26.3", ["fichiers"] = files.Count,
+                    ["mondes"] = new JsonArray(DemoWorlds.Select(w => (JsonNode)JsonValue.Create(w)!).ToArray()),
+                }.ToJsonString());
+            }
+        }
+        return memory.ToArray();
     }
 
     private void Log(string level, string source, string text) => _console.Add(new AdminConsoleLine
@@ -490,5 +1063,101 @@ public sealed class DemoConnection : IServerConnection
     public Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct) =>
         Task.FromResult(_api.Handle(method.Method, path, json, _key));
 
+    /// <summary>L'archive du serveur fictif, envoyée par morceaux comme sur un vrai réseau (la page montre l'avancement).</summary>
+    public async Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress,
+        CancellationToken ct)
+    {
+        if (!_api.TryDownload(path, _key, out byte[]? archive, out AdminReply? error))
+        {
+            return _api.Handle("GET", path, null, _key);
+        }
+        if (error != null)
+        {
+            return error;
+        }
+        long done = 0;
+        byte[] bytes = archive!;
+        foreach (var chunk in bytes.Chunk(64 * 1024))
+        {
+            await destination.WriteAsync(chunk, ct);
+            done += chunk.Length;
+            progress?.Report((done, bytes.Length));
+            await Task.Delay(20, ct);
+        }
+        return new AdminReply(200, "");
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>
+/// Un serveur loué fictif, pour les captures : l'API du serveur fictif, plus ce que le tunnel SSH sait faire
+/// (démarrer le serveur arrêté, lire la version installée, mettre à jour), sans réseau.
+/// </summary>
+public sealed class DemoManagedConnection : IServerConnection, IManagedServer
+{
+    private readonly DemoAdminApi _api;
+    private readonly DemoConnection _inner;
+
+    public DemoManagedConnection(DemoAdminApi api, string where, string installed)
+    {
+        _api = api;
+        _inner = new DemoConnection(api, "tunnel SSH vers " + where);
+        Where = where;
+        Installed = installed;
+    }
+
+    /// <summary>Le serveur fictif derrière le tunnel (les captures l'arrêtent et le démarrent).</summary>
+    public DemoAdminApi Api => _api;
+
+    /// <summary>Version de Valcombe installée sur le serveur fictif (valcombe-installe.txt).</summary>
+    public string Installed { get; private set; }
+
+    public string Description => _inner.Description;
+
+    public string Where { get; }
+
+    public bool CanStartServer => true;
+
+    /// <summary>Comme le vrai tunnel : un serveur arrêté ne répond pas du tout (statut 0), il ne dit pas 503.</summary>
+    public Task ConnectAsync(CancellationToken ct) => _api.Online ? _inner.ConnectAsync(ct)
+        : throw new AdminException(0, $"Le serveur de Valcombe ne répond pas sur {Where.Split('@')[^1]} : il est arrêté, ou en train de démarrer.");
+
+    public Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct) => _inner.SendAsync(method, path, json, ct);
+
+    public Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress, CancellationToken ct) =>
+        _inner.DownloadAsync(path, destination, progress, ct);
+
+    public async Task StartServerAsync(IProgress<(string, double)> progress, CancellationToken ct)
+    {
+        progress.Report(($"Démarrage du serveur sur {Where}…", -1));
+        await Task.Delay(300, ct);
+        _api.Start();
+        progress.Report(($"Serveur démarré sur {Where} : l'API répondra dans un instant.", 0));
+    }
+
+    public Task<Ssh.VpsServiceStatus> ServiceStatusAsync(CancellationToken ct) => Task.FromResult(new Ssh.VpsServiceStatus
+    {
+        Installed = true,
+        ActiveState = _api.Online ? "active" : "inactive",
+        SubState = _api.Online ? "running" : "dead",
+        Enabled = true,
+        Listening = _api.Online,
+        Version = Installed,
+        Minecraft = "26.3",
+    });
+
+    public async Task<Ssh.VpsInstallResult> UpdateAsync(Release release, IProgress<(string, double)> progress, CancellationToken ct)
+    {
+        foreach (var (text, p) in new[] { ("Java", 0.2), ("Fabric", 0.4), ("Mods du serveur", 0.7), ("Service systemd", 0.95) })
+        {
+            progress.Report(("Serveur loué : " + text, p));
+            await Task.Delay(150, ct);
+        }
+        bool changed = Installed != release.Tag;
+        Installed = release.Tag;
+        return new Ssh.VpsInstallResult { Changed = changed, Restarted = changed && _api.Online, Version = release.Tag, Summary = "Valcombe " + release.Tag };
+    }
+
+    public ValueTask DisposeAsync() => _inner.DisposeAsync();
 }

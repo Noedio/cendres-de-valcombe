@@ -1548,7 +1548,12 @@ public partial class MainWindow : Window
         // Page Serveur : ce PC et un serveur distant, tous deux fictifs (aucune requête ne sort).
         _config.RemoteServers = new List<Services.Admin.RemoteServer>
         {
-            new() { Id = "apercu-vps", Name = "VPS de la guilde", Host = "vps.exemple.fr", ApiPort = Services.Admin.AdminClient.DefaultPort },
+            new()
+            {
+                Id = "apercu-vps", Name = "VPS de la guilde", Host = "vps.exemple.fr", Access = Services.Admin.RemoteServer.AccessSsh,
+                VpsId = "apercu-profil-vps",
+            },
+            new() { Id = "apercu-asso", Name = "Serveur de l'association", Host = "10.8.0.12", ApiPort = Services.Admin.AdminClient.DefaultPort },
         };
         foreach (string page in new[] { "Home", "Host", "Server", "Atelier", "Guide", "Carnet", "Game", "Look", "Settings", "Account" })
         {

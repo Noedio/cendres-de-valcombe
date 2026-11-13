@@ -303,9 +303,11 @@ public sealed class VpsServer : IDisposable
     /// Installe le serveur, ou le met à jour vers <paramref name="release"/> : compte dédié, Java, Fabric, mods,
     /// réglages, service systemd (activé, pas démarré), pare-feu. Sans effet sur un serveur déjà à jour.
     /// Le serveur en marche n'est pas redémarré (voir <see cref="UpdateAsync"/>).
+    /// <paramref name="log"/> reçoit chaque ligne du journal de l'installation dès qu'elle arrive (le parcours du
+    /// launcher la montre en direct) ; le journal entier est aussi rendu à la fin.
     /// </summary>
     public async Task<VpsInstallResult> InstallAsync(Release release, IProgress<(string, double)>? progress = null,
-        bool download = true, CancellationToken ct = default)
+        bool download = true, CancellationToken ct = default, IProgress<string>? log = null)
     {
         void Report(string text, double p) => progress?.Report((text, p));
         if (!Profile.EulaAccepted)
@@ -330,7 +332,7 @@ public sealed class VpsServer : IDisposable
         {
             throw new InvalidOperationException("Impossible de créer un dossier temporaire sur le serveur : " + stage.Message);
         }
-        var log = new List<string>();
+        var lines = new List<string>();
         bool changed = false;
         string finished = "";
         string error = "";
@@ -377,10 +379,11 @@ public sealed class VpsServer : IDisposable
                 }
                 else
                 {
-                    lock (log)
+                    lock (lines)
                     {
-                        log.Add(line);
+                        lines.Add(line);
                     }
+                    log?.Report(line);
                 }
             }, timeout: TimeSpan.FromMinutes(30), ct: ct);
             if (!result.Ok || finished.Length == 0)
@@ -401,7 +404,7 @@ public sealed class VpsServer : IDisposable
             }
         }
         Report("Serveur loué : installé.", 1);
-        return new VpsInstallResult { Changed = changed, Version = release.Tag, Summary = finished, Log = log };
+        return new VpsInstallResult { Changed = changed, Version = release.Tag, Summary = finished, Log = lines };
     }
 
     /// <summary>
@@ -412,7 +415,7 @@ public sealed class VpsServer : IDisposable
         CancellationToken ct = default)
     {
         var before = await StatusAsync(ct);
-        var result = await InstallAsync(release, progress, true, ct);
+        var result = await InstallAsync(release, progress, true, ct: ct);
         if (result.Changed && before.Active)
         {
             progress?.Report(("Serveur loué : redémarrage pour la nouvelle version…", 1));
