@@ -50,6 +50,40 @@ class VignettesTest {
 	}
 
 	@Test
+	void aStructureIsSeenFromThreeQuartersWithLitFaces() {
+		// Un seul bloc gris : son dessus au milieu en haut, sa face sud à gauche, sa face est à droite, chacune plus sombre.
+		BufferedImage out = Vignettes.isometric(1, 1, 1, new int[] {0x808080});
+		assertEquals(Vignettes.SIZE, out.getWidth());
+		assertEquals(Vignettes.SIZE, out.getHeight());
+		int top = rgb(out, 256, 146)[0];
+		int south = rgb(out, 146, 311)[0];
+		int east = rgb(out, 366, 311)[0];
+		assertEquals(Math.round(0x80 * Vignettes.TOP), top, 2.0, "dessus en plein jour");
+		assertEquals(Math.round(0x80 * Vignettes.SOUTH), south, 2.0, "face sud");
+		assertEquals(Math.round(0x80 * Vignettes.EAST), east, 2.0, "face est, dans l'ombre");
+		assertTrue(top > south && south > east);
+	}
+
+	@Test
+	void hiddenBlocksAndEmptyCellsAreSkipped() {
+		// Une colonne de deux blocs : le dessus du bloc du bas est caché par celui du haut, donc jamais peint en rouge.
+		int[] column = {0xFF0000, 0x00FF00}; // y = 0 rouge, y = 1 vert
+		BufferedImage out = Vignettes.isometric(1, 2, 1, column);
+		boolean redTopSeen = false;
+		for (int x = 0; x < Vignettes.SIZE; x += 4) {
+			for (int y = 0; y < Vignettes.SIZE; y += 4) {
+				int[] c = rgb(out, x, y);
+				redTopSeen |= c[0] == 0xFF && c[1] == 0 && c[2] == 0;
+			}
+		}
+		assertTrue(!redTopSeen, "le dessus du bloc du bas n'est pas peint (seules ses faces sud et est, plus sombres)");
+		// Rien que du vide : la scène seule, sans erreur.
+		BufferedImage none = Vignettes.isometric(2, 1, 2, new int[] {-1, -1, -1, -1});
+		int[] mid = rgb(none, 256, 256);
+		assertTrue(mid[0] < 0x60 && mid[1] < 0x60 && mid[2] < 0x60, "le fond sombre de la scène");
+	}
+
+	@Test
 	void aLargeMapIsReducedToTheSameSize() {
 		BufferedImage out = Vignettes.compose(plain(601, 0x808080), List.of(), List.of(), null, 300);
 		assertEquals(Vignettes.SIZE, out.getWidth());

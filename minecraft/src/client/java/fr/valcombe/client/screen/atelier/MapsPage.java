@@ -80,6 +80,13 @@ public class MapsPage extends AtelierPage {
 		return List.of(new Crumb("Atelier", AtelierHome::new), new Crumb(AtelierHome.CARTES, null));
 	}
 
+	@Override
+	protected boolean cancelPending() {
+		boolean was = confirmClose != null;
+		confirmClose = null;
+		return was;
+	}
+
 	/** Les cartes de la bibliothèque, telles que le serveur les envoie. */
 	public static List<JsonObject> library() {
 		return list(data(), "cartes");
@@ -209,7 +216,7 @@ public class MapsPage extends AtelierPage {
 			: "Aucune carte ne répond à « " + search.strip() + " ».";
 		grid = addRenderableWidget(new HdGrid<JsonObject>(x, gy, w, gh, tall ? 118 : 176, tall ? 150 : 52, 6, m -> str(m, "nom"))
 			.items(shown).key("atelier.cartes.galerie").empty(empty).openOnClick()
-			.onActivate(m -> go(new MapSheetPage(str(m, "id")))));
+			.onActivate(m -> go(MapSheetPage.visit(str(m, "id")))));
 		grid.cell(tall ? MapsPage::tallCard : MapsPage::wideCard);
 		// La carte qui vient de paraître (copie, nouvelle carte) est mise en avant et montrée.
 		if (before != null) {

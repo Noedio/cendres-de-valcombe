@@ -85,6 +85,15 @@ public class NewMapPage extends AtelierPage {
 		return t;
 	}
 
+	@Override
+	protected boolean cancelPending() {
+		if (step == 0) {
+			return false;
+		}
+		step--; // Échap revient d'une étape, comme « Précédent »
+		return true;
+	}
+
 	/** L'étape en cours (0 à 2), pour les tests en jeu. */
 	public static int step() {
 		return step;

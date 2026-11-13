@@ -1295,7 +1295,7 @@ public final class StructureWorkshop implements WorldManager.Listener {
 
 	/** Nouvelle structure : une parcelle vide, nommée, au bout de la rangée « Vos structures » ; le joueur y est conduit. */
 	public String create(ServerPlayer p, String size, String nom) {
-		ServerLevel level = here(p);
+		ServerLevel level = hereOrGo(p);
 		int k = SIZES.indexOf(size == null ? "" : size.strip().toLowerCase(Locale.ROOT));
 		if (k < 0) {
 			throw new GameException("Taille : petite, moyenne, grande ou immense.");
@@ -1322,9 +1322,20 @@ public final class StructureWorkshop implements WorldManager.Listener {
 			+ "puis « Enregistrer » à son pupitre. Identifiant : " + id + ".";
 	}
 
-	/** Conduit le joueur devant le pupitre d'une parcelle. */
+	/**
+	 * Le monde de l'atelier, où le joueur est conduit d'abord s'il est ailleurs (« Aller sur sa parcelle » et « Nouvelle
+	 * structure » de l'Atelier en jeu, lancés depuis n'importe quel monde) ; une GameException s'il n'y arrive pas.
+	 */
+	private ServerLevel hereOrGo(ServerPlayer p) {
+		if (!(p.level() instanceof ServerLevel l) || !isWorkshop(l)) {
+			go(p);
+		}
+		return here(p);
+	}
+
+	/** Conduit le joueur devant le pupitre d'une parcelle (depuis un autre monde : d'abord dans l'atelier). */
 	public String visit(ServerPlayer p, String id) {
-		ServerLevel level = here(p);
+		ServerLevel level = hereOrGo(p);
 		StructurePlots.Plot plot = current(p, level, id);
 		focus.put(p.getUUID(), plot.id);
 		p.teleportTo(level, plot.x + 0.5, S + 1, plot.lecternZ() - 1.5, Set.of(), 0f, 20f, false);

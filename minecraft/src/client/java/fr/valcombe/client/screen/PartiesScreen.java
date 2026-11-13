@@ -83,7 +83,7 @@ public class PartiesScreen extends HdScreen {
 	// ------------------------------------------------------------------
 
 	/** La couleur de l'état, sur le parchemin. */
-	static int statusColor(String statut) {
+	public static int statusColor(String statut) {
 		return switch (statut == null ? "" : statut) {
 			case "ouverte" -> 0xFF2F6B2A;
 			case "en-cours" -> Hd.WINE;

@@ -46,6 +46,9 @@ import net.minecraft.world.level.block.state.BlockState;
  * place, des trônes et des maisons, aux couleurs du thème).</li>
  * <li>{@code partie:<monde>} : la carte en place dans un monde de partie, vue de dessus dans le monde lui-même
  * (refaite au plus une fois par minute).</li>
+ * <li>{@code structure:<id>} : une structure du catalogue vue de trois quarts (perspective isométrique, faces éclairées
+ * comme sous un soleil du sud-est), aux couleurs de carte de ses blocs ; refaite quand elle est enregistrée, modifiée
+ * ou rendue à l'originale (son empreinte est celle de ses fichiers).</li>
  * </ul>
  * Réservé aux opérateurs, comme l'Atelier. Les images se font hors du fil du serveur quand elles le peuvent (cartes de
  * la bibliothèque, villages) ; celles d'un monde chargé se font sur son fil.
@@ -126,6 +129,7 @@ public final class Vignettes {
 			case "carte" -> maps.exists(arg) ? maps.stamp(arg) : "";
 			case "village" -> village(arg) == null ? "" : "v1";
 			case "partie" -> gameStamp(arg);
+			case "structure" -> structureStamp(arg);
 			default -> "";
 		};
 	}
@@ -161,6 +165,23 @@ public final class Vignettes {
 		if (key.startsWith("partie:")) {
 			// Le monde se lit sur son fil.
 			finish(key, stamp, safely(() -> gameImage(key.substring("partie:".length()))));
+			return;
+		}
+		if (key.startsWith("structure:")) {
+			// Les blocs se lisent sur le fil du serveur (le catalogue n'est pas fait pour deux fils) ; l'image se peint à côté.
+			int[] colors;
+			int[] size = new int[3];
+			try {
+				colors = structureColors(key.substring("structure:".length()), size);
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Vignette de structure impossible : {}", e.toString());
+				colors = null;
+			}
+			int[] cells = colors;
+			pool.submit(() -> {
+				byte[] png = cells == null ? new byte[0] : safely(() -> encode(isometric(size[0], size[1], size[2], cells)));
+				server.execute(() -> finish(key, stamp, png));
+			});
 			return;
 		}
 		pool.submit(() -> {
@@ -494,6 +515,138 @@ public final class Vignettes {
 	// ------------------------------------------------------------------
 	// La carte en place dans un monde de partie
 	// ------------------------------------------------------------------
+
+	// ------------------------------------------------------------------
+	// Une structure du catalogue, vue de trois quarts
+	// ------------------------------------------------------------------
+
+	/** L'empreinte d'une structure : celle de ses fichiers (vide si elle n'est pas au catalogue). */
+	private static String structureStamp(String id) {
+		StructureStore store = ValcombeMod.structures();
+		if (store == null || !store.exists(id)) {
+			return "";
+		}
+		return "s1:" + store.signature(id);
+	}
+
+	/**
+	 * Les couleurs des blocs d'une structure (fil du serveur), une par case, rangées comme les cases d'un {@link Clip}
+	 * ({@code (y * longueur + z) * largeur + x}) ; -1 pour l'air et ce qui n'a pas de couleur de carte (verre, torches).
+	 * size reçoit largeur, hauteur, longueur.
+	 */
+	private static int[] structureColors(String id, int[] size) {
+		StructureStore store = ValcombeMod.structures();
+		if (store == null || !store.exists(id)) {
+			return null;
+		}
+		Clip clip = store.clip(id);
+		size[0] = clip.width;
+		size[1] = clip.height;
+		size[2] = clip.length;
+		int[] colorOf = new int[clip.palette.size()];
+		for (int i = 0; i < colorOf.length; i++) {
+			BlockState s = clip.palette.get(i);
+			int c = s.isAir() ? 0 : s.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
+			colorOf[i] = c == 0 ? -1 : c;
+		}
+		int[] out = new int[clip.cells.length];
+		for (int i = 0; i < out.length; i++) {
+			int k = clip.cells[i];
+			out[i] = k == Clip.EMPTY || k < 0 || k >= colorOf.length ? -1 : colorOf[k];
+		}
+		return out;
+	}
+
+	/** Éclairage des trois faces vues : le dessus en plein soleil, le sud un peu moins, l'est dans l'ombre. */
+	static final double TOP = 1.0;
+	static final double SOUTH = 0.80;
+	static final double EAST = 0.62;
+
+	/**
+	 * Une structure vue de trois quarts, de SIZE × SIZE pixels : chaque bloc est un petit cube (dessus, face sud, face
+	 * est), peint du fond vers l'avant ; seules les faces qui donnent sur le vide sont peintes. Une ombre au sol, un fond
+	 * sombre de scène : la structure ressort sur le parchemin de l'Atelier. colors : une couleur par case (voir
+	 * {@link #structureColors}), -1 pour le vide.
+	 */
+	static BufferedImage isometric(int width, int height, int length, int[] colors) {
+		BufferedImage img = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+		// Le fond : une scène sombre, plus claire au milieu.
+		g.setPaint(new java.awt.RadialGradientPaint(SIZE / 2f, SIZE * 0.42f, SIZE * 0.75f, new float[] {0f, 1f},
+			new Color[] {new Color(0x4A3E4C), new Color(0x1E1820)}));
+		g.fillRect(0, 0, SIZE, SIZE);
+		int w = Math.max(1, width);
+		int h = Math.max(1, height);
+		int l = Math.max(1, length);
+		double margin = SIZE * 0.07;
+		double a = Math.min((SIZE - 2 * margin) / (w + l), (SIZE - 2 * margin) / ((w + l) / 2.0 + h));
+		// Le centre de l'image tombe au milieu du dessin : de -l·a à w·a en largeur, de -h·a à (w+l)·a/2 en hauteur.
+		double ox = SIZE / 2.0 - (w - l) * a / 2.0;
+		double oy = SIZE / 2.0 - ((w + l) * a / 2.0 - h * a) / 2.0;
+		// L'ombre au sol, sous l'emprise de la structure.
+		Path2D shadow = new Path2D.Double();
+		double grow = a * 0.6;
+		shadow.moveTo(ox - grow, oy - grow / 2);
+		shadow.lineTo(ox + w * a, oy + w * a / 2 - grow / 2);
+		shadow.lineTo(ox + (w - l) * a + grow, oy + (w + l) * a / 2);
+		shadow.lineTo(ox - l * a, oy + l * a / 2 + grow / 2);
+		shadow.closePath();
+		g.setColor(new Color(0, 0, 0, 70));
+		g.fill(shadow);
+		boolean edges = a >= 3;
+		g.setStroke(new BasicStroke((float) Math.max(0.6, a / 14)));
+		for (int s = 0; s <= w + h + l - 3; s++) {
+			for (int y = 0; y < h; y++) {
+				for (int x = 0; x < w; x++) {
+					int z = s - x - y;
+					if (z < 0 || z >= l) {
+						continue;
+					}
+					int c = colors[(y * l + z) * w + x];
+					if (c < 0) {
+						continue;
+					}
+					boolean top = y + 1 >= h || colors[((y + 1) * l + z) * w + x] < 0;
+					boolean east = x + 1 >= w || colors[(y * l + z) * w + x + 1] < 0;
+					boolean south = z + 1 >= l || colors[(y * l + z + 1) * w + x] < 0;
+					if (top) {
+						face(g, ox, oy, a, c, TOP, edges, x, y + 1, z, x + 1, y + 1, z, x + 1, y + 1, z + 1, x, y + 1, z + 1);
+					}
+					if (south) {
+						face(g, ox, oy, a, c, SOUTH, edges, x, y, z + 1, x + 1, y, z + 1, x + 1, y + 1, z + 1, x, y + 1, z + 1);
+					}
+					if (east) {
+						face(g, ox, oy, a, c, EAST, edges, x + 1, y, z, x + 1, y, z + 1, x + 1, y + 1, z + 1, x + 1, y + 1, z);
+					}
+				}
+			}
+		}
+		g.dispose();
+		return img;
+	}
+
+	/** Une face de cube : quatre coins (x, y, z) projetés, peinte de la couleur assombrie, et son filet. */
+	private static void face(Graphics2D g, double ox, double oy, double a, int rgb, double light, boolean edges, int... p) {
+		Path2D f = new Path2D.Double();
+		for (int i = 0; i < 4; i++) {
+			double sx = ox + (p[3 * i] - p[3 * i + 2]) * a;
+			double sy = oy + (p[3 * i] + p[3 * i + 2]) * a / 2 - p[3 * i + 1] * a;
+			if (i == 0) {
+				f.moveTo(sx, sy);
+			} else {
+				f.lineTo(sx, sy);
+			}
+		}
+		f.closePath();
+		g.setColor(new Color(scale(rgb, light)));
+		g.fill(f);
+		if (edges) {
+			g.setColor(new Color(0, 0, 0, 38));
+			g.draw(f);
+		}
+	}
 
 	private static String gameStamp(String worldId) {
 		fr.valcombe.mc.games.GameRoom room = fr.valcombe.mc.games.Games.byWorld(worldId);

@@ -1,6 +1,5 @@
 package fr.valcombe.mc;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -8,10 +7,8 @@ import fr.valcombe.rules.Distribution;
 import fr.valcombe.rules.GameException;
 import fr.valcombe.rules.RoleDef;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,10 +26,6 @@ import net.minecraft.server.level.ServerPlayer;
  * d'attache ou la partie principale, voir {@link fr.valcombe.mc.games.Games#forPlayer}) : jamais « la seule » partie.
  */
 public final class Workshop {
-	private static final Gson GSON = new Gson();
-	/** Côté de l'aperçu envoyé à l'écran en jeu, en cases (chacune y est dessinée en deux pixels). */
-	static final int PREVIEW_SIDE = 48;
-
 	private final CreationStore creations;
 	private final MapStore maps;
 	private final StructureStore structures;
@@ -196,17 +189,6 @@ public final class Workshop {
 		return "Carte actuelle : " + origin + ". " + cur.get("sieges") + " trônes, " + cur.get("maisons") + " maisons.";
 	}
 
-	/** La même chose en bref, pour la ligne du haut de l'écran en jeu. */
-	public static String brief(Map<String, Object> cur) {
-		if (cur == null) {
-			return "Aucune carte sur le serveur.";
-		}
-		String nom = (String) cur.get("nom");
-		return (!nom.isEmpty() ? "« " + nom + " »" : (Boolean) cur.get("genere") ? "Village généré" : "Carte faite à la main")
-			+ ((Boolean) cur.get("modifiee") && !nom.isEmpty() ? ", retouchée" : "") + " · " + cur.get("sieges") + " trônes · "
-			+ cur.get("maisons") + " maisons";
-	}
-
 	// ------------------------------------------------------------------
 	// Écran en jeu
 	// ------------------------------------------------------------------
@@ -217,35 +199,24 @@ public final class Workshop {
 		McHost host = room == null ? null : room.host();
 		Map<String, Object> cur = current(host, false);
 		out.put("carte", cur);
-		out.put("resume", describe(cur));
-		out.put("bref", brief(cur));
 		out.put("cartes", library(false));
 		out.put("chantier", host != null && host.busy());
 		out.put("essai", room != null && room.session().trialPending());
 		out.put("partie", room == null ? null : room.name()); // la partie dont c'est la carte actuelle
+		out.put("partieId", room == null ? null : room.id());
 		out.put("editeur", editor.state(p.getScoreboardName()));
-		List<Map<String, Object>> list = new ArrayList<>();
-		for (StructureStore.Def d : structures.list()) {
-			Map<String, Object> m = new LinkedHashMap<>();
-			m.put("id", d.id);
-			m.put("nom", d.nom);
-			m.put("categorie", d.categorie);
-			m.put("taille", d.taille);
-			m.put("repere", d.repere);
-			m.put("fournie", d.fournie);
-			m.put("modifiee", d.modifiee); // fournie, modifiée dans l'atelier structures
-			list.add(m);
-		}
-		out.put("structures", list);
-		List<Map<String, Object>> roles = new ArrayList<>();
-		for (RoleDef d : creations.roles()) {
-			roles.add(Map.of("id", d.id, "nom", d.nom, "camp", d.camp));
-		}
-		out.put("roles", roles);
+		out.put("structures", structureList());
+		StructureWorkshop sw = ValcombeMod.structureWorkshop();
+		out.put("atelierStructures", sw != null && sw.entry() != null); // l'atelier structures existe (déjà disposé)
+		out.put("dansAtelierStructures", sw != null && sw.isWorkshop(p.level()));
+		out.put("tailles", StructureWorkshop.SIZES);
+		out.put("roles", roleList());
+		out.put("scenarios", scenarioList());
+		out.put("packs", packs());
 		out.put("themes", Village.THEMES);
 		out.put("tronesMin", Village.MIN_SEATS);
 		out.put("tronesMax", Village.MAX_SEATS);
-		out.put("parties", gameWorlds());
+		out.put("parties", gameWorlds(p));
 		// « Nouvelle carte » › importer : les fichiers déposés dans le dossier d'import du serveur.
 		out.put("fichiers", structures.importable());
 		out.put("dossierImport", inbox());
@@ -273,13 +244,14 @@ public final class Workshop {
 	 * Les mondes de partie où l'on peut envoyer une carte (la partie principale d'abord), pour l'Atelier en jeu : ce
 	 * qu'ils portent, s'ils reçoivent déjà une carte, si une partie s'y joue.
 	 */
-	List<Map<String, Object>> gameWorlds() {
+	List<Map<String, Object>> gameWorlds(ServerPlayer viewer) {
 		MapWorkshop w = ValcombeMod.mapWorkshop();
 		if (w == null) {
 			return List.of();
 		}
 		MapSender sender = ValcombeMod.sender();
 		fr.valcombe.mc.games.GameRoom main = fr.valcombe.mc.games.Games.main();
+		fr.valcombe.mc.games.GameRoom mine = viewer == null ? null : roomOf(viewer);
 		List<Map<String, Object>> out = new ArrayList<>();
 		for (fr.valcombe.mc.worlds.WorldEntry e : w.parties()) {
 			Map<String, Object> m = new LinkedHashMap<>();
@@ -299,9 +271,201 @@ public final class Workshop {
 			var level = server.getLevel(fr.valcombe.mc.worlds.WorldManager.key(e.id()));
 			m.put("joueurs", level == null ? 0 : level.players().size());
 			m.put("vignette", Vignettes.stampOf("partie:" + e.id()));
+			// Pour la fiche d'une partie dans l'Atelier : son état (celui du tableau des parties), sa carte en place (d'où
+			// elle vient, si elle a été retouchée), son scénario, si c'est la partie que vise l'opérateur (où ses gestes de
+			// carte s'appliquent : repères, enregistrer).
+			m.put("fiche", room == null ? null : room.card().view());
+			m.put("actuelle", room == null ? null : current(room.host(), false));
+			m.put("chantier", room != null && room.host().busy());
+			m.put("scenario", room == null || room.session().scenario() == null ? null : room.session().scenario().nom);
+			m.put("scenarioId", room == null || room.session().scenario() == null ? null : room.session().scenario().id);
+			m.put("visee", room != null && room == mine);
+			m.put("ici", room != null && viewer != null && room.here(viewer));
 			out.add(m);
 		}
 		return out;
+	}
+
+	// ------------------------------------------------------------------
+	// Structures, rôles, scénarios et packs, pour l'Atelier en jeu
+	// ------------------------------------------------------------------
+
+	/** Le catalogue des structures, chacune avec l'empreinte de sa vignette et ce que l'atelier structures en sait. */
+	private List<Map<String, Object>> structureList() {
+		StructureWorkshop sw = ValcombeMod.structureWorkshop();
+		java.util.Set<String> plots = new java.util.HashSet<>();
+		if (sw != null) {
+			for (StructureWorkshop.ParcelInfo pi : sw.parcels()) {
+				plots.add(pi.id());
+			}
+		}
+		List<Map<String, Object>> list = new ArrayList<>();
+		for (StructureStore.Def d : structures.list()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("id", d.id);
+			m.put("nom", d.nom);
+			m.put("categorie", d.categorie);
+			m.put("taille", d.taille);
+			m.put("blocs", d.blocs);
+			m.put("repere", d.repere);
+			m.put("fournie", d.fournie);
+			m.put("modifiee", d.modifiee); // fournie, modifiée dans l'atelier structures
+			m.put("modifieeLe", d.modifieeLe);
+			m.put("parcelle", plots.contains(d.id));
+			m.put("vignette", Vignettes.stampOf("structure:" + d.id));
+			list.add(m);
+		}
+		return list;
+	}
+
+	/** Un rôle tel qu'un jeton le montre : son nom, son emblème (pictogramme), s'il est du mal. */
+	private Map<String, Object> token(String roleId) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("id", roleId);
+		RoleDef mine = creations.roles().stream().filter(d -> d.id.equals(roleId)).findFirst().orElse(null);
+		if (mine != null) {
+			m.put("nom", mine.nom);
+			m.put("embleme", mine.embleme);
+			m.put("mal", mine.type().evil());
+			m.put("cree", true);
+			return m;
+		}
+		fr.valcombe.rules.Role r = fr.valcombe.rules.Role.parse(roleId);
+		m.put("nom", r == null ? roleId : r.displayName);
+		m.put("embleme", r == null ? roleId : roleId.toLowerCase(java.util.Locale.ROOT));
+		m.put("mal", r != null && r.type != null && r.type.evil());
+		m.put("cree", false);
+		m.put("inconnu", r == null);
+		return m;
+	}
+
+	/** Les rôles créés : leur jeton, leur texte, leurs réveils, et les scénarios qui les citent. */
+	private List<Map<String, Object>> roleList() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		List<fr.valcombe.session.ScenarioDef> scenarios = creations.scenarios();
+		for (RoleDef d : creations.roles()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("id", d.id);
+			m.put("nom", d.nom);
+			m.put("camp", d.camp);
+			m.put("campTexte", d.type().displayName);
+			m.put("mal", d.type().evil());
+			m.put("embleme", d.embleme);
+			m.put("texte", d.texte == null ? "" : d.texte);
+			m.put("premiereNuit", wake(d.premiereNuit));
+			m.put("autresNuits", wake(d.autresNuits));
+			m.put("scenarios", scenarios.stream().filter(s -> s.roles != null && s.roles.contains(d.id)).map(s -> s.nom).toList());
+			out.add(m);
+		}
+		return out;
+	}
+
+	/** « jamais », « au début », « après le Moine » : un réveil en clair. */
+	static String wake(String when) {
+		if (when == null || when.isBlank() || when.equals("jamais")) {
+			return "ne se réveille pas";
+		}
+		if (when.equals("debut")) {
+			return "au début de la nuit";
+		}
+		if (when.equals("fin")) {
+			return "à la fin de la nuit";
+		}
+		int colon = when.indexOf(':');
+		if (colon > 0) {
+			String other = when.substring(colon + 1);
+			fr.valcombe.rules.Role r = fr.valcombe.rules.Role.parse(other);
+			String name = r == null ? other : r.displayName;
+			return (when.startsWith("avant") ? "juste avant " : "juste après ") + name;
+		}
+		return when;
+	}
+
+	/** Les scénarios créés : jetons de leurs rôles, carte, nombres de joueurs, parties où ils sont choisis. */
+	private List<Map<String, Object>> scenarioList() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (fr.valcombe.session.ScenarioDef d : creations.scenarios()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("id", d.id);
+			m.put("nom", d.nom);
+			m.put("description", d.description == null ? "" : d.description);
+			List<Map<String, Object>> tokens = new ArrayList<>();
+			for (String r : d.roles == null ? List.<String>of() : d.roles) {
+				tokens.add(token(r));
+			}
+			m.put("roles", tokens);
+			String carte = d.carte == null ? "" : d.carte;
+			m.put("carte", carte);
+			m.put("carteNom", carte.isEmpty() ? "" : maps.list().stream().filter(x -> x.id.equals(carte)).map(x -> x.nom).findFirst().orElse(""));
+			m.put("carteManque", !carte.isEmpty() && !maps.exists(carte));
+			List<Integer> n = d.playable();
+			m.put("joueurs", n.isEmpty() ? "" : n.get(0) + " à " + n.get(n.size() - 1));
+			m.put("manquants", d.missingRoles());
+			List<String> active = new ArrayList<>();
+			for (fr.valcombe.mc.games.GameRoom r : fr.valcombe.mc.games.Games.all()) {
+				if (r.session().scenario() != null && r.session().scenario().id.equals(d.id)) {
+					active.add(r.name());
+				}
+			}
+			m.put("choisiDans", active);
+			out.add(m);
+		}
+		return out;
+	}
+
+	/** Les dossiers où l'Atelier en jeu cherche des packs .valcombe : le dossier d'import, puis celui des partages. */
+	private List<java.nio.file.Path> packDirs() {
+		return List.of(java.nio.file.Path.of(inbox()), creations.dir().resolve("partages"));
+	}
+
+	/** Les packs .valcombe déposés sur le serveur (dossier d'import, puis partages), les plus récents d'abord. */
+	List<Map<String, Object>> packs() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (java.nio.file.Path dir : packDirs()) {
+			if (!java.nio.file.Files.isDirectory(dir)) {
+				continue;
+			}
+			try (var s = java.nio.file.Files.list(dir)) {
+				for (java.nio.file.Path f : s.filter(java.nio.file.Files::isRegularFile)
+						.filter(x -> x.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".valcombe")).toList()) {
+					Map<String, Object> m = new LinkedHashMap<>();
+					long at = java.nio.file.Files.getLastModifiedTime(f).toMillis();
+					m.put("fichier", f.getFileName().toString());
+					m.put("dossier", dir.equals(packDirs().get(0)) ? "import" : "partages");
+					m.put("octets", java.nio.file.Files.size(f));
+					m.put("date", at);
+					m.put("dateTexte", WHEN.format(java.time.Instant.ofEpochMilli(at)));
+					out.add(m);
+				}
+			} catch (IOException e) {
+				ValcombeMod.LOG.warn("Dossier des packs illisible {}", dir, e);
+			}
+		}
+		out.sort((a, b) -> Long.compare((Long) b.get("date"), (Long) a.get("date")));
+		return out.size() > 60 ? out.subList(0, 60) : out;
+	}
+
+	/** Importe un pack .valcombe déposé sur le serveur (dossier d'import, sinon partages) : rôles, scénarios, cartes, structures. */
+	public String importPack(String fileName) {
+		String name = fileName == null ? "" : fileName.strip();
+		if (name.isEmpty() || name.contains("/") || name.contains("\\") || name.contains("..")
+			|| !name.toLowerCase(java.util.Locale.ROOT).endsWith(".valcombe")) {
+			throw new GameException("Fichier de pack : le nom d'un fichier .valcombe déposé dans " + inbox() + ".");
+		}
+		for (java.nio.file.Path dir : packDirs()) {
+			java.nio.file.Path f = dir.resolve(name);
+			if (java.nio.file.Files.isRegularFile(f)) {
+				try {
+					if (java.nio.file.Files.size(f) > 64L * 1024 * 1024) {
+						throw new GameException("Pack trop gros (64 Mo au plus).");
+					}
+					return "Pack « " + name + " » : " + creations.importPack(java.nio.file.Files.readString(f, java.nio.charset.StandardCharsets.UTF_8));
+				} catch (IOException e) {
+					throw new GameException("Pack illisible : " + e.getMessage());
+				}
+			}
+		}
+		throw new GameException("Pack introuvable : déposez « " + name + " » dans " + inbox() + ", puis réessayez.");
 	}
 
 	private String inboxPath;
@@ -389,107 +553,7 @@ public final class Workshop {
 		return command.startsWith("vc carte ") || command.startsWith("vc structure ") || command.startsWith("vc structures ")
 			|| command.equals("vc annuler") || command.startsWith("vc annuler ") || command.equals("vc retablir")
 			|| command.startsWith("vc retablir ") || command.equals("vc baguette")
-			|| command.startsWith("vc atelier ") || command.startsWith("vc scenario ");
-	}
-
-	// ------------------------------------------------------------------
-	// Aperçu vu de dessus, pour l'écran en jeu
-	// ------------------------------------------------------------------
-	/**
-	 * L'aperçu d'une carte, réduit à quelques dizaines de cases : couleurs vues de dessus (trois octets par
-	 * case, en base 64) et repères. id vide ou « actuelle » : la carte actuelle de la partie de cet hôte.
-	 */
-	public String preview(McHost host, String id) {
-		boolean currentMap = id == null || id.isBlank() || id.equals("actuelle");
-		byte[] png;
-		int radius;
-		List<int[]> seats;
-		List<int[]> houses;
-		int[] room;
-		String name;
-		if (currentMap) {
-			Village v = host == null ? null : host.village();
-			if (v == null) {
-				throw new GameException("Aucune carte sur le serveur.");
-			}
-			png = host.topView(v);
-			radius = Math.min(Village.MAX_EXTENT, v.extent());
-			seats = v.relSeats();
-			houses = v.relHouses();
-			room = v.relConvocation();
-			name = v.libraryName();
-		} else {
-			MapStore.MapDef d = maps.list().stream().filter(x -> x.id.equals(id)).findFirst()
-				.orElseThrow(() -> new GameException("Carte introuvable : " + id + "."));
-			png = maps.preview(id);
-			radius = d.rayon;
-			seats = d.sieges;
-			houses = d.logis;
-			room = d.convocation;
-			name = d.nom;
-		}
-		JsonObject o = new JsonObject();
-		o.addProperty("id", currentMap ? "" : id);
-		o.addProperty("nom", name);
-		o.addProperty("rayon", radius);
-		o.add("sieges", flat(seats));
-		o.add("maisons", flat(houses));
-		o.add("salle", room == null ? null : GSON.toJsonTree(new int[] {room[0], room[2]}));
-		if (png != null) {
-			try {
-				var img = javax.imageio.ImageIO.read(new ByteArrayInputStream(png));
-				if (img != null) {
-					o.addProperty("cote", PREVIEW_SIDE);
-					o.addProperty("pixels", Base64.getEncoder().encodeToString(shrink(img.getWidth(), img.getHeight(),
-						img.getRGB(0, 0, img.getWidth(), img.getHeight(), null, 0, img.getWidth()), PREVIEW_SIDE)));
-				}
-			} catch (IOException | RuntimeException e) {
-				ValcombeMod.LOG.warn("Aperçu de la carte {} illisible", id, e);
-			}
-		}
-		return o.toString();
-	}
-
-	/** [est, sud] de chaque repère. */
-	private static JsonElement flat(List<int[]> marks) {
-		List<int[]> out = new ArrayList<>();
-		for (int[] a : marks) {
-			out.add(new int[] {a[0], a[2]});
-		}
-		return GSON.toJsonTree(out);
-	}
-
-	/** Réduit une image (une couleur par pixel) à side × side cases : la moyenne de chaque case, en trois octets. */
-	static byte[] shrink(int width, int height, int[] rgb, int side) {
-		byte[] out = new byte[side * side * 3];
-		for (int cy = 0; cy < side; cy++) {
-			int y0 = cy * height / side;
-			int y1 = Math.max(y0 + 1, (cy + 1) * height / side);
-			for (int cx = 0; cx < side; cx++) {
-				int x0 = cx * width / side;
-				int x1 = Math.max(x0 + 1, (cx + 1) * width / side);
-				long r = 0;
-				long g = 0;
-				long b = 0;
-				int n = 0;
-				for (int y = y0; y < y1 && y < height; y++) {
-					for (int x = x0; x < x1 && x < width; x++) {
-						int c = rgb[y * width + x];
-						r += c >> 16 & 255;
-						g += c >> 8 & 255;
-						b += c & 255;
-						n++;
-					}
-				}
-				int i = (cy * side + cx) * 3;
-				if (n > 0) {
-					out[i] = (byte) (r / n);
-					out[i + 1] = (byte) (g / n);
-					out[i + 2] = (byte) (b / n);
-				}
-			}
-		}
-		return out;
+			|| command.startsWith("vc atelier ") || command.startsWith("vc scenario ") || command.startsWith("vc partie ");
 	}
 
 	// ------------------------------------------------------------------

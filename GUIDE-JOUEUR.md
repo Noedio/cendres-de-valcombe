@@ -202,7 +202,7 @@ Les deux écarts en gras viennent des règles officielles de Blood on the Clockt
 
 ## 10. Pour le MJ : préparer une partie de la table
 
-- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue, la victoire du mal majoritaire, l'Héritière sans seuil et le mal qui se connaît dès 5 joueurs. Choisissez-le dans l'Atelier ou dans le jeu (menu J › Pupitre du Conteur › Éditer le script › Scénarios…).
+- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue, la victoire du mal majoritaire, l'Héritière sans seuil et le mal qui se connaît dès 5 joueurs. Choisissez-le dans l'Atelier (la page web, ou en jeu : menu J › Atelier › Rôles et scénarios, fiche du scénario, « Choisir pour une partie… ») ou dans le jeu (menu J › Pupitre du Conteur › Éditer le script › Scénarios…).
 - **Le temps de discussion** et la durée du Conseil se règlent dans le Pupitre du Conteur › « Durées et minuteurs… ».
 - **Choisir les rôles soi-même** : au salon, Pupitre du Conteur › « Imposer des rôles… » ; avant la première nuit, onglet Nuit › « Distribution des rôles… » montre le rôle de chacun, à changer d'un clic.
 - **Les groupes de rôles** : dans l'éditeur de script (Pupitre du Conteur › Éditer le script), la colonne de droite propose les groupes : cliquez sur le nom pour passer d'un groupe à l'autre (ses jetons sont soulignés d'or), puis « + » (ajouter au script), « − » (retirer) ou « Seul » (le script devient le groupe). « Ranger… » enregistre le script en cours comme groupe. Les groupes se créent aussi dans l'Atelier web et voyagent dans les fichiers `.valcombe` (onglet Partage).

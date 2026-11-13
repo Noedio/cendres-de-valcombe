@@ -43,22 +43,22 @@ public class AtelierHome extends AtelierPage {
 	}
 
 	// ------------------------------------------------------------------
-	// Où mène chaque entrée (Structures, Parties, Rôles et scénarios : pages de l'agent qui les refait)
+	// Où mène chaque entrée
 	// ------------------------------------------------------------------
 
-	/** L'entrée « Structures ». */
+	/** L'entrée « Structures » : le catalogue en vignettes ({@link StructuresPage}). */
 	public static Screen structures() {
-		return new fr.valcombe.client.screen.AtelierScreen(3);
+		return new StructuresPage();
 	}
 
-	/** L'entrée « Parties ». */
+	/** L'entrée « Parties » : les parties du serveur et leurs cartes ({@link PartiesPage}). */
 	public static Screen parties() {
-		return new PartiesScreen();
+		return new PartiesPage();
 	}
 
-	/** L'entrée « Rôles et scénarios ». */
+	/** L'entrée « Rôles et scénarios » : scénarios, rôles créés, packs ({@link RolesPage}). */
 	public static Screen roles() {
-		return new fr.valcombe.client.screen.AtelierScreen(5);
+		return new RolesPage();
 	}
 
 	// ------------------------------------------------------------------
@@ -92,7 +92,7 @@ public class AtelierHome extends AtelierPage {
 
 	static String rolesLine(JsonObject a) {
 		int roles = list(a, "roles").size();
-		int scenarios = list(view(), "scenarios").size();
+		int scenarios = list(a, "scenarios").size();
 		return plural(roles, "rôle créé", "rôles créés") + " · " + plural(scenarios, "scénario", "scénarios");
 	}
 
@@ -116,9 +116,11 @@ public class AtelierHome extends AtelierPage {
 		int th = (h - (rows - 1) * gap) / rows;
 		String[][] tiles = {
 			{CARTES, mapsLine(a), "La bibliothèque en vignettes, les fiches des cartes, « Nouvelle carte » et les ateliers carte ouverts."},
-			{STRUCTURES, structuresLine(a), "Le catalogue des structures (maisons, place, décor, les vôtres) et l'atelier structures."},
-			{PARTIES, partiesLine(a), "Les parties du serveur : les rejoindre, les regarder, les suspendre ; créer une partie d'essai."},
-			{ROLES, rolesLine(a), "Vos rôles créés et vos scénarios : choisir pour la prochaine partie, essayer, supprimer."},
+			{STRUCTURES, structuresLine(a), "Le catalogue en vignettes (maisons, place, décor, les vôtres), « Nouvelle structure », "
+				+ "les gestes de WorldEdit dans les ateliers."},
+			{PARTIES, partiesLine(a), "Les parties du serveur et leurs cartes : y aller, leur envoyer une carte, enregistrer la leur, "
+				+ "les suspendre ; créer une partie d'essai."},
+			{ROLES, rolesLine(a), "Vos scénarios et vos rôles créés, en jetons : choisir pour une partie, essayer, importer un pack."},
 		};
 		for (int i = 0; i < tiles.length; i++) {
 			int tx = x + (i % cols) * (tw + gap);
@@ -206,7 +208,22 @@ public class AtelierHome extends AtelierPage {
 						Vignettes.draw(hd, "carte:" + str(latest, "id"), str(latest, "vignette"), sx, sy, side, side);
 					}
 				}
-				case 1 -> AtelierArt.structures(hd, x, y, w, h, hot);
+				case 1 -> {
+					// Une structure du catalogue vue de trois quarts (la dernière des vôtres, sinon la maison gothique) sur la parcelle peinte.
+					AtelierArt.structures(hd, x, y, w, h, hot);
+					List<JsonObject> all = list(data(), "structures");
+					JsonObject shown = all.stream().filter(s -> !ClientState.bool(s, "fournie")).reduce((a, b) -> b)
+						.orElse(all.stream().filter(s -> "maison-gothique".equals(str(s, "id"))).findFirst().orElse(null));
+					if (shown != null && Vignettes.ready("structure:" + str(shown, "id"), str(shown, "vignette"))) {
+						int side = Math.min(w, h) - hd.u(8);
+						int sx = x + (w - side) / 2;
+						int sy = y + (h - side) / 2;
+						hd.fill(sx - hd.u(2), sy - hd.u(2), sx + side + hd.u(2), sy + side + hd.u(2), 0xFF4A2E1C);
+						Vignettes.draw(hd, "structure:" + str(shown, "id"), str(shown, "vignette"), sx, sy, side, side);
+					} else if (shown != null) {
+						Vignettes.get("structure:" + str(shown, "id"), str(shown, "vignette")); // demandée : elle paraîtra à la place du dessin
+					}
+				}
 				case 2 -> {
 					JsonObject g = new JsonObject();
 					g.addProperty("id", "atelier-accueil");

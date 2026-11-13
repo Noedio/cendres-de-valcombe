@@ -65,6 +65,12 @@ public class MapSheetPage extends AtelierPage {
 		}
 	}
 
+	/** La fiche ouverte depuis la bibliothèque : elle commence sur ses actions (pas sur une confirmation laissée en route). */
+	public static MapSheetPage visit(String id) {
+		lastId = null;
+		return new MapSheetPage(id);
+	}
+
 	public String mapId() {
 		return id;
 	}
@@ -79,6 +85,16 @@ public class MapSheetPage extends AtelierPage {
 		List<Crumb> t = new ArrayList<>(MapsPage.crumbs());
 		t.add(new Crumb(m == null ? id : str(m, "nom"), null));
 		return t;
+	}
+
+	@Override
+	protected boolean cancelPending() {
+		if (mode == Mode.ACTIONS) {
+			return false;
+		}
+		HdTextField.forget(NAME_KEY);
+		mode = Mode.ACTIONS;
+		return true;
 	}
 
 	@Override

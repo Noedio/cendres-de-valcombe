@@ -35,8 +35,11 @@ import net.minecraft.util.Util;
  * elle était tapée, dont la réponse revient dans la vue ({@code atelier.reponse}). L'Atelier est réservé aux
  * opérateurs : sans la vue {@code atelier}, la page dit pourquoi et mène aux mondes (les invités y construisent).
  * <p>
- * Pages : {@link AtelierHome} (accueil, quatre entrées), {@link MapsPage} (cartes), {@link MapSheetPage} (fiche d'une
- * carte), {@link NewMapPage} (nouvelle carte, en trois étapes).
+ * Pages : {@link AtelierHome} (accueil, quatre entrées) ; {@link MapsPage} (cartes), {@link MapSheetPage} (fiche d'une
+ * carte), {@link NewMapPage} (nouvelle carte, en trois étapes) ; {@link StructuresPage} (catalogue et Construire),
+ * {@link StructureSheetPage}, {@link NewStructurePage} ; {@link PartiesPage}, {@link PartySheetPage} ; {@link RolesPage}
+ * (scénarios, rôles créés, packs), {@link ScenarioSheetPage}, {@link RoleSheetPage}. Échap défait d'abord ce qui est en
+ * cours sur la page ({@link #cancelPending()}), puis ferme l'Atelier.
  */
 public abstract class AtelierPage extends HdScreen {
 	/** Marge des côtés, en unités. */
@@ -119,6 +122,23 @@ public abstract class AtelierPage extends HdScreen {
 
 	/** Le dessin de la page, sous ses widgets (pixels réels). */
 	protected void drawPage(Hd hd) {
+	}
+
+	/**
+	 * Échap annule d'abord ce que la page a en cours (une confirmation, une saisie, une étape d'un parcours) : la page le
+	 * défait et renvoie vrai. Sans rien en cours (faux), Échap ferme l'Atelier.
+	 */
+	protected boolean cancelPending() {
+		return false;
+	}
+
+	@Override
+	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+		if (event.input() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE && cancelPending()) {
+			rebuildSoon();
+			return true;
+		}
+		return super.keyPressed(event);
 	}
 
 	/** Largeur réservée à droite du pied de page pour les boutons de la page, en unités. */

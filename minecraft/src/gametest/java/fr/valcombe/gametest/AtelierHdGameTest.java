@@ -14,6 +14,14 @@ import fr.valcombe.client.screen.atelier.AtelierPage;
 import fr.valcombe.client.screen.atelier.MapSheetPage;
 import fr.valcombe.client.screen.atelier.MapsPage;
 import fr.valcombe.client.screen.atelier.NewMapPage;
+import fr.valcombe.client.screen.atelier.NewStructurePage;
+import fr.valcombe.client.screen.atelier.PartiesPage;
+import fr.valcombe.client.screen.atelier.PartySheetPage;
+import fr.valcombe.client.screen.atelier.RoleSheetPage;
+import fr.valcombe.client.screen.atelier.RolesPage;
+import fr.valcombe.client.screen.atelier.ScenarioSheetPage;
+import fr.valcombe.client.screen.atelier.StructureSheetPage;
+import fr.valcombe.client.screen.atelier.StructuresPage;
 import fr.valcombe.mc.MapWorkshop;
 import fr.valcombe.mc.ValcombeMod;
 import fr.valcombe.mc.worlds.WorldEntry;
@@ -47,6 +55,13 @@ import net.minecraft.server.level.ServerPlayer;
  * <li>« Nouvelle carte » : les trois étapes (captures), ce qui manque dit et « Suivant » grisé tant qu'il manque ; un
  * fichier .nbt déposé dans le dossier d'import est importé dans un atelier, qui paraît dans « Ateliers ouverts »
  * (capture), puis il est fermé.</li>
+ * <li>Structures : le catalogue en vignettes vues de trois quarts (512 × 512, faites par le serveur), « À vous » vide et
+ * « Nouvelle structure » mis en avant, le parcours guidé (la sélection manque hors d'un atelier) ; une structure importée,
+ * sa fiche, renommée sur place puis supprimée après confirmation.</li>
+ * <li>Parties : la liste, la fiche de la partie principale, « Carte en place » (vider le monde se confirme, « Annuler » ne
+ * lance rien) ; une partie d'essai créée par la page, sa fiche une fois son village posé, supprimée après confirmation.</li>
+ * <li>Rôles et scénarios : un rôle et un scénario créés, leurs fiches (jetons HD), le choix d'une partie ; un pack .valcombe
+ * déposé, importé par la page ; le rôle supprimé par sa fiche après confirmation.</li>
  * <li>La mise en page de chaque page à 427 × 240 (fenêtre de 854 × 480 à l'échelle 2), à l'échelle 3, à l'échelle 1 et
  * dans une fenêtre de 2560 × 1440 : aucun widget ne sort du panneau ni n'en chevauche un autre.</li>
  * </ol>
@@ -253,21 +268,84 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		return true;
 	}
 
-	/** Ouvre chaque page, vérifie sa mise en page, et la capture sous ce suffixe. */
-	private static void layouts(ClientGameTestContext ctx, String suffix, String mapId) {
+	/** Ce que le test crée, pour le ménage de la fin. */
+	private static final class Made {
+		final List<String> maps = new ArrayList<>();
+		final List<String> trials = new ArrayList<>();
+		final List<Path> files = new ArrayList<>();
+		String structure;
+		String role;
+		String scenario;
+	}
+
+	/** Les pages de l'Atelier, chacune avec son nom (captures, messages) ; celles qui se capturent à chaque taille. */
+	private static final List<String> SHOWN = List.of("accueil", "bibliotheque", "fiche", "structures", "fiche-structure", "fiche-partie",
+		"fiche-scenario");
+
+	/** Ouvre chaque page, vérifie sa mise en page, et capture les principales sous ce suffixe. */
+	private static void layouts(ClientGameTestContext ctx, String suffix, String mapId, String mainId, Made made) {
 		List<Supplier<Screen>> pages = List.of(AtelierHome::new, () -> new MapsPage(0), () -> new MapsPage(1), () -> new MapsPage(2),
-			() -> new MapSheetPage(mapId), NewMapPage::start);
-		String[] names = {"accueil", "bibliotheque", "ateliers", "corbeille", "fiche", "nouvelle"};
+			() -> MapSheetPage.visit(mapId), NewMapPage::start, () -> new StructuresPage(0), () -> new StructuresPage(1),
+			() -> StructureSheetPage.visit("maison-gothique"), NewStructurePage::start, PartiesPage::new, () -> PartySheetPage.visit(mainId),
+			() -> new RolesPage(0), () -> new RolesPage(1), () -> new RolesPage(2), () -> ScenarioSheetPage.visit(made.scenario),
+			() -> RoleSheetPage.visit(made.role));
+		String[] names = {"accueil", "bibliotheque", "ateliers", "corbeille", "fiche", "nouvelle", "structures", "construire",
+			"fiche-structure", "nouvelle-structure", "parties", "fiche-partie", "scenarios", "roles", "packs", "fiche-scenario", "fiche-role"};
 		for (int i = 0; i < pages.size(); i++) {
 			Supplier<Screen> page = pages.get(i);
 			ctx.setScreen(page::get);
 			ctx.waitTicks(6);
 			String problem = ctx.computeOnClient(AtelierHdGameTest::layoutProblem);
 			check(problem == null, "mise en page « " + names[i] + " » (" + suffix + ") : " + (problem == null ? "bonne" : problem));
-			if (i == 0 || i == 1 || i == 4) {
+			if (SHOWN.contains(names[i])) {
 				shot(ctx, "taille-" + suffix + "-" + names[i]);
 			}
 		}
+	}
+
+	/** Donne ce texte au champ de saisie de l'écran (comme tapé), puis rouvre la page pour qu'elle en tienne compte. */
+	private static void typeIn(ClientGameTestContext ctx, String text, Supplier<Screen> reopen) {
+		boolean ok = ctx.computeOnClient(mc -> {
+			for (var w : mc.gui.screen().children()) {
+				if (w instanceof fr.valcombe.client.hd.HdTextField f) {
+					f.value(text);
+					return true;
+				}
+			}
+			return false;
+		});
+		check(ok, "champ de saisie pour « " + text + " »");
+		ctx.setScreen(reopen::get);
+		ctx.waitTicks(8);
+	}
+
+	/** Choisit dans la liste de l'écran la ligne dont ce champ vaut ce texte. */
+	private static boolean chooseRow(ClientGameTestContext ctx, String key, String value) {
+		boolean ok = ctx.computeOnClient(mc -> {
+			for (var w : mc.gui.screen().children()) {
+				if (w instanceof fr.valcombe.client.hd.HdList<?> l) {
+					for (int i = 0; i < l.items().size(); i++) {
+						if (l.items().get(i) instanceof JsonObject o && value.equals(ClientState.str(o, key))) {
+							l.choose(i);
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		});
+		ctx.waitTicks(8);
+		return ok;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static boolean openInGrid(ClientGameTestContext ctx, String name) {
+		boolean ok = ctx.computeOnClient(mc -> {
+			HdGrid<JsonObject> g = grid(mc);
+			return g != null && g.open(name);
+		});
+		ctx.waitTicks(10);
+		return ok;
 	}
 
 	private static net.minecraft.nbt.ListTag ints(int... values) {
@@ -329,10 +407,12 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			ctx.waitTicks(40);
 			check(server.computeOnServer(s -> mw() != null && ValcombeMod.maps() != null), "atelier carte disponible");
 			int initialScale = ctx.computeOnClient(mc -> mc.options.guiScale().get());
-			List<String> maps = new ArrayList<>();
+			Made made = new Made();
+			List<String> maps = made.maps;
 			Path dropped = server.computeOnServer(s -> Path.of(ValcombeMod.structures().inboxPath()).resolve("atelier-hd-essai.nbt"));
+			made.files.add(dropped);
 			try {
-				run(ctx, world, me, maps, dropped);
+				run(ctx, world, me, made, dropped);
 			} finally {
 				ctx.setScreen(() -> null);
 				ctx.getInput().resizeWindow(854, 480);
@@ -340,8 +420,27 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 					mc.options.guiScale().set(initialScale);
 					mc.resizeGui();
 				});
-				// Ménage : ateliers et cartes d'essai, le fichier déposé.
+				// Ménage : ateliers et cartes d'essai, parties d'essai, structure, rôle et scénario, fichiers déposés.
 				server.runOnServer(s -> {
+					var creations = ValcombeMod.creations();
+					if (made.scenario != null && creations.scenarios().stream().anyMatch(d -> d.id.equals(made.scenario))) {
+						creations.deleteScenario(made.scenario);
+					}
+					if (made.role != null && creations.roles().stream().anyMatch(d -> d.id.equals(made.role))) {
+						creations.deleteRole(made.role);
+					}
+					if (made.structure != null && ValcombeMod.structures().exists(made.structure)) {
+						ValcombeMod.structures().delete(made.structure);
+					}
+					for (String id : made.trials) {
+						if (fr.valcombe.mc.games.Games.byWorld(id) != null && !ValcombeMod.worlds().busy(id)) {
+							try {
+								fr.valcombe.mc.games.Games.current().delete(id);
+							} catch (RuntimeException e) {
+								System.out.println("[valcombe-test] partie d'essai restée : " + id + " (" + e.getMessage() + ")");
+							}
+						}
+					}
 					for (String id : maps) {
 						WorldEntry e = mw().atelierOf(id);
 						if (e != null && !ValcombeMod.worlds().busy(e.id())) {
@@ -352,17 +451,20 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 						}
 					}
 				});
-				try {
-					Files.deleteIfExists(dropped);
-				} catch (java.io.IOException e) {
-					System.out.println("[valcombe-test] fichier d'essai resté : " + dropped);
+				for (Path f : made.files) {
+					try {
+						Files.deleteIfExists(f);
+					} catch (java.io.IOException e) {
+						System.out.println("[valcombe-test] fichier d'essai resté : " + f);
+					}
 				}
 				ctx.waitTicks(40);
 			}
 		}
 	}
 
-	private void run(ClientGameTestContext ctx, TestSingleplayerContext world, String me, List<String> maps, Path dropped) {
+	private void run(ClientGameTestContext ctx, TestSingleplayerContext world, String me, Made made, Path dropped) {
+		List<String> maps = made.maps;
 		var server = world.getServer();
 		String hubDim = "valcombe:" + server.computeOnServer(s -> ValcombeMod.hub().id());
 		long stamp = System.currentTimeMillis() % 100000;
@@ -528,18 +630,286 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		press(ctx, "Confirmer la fermeture");
 		check(waitFor(ctx, world, 600, s -> ValcombeMod.worlds().find(imported) == null), "atelier d'import fermé depuis la liste");
 
-		// 7. La mise en page de chaque page, à plusieurs tailles d'interface.
+		String mainId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().id());
+		structures(ctx, world, made, stamp);
+		parties(ctx, world, made, stamp, mainId);
+		roles(ctx, world, made, stamp, mapId);
+
+		// 10. La mise en page de chaque page, à plusieurs tailles d'interface.
 		if (scale(ctx, 2, 854, 480)) {
-			layouts(ctx, "427x240", mapId);
+			layouts(ctx, "427x240", mapId, mainId, made);
 		}
 		if (scale(ctx, 3, 1280, 720)) {
-			layouts(ctx, "echelle3", mapId);
+			layouts(ctx, "echelle3", mapId, mainId, made);
 		}
 		if (scale(ctx, 1, 854, 480)) {
-			layouts(ctx, "echelle1", mapId);
+			layouts(ctx, "echelle1", mapId, mainId, made);
 		}
 		if (scale(ctx, 2, 2560, 1440)) {
-			layouts(ctx, "2560x1440", mapId);
+			layouts(ctx, "2560x1440", mapId, mainId, made);
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// 7. Structures
+	// ------------------------------------------------------------------
+
+	/**
+	 * Le catalogue en vignettes vues de trois quarts ; « À vous » vide, avec « Nouvelle structure » mis en avant ; le parcours
+	 * « Nouvelle structure » (la sélection manque hors d'un atelier, la parcelle vide passe) ; une structure à vous (un
+	 * fichier .nbt importé), sa fiche, renommée sur place puis supprimée après confirmation.
+	 */
+	private void structures(ClientGameTestContext ctx, TestSingleplayerContext world, Made made, long stamp) {
+		var server = world.getServer();
+		ctx.setScreen(AtelierHome::new);
+		ctx.waitTicks(5);
+		ctx.runOnClient(mc -> StructuresPage.resetFilters());
+		press(ctx, AtelierHome.STRUCTURES);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructuresPage), "entrée Structures");
+		check(waitClient(ctx, 400, mc -> StructuresPage.catalog().stream().filter(o -> "maison-gothique".equals(ClientState.str(o, "id")))
+			.anyMatch(o -> Vignettes.get("structure:maison-gothique", ClientState.str(o, "vignette")) != null
+				&& Vignettes.ready("structure:maison-gothique", ClientState.str(o, "vignette")))), "vignette de trois quarts reçue");
+		check(ctx.computeOnClient(mc -> {
+			var img = Vignettes.get("structure:maison-gothique", "");
+			return img != null && img.width() == 512 && img.height() == 512;
+		}), "vignette de structure de 512 × 512 pixels");
+		ctx.waitTicks(40); // les autres vignettes du catalogue arrivent
+		shot(ctx, "13-structures");
+		chooseTab(ctx, "À vous");
+		boolean noneMine = server.computeOnServer(s -> ValcombeMod.structures().list().stream().allMatch(d -> d.fournie));
+		if (noneMine) {
+			check(primary(ctx, StructuresPage.NEW), "« À vous » vide : « Nouvelle structure » mis en avant");
+			shot(ctx, "14-structures-a-vous-vide");
+		}
+
+		// Le parcours « Nouvelle structure » : hors d'un atelier, la sélection manque et le dit ; la parcelle vide passe.
+		press(ctx, StructuresPage.NEW);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof NewStructurePage) && NewStructurePage.step() == 0, "parcours « Nouvelle structure »");
+		press(ctx, NewStructurePage.FROM_SELECTION);
+		check(greyed(ctx, NewStructurePage.NEXT), "sans sélection, « Suivant » reste grisé");
+		shot(ctx, "15-nouvelle-structure-sans-selection");
+		press(ctx, NewStructurePage.EMPTY_PLOT);
+		check(primary(ctx, NewStructurePage.NEXT), "parcelle vide : « Suivant » mis en avant");
+		press(ctx, NewStructurePage.NEXT);
+		check(greyed(ctx, NewStructurePage.NEXT), "sans nom, « Suivant » grisé");
+		typeIn(ctx, "Tour d'essai", NewStructurePage::new);
+		check(primary(ctx, NewStructurePage.NEXT), "nommée : « Suivant » mis en avant");
+		press(ctx, NewStructurePage.NEXT);
+		check(primary(ctx, NewStructurePage.OPEN_PLOT), "dernière étape : « Ouvrir la parcelle » mis en avant");
+		shot(ctx, "16-nouvelle-structure-verifier");
+
+		// Une structure à vous : un fichier .nbt déposé, importé par la commande ; sa fiche.
+		Path file = server.computeOnServer(s -> Path.of(ValcombeMod.structures().inboxPath()).resolve("pilier-" + stamp + ".nbt"));
+		made.files.add(file);
+		writeStructure(file);
+		send(ctx, "vc structure importer pilier-" + stamp + ".nbt");
+		String sid = server.computeOnServer(s -> ValcombeMod.structures().list().stream().filter(d -> !d.fournie
+			&& d.id.startsWith("pilier-" + stamp)).map(d -> d.id).findFirst().orElse(null));
+		check(sid != null, "structure importée au catalogue");
+		made.structure = sid;
+		String sname = server.computeOnServer(s -> ValcombeMod.structures().def(sid).nom);
+		ctx.runOnClient(mc -> StructuresPage.resetFilters());
+		ctx.setScreen(() -> new StructuresPage(0));
+		check(waitClient(ctx, 100, mc -> StructuresPage.catalog().stream().anyMatch(o -> sid.equals(ClientState.str(o, "id")))),
+			"la structure paraît dans le catalogue");
+		chooseTab(ctx, "À vous");
+		check(waitClient(ctx, 300, mc -> Vignettes.ready("structure:" + sid, "")), "sa vignette est faite");
+		shot(ctx, "17-structures-a-vous");
+		check(openInGrid(ctx, sname), "case de la structure");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage p && p.structureId().equals(sid)), "fiche de la structure");
+		check(ctx.computeOnClient(mc -> AtelierPage.current().trailLabels().equals(List.of("Atelier", "Structures", sname))),
+			"fil d'Ariane : Atelier › Structures › " + sname);
+		check(primary(ctx, StructureSheetPage.TAKE), "« Prendre en main » mis en avant");
+		shot(ctx, "18-fiche-structure");
+
+		// Une action réelle : renommée sur place, puis supprimée après confirmation.
+		press(ctx, StructureSheetPage.RENAME);
+		check(greyed(ctx, StructureSheetPage.RENAME_CONFIRM), "même nom : « Renommer » grisé");
+		typeIn(ctx, "Pilier renommé " + stamp, () -> new StructureSheetPage(sid));
+		press(ctx, StructureSheetPage.RENAME_CONFIRM);
+		check(waitFor(ctx, world, 100, s -> ValcombeMod.structures().def(sid).nom.equals("Pilier renommé " + stamp)), "structure renommée");
+		check(waitClient(ctx, 100, mc -> AtelierPage.reply() != null && ClientState.str(AtelierPage.reply(), "texte").contains("renommée")),
+			"la réponse du serveur s'affiche");
+		press(ctx, StructureSheetPage.DELETE);
+		check(server.computeOnServer(s -> ValcombeMod.structures().exists(sid)), "un seul clic ne supprime rien");
+		// Échap défait la confirmation sans fermer l'Atelier ; un second Échap, lui, le fermerait.
+		ctx.getInput().pressKey(com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE);
+		ctx.waitTicks(8);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage && find(mc, StructureSheetPage.DELETE) != null
+			&& find(mc, StructureSheetPage.DELETE_CONFIRM) == null), "Échap annule la confirmation, la fiche reste ouverte");
+		press(ctx, StructureSheetPage.DELETE);
+		shot(ctx, "19-structure-suppression-a-confirmer");
+		press(ctx, StructureSheetPage.DELETE_CONFIRM);
+		check(waitFor(ctx, world, 100, s -> !ValcombeMod.structures().exists(sid)), "structure supprimée du catalogue");
+		check(waitClient(ctx, 100, mc -> mc.gui.screen() instanceof StructuresPage), "la fiche revient d'elle-même au catalogue");
+	}
+
+	// ------------------------------------------------------------------
+	// 8. Parties
+	// ------------------------------------------------------------------
+
+	/**
+	 * Les parties en vignettes ; la fiche de la partie principale et « Carte en place » ; une partie d'essai créée par la
+	 * page (son nom écrit sur place), mise en avant, sa fiche une fois son village posé, puis supprimée après confirmation.
+	 */
+	private void parties(ClientGameTestContext ctx, TestSingleplayerContext world, Made made, long stamp, String mainId) {
+		var server = world.getServer();
+		ctx.setScreen(AtelierHome::new);
+		ctx.waitTicks(5);
+		press(ctx, AtelierHome.PARTIES);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof PartiesPage), "entrée Parties");
+		check(waitClient(ctx, 100, mc -> PartiesPage.games().stream().anyMatch(g -> mainId.equals(ClientState.str(g, "id")))),
+			"la partie principale est dans la liste");
+		ctx.waitTicks(30);
+		shot(ctx, "20-parties");
+		String mainName = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().name());
+		check(openInGrid(ctx, mainName), "case de la partie principale");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof PartySheetPage p && p.gameId().equals(mainId)), "fiche de la partie");
+		shot(ctx, "21-fiche-partie");
+		press(ctx, PartySheetPage.MAP);
+		check(ctx.computeOnClient(mc -> find(mc, PartySheetPage.SAVE_AS) != null && find(mc, PartySheetPage.CLEAR) != null),
+			"« Carte en place » : enregistrer sous, carte vide, vider le monde");
+		shot(ctx, "22-partie-carte-en-place");
+		press(ctx, PartySheetPage.CLEAR);
+		check(ctx.computeOnClient(mc -> find(mc, PartySheetPage.CLEAR_CONFIRM) != null), "vider le monde se confirme");
+		press(ctx, PartySheetPage.CANCEL);
+		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "« Annuler » : rien n'est lancé");
+
+		// Une partie d'essai créée par la page.
+		ctx.setScreen(PartiesPage::new);
+		ctx.waitTicks(5);
+		press(ctx, PartiesPage.CREATE);
+		check(greyed(ctx, PartiesPage.CREATE_CONFIRM), "sans nom, « Créer » grisé");
+		String trialName = "Essai atelier " + stamp;
+		typeIn(ctx, trialName, PartiesPage::new);
+		press(ctx, PartiesPage.CREATE_CONFIRM);
+		check(waitFor(ctx, world, 200, s -> ValcombeMod.worlds().list().stream().anyMatch(e -> e.nom().equals(trialName))), "partie d'essai créée");
+		String trial = server.computeOnServer(s -> ValcombeMod.worlds().list().stream().filter(e -> e.nom().equals(trialName))
+			.map(WorldEntry::id).findFirst().orElseThrow());
+		made.trials.add(trial);
+		check(waitClient(ctx, 100, mc -> grid(mc) != null && grid(mc).labels().contains(trialName)), "elle paraît dans la liste");
+		shot(ctx, "23-partie-essai-mise-en-avant");
+		check(waitFor(ctx, world, 2400, s -> !ValcombeMod.sender().busy(trial) && fr.valcombe.mc.games.Games.byWorld(trial).host().village() != null
+			&& !fr.valcombe.mc.games.Games.byWorld(trial).host().busy()), "son village est posé");
+		ctx.setScreen(() -> new PartySheetPage(trial));
+		check(waitClient(ctx, 200, mc -> PartiesPage.games().stream().filter(g -> trial.equals(ClientState.str(g, "id")))
+			.anyMatch(g -> Vignettes.ready("partie:" + trial, ""))), "la vignette de sa carte est faite");
+		ctx.setScreen(() -> new PartySheetPage(trial));
+		ctx.waitTicks(10);
+		shot(ctx, "24-fiche-partie-essai");
+		press(ctx, PartySheetPage.DELETE);
+		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.byWorld(trial) != null), "un seul clic ne supprime rien");
+		shot(ctx, "25-partie-suppression-a-confirmer");
+		press(ctx, PartySheetPage.DELETE_CONFIRM);
+		check(waitFor(ctx, world, 600, s -> ValcombeMod.worlds().find(trial) == null && fr.valcombe.mc.games.Games.byWorld(trial) == null),
+			"partie d'essai supprimée");
+		check(waitClient(ctx, 100, mc -> mc.gui.screen() instanceof PartiesPage), "la fiche revient d'elle-même à la liste");
+	}
+
+	// ------------------------------------------------------------------
+	// 9. Rôles et scénarios
+	// ------------------------------------------------------------------
+
+	/**
+	 * Un rôle créé et un scénario (sur la carte d'essai) ; les scénarios en jetons, sa fiche et le choix d'une partie ;
+	 * les rôles, sa fiche ; un pack déposé (exporté puis rôle et scénario retirés) importé par la page ; le rôle supprimé
+	 * par sa fiche après confirmation.
+	 */
+	private void roles(ClientGameTestContext ctx, TestSingleplayerContext world, Made made, long stamp, String mapId) {
+		var server = world.getServer();
+		String roleId = "veilleur-" + stamp;
+		String scId = "cendres-" + stamp;
+		String roleName = "Veilleur des cendres";
+		String scName = "Nuit des cendres " + stamp;
+		made.role = roleId;
+		made.scenario = scId;
+		Runnable create = () -> server.runOnServer(s -> {
+			var r = new fr.valcombe.rules.RoleDef();
+			r.id = roleId;
+			r.nom = roleName;
+			r.camp = "CITADIN";
+			r.embleme = "e_cle";
+			r.texte = "Vous veillez sur les braises : vous savez si le feu a été attisé cette nuit.";
+			ValcombeMod.creations().saveRole(r);
+			var d = new fr.valcombe.session.ScenarioDef();
+			d.id = scId;
+			d.nom = scName;
+			d.description = "Une soirée autour des braises de Valcombe, avec un rôle créé pour l'occasion.";
+			d.carte = mapId;
+			for (var role : fr.valcombe.rules.Role.classic()) {
+				d.roles.add(role.name().toLowerCase(java.util.Locale.ROOT));
+			}
+			d.roles.add(roleId);
+			ValcombeMod.creations().saveScenario(d);
+		});
+		create.run();
+		ctx.setScreen(AtelierHome::new);
+		ctx.waitTicks(5);
+		press(ctx, AtelierHome.ROLES);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof RolesPage), "entrée Rôles et scénarios");
+		check(waitClient(ctx, 100, mc -> RolesPage.scenarios().stream().anyMatch(o -> scId.equals(ClientState.str(o, "id")))),
+			"le scénario est dans la vue de l'Atelier");
+		ctx.setScreen(() -> new RolesPage(0));
+		ctx.waitTicks(10);
+		shot(ctx, "26-scenarios");
+		check(openInGrid(ctx, scName), "case du scénario");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof ScenarioSheetPage p && p.scenarioId().equals(scId)), "fiche du scénario");
+		check(primary(ctx, ScenarioSheetPage.CHOOSE), "« Choisir pour une partie » mis en avant");
+		shot(ctx, "27-fiche-scenario");
+		press(ctx, ScenarioSheetPage.CHOOSE);
+		shot(ctx, "28-scenario-pour-une-partie");
+		press(ctx, ScenarioSheetPage.CANCEL);
+		ctx.setScreen(() -> new RolesPage(1));
+		ctx.waitTicks(10);
+		shot(ctx, "29-roles");
+		check(openInGrid(ctx, roleName), "case du rôle");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof RoleSheetPage p && p.roleId().equals(roleId)), "fiche du rôle");
+		shot(ctx, "30-fiche-role");
+
+		// Un pack déposé : exporté dans le dossier d'import, rôle et scénario retirés, puis importé par la page.
+		Path pack = server.computeOnServer(s -> Path.of(ValcombeMod.structures().inboxPath()).resolve("atelier-hd-" + stamp + ".valcombe"));
+		made.files.add(pack);
+		server.runOnServer(s -> {
+			var creations = ValcombeMod.creations();
+			String json = creations.exportPack(List.of(roleId), List.of(scId), List.of());
+			try {
+				Files.writeString(pack, json);
+			} catch (java.io.IOException e) {
+				throw new java.io.UncheckedIOException(e);
+			}
+			creations.deleteScenario(scId);
+			creations.deleteRole(roleId);
+		});
+		ctx.setScreen(() -> new RolesPage(2));
+		check(waitClient(ctx, 100, mc -> RolesPage.packList().stream().anyMatch(p -> pack.getFileName().toString()
+			.equals(ClientState.str(p, "fichier")))), "le pack déposé paraît");
+		ctx.setScreen(() -> new RolesPage(2));
+		ctx.waitTicks(5);
+		check(chooseRow(ctx, "fichier", pack.getFileName().toString()), "pack choisi");
+		check(primary(ctx, RolesPage.IMPORT), "« Importer » mis en avant");
+		shot(ctx, "31-packs");
+		press(ctx, RolesPage.IMPORT);
+		check(waitFor(ctx, world, 100, s -> ValcombeMod.creations().roles().stream().anyMatch(d -> d.id.equals(roleId))
+			&& ValcombeMod.creations().scenarios().stream().anyMatch(d -> d.id.equals(scId))), "rôle et scénario revenus du pack : "
+			+ ctx.computeOnClient(mc -> AtelierPage.reply() == null ? "" : ClientState.str(AtelierPage.reply(), "texte")));
+
+		// Le rôle supprimé par sa fiche, après confirmation (puis remis, pour les mises en page).
+		ctx.setScreen(() -> new RoleSheetPage(roleId));
+		ctx.waitTicks(30);
+		press(ctx, RoleSheetPage.DELETE);
+		check(server.computeOnServer(s -> ValcombeMod.creations().roles().stream().anyMatch(d -> d.id.equals(roleId))), "un seul clic ne supprime rien");
+		shot(ctx, "32-role-suppression-a-confirmer");
+		press(ctx, RoleSheetPage.DELETE_CONFIRM);
+		check(waitFor(ctx, world, 100, s -> ValcombeMod.creations().roles().stream().noneMatch(d -> d.id.equals(roleId))), "rôle supprimé");
+		check(waitClient(ctx, 100, mc -> mc.gui.screen() instanceof RolesPage), "la fiche revient d'elle-même aux rôles");
+		server.runOnServer(s -> {
+			var r = new fr.valcombe.rules.RoleDef();
+			r.id = roleId;
+			r.nom = roleName;
+			r.camp = "CITADIN";
+			r.embleme = "e_cle";
+			r.texte = "Vous veillez sur les braises : vous savez si le feu a été attisé cette nuit.";
+			ValcombeMod.creations().saveRole(r);
+		});
 	}
 }

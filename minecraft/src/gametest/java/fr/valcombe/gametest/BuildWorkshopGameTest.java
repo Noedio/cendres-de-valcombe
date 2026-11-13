@@ -244,7 +244,11 @@ public class BuildWorkshopGameTest implements FabricClientGameTest {
 			});
 			check(saved.startsWith("6×4×8 192 Murs d'essai") && saved.contains("Importé : structure « Murs d'essai »")
 				&& saved.endsWith("6×4×8"), "sélection enregistrée dans le catalogue puis reçue d'un pack : " + saved);
-			ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(4));
+			// Atelier › Structures › Construire : dans l'atelier, les gestes de WorldEdit et la sélection en cours.
+			ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.StructuresPage(1));
+			ctx.waitTicks(10);
+			check(ctx.computeOnClient(mc -> mc.gui.screen().children().stream().anyMatch(w -> w instanceof fr.valcombe.client.hd.HdButton hb
+				&& hb.active && hb.getMessage().getString().equals("En structure…"))), "Atelier › Structures › Construire : les gestes de WorldEdit");
 			shot(ctx, "atelier-onglet-worldedit");
 			ctx.setScreen(() -> null);
 

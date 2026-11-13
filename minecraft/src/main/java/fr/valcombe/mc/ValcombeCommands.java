@@ -118,16 +118,28 @@ public final class ValcombeCommands {
 			!arg(ctx, "maisons").equals("non"), world != null ? world : here(ctx), ctx.getSource().getPlayer());
 	}
 
-	/** Envoie à l'écran en jeu l'aperçu vu de dessus d'une carte (id vide : la carte actuelle de la partie du joueur). */
-	private static String preview(CommandContext<CommandSourceStack> ctx, String id) throws Exception {
-		ServerPlayer p = player(ctx);
-		if (!ViewSync.hasClientMod(p)) {
-			throw new GameException("L'aperçu s'affiche dans l'écran de l'Atelier, qui demande le mod de Valcombe sur votre jeu.");
+	/**
+	 * /vc structure nouvelle-selection &lt;rayon&gt; &lt;nom&gt; : la sélection WorldEdit au catalogue, sous un identifiant tiré
+	 * du nom (« Tour de guet » : tour-de-guet, ou tour-de-guet-2 s'il est pris). Ce que lance « Nouvelle structure » de
+	 * l'Atelier en jeu.
+	 */
+	private static String newFromSelection(CommandContext<CommandSourceStack> ctx) throws Exception {
+		WorldEditGate gate = WorldEditGate.current();
+		StructureStore store = ValcombeMod.structures();
+		if (gate == null || store == null) {
+			throw new GameException("La construction n'est pas disponible sur ce serveur.");
 		}
-		GameRoom r = Games.forSource(ctx.getSource());
-		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p,
-			new fr.valcombe.net.ValcombeNet.PreviewPayload(ValcombeMod.workshop().preview(r == null ? null : r.host(), id)));
-		return "";
+		String nom = arg(ctx, "nom").strip();
+		if (nom.isEmpty() || nom.length() > 50) {
+			throw new GameException("Nom de structure : 1 à 50 caractères.");
+		}
+		StructureWorkshop sw = ValcombeMod.structureWorkshop();
+		java.util.Set<String> plots = new java.util.HashSet<>();
+		if (sw != null) {
+			sw.parcels().forEach(p -> plots.add(p.id()));
+		}
+		String id = store.freeId(nom, plots::contains);
+		return SelectionToStructure.save(gate.link(), store, player(ctx), id, nom, arg(ctx, "rayon"), "");
 	}
 
 	/** Le catalogue de structures, une ligne par rayon. */
@@ -272,6 +284,18 @@ public final class ValcombeCommands {
 			.then(Commands.literal("supprimer").requires(admin)
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(mine)
 					.executes(c -> exec(c, x -> ValcombeMod.structures().delete(arg(x, "id"))))))
+			// Une structure fournie modifiée revient à l'originale, d'où que l'on soit (l'atelier structures la repose seul).
+			.then(Commands.literal("originale").requires(admin)
+				.then(Commands.argument("id", StringArgumentType.word())
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().list().stream()
+						.filter(d -> d.modifiee).map(d -> d.id), b))
+					.executes(c -> exec(c, x -> ValcombeMod.structures().revert(arg(x, "id"))))))
+			// La sélection WorldEdit au catalogue, l'identifiant tiré du nom (« Nouvelle structure » de l'Atelier en jeu).
+			.then(Commands.literal("nouvelle-selection").requires(admin)
+				.then(Commands.argument("rayon", StringArgumentType.word())
+					.suggests((c, b) -> SharedSuggestionProvider.suggest(StructureStore.CATEGORIES, b))
+					.then(Commands.argument("nom", StringArgumentType.greedyString())
+						.executes(c -> exec(c, x -> newFromSelection(x))))))
 			.then(Commands.literal("importer").requires(admin)
 				.then(Commands.argument("fichier", StringArgumentType.greedyString())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().importable(), b))
@@ -663,11 +687,6 @@ public final class ValcombeCommands {
 						w -> w.removeLast(x.getSource().getPlayer(), true), () -> host(x).removeSeat()))))
 					.then(Commands.literal("maison").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
 						w -> w.removeLast(x.getSource().getPlayer(), false), () -> host(x).removeHouse())))))
-				.then(Commands.literal("apercu")
-					.executes(c -> exec(c, x -> preview(x, "")))
-					.then(Commands.argument("id", StringArgumentType.word())
-						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
-						.executes(c -> exec(c, x -> preview(x, arg(x, "id"))))))
 				.then(Commands.literal("infos").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
 					w -> w.info(x.getSource().getPlayer()), () -> host(x).mapInfo()))))
 				.then(Commands.literal("annuler").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
@@ -697,6 +716,15 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(host(x), arg(x, "id"), arg(x, "id"))))
 						.then(Commands.argument("nom", StringArgumentType.greedyString())
 							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(host(x), arg(x, "id"), arg(x, "nom")))))))
+				// La carte en place dans le monde d'une partie nommée, d'où que l'on soit (fiche d'une partie, Atelier en jeu).
+				.then(Commands.literal("enregistrer-partie")
+					.then(Commands.argument("monde", StringArgumentType.word()).suggests(GAME_WORLDS)
+						.then(Commands.argument("id", StringArgumentType.word())
+							.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(namedRoom(arg(x, "monde")).host(), arg(x, "id"),
+								arg(x, "id"))))
+							.then(Commands.argument("nom", StringArgumentType.greedyString())
+								.executes(c -> exec(c, x -> ValcombeMod.maps().saveCurrent(namedRoom(arg(x, "monde")).host(), arg(x, "id"),
+									arg(x, "nom"))))))))
 				// Ancien nom de « envoyer », vers le monde de la partie du serveur.
 				.then(Commands.literal("charger")
 					.then(Commands.argument("id", StringArgumentType.word()).suggests(MAP_IDS)
@@ -937,6 +965,13 @@ public final class ValcombeCommands {
 					ValcombeMod.tablet().closeAtelier(name(x));
 					return "Votre lien d'Atelier ne fonctionne plus. Un nouveau : /vc atelier.";
 				})))
+				// Un pack .valcombe déposé sur le serveur (dossier d'import, ou celui des partages) : rôles, scénarios, cartes, structures.
+				.then(Commands.literal("pack")
+					.then(Commands.literal("importer")
+						.then(Commands.argument("fichier", StringArgumentType.greedyString())
+							.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.workshop().packs().stream()
+								.map(m -> (String) m.get("fichier")), b))
+							.executes(c -> exec(c, x -> ValcombeMod.workshop().importPack(arg(x, "fichier")))))))
 				.then(Commands.literal("essai")
 					.then(Commands.argument("scenario", StringArgumentType.word())
 						.suggests(scenarioIds)
@@ -990,7 +1025,11 @@ public final class ValcombeCommands {
 						return SharedSuggestionProvider.suggest(java.util.stream.Stream.concat(java.util.stream.Stream.of("aucun"),
 							s == null ? java.util.stream.Stream.<String>empty() : s.scenarios().stream().map(d -> d.id)), b);
 					})
-					.executes(c -> exec(c, x -> ses(x).useScenario(arg(x, "id"))))))
+					.executes(c -> exec(c, x -> ses(x).useScenario(arg(x, "id"))))
+					// Pour une autre partie que la sienne (l'Atelier en jeu, « Choisir pour une partie ») : un opérateur.
+					.then(Commands.argument("monde", StringArgumentType.word()).requires(admin)
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(Games.all().stream().map(GameRoom::id).toList(), b))
+						.executes(c -> exec(c, x -> namedRoom(arg(x, "monde")).session().useScenario(arg(x, "id")))))))
 			.then(Commands.literal("tablette").requires(leader)
 				.executes(c -> exec(c, x -> {
 					ServerPlayer p = x.getSource().getPlayerOrException();
