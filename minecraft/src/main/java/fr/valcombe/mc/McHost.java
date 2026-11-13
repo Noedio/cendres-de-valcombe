@@ -2979,6 +2979,11 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		for (int i = 0; i < lanterns.size(); i++) {
 			BlockPos pos = lanterns.get(i);
 			schedule(1 + i * 3, () -> {
+				// Le monde a pu être remis à neuf entre-temps (l'ancien est fermé), ou ce tronçon déchargé : lire un
+				// bloc là forcerait un chargement sur le fil du serveur, qui ne revient jamais pour un monde fermé.
+				if (level != levelIfReady() || !level.isLoaded(pos)) {
+					return;
+				}
 				var state = level.getBlockState(pos);
 				if (state.getBlock() instanceof net.minecraft.world.level.block.LanternBlock) {
 					level.setBlock(pos, to.defaultBlockState()
