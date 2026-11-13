@@ -303,9 +303,11 @@ public class NotebookScreen extends HdScreen {
 		for (int i = scroll; i < names.size() && i < scroll + visible(); i++) {
 			String name = names.get(i);
 			Page p = page(name);
-			// Nom dans la couleur de ta confiance, rôle qu'il annonce dessous.
-			HdText.line(hd, nameStyle, name, left, hd.px(y) - hd.u(2), hd.px(112), TRUST_COLORS[p.trust]);
+			// Nom dans la couleur de ta confiance, rôle qu'il annonce dessous ; sans rôle annoncé, le nom se centre sur
+			// la hauteur des boutons de sa ligne.
 			String claim = claimOf(name);
+			int nameTop = claim.isEmpty() ? hd.px(y) + (hd.u(18) - hd.lineHeight(nameStyle)) / 2 : hd.px(y) - hd.u(2);
+			HdText.line(hd, nameStyle, name, left, nameTop, hd.px(112), TRUST_COLORS[p.trust]);
 			if (!claim.isEmpty()) {
 				HdText.line(hd, claimStyle, "« " + claim + " »", left, hd.px(y + 8), hd.px(112), Hd.INK_SOFT);
 			}

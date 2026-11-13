@@ -37,17 +37,28 @@ public class NightScreen extends HdScreen {
 		return who == null || who.isEmpty() ? null : who;
 	}
 
+	/** Haut des boutons d'action (unités) : la carte de l'étape s'arrête au-dessus. */
+	private int actionsTop;
+
 	@Override
 	protected void build() {
-		button(px + pw - 100, py + ph - 26, 86, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
-		if (!ClientState.phase().equals("NIGHT")) {
-			return; // le jour s'est levé : il ne reste que le retour au pupitre
-		}
 		String who = stepPlayer();
-		// Trois colonnes de boutons, de même largeur, sous la carte de l'étape.
+		boolean night = ClientState.phase().equals("NIGHT");
+		// Trois colonnes de boutons, de même largeur, sous la carte de l'étape, posées au plus bas : « Retour » prend la
+		// case libre de la dernière rangée, et ce qu'il faut faire et dire garde toute la place au-dessus.
 		int x = px + 150;
 		int bw = (pw - 164 - 8) / 3;
-		int y = py + ph - 94;
+		int rows = night && who != null ? 3 : 2;
+		int y = py + ph - 8 - rows * 22 + 4;
+		actionsTop = y;
+		if (night && who != null) {
+			button(x + 2 * (bw + 4), y + 44, bw, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
+		} else {
+			button(px + pw - 100, py + ph - 26, 86, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
+		}
+		if (!night) {
+			return; // le jour s'est levé : il ne reste que le retour au pupitre
+		}
 		boolean paused = ClientState.bool(view(), "paused");
 		button(x, y, bw, "◀ Précédente", () -> send("vc precedent"));
 		button(x + bw + 4, y, bw, "Suivante ▶", () -> send("vc suivant"));
@@ -126,14 +137,14 @@ public class NightScreen extends HdScreen {
 		cy += hd.u(14);
 		String wait = ClientState.str(ns, "waiting");
 		if (wait != null && !wait.isEmpty()) {
-			HdText.line(hd, dense, "On attend : " + wait, px0, cy, pwPx, Theme.BRONZE);
+			HdText.line(hd, dense, "On attend : " + wait, px0, cy, pwPx, Hd.BRONZE_INK);
 			cy += pitch + hd.u(1);
 		}
 		if (ClientState.bool(v, "paused")) {
 			hd.text(dense, "Partie en pause.", px0, cy, Theme.BLOOD);
 			cy += pitch + hd.u(1);
 		}
-		int limit = hd.px(py + ph - 98);
+		int limit = hd.px(actionsTop - 4);
 		for (String a : strings(ns, "alerts")) {
 			cy += HdText.paragraph(hd, dense, "⚠ " + a, px0, cy, pwPx, Theme.BLOOD, pitch, Math.max(pitch, limit - cy)) + hd.u(2);
 		}

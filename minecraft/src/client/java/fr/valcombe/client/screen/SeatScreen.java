@@ -179,7 +179,7 @@ public class SeatScreen extends HdScreen {
 		}
 		List<String> marks = strings(row, "reminders");
 		if (!marks.isEmpty() && limit - y >= hd.lineHeight(BODY)) {
-			y += hd.paragraph(BODY, "Rappels : " + String.join(" · ", marks), hd.px(x), y, hd.px(textW), Hd.BRONZE, limit - y) + gap;
+			y += hd.paragraph(BODY, "Rappels : " + String.join(" · ", marks), hd.px(x), y, hd.px(textW), Hd.BRONZE_INK, limit - y) + gap;
 		}
 		JsonObject answers = ClientState.obj(view(), "answers");
 		List<String> said = strings(answers, name);

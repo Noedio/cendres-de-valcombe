@@ -77,7 +77,7 @@ public class ChronicleScreen extends HdScreen {
 			}
 			int color = heading ? Theme.WINE
 				: raw.contains("meurt") || raw.contains("exécuté") ? Theme.BLOOD
-				: raw.contains("vote") || raw.contains("voix") || raw.contains("accuse") || raw.contains("nomine") ? Theme.BRONZE
+				: raw.contains("vote") || raw.contains("voix") || raw.contains("accuse") || raw.contains("nomine") ? Hd.BRONZE_INK
 				: raw.startsWith("Le Conteur") ? Theme.ASH
 				: Theme.INK;
 			for (String part : HdFonts.wrap(style(heading), scale, raw, width)) {

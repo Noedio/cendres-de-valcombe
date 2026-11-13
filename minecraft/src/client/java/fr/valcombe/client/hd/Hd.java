@@ -38,6 +38,11 @@ public final class Hd implements AutoCloseable {
 	public static final int MUTED = 0xFFB4A99C;
 	/** Texte secondaire sur parchemin. */
 	public static final int INK_SOFT = 0xFF5B4636;
+	/**
+	 * Bronze pour du texte sur parchemin (attente, rappels posés, votes de la chronique) : le BRONZE des cadres n'y
+	 * atteignait qu'un contraste de 2,4 ; celui-ci dépasse 5, et garde la teinte.
+	 */
+	public static final int BRONZE_INK = 0xFF6E4F22;
 	/** Fond d'une ligne choisie dans une liste. */
 	public static final int SELECTION = 0xE05A1E2A;
 	/** Fond d'une ligne survolée. */

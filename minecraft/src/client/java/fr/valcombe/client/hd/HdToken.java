@@ -25,6 +25,13 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 	 * lisait pas sur la plaque sombre (contraste de 1,7 sur parchemin) ; celle-ci atteint 4,5 tout en restant éteinte.
 	 */
 	static final int DEAD_LABEL = 0xFFB8AEB0;
+	/** Décalage (degrés) de chaque marqueur le long du bord, depuis le haut à droite. */
+	private static final int[] MARKER_STEPS = {0, 32, -32, 64, -64};
+
+	/** Taille d'un marqueur (unités) sur un jeton de cette taille. */
+	static double markerSize(int tokenSize) {
+		return Math.max(5.5, Math.min(10, tokenSize * 0.42));
+	}
 
 	private final String name;
 	private final String roleId;
@@ -37,6 +44,12 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 	private String tooltip;
 	/** Où mettre le nom : 0 dessous, 1 dessus, 2 à gauche, 3 à droite. */
 	private int labelSide;
+	/** Plaque du nom posée par le cercle (RingLayout), en unités ; null : nom placé par labelSide. */
+	private RingLayout.Box plate;
+	/** Nom montré sur la plaque posée (raccourci, ou vide s'il est caché) et nom entier. */
+	private String plateText;
+	private boolean ringPlaced;
+	private boolean plateCut;
 
 	public HdToken(int cx, int cy, int size, String name, String roleId, String team, boolean alive, boolean selected,
 			Runnable action) {
@@ -66,6 +79,34 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 		return labelSide(Math.abs(c) > 0.8 ? (c < 0 ? 2 : 3) : sn < 0 ? 1 : 0);
 	}
 
+	/**
+	 * Le nom tel que le cercle l'a posé (RingLayout) : sur sa plaque, raccourci par « … » s'il le faut, ou caché.
+	 * Survoler ou cliquer la plaque revient à survoler ou cliquer le jeton ; un nom raccourci se lit en entier dans
+	 * l'infobulle.
+	 */
+	public HdToken seat(RingLayout.Seat seat) {
+		this.ringPlaced = true;
+		this.plate = seat.plate();
+		this.plateText = seat.shown();
+		this.plateCut = seat.cut();
+		return this;
+	}
+
+	/** Plaque du nom posée par le cercle, en unités (null : aucune, ou nom placé à l'ancienne). */
+	public RingLayout.Box plateBounds() {
+		return plate;
+	}
+
+	/** Le jeton a-t-il été posé par un cercle (RingLayout) ? */
+	public boolean onRing() {
+		return ringPlaced;
+	}
+
+	/** Le nom montré sous le jeton (celui de la plaque s'il a été posé par le cercle). */
+	public String shownName() {
+		return ringPlaced ? plateText : name;
+	}
+
 	public HdToken caption(String c) {
 		this.caption = c;
 		return this;
@@ -78,7 +119,13 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 
 	@Override
 	public String hdTooltip() {
-		return tooltip;
+		// Un nom raccourci ou caché se lit en entier au survol.
+		return tooltip != null ? tooltip : plateCut ? name : null;
+	}
+
+	@Override
+	public boolean isMouseOver(double mouseX, double mouseY) {
+		return super.isMouseOver(mouseX, mouseY) || isActive() && visible && plate != null && plate.contains(mouseX, mouseY);
 	}
 
 	/** Lance l'action du jeton, comme un clic. */
@@ -95,6 +142,10 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 
 	@Override
 	protected void extractContents(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+		if (plate != null && !isHovered) {
+			// La plaque du nom fait partie du jeton : la survoler montre l'anneau et l'infobulle.
+			isHovered = plate.contains(mouseX, mouseY);
+		}
 		try (Hd hd = Hd.begin(g)) {
 			int x = hd.px(getX());
 			int y = hd.px(getY());
@@ -134,14 +185,25 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 				hd.image(HdSprites.ANNEAU_SURVOL, x - m, y - m, size + 2 * m, size + 2 * m);
 			}
 			drawLabel(hd, x, y, size, cx, cy);
-			int ms = hd.u(10);
+			// Marqueurs posés sur le bord du jeton, en haut à droite puis de part et d'autre : ils ne dépassent du disque
+			// que d'une unité et demie au plus, et ne mordent donc jamais sur la plaque d'un voisin.
+			double msU = markerSize(getWidth());
+			int ms = hd.u(msU);
+			double reach = getWidth() / 2.0 - msU * 0.35;
 			for (int i = 0; i < markers.size(); i++) {
-				hd.image(Theme.tex("marker_" + markers.get(i)), x + size - hd.u(8) - i * hd.u(9), y - hd.u(3), ms, ms, -1);
+				double a = Math.toRadians(-45 + MARKER_STEPS[i % MARKER_STEPS.length]);
+				int mx = cx + hd.u(reach * Math.cos(a));
+				int my = cy + hd.u(reach * Math.sin(a));
+				hd.image(Theme.tex("marker_" + markers.get(i)), mx - ms / 2, my - ms / 2, ms, ms, -1);
 			}
 		}
 	}
 
 	private void drawLabel(Hd hd, int x, int y, int size, int cx, int cy) {
+		if (ringPlaced) {
+			drawPlate(hd);
+			return;
+		}
 		if (name.isEmpty()) {
 			return;
 		}
@@ -165,6 +227,25 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 		if (caption != null) {
 			hd.textCentered(st, caption, cx, y + size + lh + hd.u(2), Hd.GOLD);
 		}
+	}
+
+	/** La plaque posée par le cercle : fond d'encre, nom centré, liseré doré quand le jeton est survolé. */
+	private void drawPlate(Hd hd) {
+		if (plate == null || plateText.isEmpty()) {
+			return;
+		}
+		HdStyle st = SeatRing.LABEL;
+		int x0 = hd.u(plate.x());
+		int y0 = hd.u(plate.y());
+		int x1 = hd.u(plate.right());
+		int y1 = hd.u(plate.bottom());
+		boolean hover = isHovered();
+		hd.fill(x0, y0, x1, y1, hover ? 0xE02A1A1E : 0xC01B1214);
+		if (hover) {
+			hd.frame(x0, y0, x1 - x0, y1 - y0, Math.max(1, hd.u(0.5)), Hd.GOLD);
+		}
+		int tw = hd.width(st, plateText);
+		hd.text(st, plateText, (x0 + x1) / 2 - tw / 2, y0 + (y1 - y0 - hd.lineHeight(st)) / 2, alive ? Hd.PARCH : DEAD_LABEL);
 	}
 
 	@Override

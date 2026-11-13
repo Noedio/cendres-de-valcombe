@@ -10,7 +10,8 @@ import fr.valcombe.client.hd.HdScreen;
 import fr.valcombe.client.hd.HdStyle;
 import fr.valcombe.client.hd.HdText;
 import fr.valcombe.client.hd.HdToken;
-import fr.valcombe.client.hd.HdTokenArt;
+import fr.valcombe.client.hd.RingLayout;
+import fr.valcombe.client.hd.SeatRing;
 import fr.valcombe.client.ui.Theme;
 
 import java.util.ArrayList;
@@ -18,9 +19,22 @@ import java.util.List;
 
 import net.minecraft.client.gui.screens.ChatScreen;
 
-/** Menu principal : salon, carte de rôle, cercle, actions du jour, journal. */
+/**
+ * Menu principal : salon, carte de rôle, cercle, actions du jour, journal.
+ *
+ * <p>En partie, le panneau se partage en trois : la carte de rôle et la dernière annonce dans une colonne à gauche,
+ * le cercle des joueurs à droite (RingLayout : aucun nom n'en chevauche un autre, de 5 à 20 joueurs), les actions en
+ * bas, sur trois colonnes ou quatre si cela fait une rangée de moins. Une action dont le libellé ne tient pas dans
+ * sa case en prend deux plutôt que d'être coupée.
+ */
 public class MainScreen extends HdScreen {
+	/** Largeur de la colonne de gauche en partie (carte de rôle, annonce), en unités. */
+	private static final int LEFT_W = 140;
+	/** Hauteur d'un bouton d'action et pas d'une rangée à l'autre. */
+	private static final int ROW = 22;
 	private int buttonsTop;
+	/** Style des libellés des actions (un peu plus petit quand elles vont sur quatre colonnes). */
+	private HdStyle actionStyle = HdStyle.BOUTON;
 
 	public MainScreen() {
 		super("Les Cendres de Valcombe");
@@ -28,18 +42,65 @@ public class MainScreen extends HdScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {380, 260};
+		// En partie, le cercle prend la droite du panneau : il est plus large.
+		return inGameView() ? new int[] {460, 300} : new int[] {380, 260};
 	}
 
 	private record Action(String label, Runnable run) {
 	}
 
+	/** Une action placée : colonne, rangée et nombre de cases. */
+	private record Cell(Action action, int col, int row, int span) {
+	}
+
 	@Override
 	protected void build() {
 		JsonObject v = view();
-		boolean inGame = !ClientState.phase().equals("LOBBY");
+		boolean inGame = inGameView();
 		JsonObject role = ClientState.obj(v, "role");
+		List<Action> actions = actions(v, inGame, role);
 
+		// Trois colonnes, ou quatre (libellés un peu plus petits) si elles font gagner une rangée au cercle.
+		List<Cell> cells = flow(actions, 3, HdStyle.BOUTON);
+		int cols = 3;
+		actionStyle = HdStyle.BOUTON;
+		if (inGame) {
+			HdStyle small = HdStyle.BOUTON.size(10.5f);
+			List<Cell> four = flow(actions, 4, small);
+			if (rows(four) < rows(cells)) {
+				cells = four;
+				cols = 4;
+				actionStyle = small;
+			}
+		}
+		int margin = cols == 4 ? 10 : 12;
+		int gap = cols == 4 ? 4 : 6;
+		int cw = (pw - 2 * margin - (cols - 1) * gap) / cols;
+		buttonsTop = py + ph - 28 - (rows(cells) - 1) * ROW;
+		int scale = Hd.guiScale();
+		for (Cell c : cells) {
+			int w = c.span() * cw + (c.span() - 1) * gap;
+			String label = c.action().label();
+			// Un libellé raccourci (« … ») sur le bouton se lit en entier dans son infobulle.
+			boolean cut = HdFonts.width(actionStyle, scale, label) > (w - 10) * scale;
+			button(px + margin + c.col() * (cw + gap), buttonsTop + c.row() * ROW, w, label, c.action().run()).style(actionStyle)
+				.tooltip(cut ? label : null);
+		}
+
+		if (inGame) {
+			// Carte de rôle : le jeton porte le texte du rôle en infobulle (la colonne est étroite pour le lire en entier).
+			if (role != null) {
+				HdToken card = new HdToken(px + 14 + 16, py + 32 + 16, 32, "", ClientState.str(role, "id"), ClientState.str(role, "team"),
+					true, false, null);
+				card.setMessage(net.minecraft.network.chat.Component.literal(String.valueOf(ClientState.str(role, "name"))));
+				token(card.tooltip(ClientState.str(role, "name") + "\n" + ClientState.str(role, "text")));
+			}
+			placeCircle(v, role);
+		}
+	}
+
+	/** Les actions du menu, dans l'ordre. */
+	private List<Action> actions(JsonObject v, boolean inGame, JsonObject role) {
 		List<Action> actions = new ArrayList<>();
 		if (ClientState.obj(v, "prompt") != null) {
 			actions.add(new Action("» Action en attente", () -> minecraft.gui.setScreen(new PromptScreen())));
@@ -137,45 +198,70 @@ public class MainScreen extends HdScreen {
 			// Opérateur : cartes, village, structures et créations, sans passer par le navigateur.
 			actions.add(new Action("Atelier", () -> minecraft.gui.setScreen(new AtelierScreen())));
 		}
-		int bw = (pw - 36) / 3;
-		int rows = (actions.size() + 2) / 3;
-		buttonsTop = py + ph - 28 - (rows - 1) * 22;
-		for (int i = 0; i < actions.size(); i++) {
-			int col = i % 3;
-			int row = i / 3;
-			Action a = actions.get(i);
-			// Un libellé raccourci (« … ») sur le bouton se lit en entier dans son infobulle.
-			int scale = Hd.guiScale();
-			boolean cut = HdFonts.width(HdStyle.BOUTON, scale, a.label()) > (bw - 10) * scale;
-			button(px + 12 + col * (bw + 6), buttonsTop + row * 22, bw, a.label(), a.run()).tooltip(cut ? a.label() : null);
+		return actions;
+	}
+
+	/**
+	 * Range les actions dans une grille de cols colonnes, dans l'ordre : une action dont le libellé ne tient pas dans
+	 * une case en prend deux (elle passe à la rangée suivante s'il ne reste qu'une case).
+	 */
+	private List<Cell> flow(List<Action> actions, int cols, HdStyle style) {
+		int margin = cols == 4 ? 10 : 12;
+		int gap = cols == 4 ? 4 : 6;
+		int cw = (pw - 2 * margin - (cols - 1) * gap) / cols;
+		int scale = Hd.guiScale();
+		List<Cell> out = new ArrayList<>();
+		int col = 0;
+		int row = 0;
+		for (Action a : actions) {
+			int span = HdFonts.width(style, scale, a.label()) > (cw - 10) * scale ? 2 : 1;
+			if (col + span > cols) {
+				col = 0;
+				row++;
+			}
+			out.add(new Cell(a, col, row, span));
+			col += span;
+			if (col >= cols) {
+				col = 0;
+				row++;
+			}
 		}
-		// Cercle des joueurs (jetons fermés : on ne voit pas les rôles des autres), à droite, dans la
-		// place laissée au-dessus du journal et des boutons : une ellipse qui ne déborde jamais.
-		if (inGame) {
-			List<JsonObject> seats = objects(v, "seats");
-			int me = ClientState.num(v, "mySeat", -1);
-			// Noms vers l'extérieur (dessus, dessous, côtés) : ils ne se recouvrent plus.
-			int top = py + 18;
-			int bottom = buttonsTop - 4;
-			int size = bottom - top < 110 ? 14 : 18;
-			int ry = Math.max(8, (bottom - top - size - 22) / 2);
-			int rx = Math.max(ry, (pw - 196) / 2 - 52);
-			int cx = px + 196 + (pw - 196) / 2 - 4;
-			int cy = top + 11 + size / 2 + ry;
-			final int sz = size;
-			final int n = seats.size();
-			ellipse(n, cx, cy, rx, ry, (i, x, y) -> {
-				JsonObject s = seats.get(i);
-				HdToken t = new HdToken(x, y, sz, ClientState.str(s, "name"),
-					i == me && role != null ? ClientState.str(role, "id") : null,
-					i == me && role != null ? ClientState.str(role, "team") : null,
-					ClientState.bool(s, "alive"), false, null);
-				if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
-					t.marker("ghost");
-				}
-				t.labelOutward(-Math.PI / 2 + 2 * Math.PI * i / Math.max(1, n));
-				token(t);
-			});
+		return out;
+	}
+
+	private static int rows(List<Cell> cells) {
+		return cells.isEmpty() ? 1 : cells.getLast().row() + 1;
+	}
+
+	/**
+	 * Cercle des joueurs (jetons fermés : on ne voit pas les rôles des autres, sauf le sien), à droite de la colonne
+	 * de gauche, entre le bandeau du titre et les actions.
+	 */
+	private void placeCircle(JsonObject v, JsonObject role) {
+		List<JsonObject> seats = objects(v, "seats");
+		if (seats.isEmpty()) {
+			return;
+		}
+		List<String> names = new ArrayList<>();
+		for (JsonObject s : seats) {
+			String name = ClientState.str(s, "name");
+			names.add(name == null ? "" : name);
+		}
+		int me = ClientState.num(v, "mySeat", -1);
+		int x = px + 14 + LEFT_W + 10;
+		int y = py + 12;
+		RingLayout.Result ring = SeatRing.layout(names,
+			SeatRing.spec(x, y, px + pw - 10 - x, buttonsTop - 4 - y).tokens(22, 10).aspect(2.6, 1.25));
+		for (int i = 0; i < seats.size(); i++) {
+			JsonObject s = seats.get(i);
+			RingLayout.Seat seat = ring.seats().get(i);
+			boolean mine = i == me && role != null;
+			HdToken t = new HdToken(seat.cx(), seat.cy(), ring.size(), names.get(i), mine ? ClientState.str(role, "id") : null,
+				mine ? ClientState.str(role, "team") : null, ClientState.bool(s, "alive"), false, null).seat(seat);
+			if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
+				t.marker("ghost");
+			}
+			token(t);
 		}
 	}
 
@@ -183,7 +269,7 @@ public class MainScreen extends HdScreen {
 		return !ClientState.phase().equals("LOBBY");
 	}
 
-	/** Lignes de journal affichées : une seule si la fenêtre est basse. */
+	/** Lignes de journal affichées au salon : une seule si la fenêtre est basse. */
 	private int feedLines() {
 		return ph < 230 ? 1 : 2;
 	}
@@ -201,51 +287,77 @@ public class MainScreen extends HdScreen {
 		int pitch = hd.u(HdText.PAS);
 		// Phase : lune ou soleil, puis son nom, en intertitre.
 		hd.image(Theme.tex(night ? "moon" : "sun"), hd.px(px + 12), hd.px(py + 11), hd.u(13), hd.u(13), -1);
-		hd.textMiddle(HdStyle.SECTION, phaseLabel(), hd.px(px + 29), hd.px(py + 11), hd.u(13), Hd.WINE);
+		hd.textMiddle(HdStyle.SECTION, hd.ellipsize(HdStyle.SECTION, phaseLabel(), hd.px(LEFT_W - 18)), hd.px(px + 29), hd.px(py + 11),
+			hd.u(13), Hd.WINE);
+		if (inGameView()) {
+			drawGameColumn(hd, v, dense, pitch);
+		} else {
+			drawLobby(hd, v, dense);
+		}
+	}
 
+	/** En partie : carte de rôle, texte du rôle s'il a la place, puis la dernière annonce, dans la colonne de gauche. */
+	private void drawGameColumn(Hd hd, JsonObject v, HdStyle dense, int pitch) {
 		JsonObject role = ClientState.obj(v, "role");
 		int x = px + 14;
 		int y = py + 32;
-		if (role != null) {
-			// Carte de rôle : jeton, nom, camp, puis le texte du rôle jusqu'au journal.
-			HdTokenArt.draw(hd, hd.px(x), hd.px(y), hd.u(36), ClientState.str(role, "id"), ClientState.str(role, "team"), true,
-				false, false);
-			hd.text(HdStyle.FORT, ClientState.str(role, "name"), hd.px(x + 42), hd.px(y + 3), Hd.INK);
-			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
-			hd.text(dense, evil ? "Camp du mal" : "Camp du bien", hd.px(x + 42), hd.px(y + 18), evil ? Theme.EVIL : Theme.GOOD);
-			HdText.paragraph(hd, dense, ClientState.str(role, "text"), hd.px(x), hd.px(y + 42), hd.px(172), Hd.INK, pitch,
-				hd.px(buttonsTop - feedHeight() - 6 - (y + 42)));
-		} else {
-			hd.text(HdStyle.FORT, phase.equals("LOBBY") ? "Inscrits :" : "Tu observes la partie.", hd.px(x), hd.px(y - 2), Hd.INK);
-			List<String> lobby = strings(v, "lobby");
-			HdStyle names = HdStyle.TEXTE.size(9.5f);
-			for (int i = 0; i < Math.min(lobby.size(), 12); i++) {
-				int lx = hd.px(x + 4 + (i / 6) * 86);
-				int ly = hd.px(y + 12 + (i % 6) * 10);
-				HdGlyphs.text(hd, names, "• " + hd.ellipsize(names, lobby.get(i), hd.u(76)), lx, ly, Hd.WINE);
-			}
-			String st = ClientState.str(v, "storyteller");
-			String teller = "Conteur : " + (st == null ? "automatique" : st);
-			if (phase.equals("LOBBY")) {
-				// Au salon, sur la ligne du haut : le journal, qui remonte quand les boutons prennent quatre rangées, ne le recouvre pas.
-				hd.textRight(dense, teller, hd.px(px + pw - 14), hd.px(py + 13), Hd.INK_SOFT);
-			} else {
-				hd.text(dense, teller, hd.px(x), hd.px(y + 76), Hd.INK_SOFT);
-			}
+		int bottom = buttonsTop - 4;
+		// La dernière annonce, en bas de la colonne : deux lignes, trois si la place le permet.
+		List<String> feed = strings(v, "feed");
+		int feedLines = feed.isEmpty() ? 0 : bottom - y > 120 ? 3 : 2;
+		int feedTop = bottom - feedLines * HdText.PAS;
+		if (!feed.isEmpty()) {
+			HdText.paragraph(hd, dense, feed.get(feed.size() - 1), hd.px(x), hd.px(feedTop), hd.px(LEFT_W), Hd.INK_SOFT, pitch,
+				feedLines * pitch);
 		}
+		if (role != null) {
+			// Le jeton (avec le texte du rôle en infobulle) est un widget ; ici, le nom et le camp à sa droite.
+			int tx = x + 38;
+			int nameW = LEFT_W - 38;
+			hd.text(HdStyle.FORT, hd.ellipsize(HdStyle.FORT, ClientState.str(role, "name"), hd.px(nameW)), hd.px(tx), hd.px(y + 3), Hd.INK);
+			boolean evil = "EVIL".equals(ClientState.str(role, "team"));
+			hd.text(dense, evil ? "Camp du mal" : "Camp du bien", hd.px(tx), hd.px(y + 18), evil ? Theme.EVIL : Theme.GOOD);
+			// Le texte du rôle, s'il tient sur deux lignes au moins entre la carte et l'annonce (sinon : infobulle du jeton).
+			int textTop = y + 38;
+			int room = feedTop - 4 - textTop;
+			if (room >= 2 * HdText.PAS) {
+				HdText.paragraph(hd, dense, ClientState.str(role, "text"), hd.px(x), hd.px(textTop), hd.px(LEFT_W), Hd.INK, pitch,
+					hd.px(room));
+			}
+		} else {
+			hd.paragraph(HdStyle.FORT, "Tu observes la partie.", hd.px(x), hd.px(y - 2), hd.px(LEFT_W), Hd.INK);
+			String st = ClientState.str(v, "storyteller");
+			HdText.line(hd, dense, "Conteur : " + (st == null ? "automatique" : st), hd.px(x), hd.px(y + 14), hd.px(LEFT_W), Hd.INK_SOFT);
+		}
+	}
 
-		// Journal des dernières annonces
+	/** Au salon : les inscrits, le Conteur, puis le journal au-dessus des actions. */
+	private void drawLobby(Hd hd, JsonObject v, HdStyle dense) {
+		int x = px + 14;
+		int y = py + 32;
+		hd.text(HdStyle.FORT, "Inscrits :", hd.px(x), hd.px(y - 2), Hd.INK);
+		List<String> lobby = strings(v, "lobby");
+		HdStyle names = HdStyle.TEXTE.size(9.5f);
+		// Les inscrits en colonnes de six, autant de colonnes que la largeur en laisse ; le dernier dit combien il en reste.
+		int rows = 6;
+		int colW = 86;
+		int cols = Math.max(1, (pw - 28) / colW);
+		int capacity = rows * cols;
+		for (int i = 0; i < Math.min(lobby.size(), capacity); i++) {
+			boolean last = i == capacity - 1 && lobby.size() > capacity;
+			String text = last ? "et " + (lobby.size() - capacity + 1) + " autres" : lobby.get(i);
+			int lx = hd.px(x + 4 + (i / rows) * colW);
+			int ly = hd.px(y + 12 + (i % rows) * 10);
+			HdGlyphs.text(hd, names, "• " + hd.ellipsize(names, text, hd.u(colW - 10)), lx, ly, last ? Hd.INK_SOFT : Hd.WINE);
+		}
+		String st = ClientState.str(v, "storyteller");
+		// Sur la ligne du haut : le journal, qui remonte quand les actions prennent quatre rangées, ne le recouvre pas.
+		hd.textRight(dense, "Conteur : " + (st == null ? "automatique" : st), hd.px(px + pw - 14), hd.px(py + 13), Hd.INK_SOFT);
 		List<String> feed = strings(v, "feed");
 		int fy = buttonsTop - feedHeight();
-		if (inGameView() && !feed.isEmpty()) {
-			// En partie : la dernière annonce, repliée dans la colonne de gauche (le cercle est à droite).
-			HdText.paragraph(hd, dense, feed.get(feed.size() - 1), hd.px(px + 14), hd.px(fy), hd.px(176), Hd.INK_SOFT, pitch,
-				hd.px(feedHeight() - 2));
-		} else {
-			for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
-				HdText.line(hd, dense, feed.get(i), hd.px(px + 14), hd.px(fy), hd.px(pw - 30), Hd.INK_SOFT);
-				fy += HdText.PAS;
-			}
+		for (int i = Math.max(0, feed.size() - feedLines()); i < feed.size(); i++) {
+			HdText.line(hd, dense, feed.get(i), hd.px(px + 14), hd.px(fy), hd.px(pw - 30), Hd.INK_SOFT);
+			fy += HdText.PAS;
 		}
 	}
 }

@@ -86,7 +86,7 @@ public class TokenScreen extends HdScreen {
 	protected void drawHd(Hd hd) {
 		List<String> worn = worn();
 		HdText.line(hd, HdText.SERRE, worn.isEmpty() ? "Aucun rappel posé sur " + name + "." : "Posés : " + String.join(" · ", worn),
-			hd.px(px + 14), hd.px(py + 10), hd.px(pw - 28), Theme.BRONZE);
+			hd.px(px + 14), hd.px(py + 10), hd.px(pw - 28), Hd.BRONZE_INK);
 		for (Head h : heads) {
 			// Nom du rôle, à la hauteur de sa première rangée de jetons.
 			HdText.line(hd, HdStyle.FORT.size(10), h.text(), hd.px(h.x()), hd.px(h.y()) + (hd.u(18) - hd.lineHeight(HdStyle.FORT.size(10))) / 2,
