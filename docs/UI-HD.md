@@ -118,6 +118,15 @@ Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 6. Une action qui reconstruit l'écran sur place (onglet, filtre local) appelle `rebuildSoon()`.
 7. Vérifier : `./gradlew build --offline -q`, puis une capture dans le test en jeu.
 
+## Écrans du Conteur
+
+Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), éditeur de script, scénarios, durées et minuteurs, ordre de réveil et distribution des rôles sont passés à `HdScreen`, avec les mêmes boutons et les mêmes commandes. Ils tiennent tous dans une interface de 427 × 240.
+
+- **Grimoire** : `Grimoire.hdTokens(x, y, w, h, clic)` place des `HdToken` sur une ellipse qui épouse la zone libre du pupitre. Les sièges sont espacés également le long du bord (et non à pas d'angle égal, qui les serre sur les côtés) ; la taille des jetons (26 à 14 unités) est la plus grande qui laisse un écart entre voisins ; les noms vont vers l'extérieur et sont raccourcis à la place qu'ils ont. La géométrie (`Grimoire.ring`, `Grimoire.spread`) est un calcul pur, vérifié par `GrimoireRingTest`. `Grimoire.place` garde les anciens jetons pour les écrans pas encore migrés.
+- **Colonne d'actions du pupitre** : boutons de 18 unités avec des écarts entre les groupes si tout tient ; sinon resserrés (16, puis 15) ; sinon la colonne défile à la molette (ascenseur à droite), les actions hors de la fenêtre restant dans l'écran, cachées. Les onglets Partie, Nuit, Jour, Parole et Fin sont un `HdTabs`.
+- **`StorytellerKit`** (paquet `screen`) : mesures de texte en unités pour placer les widgets dans `build()`, bouton fléché dessiné (`ArrowButton`, libellé « ▲ » ou « ▼ » gardé pour la narration), ascenseur des listes de boutons qui défilent ligne à ligne, fond alterné des lignes d'un tableau.
+- **Test en jeu** : `StorytellerHdGameTest` ouvre chaque écran sur des vues fabriquées (salon, lancement, journée chargée, nuit, 20 joueurs) à 427 × 240, vérifie qu'aucun widget visible ne sort du panneau ni n'en chevauche un autre, clique un jeton, change d'onglet, fait défiler la colonne, et capture le tout (`valcombe-conteur-hd-*.png`), aussi à l'échelle 3 et dans une interface de 640 × 360.
+
 ## Textures et polices
 
 - **Textures** (`assets/valcombe/textures/gui/hd/`) : produites par `python tools/make_ui.py`, jamais dessinées à la main. Pour en ajouter une : une fonction dans le script (formes par distance signée, voir `button()` ou `tooltip()`), une constante dans `HdSprites` (taille et bords en unités), relancer le script ; `HdSpritesTest` vérifie l'accord entre les deux. Dimensions multiples de 8 pixels (chaîne de mipmaps).

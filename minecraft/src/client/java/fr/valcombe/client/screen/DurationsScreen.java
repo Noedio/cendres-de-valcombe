@@ -3,15 +3,23 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.ui.Theme;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdButton;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-
-/** Toutes les durées de la partie, le mode manuel, et le minuteur en cours (passer, prolonger, arrêter). */
-public class DurationsScreen extends BaseScreen {
+/**
+ * Toutes les durées de la partie, le mode manuel, et le minuteur en cours (passer, prolonger, arrêter).
+ * En haute résolution : un tableau (durée, valeur, boutons « − » et « + ») dont les lignes se resserrent pour
+ * laisser la place au minuteur quand il tourne.
+ */
+public class DurationsScreen extends HdScreen {
 	/** {libellé, clé de réglage, pas, valeur affichée (calculée), unité}. */
 	private record Row(String label, String key, int step, int value, String shown) {
 	}
+
+	/** Haut du tableau, sous les deux interrupteurs (unités depuis py). */
+	private static final int TABLE_TOP = 34;
 
 	public DurationsScreen() {
 		super("Durées et minuteurs");
@@ -54,50 +62,87 @@ public class DurationsScreen extends BaseScreen {
 		}
 	}
 
-	@Override
-	protected void build() {
-		JsonObject v = view();
-		JsonObject st = ClientState.obj(v, "settings");
-		int y = py + 12;
-		boolean manual = ClientState.bool(st, "manual");
-		boolean autoNight = ClientState.bool(st, "autoNight");
-		int half = (pw - 34) / 2;
-		button(px + 14, y, half, "Mode manuel : " + (manual ? "oui" : "non"),
-			() -> send("vc reglage manuel " + (manual ? "non" : "oui")));
-		button(px + 20 + half, y, half, "Nuit auto (sans Conteur) : " + (autoNight ? "oui" : "non"),
-			() -> send("vc reglage nuit_auto " + (autoNight ? "non" : "oui")));
-		y += 24;
-		for (Row r : rows()) {
-			button(px + pw - 70, y, 24, "−", () -> set(r, r.value() - r.step()));
-			button(px + pw - 40, y, 24, "+", () -> set(r, r.value() + r.step()));
-			y += 20;
-		}
-		JsonObject timer = ClientState.obj(v, "timer");
-		if (timer != null) {
-			int by = py + ph - 52;
-			int bw = (pw - 36) / 3;
-			button(px + 12, by, bw, "Passer", () -> send("vc minuteur passer"));
-			button(px + 18 + bw, by, bw, "+30 s", () -> send("vc minuteur prolonger 30"));
-			button(px + 24 + 2 * bw, by, bw, "Arrêter", () -> send("vc minuteur arreter"));
-		}
-		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
+	private static JsonObject timer() {
+		return ClientState.obj(view(), "timer");
+	}
+
+	/** Bas du tableau : au-dessus de la ligne du minuteur s'il tourne, sinon au-dessus de « Retour ». */
+	private int tableBottom() {
+		return py + ph - 26 - 6 - (timer() != null ? 16 : 0);
+	}
+
+	/** Pas entre deux lignes du tableau (17 à 20 unités). */
+	private int rowStep() {
+		return Math.max(17, Math.min(20, (tableBottom() - py - TABLE_TOP) / rows().length));
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-		int y = py + 12 + 24 + 6;
+	protected void build() {
+		JsonObject st = ClientState.obj(view(), "settings");
+		int y = py + 10;
+		boolean manual = ClientState.bool(st, "manual");
+		boolean autoNight = ClientState.bool(st, "autoNight");
+		int half = (pw - 30) / 2;
+		HdStyle small = HdStyle.BOUTON.size(10);
+		toggle(px + 12, y, half, "Mode manuel", manual, () -> send("vc reglage manuel " + (manual ? "non" : "oui")))
+			.style(small)
+			.tooltip("Oui (avec un Conteur humain) : aucun minuteur n'enchaîne seul. Le Conteur ouvre et clôt le Conseil, "
+				+ "lance chaque vote et appelle chaque rôle la nuit.");
+		toggle(px + pw - 12 - half, y, half, "Nuit auto (sans Conteur)", autoNight,
+			() -> send("vc reglage nuit_auto " + (autoNight ? "non" : "oui")))
+			.style(small)
+			.tooltip("Oui : sans Conteur humain, la nuit tombe d'elle-même, au début de la partie et après chaque coucher "
+				+ "du soleil.");
+		int step = rowStep();
+		int h = Math.min(18, step - 2);
+		y = py + TABLE_TOP;
 		for (Row r : rows()) {
-			g.text(font, r.label(), px + 14, y, Theme.INK, false);
-			String shown = r.shown();
-			g.text(font, shown, px + pw - 78 - font.width(shown), y, Theme.INK, false);
-			y += 20;
+			int by = y + (step - h) / 2;
+			button(px + pw - 68, by, 24, h, "−", () -> set(r, r.value() - r.step()));
+			button(px + pw - 40, by, 24, h, "+", () -> set(r, r.value() + r.step()));
+			y += step;
 		}
-		JsonObject timer = ClientState.obj(view(), "timer");
+		if (timer() != null) {
+			// Minuteur en cours : ses trois commandes partagent la rangée du bas avec « Retour ».
+			int gap = 6;
+			int bw = (pw - 24 - 3 * gap) / 4;
+			int bx = px + 12;
+			button(bx, py + ph - 26, bw, "Passer", () -> send("vc minuteur passer"));
+			button(bx + (bw + gap), py + ph - 26, bw, "+30 s", () -> send("vc minuteur prolonger 30"));
+			button(bx + 2 * (bw + gap), py + ph - 26, bw, "Arrêter", () -> send("vc minuteur arreter"));
+			button(px + pw - 12 - bw, py + ph - 26, bw, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
+		} else {
+			button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
+		}
+	}
+
+	/** Bouton de hauteur choisie (les « − » et « + » du tableau se resserrent avec lui). */
+	private HdButton button(int x, int y, int w, int h, String label, Runnable action) {
+		return addRenderableWidget(new HdButton(x, y, w, h, label, action));
+	}
+
+	@Override
+	protected void drawHd(Hd hd) {
+		int step = rowStep();
+		int x = px + 12;
+		int w = pw - 24;
+		int y = py + TABLE_TOP;
+		Row[] rows = rows();
+		for (int i = 0; i < rows.length; i++) {
+			Row r = rows[i];
+			StorytellerKit.band(hd, x, y, w, step, i);
+			hd.textMiddle(HdStyle.TEXTE, r.label(), hd.px(x + 4), hd.px(y), hd.px(step), Hd.INK);
+			int vy = hd.px(y) + (hd.px(step) - hd.lineHeight(HdStyle.FORT)) / 2;
+			hd.textRight(HdStyle.FORT, r.shown(), hd.px(px + pw - 76), vy, Hd.WINE);
+			y += step;
+		}
+		JsonObject timer = timer();
 		if (timer != null) {
 			String kind = ClientState.str(timer, "kind");
 			String text = "Minuteur en cours : " + kind + ", " + (ClientState.bool(timer, "held")
 				? "attend le Conteur" : clockText(ClientState.num(timer, "left", 0)));
-			Theme.centered(g, font, text, px + pw / 2, py + ph - 64, Theme.INK);
+			hd.textCentered(HdStyle.FORT, hd.ellipsize(HdStyle.FORT, text, hd.px(w)), hd.px(px + pw / 2),
+				hd.px(py + ph - 26 - 4) - hd.lineHeight(HdStyle.FORT), Hd.INK);
 		}
 	}
 }
