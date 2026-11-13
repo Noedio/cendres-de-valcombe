@@ -42,6 +42,17 @@ repositories {
 			includeGroupAndSubgroups 'org.enginehub'
 		}
 	}
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = 'Nucleoid (Fantasy)'
+				url = 'https://maven.nucleoid.xyz'
+			}
+		}
+		filter {
+			includeGroup 'xyz.nucleoid'
+		}
+	}
 }
 
 dependencies {
@@ -64,6 +75,12 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Mondes persistants créés, ouverts et supprimés pendant que le serveur tourne (hub, parties, ateliers).
+	// Inclus dans le jar du mod (jar-in-jar) : les joueurs et le serveur n'ont aucun mod de plus à installer.
+	// Minecraft 26 n'est plus obfusqué : Loom ne remappe plus, « implementation » remplace « modImplementation ».
+	implementation "xyz.nucleoid:fantasy:${project.fantasy_version}"
+	include "xyz.nucleoid:fantasy:${project.fantasy_version}"
 
 	// Mods graphiques des joueurs (installés par le launcher), pour essayer le mod avec eux :
 	// ./gradlew runClient -Pgraphisme  (ou runClientGameTest -Pgraphisme)

@@ -7,7 +7,8 @@
 	"entrypoints": {
 		"fabric-client-gametest": [
 			"fr.valcombe.gametest.ScreensGameTest",
-			"fr.valcombe.gametest.WorldEditGameTest"
+			"fr.valcombe.gametest.WorldEditGameTest",
+			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},
 	"depends": {
