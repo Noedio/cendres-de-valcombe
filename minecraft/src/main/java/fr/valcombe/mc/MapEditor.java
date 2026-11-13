@@ -234,9 +234,8 @@ public final class MapEditor {
 	private void commit(String label, Box zone, Clip before, BuildQueue.Plan plan, Marker marker) {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
 		if (village() != null) {
-			// Dans le monde de la partie : sa carte est retouchée, et retient ce qu'on y a bâti.
+			// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée.
 			host.markEdited();
-			host.markBuilt(zone.x0(), zone.y0(), zone.z0(), zone.x1(), zone.y1(), zone.z1());
 		}
 		host.startEdit(label, level(), plan, null);
 	}

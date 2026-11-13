@@ -27,7 +27,7 @@ final class BuildQueue {
 	private static final int MAX_CHANGES = 8000;
 
 	/**
-	 * Une suite de blocs calculée au fur et à mesure, sans rien garder en mémoire : raser un terrain,
+	 * Une suite de blocs calculée au fur et à mesure, sans rien garder en mémoire : remettre un terrain à plat,
 	 * remettre un instantané. (Une liste de plusieurs millions de positions saturerait la mémoire.)
 	 */
 	abstract static class Part {

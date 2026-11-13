@@ -36,8 +36,13 @@ public final class MapStore {
 	/** Hauteur enregistrée : 4 blocs sous la place, et au moins 24 au-dessus (davantage si la carte monte plus haut). */
 	static final int BELOW = 4;
 	static final int HEIGHT = 28;
-	/** Plus grande hauteur enregistrée : celle qu'on rase pour retirer une carte du monde (voir McHost.clearHeight). */
+	/** Plus grande hauteur enregistrée : la plus haute construction importée, avec un peu de marge. */
 	static final int MAX_HEIGHT = SchematicImporter.MAX_HEIGHT + 10;
+	/**
+	 * Au-delà de l'emprise de ses repères, jusqu'où l'on cherche ce qui a été bâti autour de la carte en service pour
+	 * l'enregistrer avec elle (dans la limite de MAX_RADIUS).
+	 */
+	static final int SCAN_MARGIN = 48;
 	/** Taille maximale d'une carte partagée (structure compressée). */
 	private static final int MAX_BYTES = 24 * 1024 * 1024;
 
@@ -207,8 +212,9 @@ public final class MapStore {
 	}
 
 	/**
-	 * Sauvegarde automatique d'une carte retouchée à la main, juste avant qu'une autre ne la remplace :
-	 * elle va dans la bibliothèque telle quelle (même inachevée), sous un nom daté. Renvoie ce nom.
+	 * Sauvegarde automatique d'une carte retouchée à la main, juste avant que son monde ne soit remis à neuf pour en
+	 * recevoir une autre (voir MapSender) : elle va dans la bibliothèque telle quelle (même inachevée), sous un nom
+	 * daté. Renvoie ce nom.
 	 */
 	String backup(Village v) {
 		var now = java.time.LocalDateTime.now();
@@ -258,12 +264,15 @@ public final class MapStore {
 				+ "avant d'enregistrer la carte.");
 		}
 		ServerLevel level = host.level(); // la carte en service est celle du monde de la partie
-		int r = v.extent();
 		BlockPos c = v.center();
+		// Tout ce qui a été bâti autour de la place (comparé au sol plat du monde de la partie), et pas seulement
+		// l'emprise des repères, sur toute sa hauteur : une construction importée, faite à la main ou avec WorldEdit
+		// déborde souvent, et ce qui ne serait pas enregistré ici disparaîtrait quand le monde reçoit une autre carte.
+		int[] built = MapPlacer.builtZone(level, c, Math.min(MAX_RADIUS, v.extent() + SCAN_MARGIN));
+		int r = MapPlacer.captureRadius(v.extent(), 0, built[0]);
+		int roof = level.getMaxY() - (c.getY() - BELOW) + 1;
+		int height = Math.min(MapPlacer.captureHeight(HEIGHT, c.getY(), built[1], MAX_HEIGHT), roof);
 		BlockPos corner = c.offset(-r, -BELOW, -r);
-		// Toute la hauteur de la carte : une construction importée ou bâtie à la main dépasse souvent les 24 blocs
-		// d'un village, et ce qui ne serait pas enregistré ici serait perdu quand une autre carte la remplace.
-		int height = Math.max(HEIGHT, Math.min(MAX_HEIGHT, host.clearHeight(v)));
 		Clip clip = Clip.capture(level, corner, 2 * r + 1, height, 2 * r + 1);
 		MapDef d = new MapDef();
 		d.id = id;
@@ -281,7 +290,7 @@ public final class MapStore {
 		d.orientations = v.relSeatYaws();
 		d.convocation = v.relConvocation();
 		checkDef(d); // avant de calculer l'aperçu : une carte qu'on ne pourrait pas recharger n'est pas enregistrée
-		return writeMap(d, clip, host.topView(v));
+		return writeMap(d, clip, McHost.topView(level, c, r));
 	}
 
 	/**
@@ -314,8 +323,9 @@ public final class MapStore {
 	}
 
 	/**
-	 * L'air au-dessus du sol n'est pas écrit : le terrain est rasé avant qu'une carte soit posée (fichier bien plus
-	 * léger). Les BELOW rangées du sous-sol et celle de la place, elles, sont gardées entières.
+	 * L'air au-dessus du sol n'est pas écrit : une carte se pose sur le sol plat d'un monde neuf, ou sur une emprise
+	 * remise à plat (voir MapPlacer), fichier bien plus léger. Les BELOW rangées du sous-sol et celle de la place,
+	 * elles, sont gardées entières.
 	 */
 	static void stripAir(Clip clip) {
 		for (int i = clip.width * clip.length * (BELOW + 1); i < clip.cells.length; i++) {
@@ -340,34 +350,8 @@ public final class MapStore {
 	}
 
 	// ------------------------------------------------------------------
-	// Charger une carte à la place de l'actuelle
+	// Gérer la bibliothèque (une carte part dans un monde de partie par « Envoyer à la partie », voir MapSender)
 	// ------------------------------------------------------------------
-	public String load(String id) {
-		if (ValcombeMod.session().game() != null) {
-			throw new GameException("On change de carte entre deux parties.");
-		}
-		MapDef d = def(id);
-		checkDef(d);
-		host.requireFree();
-		Clip clip = readClip(d);
-		ServerLevel level = host.level(); // chargée à la place de la carte du monde de la partie
-		BlockPos c = host.mapCenter();
-		BlockPos corner = c.offset(-d.rayon, -BELOW, -d.rayon);
-		// L'ancienne carte est retirée, le terrain rasé, puis la carte posée : le tout par petits lots (le serveur reste fluide).
-		BuildQueue.Plan build = new BuildQueue.Plan().first(host.clearPart(c, d.rayon, BELOW, d.height()))
-			.then(clip.plan(level, corner, false, false));
-		String saved = host.replaceMap("Chargement de « " + d.nom + " »", build,
-			true, () -> {
-				Village v = Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis, d.convocation);
-				v.setLibrary(d.id, d.nom);
-				v.setRelSeatYaws(d.orientations);
-				v.placeThrones(level);
-				host.useVillage(v);
-				host.announceAll("Carte « " + d.nom + " » chargée.");
-			});
-		return "Chargement de la carte « " + d.nom + " » lancé." + McHost.PROGRESS + saved;
-	}
-
 	public String delete(String id) {
 		MapDef d = def(id);
 		changed();

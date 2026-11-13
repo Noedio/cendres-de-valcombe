@@ -249,11 +249,13 @@ final class Atelier {
 					}
 					text(ex, 200, "");
 				}
+				// Tout ce qui change la carte d'un monde de partie l'y envoie (MapSender) : le monde choisi (« monde »,
+				// absent : celui de la partie du serveur) est remis à neuf, puis la carte y est posée.
 				case "carte/importer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					byte[] data = java.util.Base64.getDecoder().decode(o.get("donnees").getAsString());
 					String file = o.get("fichier").getAsString();
-					text(ex, 200, logged(owner, onServer(() -> host.importSchematic(file, data), 180)));
+					text(ex, 200, logged(owner, onServer(() -> host.sender().sendImport(file, data, world(o), player(owner)), 180)));
 				}
 				case "simuler" -> json(ex, simulate(body));
 				case "jouer" -> text(ex, 200, logged(owner, onServer(() -> play(JsonParser.parseString(body).getAsJsonObject(), owner), 10)));
@@ -261,20 +263,24 @@ final class Atelier {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
 				}
-				case "carte/nouvelle" -> text(ex, 200, logged(owner, onServer(() -> {
-					// Carte vide à compléter à la main : là où se tient l'opérateur s'il est dans le monde de la partie, sinon à
-					// la place de la carte actuelle (ou au centre de ce monde).
-					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
-					return host.inGameWorld(p) ? host.customMap(p) : host.customMapAt(host.mapCenter());
-				}, 30)));
-				case "carte/oublier" -> text(ex, 200, logged(owner, onServer(host::forgetVillage, 10)));
+				case "carte/nouvelle" -> {
+					JsonObject o = object(body);
+					text(ex, 200, logged(owner, onServer(() -> host.sender().sendBlank(world(o), player(owner)), 30)));
+				}
+				case "carte/vider" -> {
+					JsonObject o = object(body);
+					text(ex, 200, logged(owner, onServer(() -> host.sender().clear(world(o), player(owner)), 30)));
+				}
 				case "carte/salle" -> text(ex, 200, logged(owner, onServer(host::buildHall, 30)));
 				case "carte/batir" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					text(ex, 200, logged(owner, onServer(() -> host.buildAtMarker(o.get("type").getAsString(),
 						o.has("index") ? o.get("index").getAsInt() : 0), 10)));
 				}
-				case "carte/charger" -> text(ex, 200, logged(owner, onServer(() -> maps.load(body.trim()), 120)));
+				case "carte/envoyer" -> {
+					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
+					text(ex, 200, logged(owner, onServer(() -> host.sender().sendMap(o.get("id").getAsString(), world(o), player(owner)), 120)));
+				}
 				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
 				case "carte/renommer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
@@ -327,10 +333,9 @@ final class Atelier {
 					// Mêmes bornes que /vc carte generer : un champ vide ou hors bornes est refusé en clair, pas ramené en silence.
 					int seats = Workshop.number(o, "places", "Trônes", Village.MIN_SEATS, Village.MAX_SEATS);
 					int size = Workshop.number(o, "taille", "Taille", 0, 2);
-					text(ex, 200, logged(owner, onServer(() -> host.generateVillage(server.getPlayerList().getPlayerByName(owner),
-						seats, size, o.has("theme") ? o.get("theme").getAsString() : "gothique",
-						!o.has("maisons") || o.get("maisons").getAsBoolean(),
-						McHost.Raze.parse(o.has("raser") ? o.get("raser").getAsString() : "bati")), 120)));
+					text(ex, 200, logged(owner, onServer(() -> host.sender().sendVillage(seats, size,
+						o.has("theme") ? o.get("theme").getAsString() : "gothique", !o.has("maisons") || o.get("maisons").getAsBoolean(),
+						world(o), player(owner)), 120)));
 				}
 				// Catalogue de structures et éditeur du mode construction (mêmes méthodes que /vc structure et /vc edit).
 				case "structure/prendre" -> text(ex, 200, onServer(() -> editor.choose(online(owner), body.trim()), 10));
@@ -377,6 +382,21 @@ final class Atelier {
 			ValcombeMod.LOG.warn("Atelier : requête refusée", e);
 			text(ex, 400, "Requête illisible : " + e.getMessage());
 		}
+	}
+
+	/** Le corps d'une requête en objet JSON (vide : un objet vide). */
+	private static JsonObject object(String body) {
+		return body == null || body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+	}
+
+	/** Le monde de partie choisi sur la page (champ « monde »), ou null : celui de la partie du serveur. */
+	private static String world(JsonObject o) {
+		return o.has("monde") && !o.get("monde").getAsString().isBlank() ? o.get("monde").getAsString() : null;
+	}
+
+	/** L'opérateur dans le jeu (il suit la barre de l'envoi où qu'il soit), ou null s'il n'y est pas. */
+	private ServerPlayer player(String owner) {
+		return server.getPlayerList().getPlayerByName(owner);
 	}
 
 	/** Exécute sur le fil du serveur (les créations changent le registre des rôles). */
@@ -441,6 +461,27 @@ final class Atelier {
 		}
 		out.put("carteResume", Workshop.describe(current));
 		out.put("carteEnPlace", host.mapInPlace());
+		// Les mondes de partie où l'on peut envoyer une carte (le premier : celui de la partie du serveur).
+		List<Map<String, Object>> targets = new ArrayList<>();
+		var worlds = ValcombeMod.worlds();
+		if (worlds != null) {
+			for (var e : worlds.list()) {
+				if (!MapSender.accepts(e.sorte())) {
+					continue;
+				}
+				Map<String, Object> w = new LinkedHashMap<>();
+				w.put("id", e.id());
+				w.put("nom", e.nom());
+				w.put("sorte", e.sorte().label());
+				w.put("partie", e.id().equals(host.worldId()));
+				if (e.id().equals(host.worldId())) {
+					targets.add(0, w);
+				} else {
+					targets.add(w);
+				}
+			}
+		}
+		out.put("mondesPartie", targets);
 		out.put("structures", structures.list());
 		out.put("editeur", editor.state(me));
 		out.put("constructeur", host.isBuilder(me));

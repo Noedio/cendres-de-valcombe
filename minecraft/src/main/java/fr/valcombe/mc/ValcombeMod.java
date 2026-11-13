@@ -202,6 +202,13 @@ public final class ValcombeMod implements ModInitializer {
 		return placer;
 	}
 
+	private static MapSender mapSender;
+
+	/** « Envoyer à la partie » (voir MapSender) ; null tant que les mondes ne sont pas prêts (voir worlds()). */
+	public static MapSender sender() {
+		return mapSender;
+	}
+
 	private static fr.valcombe.mc.hub.Travel travel;
 	private static fr.valcombe.mc.hub.Hub hub;
 
@@ -374,6 +381,11 @@ public final class ValcombeMod implements ModInitializer {
 				manager.addGuard(HOST);
 				manager.addListener(HOST);
 				placer = new MapPlacer(maps, manager, server);
+				// « Envoyer à la partie » : la seule façon de changer la carte d'un monde de partie (monde remis à neuf,
+				// carte posée dessus). Aujourd'hui une partie, celle du serveur ; l'hôte d'un monde est cherché par son identifiant.
+				var sender = new MapSender(server, manager, placer, maps, id -> id.equals(HOST.worldId()) ? HOST : null, HOST::worldId);
+				HOST.setSender(sender);
+				mapSender = sender;
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
 				setUpHub(server, manager);
 			} catch (RuntimeException | LinkageError e) {
@@ -417,6 +429,11 @@ public final class ValcombeMod implements ModInitializer {
 				placer.stop(); // les poses en cours sont abandonnées avant que les mondes ne se ferment
 				placer = null;
 			}
+			if (mapSender != null) {
+				mapSender.stop(); // un envoi coupé laisse sa marque dans le dossier du monde : le démarrage le signalera
+				mapSender = null;
+			}
+			HOST.setSender(null);
 			if (travel != null) {
 				try {
 					travel.stop(); // la position de chacun dans son monde, pour le prochain voyage

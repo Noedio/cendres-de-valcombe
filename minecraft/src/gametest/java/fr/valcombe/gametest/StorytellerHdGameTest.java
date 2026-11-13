@@ -392,7 +392,7 @@ public class StorytellerHdGameTest implements FabricClientGameTest {
 			resetTab(ctx);
 			JsonObject lobby = lobbyView(me);
 			show(ctx, lobby, StorytellerScreen::new, "1-pupitre-salon",
-				"Éditer le script", "Bâtir le village", "Lancer (automatique)", "Durées et minuteurs…", "Retour");
+				"Éditer le script", "Nouveau village", "Lancer (automatique)", "Durées et minuteurs…", "Retour");
 			show(ctx, lobby, ScriptScreen::new, "2-script", "Cendres", "Brumes", "Enregistrer sous…", "Scénarios…",
 				"Seul", "Retour");
 			check(ctx.computeOnClient(mc -> count(mc, HdToken.class)) == Role.all().size(), "un jeton par rôle du script");

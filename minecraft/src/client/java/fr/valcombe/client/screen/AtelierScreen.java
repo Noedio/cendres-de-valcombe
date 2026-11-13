@@ -43,8 +43,6 @@ public class AtelierScreen extends BaseScreen {
 	private static int size = 1;
 	private static int theme;
 	private static boolean houses = true;
-	/** Rasage de l'ancienne carte : tout ce qu'elle a bâti (false), ou un grand carré fixe (true). */
-	private static boolean razeSquare;
 	private static int shelf;
 	private static String structure;
 	private static int structurePage;
@@ -247,19 +245,20 @@ public class AtelierScreen extends BaseScreen {
 					saveAs.disabled();
 				}
 			}
-			var blank = confirm(bx, row(r++), bw, "Carte vide ici", "vc carte nouvelle");
+			// Une nouvelle carte arrive toujours sur un monde de partie remis à neuf (« Envoyer à la partie ») : rien ne
+			// reste de l'ancienne.
+			var blank = confirm(bx, row(r++), bw, "Carte vide (monde neuf)", "vc carte nouvelle");
 			var file = chat(bx, row(r++), bw, "Importer un fichier…", "vc carte importer ");
+			var empty = confirm(bx, row(r), bw, "Vider le monde", "vc carte vider");
 			if (busy) {
 				blank.disabled();
 				file.disabled();
-			}
-			if (current != null) {
-				confirm(bx, row(r), bw, "Oublier la carte", "vc carte oublier");
+				empty.disabled();
 			}
 		} else {
-			var load = confirm(bx, row(0), bw, "Charger", "vc carte charger " + map);
+			var send = confirm(bx, row(0), bw, "Envoyer à la partie", "vc carte envoyer " + map);
 			if (busy) {
-				load.disabled();
+				send.disabled();
 			}
 			chat(bx, row(1), bw, "Renommer…", "vc carte renommer " + map + " ");
 			action(bx, row(2), bw, "Dupliquer", "vc carte copier " + map);
@@ -383,14 +382,8 @@ public class AtelierScreen extends BaseScreen {
 			armed = null;
 			rebuildWidgets();
 		});
-		button(cx - 100, row(4), 200, razeSquare ? "Raser : un carré de 200 blocs" : "Raser : tout ce que la carte a bâti", () -> {
-			razeSquare = !razeSquare;
-			armed = null;
-			rebuildWidgets();
-		});
 		var gen = confirm(cx - 100, row(5) + 4, 200, "Générer le village",
-			"vc carte generer " + seats + " " + SIZES[size] + " " + themeName + " " + (houses ? "oui" : "non")
-				+ (razeSquare ? " carre" : " bati"));
+			"vc carte generer " + seats + " " + SIZES[size] + " " + themeName + " " + (houses ? "oui" : "non"));
 		if (ClientState.bool(a, "chantier")) {
 			gen.disabled();
 		}
@@ -398,8 +391,9 @@ public class AtelierScreen extends BaseScreen {
 
 	private void drawVillage(GuiGraphicsExtractor g) {
 		Theme.centered(g, font, "Trônes : " + seats, px + pw / 2, row(0) + 5, Theme.INK);
-		Theme.paragraph(g, font, "Le village généré remplace la carte actuelle, au même endroit (sans carte : là où vous êtes). "
-			+ "Tout ce que l'ancienne carte a bâti est rasé d'abord. Une carte retouchée à la main est sauvegardée dans la bibliothèque.",
+		Theme.paragraph(g, font, "Le village est envoyé à la partie : son monde est remis à neuf, plat et vide, puis le village y "
+			+ "est bâti au centre. Rien ne reste de l'ancienne carte ; retouchée à la main, elle est d'abord sauvegardée dans la "
+			+ "bibliothèque. Les joueurs présents attendent au hub, un lien les y ramène à la fin.",
 			px + 40, row(6) + 8, pw - 80, Theme.ASH, 32);
 	}
 

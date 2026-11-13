@@ -24,7 +24,8 @@ import net.minecraft.server.level.ServerLevel;
 
 /**
  * Commandes opérateur de test des cartes dans les mondes (sous /vc carte, déjà réservé aux opérateurs) :
- * {@code poser <id> <monde>} pose une carte de la bibliothèque au centre d'un monde de Valcombe, sur le sol plat ;
+ * {@code poser <id> <monde>} pose une carte de la bibliothèque au centre d'un monde de Valcombe, sur le sol plat
+ * (pas dans le monde de la partie : sa carte s'y envoie, voir MapSender) ;
  * {@code capturer <monde> <id> [nom]} range dans la bibliothèque la carte que porte un monde. Le monde se désigne
  * par son identifiant ou son nom, même approché (voir WorldLookup).
  */
@@ -105,6 +106,11 @@ final class MapPlacerCommands {
 
 	private static String place(CommandSourceStack src, MapPlacer placer, WorldManager worlds, String mapId, String world) {
 		WorldEntry e = WorldLookup.resolve(worlds.list(), world);
+		if (e.id().equals(ValcombeMod.host().worldId())) {
+			// La partie y joue sur sa carte : la changer, c'est remettre ce monde à neuf et la lui donner (MapSender).
+			throw new GameException("« " + e.nom() + " » est le monde de la partie : une carte s'y envoie, sur un monde remis à neuf, "
+				+ "avec /vc carte envoyer " + mapId + ".");
+		}
 		ServerLevel level = worlds.level(e.id());
 		MapPlacer.Placement p = placer.place(mapId, level, new net.minecraft.core.BlockPos(0, WorldManager.SURFACE_Y, 0), src.getPlayer());
 		PlacedMap map = p.map();

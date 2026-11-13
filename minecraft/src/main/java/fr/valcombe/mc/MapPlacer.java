@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -42,7 +43,8 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * demandé, le plus souvent sur le sol plat ({@link WorldManager#SURFACE_Y}). Les blocs partent par petits lots à
  * chaque tick (BuildQueue) : le serveur reste fluide, une barre suit l'avancement pour les joueurs du monde. Les
  * repères posés, en coordonnées du monde, sont rendus aussitôt ({@link Placement#map()}) et le résultat complété
- * quand tout est en place. Rien n'est changé à la partie en cours : le jeu s'en servira quand il aura son monde.
+ * quand tout est en place. La partie d'un monde de partie ne change de carte que par « Envoyer à la partie »
+ * (MapSender), qui remet d'abord ce monde à neuf, y pose la carte par ici, puis la donne à la partie.
  * <p>
  * <b>Mémoire</b> : chaque monde retient la carte qu'il porte (fichier {@value #FILE} dans son dossier). Il disparaît
  * avec le monde quand celui-ci est remis à neuf : un monde neuf ne porte rien.
@@ -59,7 +61,7 @@ public final class MapPlacer {
 	static final String FILE = "valcombe-carte.json";
 	/** Il faut au moins ce nombre de trônes pour qu'une carte se joue (comme à l'enregistrement de la carte actuelle). */
 	static final int MIN_SEATS = 5;
-	/** Remise à plat sans rien faire tomber (comme le rasage de McHost). */
+	/** Remise à plat sans rien faire tomber : ni le contenu d'un coffre, ni la torche dont le support disparaît. */
 	private static final int FLAT_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SUPPRESS_DROPS | Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
 	/** Décors en entités d'une carte (trônes sculptés, scène, panneaux...) : retirés avec elle. */
 	private static final Set<String> DECOR = Set.of("vc_trone", "vc_scene", "valcombe_salle", "vc_presentoir", "vc_repere", "vc_chair");
@@ -67,11 +69,13 @@ public final class MapPlacer {
 	/**
 	 * Une pose lancée.
 	 *
-	 * @param map  la carte et ses repères, en coordonnées du monde (connus dès le lancement)
-	 * @param done complété sur le fil du serveur quand tout est posé (ou en échec si le monde est remis à neuf,
+	 * @param map     la carte et ses repères, en coordonnées du monde (connus dès le lancement)
+	 * @param village le village de jeu de cette carte, à sa place (PlacedMap.toVillage) : ses trônes sculptés sont posés
+	 *                avec lui, c'est donc lui qu'une partie adopte (voir MapSender)
+	 * @param done    complété sur le fil du serveur quand tout est posé (ou en échec si le monde est remis à neuf,
 	 *             supprimé, ou si le serveur s'arrête entre-temps)
 	 */
-	public record Placement(PlacedMap map, CompletableFuture<PlacedMap> done) {
+	public record Placement(PlacedMap map, Village village, CompletableFuture<PlacedMap> done) {
 	}
 
 	/**
@@ -114,7 +118,7 @@ public final class MapPlacer {
 		WorldEntry e = worlds.entryOf(level);
 		if (e == null) {
 			throw new GameException("Les cartes de la bibliothèque se posent dans les mondes de Valcombe (/vc monde liste). "
-				+ "La carte de la partie, elle, se charge dans son monde : /vc carte charger <id>.");
+				+ "La carte de la partie, elle, s'envoie à son monde : /vc carte envoyer <id>.");
 		}
 		if (worlds.busy(e.id()) || server.getLevel(level.dimension()) != level) {
 			throw new GameException("Le monde « " + e.nom() + " » est en cours de remise à neuf : réessayez dans un instant.");
@@ -145,6 +149,18 @@ public final class MapPlacer {
 	 */
 	public Placement place(String mapId, ServerLevel level, BlockPos center, ServerPlayer watcher) {
 		requireServerThread();
+		MapStore.MapDef d = maps.checkedDef(mapId);
+		UUID viewer = watcher == null ? null : watcher.getUUID();
+		return place(d, maps.readClip(d), level, center, p -> p.getUUID().equals(viewer));
+	}
+
+	/**
+	 * Pose la carte de fiche d et de blocs clip (déjà relus de la bibliothèque, voir MapStore.readClip) dans ce monde
+	 * de Valcombe, sa place en center. La barre d'avancement suit les joueurs de ce monde et ceux que retient
+	 * watchers, où qu'ils soient (ceux qu'« Envoyer à la partie » a sortis du monde remis à neuf, par exemple).
+	 */
+	Placement place(MapStore.MapDef d, Clip clip, ServerLevel level, BlockPos center, Predicate<ServerPlayer> watchers) {
+		requireServerThread();
 		WorldEntry e = entry(level);
 		if (e.sorte() == fr.valcombe.mc.worlds.WorldKind.HUB) {
 			// Le hub porte la salle d'accueil (portes, dalles, mur des rôles) que le hub rebâtit lui-même : une carte
@@ -154,10 +170,8 @@ public final class MapPlacer {
 		if (queue.busy(level)) {
 			throw new GameException("Une carte est déjà en train d'être posée dans « " + e.nom() + " » : attendez la fin de la barre.");
 		}
-		MapStore.MapDef d = maps.checkedDef(mapId);
 		PlacedMap map = PlacedMap.of(d, level.dimension(), center);
 		checkInside(level, map);
-		Clip clip = maps.readClip(d);
 		PlacedMap old = placed(level);
 
 		// Remise à plat de l'ancienne carte, puis de l'emprise de la nouvelle au-dessus de la place (le sous-sol et la
@@ -173,14 +187,13 @@ public final class MapPlacer {
 		plan.then(clip.plan(level, map.min(), false, false));
 
 		CompletableFuture<PlacedMap> done = new CompletableFuture<>();
-		Placement placement = new Placement(map, done);
-		UUID viewer = watcher == null ? null : watcher.getUUID();
+		Village v = map.toVillage();
+		Placement placement = new Placement(map, v, done);
 		String label = "Pose de « " + d.nom + " » dans « " + e.nom() + " »";
 		queue.add(label, level, plan, () -> {
 			holds.remove(placement);
 			try {
 				removeDecor(level, old, map);
-				Village v = map.toVillage();
 				v.placeThrones(level); // les trônes sculptés d'un village généré sont des entités : reposés ici
 				liftPlayers(level, map);
 				remember(level, e, map);
@@ -189,7 +202,7 @@ public final class MapPlacer {
 				ValcombeMod.LOG.error("Fin de la pose de « " + d.id + " » dans " + e.id(), ex);
 				done.completeExceptionally(ex instanceof GameException ? ex : new GameException("Pose inachevée : " + ex.getMessage()));
 			}
-		}, p -> p.level() == level || p.getUUID().equals(viewer), () -> {
+		}, p -> p.level() == level || watchers.test(p), () -> {
 			holds.remove(placement);
 			done.completeExceptionally(new GameException("Pose de « " + d.nom + " » interrompue : le monde « " + e.nom()
 				+ " » a été remis à neuf ou supprimé, ou le serveur s'arrête."));
@@ -203,6 +216,38 @@ public final class MapPlacer {
 		holds.put(placement, h);
 		h.forEach(MapPlacer::refresh);
 		return placement;
+	}
+
+	/**
+	 * Bâtit ce plan (un village généré, une construction importée) dans ce monde de Valcombe, par petits lots comme
+	 * une pose, la zone de rayon radius autour de center tenue chargée. La barre suit les joueurs de ce monde et ceux
+	 * que retient watchers. Rien n'est noté dans le monde : c'est à l'appelant de dire quelle carte il porte.
+	 *
+	 * @return complété sur le fil du serveur quand tout est en place (plan.after compris), ou en échec si le monde
+	 *         est remis à neuf, supprimé, ou si le serveur s'arrête entre-temps
+	 */
+	CompletableFuture<Void> build(String label, ServerLevel level, BuildQueue.Plan plan, BlockPos center, int radius,
+			Predicate<ServerPlayer> watchers) {
+		requireServerThread();
+		WorldEntry e = entry(level);
+		if (queue.busy(level)) {
+			throw new GameException("Une carte est déjà en train d'être posée dans « " + e.nom() + " » : attendez la fin de la barre.");
+		}
+		CompletableFuture<Void> done = new CompletableFuture<>();
+		// Une pose sans carte de la bibliothèque : seule sa zone tenue chargée compte (voir tick()).
+		Placement placement = new Placement(null, null, new CompletableFuture<>());
+		queue.add(label, level, plan, () -> {
+			holds.remove(placement);
+			done.complete(null);
+		}, p -> p.level() == level || watchers.test(p), () -> {
+			holds.remove(placement);
+			done.completeExceptionally(new GameException(label + " interrompu : le monde « " + e.nom()
+				+ " » a été remis à neuf ou supprimé, ou le serveur s'arrête."));
+		});
+		Hold h = new Hold(level, ChunkPos.containing(center), radius / 16 + 2);
+		holds.put(placement, List.of(h));
+		refresh(h);
+		return done;
 	}
 
 	/** Le monde doit contenir toute l'emprise de la carte (hauteur et bordure). */

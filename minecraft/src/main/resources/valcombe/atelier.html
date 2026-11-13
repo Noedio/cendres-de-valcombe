@@ -355,6 +355,10 @@
 	<div class="cols wide">
 		<div class="card">
 			<h2>Bibliothèque de cartes</h2>
+			<div class="row">
+				<div><label>Envoyer à</label><select id="sendTo"></select></div>
+			</div>
+			<p class="hint">« Envoyer à la partie » remet le monde choisi à neuf, plat et vide, puis y pose la carte : il ne reste rien de l'ancienne, quelle que soit sa taille. Chaque monde de partie porte sa propre carte. Les joueurs présents attendent au hub pendant la pose (une barre la suit), puis un lien les y ramène.</p>
 			<div class="list" id="mapList"></div>
 			<p class="hint" id="curMap"></p>
 			<h2 style="margin-top:16px" id="planTitle">Plan de la carte actuelle</h2>
@@ -401,23 +405,22 @@
 				<div><label>Thème</label><select id="gTheme"></select></div>
 			</div>
 			<label class="check"><input type="checkbox" id="gMaisons" checked> Avec des maisons (la nuit, chacun chez soi)</label>
-			<div><label>Avant de bâtir, raser</label><select id="gRaser"><option value="bati" selected>Tout ce que la carte actuelle a bâti</option><option value="carre">Un grand carré de 200 blocs autour du centre</option></select></div>
-			<div class="bar"><button id="genMap">Générer à la place de la carte actuelle</button></div>
+			<div class="bar"><button id="genMap">Envoyer un village généré à la partie</button></div>
 			<h2 style="margin-top:20px">Importer une construction</h2>
-			<p class="hint">Une place faite ailleurs : schématique WorldEdit (<code>.schem</code>), Litematica (<code>.litematic</code>) ou structure Minecraft (<code>.nbt</code>), jusqu'à 320 × 128 × 320 blocs. Elle remplace la carte actuelle ; posez ensuite les trônes et les maisons en mode construction, puis enregistrez-la ici.</p>
+			<p class="hint">Une place faite ailleurs : schématique WorldEdit (<code>.schem</code>), Litematica (<code>.litematic</code>) ou structure Minecraft (<code>.nbt</code>), jusqu'à 320 × 128 × 320 blocs. Elle est posée au centre du monde choisi, remis à neuf ; posez ensuite les trônes et les maisons en mode construction, puis enregistrez-la ici.</p>
 			<input type="file" id="impSchem" accept=".schem,.schematic,.litematic,.nbt">
-			<div class="bar"><button id="importSchem">Importer à la place de la carte actuelle</button></div>
+			<div class="bar"><button id="importSchem">Envoyer la construction à la partie</button></div>
 			<h2 style="margin-top:20px">Construire à la main</h2>
 			<div class="bar" style="margin-top:0">
 				<button class="main" id="buildMode">Entrer en mode construction (pour moi, dans le jeu)</button>
-				<button id="blankMap">Nouvelle carte vide</button>
+				<button id="blankMap">Nouvelle carte vide (monde neuf)</button>
 			</div>
 			<p class="hint">Le mode construction (dans le jeu : <code>/vc carte construction</code>) passe en créatif et donne sept outils : trône, maison, centre, salle de convocation et gomme pour les repères, sélection et structure pour bâtir (onglet Structures). Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre, puis cliquer là où le reposer. Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup (la gomme la retire avec son repère). Chaque repère porte une étiquette à son numéro, et un trait de lumière relie le trône et la maison qui vont ensemble quand on s'en approche. Tout ce que vous posez dans le jeu apparaît sur le plan, et inversement. Ensuite, enregistrez la carte ici.</p>
-			<p class="hint">« Nouvelle carte vide » déclare une carte sans repères là où vous vous tenez dans le jeu (au point d'apparition si vous n'y êtes pas) : sur la carte actuelle, ses blocs sont gardés ; ailleurs, l'ancienne carte est retirée du monde.</p>
+			<p class="hint">« Nouvelle carte vide » remet le monde choisi à neuf et y déclare une carte sans repères, la place au centre du sol plat : il n'y a plus qu'à bâtir et à poser les repères.</p>
 			<h2 style="margin-top:20px">Autres actions</h2>
 			<div class="bar" style="margin-top:0">
 				<button id="hallMap">Rebâtir la salle d'attente</button>
-				<button class="danger" id="forgetMap">Oublier la carte (jouer sans carte)</button>
+				<button class="danger" id="clearWorld">Vider le monde (jouer sans carte)</button>
 			</div>
 			<div class="msg" id="mapMsg"></div>
 		</div>
@@ -1430,9 +1433,10 @@ async function play(trial) {
 		const sc = data.scenarios.find(x => x.id === editingSc);
 		if (sc && sc.carte && sc.carte !== data.carteEnPlace) {
 			const lib = data.cartes.find(x => x.id === sc.carte);
-			if (!confirm("Ce scénario charge la carte « " + (lib ? lib.nom : sc.carte) + " » à la place de la carte actuelle"
-				+ (data.carteActuelle && data.carteActuelle.modifiee ? " (retouchée à la main : elle sera d'abord sauvegardée dans la bibliothèque)" : "")
-				+ ". Continuer ?")) return;
+			if (!confirm("Ce scénario envoie la carte « " + (lib ? lib.nom : sc.carte) + " » à la partie : son monde est remis à neuf, "
+				+ "il ne restera rien de la carte actuelle"
+				+ (data.carteActuelle && data.carteActuelle.modifiee ? " (retouchée à la main, elle sera d'abord sauvegardée dans la bibliothèque)" : "")
+				+ ". Les joueurs présents attendent au hub pendant la pose. Continuer ?")) return;
 		}
 		msg("scMsg", await api("jouer", { scenario: editingSc, essai: trial, joueurs }), true);
 		load();
@@ -1460,9 +1464,10 @@ function renderMaps() {
 		const bar = document.createElement("div");
 		bar.className = "bar";
 		const load_ = document.createElement("button");
-		load_.textContent = "Charger";
-		load_.disabled = data.partieEnCours;
-		load_.onclick = () => mapAction("carte/charger", m.id, "Charger « " + m.nom + " » à la place de la carte actuelle ?");
+		load_.className = "main";
+		load_.textContent = "Envoyer à la partie";
+		load_.onclick = () => mapAction("carte/envoyer", Object.assign({ id: m.id }, target()),
+			"Envoyer « " + m.nom + " » à « " + targetName() + " » ?" + replaceNote());
 		const del = document.createElement("button");
 		del.className = "danger";
 		del.textContent = "Supprimer";
@@ -1494,10 +1499,18 @@ function renderMaps() {
 		+ (data.chantier ? " Un chantier est en cours : la carte change dès qu'il est fini." : "");
 	// Pendant un chantier ou une partie, rien de ce qui change la carte n'est proposé.
 	const locked = !!data.chantier || !!data.partieEnCours;
-	for (const id of ["genMap", "importSchem", "saveMap", "blankMap", "hallMap", "forgetMap"]) $(id).disabled = locked;
+	for (const id of ["genMap", "importSchem", "saveMap", "blankMap", "hallMap", "clearWorld"]) $(id).disabled = locked;
 	$("saveMap").disabled = locked || !cur;
 	$("hallMap").disabled = locked || !cur;
-	$("forgetMap").disabled = locked || !cur;
+	// Les mondes de partie où envoyer une carte : celui de la partie du serveur d'abord, le choix fait est gardé.
+	const to = $("sendTo");
+	const keep = to.value;
+	to.innerHTML = "";
+	for (const w of data.mondesPartie || []) {
+		to.add(new Option(w.nom + (w.partie ? " (la partie du serveur)" : " (" + w.sorte + ")"), w.id));
+	}
+	if (keep && [...to.options].some(o => o.value === keep)) to.value = keep;
+	to.disabled = !to.options.length;
 	$("buildMode").textContent = data.constructeur ? "Quitter le mode construction" : "Entrer en mode construction (pour moi, dans le jeu)";
 	$("buildMode").disabled = !data.enJeu || (!!data.partieEnCours && !data.constructeur);
 	$("buildMode").title = data.enJeu ? "" : "Connectez-vous au jeu : le mode construction se passe là-bas.";
@@ -1788,17 +1801,28 @@ async function mapAction(path, body, question) {
 }
 
 $("mNom").oninput = () => { $("mId").value = slug($("mNom").value); };
-/** Ce qu'il advient de la carte actuelle quand une autre la remplace. */
+/** Le monde de partie choisi dans « Envoyer à » (rien : celui de la partie du serveur). */
+function target() {
+	const v = $("sendTo").value;
+	return v ? { monde: v } : {};
+}
+function targetName() {
+	const w = (data.mondesPartie || []).find(x => x.id === $("sendTo").value);
+	return w ? w.nom : "la partie";
+}
+/** Ce qu'il advient du monde choisi, et de sa carte, quand on lui en envoie une autre. */
 function replaceNote() {
+	const w = (data.mondesPartie || []).find(x => x.id === $("sendTo").value);
 	const cur = data.carteActuelle;
-	return !cur ? "" : cur.modifiee ? " La carte actuelle, retouchée à la main, sera d'abord sauvegardée dans la bibliothèque."
-		: " La carte actuelle sera retirée du monde.";
+	return " Le monde est remis à neuf, plat et vide : il ne restera rien de sa carte actuelle."
+		+ ((!w || w.partie) && cur && cur.modifiee ? " Retouchée à la main, elle sera d'abord sauvegardée dans la bibliothèque." : "")
+		+ " Les joueurs présents attendent au hub pendant la pose.";
 }
 $("importSchem").onclick = async () => {
 	const f = $("impSchem").files[0];
 	if (!f) { msg("mapMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
-	if (!confirm("Importer « " + f.name + " » comme nouvelle carte ?" + replaceNote())) return;
-	await mapAction("carte/importer", { fichier: f.name, donnees: await fileB64(f) });
+	if (!confirm("Envoyer la construction « " + f.name + " » à « " + targetName() + " » ?" + replaceNote())) return;
+	await mapAction("carte/importer", Object.assign({ fichier: f.name, donnees: await fileB64(f) }, target()));
 };
 $("buildMode").onclick = () => mapAction("construction", "");
 $("undoMark").onclick = () => planAction("carte/annuler", "");
@@ -1810,18 +1834,17 @@ $("saveMap").onclick = () => {
 };
 $("genMap").onclick = () => {
 	try {
-		mapAction("carte/generer", {
+		mapAction("carte/generer", Object.assign({
 			places: intField("gPlaces", "Trônes", data.tronesMin, data.tronesMax), taille: parseInt($("gTaille").value, 10),
-			theme: $("gTheme").value, maisons: $("gMaisons").checked, raser: $("gRaser").value,
-		}, "Générer un village ?" + replaceNote());
+			theme: $("gTheme").value, maisons: $("gMaisons").checked,
+		}, target()), "Envoyer un village généré à « " + targetName() + " » ?" + replaceNote());
 	} catch (e) { msg("mapMsg", e.message); }
 };
-$("blankMap").onclick = () => mapAction("carte/nouvelle", "", "Déclarer une carte vide là où vous vous tenez dans le jeu "
-	+ "(au point d'apparition si vous n'y êtes pas) ? Sur la carte actuelle, ses blocs sont gardés et seuls les repères repartent de zéro."
-	+ (data.carteActuelle && data.carteActuelle.modifiee ? " Elle sera d'abord sauvegardée dans la bibliothèque." : ""));
+$("blankMap").onclick = () => mapAction("carte/nouvelle", target(), "Envoyer une carte vide à « " + targetName()
+	+ " » ? La place sera au centre du sol plat, sans repères." + replaceNote());
 $("hallMap").onclick = () => mapAction("carte/salle", "");
-$("forgetMap").onclick = () => mapAction("carte/oublier", "", "Oublier la carte ? On jouera autour du Conteur. Ses blocs restent en place "
-	+ "jusqu'à ce qu'une autre carte soit posée.");
+$("clearWorld").onclick = () => mapAction("carte/vider", target(), "Vider « " + targetName() + " » ? On y jouera sans carte, "
+	+ "autour du Conteur." + replaceNote());
 
 // ---------------------------------------------------------------- Structures
 const SHELVES = [["maisons", "Maisons et salles"], ["place", "Pour la place"], ["decor", "Décor"], ["perso", "Vos structures"]];

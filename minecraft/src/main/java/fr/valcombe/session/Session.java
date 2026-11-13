@@ -1073,7 +1073,8 @@ public final class Session {
 			throw new GameException("Une partie est déjà en cours.");
 		}
 		if (host.busy()) {
-			throw new GameException("La carte est en chantier ou en cours de remise en état : patientez quelques secondes.");
+			throw new GameException("La carte est en chantier, en route vers la partie ou en cours de remise en état : "
+				+ "patientez quelques secondes.");
 		}
 		List<String> names = lobby.stream().filter(this::online).toList();
 		if (scenario != null && !scenario.playable().contains(names.size())) {

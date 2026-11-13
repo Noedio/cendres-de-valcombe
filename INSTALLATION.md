@@ -101,7 +101,7 @@ Le serveur ouvre aussi une **API d'administration**, protégée par une clé et 
 ## Pour le Conteur
 
 1. En jeu, ouvrez le menu (**J**), puis « Panneau du Conteur ».
-2. Le village de Valcombe est bâti tout seul au premier démarrage du serveur : rien à faire. Pour le rebâtir ailleurs, placez-vous sur un terrain dégagé et cliquez sur « Bâtir le village », puis « Confirmer » : il remplace la carte actuelle, qui est retirée du monde.
+2. Le village de Valcombe est bâti tout seul au premier démarrage du serveur, dans le monde de la partie : rien à faire. Pour un village d'un autre thème, choisissez-le (« Thème ») et cliquez sur « Nouveau village », puis « Confirmer » : le monde de la partie est remis à neuf, puis le nouveau village y est bâti. Les joueurs présents attendent au hub pendant ce temps ; un lien les ramène à la fin.
 3. Les joueurs s'inscrivent depuis leur menu. Pour tester seul, ajoutez des joueurs fictifs.
 4. « Lancer (automatique) » : le jeu mène tout seul. « Lancer (Conteur humain) » : vous relisez chaque information, et vous pouvez retoucher la distribution avant la première nuit en cliquant sur les jetons du grimoire.
 5. « Faire tomber la nuit », puis « Clore la journée » après les votes.

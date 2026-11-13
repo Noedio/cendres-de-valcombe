@@ -65,11 +65,13 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | `/vc consigne enregistrement\|chatelain\|successeur <valeur>` | Meneur | Consignes du Conteur humain |
 | `/vc note <joueur> [texte]` | Meneur | Note dans le grimoire |
 | `/vc script basculer <rôle>\|complet\|sauver <nom>\|charger <nom>\|supprimer <nom>` | Meneur | Éditeur de scripts |
-| `/vc carte construire\|oublier` | Opérateur | Construire le village sous ses pieds, ou l'oublier (sinon il se construit seul au premier démarrage) |
-| `/vc carte nouvelle`, `/vc carte siege`, `/vc carte maison` | Opérateur | Carte personnalisée : la place ici, puis chaque siège et chaque maison à sa position |
+| `/vc carte envoyer <id> [monde]` (ou `charger <id>`) | Opérateur | « Envoyer à la partie » : le monde de partie (par défaut celui du serveur) est remis à neuf, plat et vide, puis la carte de la bibliothèque y est posée et devient sa carte. Les joueurs présents attendent au hub ; refusé pendant une partie |
+| `/vc carte construire [thème]`, `/vc carte generer <trônes> <taille> <thème> <oui\|non> [monde]` | Opérateur | Nouveau village : monde de partie remis à neuf, puis village généré au centre (il se construit seul au premier démarrage) |
+| `/vc carte vider [monde]` | Opérateur | Monde de partie remis à neuf et laissé vide : on joue sans carte, autour du Conteur |
+| `/vc carte nouvelle [monde]`, `/vc carte trone`, `/vc carte maison` | Opérateur | Carte personnalisée : un monde neuf, la place au centre, puis chaque trône et chaque maison à sa position |
 | `/vc carte retirer siege\|maison`, `/vc carte annuler`, `/vc carte infos` | Opérateur | Retirer le dernier emplacement, annuler la dernière pose, résumé de la carte |
 | `/vc carte renommer <id> <nom>`, `/vc carte copier <id> <nouvel_id>` | Opérateur | Renommer ou dupliquer une carte de la bibliothèque |
-| `/vc carte poser <id> <monde>` | Opérateur | Poser une carte de la bibliothèque au centre d'un monde de Valcombe, sur le sol plat (l'ancienne carte du monde est retirée) ; le monde se donne par son identifiant ou son nom, même approché |
+| `/vc carte poser <id> <monde>` | Opérateur | Poser une carte de la bibliothèque au centre d'un monde de Valcombe (atelier, partie d'essai), sur le sol plat (l'ancienne carte du monde est retirée) ; le monde se donne par son identifiant ou son nom, même approché. Pas dans le monde de la partie : sa carte s'y envoie |
 | `/vc carte capturer <monde> <id> [nom]` | Opérateur | Ranger dans la bibliothèque la carte que porte un monde de Valcombe : toute la zone bâtie autour de sa place, et ses repères |
 | `/vc reglage <clé> <valeur>` | Meneur | `nuit_maisons`, `nuit_immobile`, `nuit_sombre`, `nuit_muette` (oui\|non), `temps_vote` |
 | `/vc grimoire`, `/vc role`, `/vc fiches`, `/vc historique`, `/vc mp <message>` | Selon le cas | Consultation, message au Conteur |
