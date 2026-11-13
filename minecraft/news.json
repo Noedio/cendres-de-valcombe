@@ -1,5 +1,10 @@
 [
   {
+    "date": "13 nov. 2026",
+    "title": "Version 0.12.0 : un éditeur de carte plus simple, et les rôles choisis par le MJ",
+    "text": "Le catalogue montre chaque structure en maquette 3D, et son fantôme apparaît là où vous visez avant de la poser. Un nouvel outil, la main, déplace, tourne ou retire d'un clic un trône, une maison ou une structure posée ; les trônes s'orientent comme on veut. Régénérer un village rase d'abord toute l'ancienne carte. Le Conteur peut imposer des rôles avant de lancer, puis corriger la distribution avant la première nuit. Et l'option « Noms au-dessus des têtes » fonctionne de nouveau."
+  },
+  {
     "date": "12 nov. 2026",
     "title": "Version 0.11.0 : les règles de notre table",
     "text": "Au Conseil, on accuse d'abord, puis on vote pour chaque accusé, dans l'ordre. Pendant le Conseil, tout le village s'entend et les morts se taisent, sauf si un vivant leur donne la parole ; la touche B fait chuchoter ou crier. Le Conteur peut tout mener à la main, régler chaque durée et changer l'ordre des réveils. Quatre rôles arrivent (la Sorcière, la Fleuriste, le Jongleur, le Bavard) avec le scénario « La Table de Valcombe ». Le carnet note vos soupçons et vos indices, et le village a des recoins pour parler à l'abri."
