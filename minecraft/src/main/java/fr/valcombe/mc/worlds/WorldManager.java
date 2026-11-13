@@ -198,10 +198,20 @@ public final class WorldManager {
 
 	/**
 	 * À l'arrêt du serveur : les mondes ouverts sont enregistrés par le serveur lui-même. Une recréation ou une
-	 * suppression en cours échoue ici ; ses fichiers seront effacés au démarrage suivant.
+	 * suppression en cours échoue ici ; ses fichiers seront effacés au démarrage suivant. Un ancien monde déjà retiré
+	 * du serveur par Fantasy mais pas encore fermé l'est ici : le serveur ne le fermera plus, et ses fichiers restés
+	 * ouverts (en solo, Java continue de tourner) empêcheraient leur effacement au prochain lancement du monde.
 	 */
 	public void stop() {
 		for (Pending p : pending.values()) {
+			if (p.old != null && !p.closed && server.getLevel(key(p.entry.id())) != p.old) {
+				p.closed = true;
+				try {
+					p.old.close();
+				} catch (IOException | RuntimeException ex) {
+					LOG.warn("Fermeture de l'ancien monde " + p.entry.id() + " incomplète", ex);
+				}
+			}
 			p.done.completeExceptionally(new GameException("Le serveur s'arrête : le monde « " + p.entry.nom()
 				+ " » sera remis à neuf au prochain démarrage."));
 		}
@@ -289,17 +299,16 @@ public final class WorldManager {
 	/**
 	 * Crée un monde neuf, plat et vide, et l'ouvre (fil du serveur). L'identifiant est tiré du nom
 	 * ({@link WorldRegistry#slug}) et rendu unique. Il n'existe qu'un hub et qu'un atelier structures.
+	 * <p>
+	 * Un identifiant dont le dossier existe déjà sur le disque sans fiche (registre illisible mis de côté, fiche
+	 * retirée à la main) n'est jamais repris : ce monde inconnu reste intact et le nouveau prend {@code nom-2}.
 	 *
 	 * @return la fiche enregistrée
 	 */
 	public WorldEntry create(WorldKind kind, String name) {
 		requireServerThread();
-		WorldEntry e = registry.create(kind, name);
+		WorldEntry e = registry.create(kind, name, id -> Files.exists(folder(id)));
 		try {
-			// Un dossier laissé par un monde du même nom, effacé hors du jeu : le nouveau monde doit partir de rien.
-			if (!deleteFolder(e.id())) {
-				throw new GameException("Des fichiers d'un ancien monde « " + e.id() + " » n'ont pas pu être effacés.");
-			}
 			open(e);
 		} catch (RuntimeException ex) {
 			registry.remove(e.id());

@@ -99,7 +99,7 @@ public final class WorldCommands {
 						.executes(c -> exec(c, worlds, (x, w) -> create(w, arg(x, "sorte"), arg(x, "nom")))))))
 			.then(Commands.literal("aller")
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(destinations)
-					.executes(c -> exec(c, worlds, (x, w) -> go(w, x.getSource().getPlayerOrException(), arg(x, "id"))))))
+					.executes(c -> exec(c, worlds, (x, w) -> go(w, x.getSource().getPlayer(), arg(x, "id"))))))
 			.then(Commands.literal("recreer")
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(ids)
 					.executes(c -> exec(c, worlds, (x, w) -> recreate(w, x.getSource(), arg(x, "id"))))))
@@ -165,6 +165,9 @@ public final class WorldCommands {
 	}
 
 	private static String go(WorldManager w, ServerPlayer p, String id) {
+		if (p == null) {
+			throw new GameException("Seul un joueur en jeu peut aller dans un monde (pas la console du serveur).");
+		}
 		if ("principal".equalsIgnoreCase(id)) {
 			WorldManager.toMainWorld(p);
 			return "Te voilà dans le monde principal.";

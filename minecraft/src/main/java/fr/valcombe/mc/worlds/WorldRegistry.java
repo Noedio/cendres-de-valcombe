@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -258,14 +259,17 @@ public final class WorldRegistry {
 		return n;
 	}
 
-	/** Un identifiant libre tiré du nom (ou de la sorte si le nom ne donne rien) : {@code soiree}, {@code soiree-2}... */
-	private String freeId(String name, WorldKind kind) {
+	/**
+	 * Un identifiant libre tiré du nom (ou de la sorte si le nom ne donne rien) : {@code soiree}, {@code soiree-2}...
+	 * Sont pris : les fiches, les effacements en attente, les mots réservés et ceux que {@code taken} refuse.
+	 */
+	private String freeId(String name, WorldKind kind, Predicate<String> taken) {
 		String base = slug(name);
 		if (base.length() < 2) {
 			base = kind.code();
 		}
 		String id = base;
-		for (int n = 2; entries.containsKey(id) || wipes.contains(id) || RESERVED.contains(id); n++) {
+		for (int n = 2; entries.containsKey(id) || wipes.contains(id) || RESERVED.contains(id) || taken.test(id); n++) {
 			String suffix = "-" + n;
 			String head = base.length() + suffix.length() > 30 ? base.substring(0, 30 - suffix.length()).replaceAll("-+$", "") : base;
 			id = head + suffix;
@@ -311,7 +315,16 @@ public final class WorldRegistry {
 	 * Ajoute une fiche. L'identifiant est tiré du nom et rendu unique ; il n'existe qu'un hub et qu'un atelier
 	 * structures. La fiche seule est créée : le monde lui-même est l'affaire du {@link WorldManager}.
 	 */
-	public synchronized WorldEntry create(WorldKind kind, String name) {
+	public WorldEntry create(WorldKind kind, String name) {
+		return create(kind, name, id -> false);
+	}
+
+	/**
+	 * Comme {@link #create(WorldKind, String)}, sans jamais prendre un identifiant que {@code taken} refuse : le
+	 * {@link WorldManager} y écarte ceux dont un dossier de monde existe déjà sur le disque (registre illisible mis
+	 * de côté, fiche retirée à la main), pour ne jamais effacer ni reprendre un monde qu'il ne connaît pas.
+	 */
+	public synchronized WorldEntry create(WorldKind kind, String name, Predicate<String> taken) {
 		if (kind == null) {
 			throw new GameException("Sorte de monde inconnue.");
 		}
@@ -324,7 +337,7 @@ public final class WorldRegistry {
 			}
 		}
 		Instant now = now();
-		WorldEntry e = new WorldEntry(freeId(nom, kind), nom, kind, null, now, now, "");
+		WorldEntry e = new WorldEntry(freeId(nom, kind, taken), nom, kind, null, now, now, "");
 		entries.put(e.id(), e);
 		save();
 		return e;

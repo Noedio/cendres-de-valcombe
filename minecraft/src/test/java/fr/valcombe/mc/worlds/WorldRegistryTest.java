@@ -109,6 +109,15 @@ class WorldRegistryTest {
 	}
 
 	@Test
+	void idsTakenOnDiskAreNeverReused() {
+		WorldRegistry r = registry();
+		// Un dossier « la-soiree » existe sans fiche (registre mis de côté) : le nouveau monde prend la suite.
+		WorldEntry a = r.create(WorldKind.PARTIE, "La Soirée", id -> id.equals("la-soiree"));
+		assertEquals("la-soiree-2", a.id());
+		assertNull(r.find("la-soiree"));
+	}
+
+	@Test
 	void namesWithoutLettersUseTheKind() {
 		WorldRegistry r = registry();
 		assertEquals("atelier-carte", r.create(WorldKind.ATELIER_CARTE, "???").id());
