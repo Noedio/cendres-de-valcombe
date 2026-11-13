@@ -48,9 +48,46 @@ public final class Tablet {
 	private volatile String owner;
 	private int port;
 	private Atelier atelier;
+	/** API d'administration (/admin/...), servie par ce même serveur web. */
+	private AdminApi admin;
+	/** L'API d'administration est ouverte : le serveur web tourne tant que le serveur Minecraft tourne. */
+	private volatile boolean adminOpen;
 
 	void setAtelier(Atelier atelier) {
 		this.atelier = atelier;
+	}
+
+	void setAdmin(AdminApi admin) {
+		this.admin = admin;
+	}
+
+	/**
+	 * Ouvre l'API d'administration : le serveur web démarre (s'il ne tournait pas) et reste en service jusqu'à
+	 * l'arrêt du serveur Minecraft, même quand la tablette et l'Atelier sont fermés. Renvoie le port.
+	 * Un port déjà pris lève une GameException, comme pour la tablette.
+	 */
+	public synchronized int openAdmin() throws IOException {
+		if (admin == null) {
+			throw new GameException("API d'administration indisponible.");
+		}
+		adminOpen = true;
+		try {
+			start();
+		} catch (IOException | RuntimeException e) {
+			adminOpen = false;
+			throw e;
+		}
+		return port;
+	}
+
+	/** L'API d'administration est-elle en service ? */
+	public synchronized boolean adminOpen() {
+		return adminOpen && http != null;
+	}
+
+	/** Port du serveur web (0 s'il ne tourne pas). */
+	public synchronized int port() {
+		return http == null ? 0 : port;
 	}
 
 	/**
@@ -86,9 +123,12 @@ public final class Tablet {
 		return http != null && atelier != null && atelier.inUse();
 	}
 
-	/** Le serveur web ne tourne que tant qu'un lien sert : celui de la tablette, ou un lien d'Atelier. */
+	/**
+	 * Le serveur web ne tourne que tant qu'un lien sert : celui de la tablette, un lien d'Atelier, ou l'API
+	 * d'administration (ouverte d'office sur un serveur dédié).
+	 */
 	private void stopIfUnused() {
-		if (http != null && token == null && (atelier == null || !atelier.inUse())) {
+		if (http != null && token == null && !adminOpen && (atelier == null || !atelier.inUse())) {
 			http.stop(0);
 			http = null;
 		}
@@ -170,8 +210,20 @@ public final class Tablet {
 			h.createContext("/atelier", atelier::page);
 			h.createContext("/api/atelier/", ex -> atelier.api(ex, !community.tabletLocalOnly() || local(ex)));
 		}
-		// Quatre fils : une longue opération de l'Atelier ne bloque plus le grimoire du Conteur.
-		h.setExecutor(Executors.newFixedThreadPool(4, r -> {
+		if (admin != null) {
+			// Ses propres règles d'accès (clé, machine elle-même) : voir AdminApi et docs/ADMIN-API.md. Tant qu'elle
+			// n'est pas ouverte (partie solo dont la tablette tourne), elle répond 404 sans regarder la clé.
+			AdminApi api = admin;
+			h.createContext("/admin/", ex -> {
+				if (adminOpen) {
+					api.handle(ex);
+				} else {
+					api.closed(ex);
+				}
+			});
+		}
+		// Six fils : une longue opération de l'Atelier ne bloque ni le grimoire du Conteur ni le launcher qui suit la console.
+		h.setExecutor(Executors.newFixedThreadPool(6, r -> {
 			Thread t = new Thread(r, "valcombe-tablette");
 			t.setDaemon(true);
 			return t;
@@ -188,6 +240,7 @@ public final class Tablet {
 		}
 		token = null;
 		owner = null;
+		adminOpen = false;
 		if (atelier != null) {
 			atelier.revoke(null);
 			atelier.setHostToken(null, null);

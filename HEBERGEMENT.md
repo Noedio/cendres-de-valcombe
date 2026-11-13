@@ -68,7 +68,7 @@ sudo systemctl status valcombe
 - Redémarrer après une mise à jour des mods : `sudo systemctl restart valcombe`.
 - Plus de mémoire : `sudo systemctl edit valcombe`, puis ajoutez `Environment=VALCOMBE_RAM=6G` sous `[Service]`.
 
-Pour taper des commandes de console (`whitelist add`, `op`), connectez-vous au jeu avec un compte opérateur. Vous pouvez aussi activer RCON dans `server.properties` et utiliser un client RCON, en gardant le port RCON fermé au public.
+Pour taper des commandes de console (`whitelist add`, `op`), connectez-vous au jeu avec un compte opérateur, ou passez par l'API d'administration (partie 8). Vous pouvez aussi activer RCON dans `server.properties` et utiliser un client RCON, en gardant le port RCON fermé au public.
 
 Premier opérateur : arrêtez le service, ajoutez votre pseudo dans `ops.json` et `whitelist.json` (ou lancez `demarrer.sh` à la main et tapez `op <pseudo>` puis `whitelist add <pseudo>`), puis relancez.
 
@@ -89,7 +89,7 @@ sudo ufw allow 24454/udp
 sudo ufw enable
 ```
 
-Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo ufw allow 25570/tcp` et `sudo ufw delete allow 25570/tcp`). Chez certains hébergeurs, il faut aussi ouvrir les ports dans leur interface web.
+Ouvrez 25570 seulement les soirs où la tablette sert, puis refermez-le (`sudo ufw allow 25570/tcp` et `sudo ufw delete allow 25570/tcp`). Chez certains hébergeurs, il faut aussi ouvrir les ports dans leur interface web. L'API d'administration (partie 8) n'a jamais besoin de ce port ouvert : elle passe par SSH.
 
 ## 6. Sauvegardes automatiques
 
@@ -116,6 +116,20 @@ Pour restaurer : arrêtez le service, décompressez l'archive dans `/opt/valcomb
 3. Envoyez le nouveau dossier `mods/` sur le VPS (remplacez les anciens fichiers), puis `sudo systemctl restart valcombe`.
 
 Une partie en cours est sauvegardée automatiquement et reprend après le redémarrage.
+
+## 8. Piloter le serveur : l'API d'administration
+
+Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage. Le launcher s'en servira pour piloter le serveur ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
+
+- **La clé** s'affiche dans le journal au premier démarrage (`sudo journalctl -u valcombe | grep "Clé d'administration"`). Elle est gardée dans `/opt/valcombe/config/valcombe/admin.json`. Ensuite : `/vc admin cle` (console, ou opérateur en jeu) la réaffiche, `/vc admin nouvellecle` la remplace. Elle donne tout pouvoir sur le serveur : ne la partagez pas.
+- **Elle n'accepte que la machine elle-même** (une requête venue d'ailleurs est refusée, même avec la clé) : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :
+
+  ```bash
+  ssh -N -L 25570:localhost:25570 utilisateur@adresse-du-vps
+  ```
+
+- **Redémarrer par l'API** : le serveur s'arrête proprement après avoir posé le drapeau `config/valcombe/redemarrer` ; `demarrer.sh` (donc le service systemd) le relance aussitôt, sans passer par `systemctl`. Un arrêt par l'API, lui, est définitif jusqu'au prochain `sudo systemctl start valcombe`. Si vous lancez le serveur autrement qu'avec `demarrer.sh` ou `demarrer.bat`, relancez-le vous-même.
+- **La couper** : mettez `"enabled": false` dans `admin.json`, puis redémarrez. `/vc admin` dit si elle est ouverte et sur quel port.
 
 ## Vie de la communauté
 

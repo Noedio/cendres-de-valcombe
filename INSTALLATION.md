@@ -96,6 +96,8 @@ Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port
 
 Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu Discord et statistiques : voir [HEBERGEMENT.md](HEBERGEMENT.md).
 
+Le serveur ouvre aussi une **API d'administration**, protégée par une clé et réservée à ce PC : le launcher s'en servira pour piloter le serveur (état, console, joueurs, réglages, redémarrage). La clé s'affiche dans la console au premier démarrage ; `/vc admin cle` la réaffiche. Détails : [docs/ADMIN-API.md](docs/ADMIN-API.md).
+
 ## Pour le Conteur
 
 1. En jeu, ouvrez le menu (**J**), puis « Panneau du Conteur ».

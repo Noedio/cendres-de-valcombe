@@ -80,4 +80,19 @@ class CommunityTest {
 		c.setTabletPort(9000);
 		assertEquals(9000, new Community(dir).tabletPort());
 	}
+
+	@Test
+	void welcomeMessageIsKeptAndChecked() {
+		Community c = new Community(dir);
+		assertEquals("", c.welcome());
+		assertEquals(Community.DEFAULT_WELCOME, c.welcomeShown());
+		c.setWelcome("  Bienvenue au bourg  ");
+		assertEquals("Bienvenue au bourg", new Community(dir).welcome());
+		assertEquals("Bienvenue au bourg", new Community(dir).welcomeShown());
+		assertThrows(GameException.class, () -> c.setWelcome("deux\nlignes"));
+		assertThrows(GameException.class, () -> c.setWelcome("x".repeat(61)));
+		assertEquals("Bienvenue au bourg", c.welcome(), "un message refusé ne change rien");
+		c.setWelcome("");
+		assertEquals(Community.DEFAULT_WELCOME, new Community(dir).welcomeShown());
+	}
 }

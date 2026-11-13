@@ -59,6 +59,45 @@ public final class ValcombeMod implements ModInitializer {
 	private static Community community;
 	private static Tablet tablet;
 
+	// ------------------------------------------------------------------
+	// API d'administration (voir AdminApi et docs/ADMIN-API.md)
+	// ------------------------------------------------------------------
+	/** Dernières lignes de la console, pour GET /admin/console : rempli dès le chargement du mod. */
+	private static final fr.valcombe.admin.ConsoleBuffer CONSOLE = new fr.valcombe.admin.ConsoleBuffer(1000);
+	/** Essais ratés de clé, par adresse : gardés d'un démarrage du serveur à l'autre dans le même processus. */
+	private static final fr.valcombe.admin.AdminGuard ADMIN_GUARD = new fr.valcombe.admin.AdminGuard();
+	private static AdminApi admin;
+	private static volatile fr.valcombe.admin.WorldsView worldsView = fr.valcombe.admin.WorldsView.NONE;
+
+	/** API d'administration (disponible une fois le serveur démarré). */
+	static AdminApi admin() {
+		return admin;
+	}
+
+	/** Clé de l'API d'administration (disponible une fois le serveur démarré), pour les commandes et les tests en jeu. */
+	public static fr.valcombe.admin.AdminKey adminKey() {
+		return admin == null ? null : admin.key();
+	}
+
+	/** Branche la liste des mondes montrée par l'API d'administration (gestionnaire de mondes). */
+	public static void setWorldsView(fr.valcombe.admin.WorldsView view) {
+		worldsView = view == null ? fr.valcombe.admin.WorldsView.NONE : view;
+	}
+
+	static fr.valcombe.admin.WorldsView worldsView() {
+		return worldsView;
+	}
+
+	/** Le serveur est-il en veille (vide depuis une minute, il ne fait plus de tick) ? */
+	static boolean asleep() {
+		return System.nanoTime() - lastTick > 2_000_000_000L;
+	}
+
+	/** Met à jour tout de suite la description du serveur (après un changement de message d'accueil ou de soirée). */
+	static void refreshMotd(net.minecraft.server.MinecraftServer server) {
+		updateMotd(server);
+	}
+
 	/** Statistiques et compte rendu Discord (disponible une fois le serveur démarré). */
 	public static Community community() {
 		return community;
@@ -169,7 +208,7 @@ public final class ValcombeMod implements ModInitializer {
 				state += " · « " + SESSION.scenario().nom + " »";
 			}
 		}
-		String motd = (evening.isEmpty() ? "Les Cendres de Valcombe" : "Prochaine soirée : " + evening) + "\n" + state;
+		String motd = (evening.isEmpty() ? community.welcomeShown() : "Prochaine soirée : " + evening) + "\n" + state;
 		if (!motd.equals(server.getMotd())) {
 			server.setMotd(motd);
 		}
@@ -185,6 +224,10 @@ public final class ValcombeMod implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		// La console est copiée dès maintenant : GET /admin/console montre aussi le démarrage du serveur.
+		if (!fr.valcombe.admin.ConsoleCapture.install(CONSOLE)) {
+			LOG.warn("Console du serveur non copiée : l'API d'administration la montrera vide.");
+		}
 		ValcombeNet.registerPayloads();
 		HOST.setUi(UI);
 		// Dalles de la salle d'attente
@@ -229,6 +272,7 @@ public final class ValcombeMod implements ModInitializer {
 			Atelier atelier = new Atelier(SESSION, creations, maps, HOST, structures, editor, workshop);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
+			setUpAdmin(server);
 			HOST.prepareWorld();
 			// Mondes de Valcombe (Fantasy) : rouverts avant l'arrivée des joueurs, qui peuvent s'y être déconnectés.
 			try {
@@ -249,6 +293,7 @@ public final class ValcombeMod implements ModInitializer {
 			HOST.resumeRestore(); // carte laissée en l'état par un arrêt en pleine partie ou en pleine remise en état
 			SESSION.setSavedScripts(ScriptStore.list(server));
 			tablet.openForHost(server.getServerDirectory().resolve("config").resolve("valcombe-hote.json"));
+			openAdmin(server);
 			startIdleClock(server);
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
@@ -262,6 +307,9 @@ public final class ValcombeMod implements ModInitializer {
 				LOG.error("Sauvegarde de la partie impossible à l'arrêt", e);
 			}
 			HOST.setServer(null);
+			if (admin != null) {
+				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
+			}
 			workshop = null;
 			if (worlds != null) {
 				worlds.stop();
@@ -505,6 +553,62 @@ public final class ValcombeMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
 			ValcombeCommands.register(dispatcher, registry, SESSION, UI));
 		LOG.info("Les Cendres de Valcombe : prêt.");
+	}
+
+	/**
+	 * Prépare l'API d'administration : clé (tirée au premier démarrage), drapeau de redémarrage retiré, branchement
+	 * sur le serveur web de la tablette. Elle n'est ouverte que plus tard (openAdmin), une fois le serveur prêt.
+	 */
+	private static void setUpAdmin(net.minecraft.server.MinecraftServer server) {
+		java.nio.file.Path dir = server.getServerDirectory().resolve("config").resolve("valcombe");
+		try {
+			// Le serveur vient de (re)démarrer : un drapeau laissé là ne doit pas relancer un serveur arrêté plus tard pour de bon.
+			if (fr.valcombe.admin.RestartFlag.clear(dir)) {
+				LOG.info("[valcombe] Redémarrage demandé par l'API d'administration : le serveur est reparti.");
+			}
+		} catch (java.io.IOException e) {
+			LOG.warn("Drapeau de redémarrage impossible à retirer : {}", e.getMessage());
+		}
+		fr.valcombe.admin.AdminKey key = new fr.valcombe.admin.AdminKey(dir);
+		boolean created;
+		try {
+			created = key.load();
+		} catch (java.io.IOException | RuntimeException e) {
+			LOG.error("API d'administration désactivée : {} illisible ou impossible à écrire ({})", key.file(), e.getMessage());
+			admin = null;
+			return;
+		}
+		String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("valcombe")
+			.map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+		admin = new AdminApi(key, ADMIN_GUARD, CONSOLE, community, dir, version);
+		admin.setServer(server);
+		tablet.setAdmin(admin);
+		if (created && server.isDedicatedServer()) {
+			LOG.info("[valcombe] Clé d'administration du serveur (pour le launcher) : {}", key.key());
+			LOG.info("[valcombe] Elle est gardée dans config/valcombe/admin.json. /vc admin cle la réaffiche, "
+				+ "/vc admin nouvellecle la remplace. Ne la partagez pas : elle donne tout pouvoir sur le serveur.");
+		}
+	}
+
+	/**
+	 * Sur un serveur dédié, l'API d'administration est ouverte d'office (sauf si admin.json la désactive) :
+	 * le serveur web reste alors en service jusqu'à l'arrêt. Une partie solo ne l'ouvre pas.
+	 */
+	private static void openAdmin(net.minecraft.server.MinecraftServer server) {
+		if (admin == null || !server.isDedicatedServer()) {
+			return;
+		}
+		if (!admin.key().enabled()) {
+			LOG.info("[valcombe] API d'administration désactivée (config/valcombe/admin.json).");
+			return;
+		}
+		try {
+			int port = tablet.openAdmin();
+			LOG.info("[valcombe] API d'administration prête sur le port {} ({}). Clé : /vc admin cle", port,
+				admin.key().localOnly() ? "requêtes de cette machine seulement" : "requêtes de toute adresse");
+		} catch (java.io.IOException | RuntimeException e) {
+			LOG.warn("[valcombe] API d'administration indisponible : {}", e.getMessage());
+		}
 	}
 
 	private static final java.util.Map<String, Integer> TICK_ERRORS = new java.util.HashMap<>();
