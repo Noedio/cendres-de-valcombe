@@ -384,6 +384,9 @@ public static class VpsCheck
         r.Check(stamp.Contains("version=" + release.Tag), "Version installée notée", stamp.Replace("\n", " "));
         r.Check(first.Log.Any(l => l.Contains("[à blanc] useradd --system")) && first.Log.Any(l => l.Contains("[à blanc] systemctl enable valcombe")),
             "Compte dédié et activation du service demandés (affichés à blanc)");
+        r.Check(first.Log.Any(l => l.StartsWith("[à blanc] runuser -u valcombe -- bash install-valcombe.sh --phase-compte", StringComparison.Ordinal))
+                && !first.Log.Any(l => l.StartsWith("[à blanc] chown -R root", StringComparison.Ordinal)),
+            "Fichiers du serveur écrits par le compte du serveur (runuser), pas par root");
         r.Check(steps.Count >= 6 && steps.Any(s => s.Contains("Mods du serveur")), $"Avancement remonté au launcher ({steps.Count} étapes)");
         var leftovers = await shell.RunAsync(CountStages);
         r.Check(leftovers.Output.Trim() == stagesBefore, "Dossier d'envoi effacé après l'installation");
@@ -523,6 +526,18 @@ public static class VpsCheck
             r.Check(!result.Ok && error.Contains(expect, StringComparison.Ordinal) && !Directory.Exists(Path.Combine(work, "racine", "opt", "essai-falsifie")),
                 $"Plan falsifié refusé ({name})", error);
         }
+        // La phase du compte du serveur seule : elle remplit le dossier du serveur, mais ne touche ni au service
+        // ni au reste du système, et rend 10 quand quelque chose a changé.
+        string accountRoot = Path.Combine(work, "racine-compte");
+        Directory.CreateDirectory(accountRoot);
+        File.WriteAllText(Path.Combine(stage, "plan.tsv"), Base("/opt/essai-compte"), new UTF8Encoding(false));
+        var accountPhase = await shell.RunAsync($"bash {Shell.Quote(LocalBashShell.ToBashPath(stage) + "/" + VpsServer.ScriptName)} --phase-compte "
+            + $"--plan {Shell.Quote(LocalBashShell.ToBashPath(stage) + "/plan.tsv")} --a-blanc "
+            + $"--racine {Shell.Quote(LocalBashShell.ToBashPath(accountRoot))} --sans-telechargement");
+        r.Check(accountPhase.ExitCode == 10 && File.Exists(Path.Combine(accountRoot, "opt", "essai-compte", "demarrer.sh"))
+                && !Directory.Exists(Path.Combine(accountRoot, "etc")) && !accountPhase.Output.Contains("@@fini"),
+            "Phase du compte seule : dossier du serveur rempli, service et système intouchés", $"code {accountPhase.ExitCode}");
+
         var notRoot = await shell.RunAsync($"bash {Shell.Quote(LocalBashShell.ToBashPath(stage) + "/" + VpsServer.ScriptName)} "
             + $"--plan {Shell.Quote(LocalBashShell.ToBashPath(stage) + "/plan.tsv")} --racine /tmp");
         r.Check(!notRoot.Ok && notRoot.Output.Contains("@@erreur"), "--racine sans --a-blanc refusé",

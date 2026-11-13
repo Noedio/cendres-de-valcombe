@@ -223,10 +223,19 @@ public sealed class VpsServer : IDisposable
         return reader.ReadToEnd().Replace("\r\n", "\n");
     }
 
-    /// <summary>Contenu d'un fichier du serveur (lu en root), ou null s'il n'existe pas.</summary>
+    /// <summary>
+    /// Contenu d'un fichier du dossier du serveur, ou null s'il n'existe pas. Il est lu avec le compte du serveur,
+    /// jamais en root : ce dossier lui appartient, et un lien symbolique qu'il y aurait posé ferait sinon lire
+    /// (puis recopier dans ses propres réglages, pour server.properties) un fichier réservé à root.
+    /// </summary>
     private async Task<string?> ReadServerFileAsync(string path, CancellationToken ct)
     {
-        var r = await _shell.RunAsync($"if [ -f {Q(path)} ]; then cat {Q(path)}; else exit 3; fi", asRoot: true, ct: ct);
+        string read = $"if [ -f {Q(path)} ]; then cat -- {Q(path)}; else exit 3; fi";
+        string account = Q(Profile.ServiceUser);
+        // Sans le compte (premier passage), rien dans ce dossier ne vient de lui : root peut lire.
+        string command = _shell.DryRunRoot != null ? read
+            : $"if id -u {account} >/dev/null 2>&1; then exec runuser -u {account} -- sh -c {Q(read)}; else {read}; fi";
+        var r = await _shell.RunAsync(command, asRoot: true, ct: ct);
         return r.ExitCode == 3 ? null : r.Ok ? r.Output : throw new InvalidOperationException($"Lecture de {path} impossible : {r.Message}");
     }
 

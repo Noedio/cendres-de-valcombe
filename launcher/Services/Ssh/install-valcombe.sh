@@ -16,14 +16,23 @@
 #   - les ports du jeu (TCP) et du chat vocal (UDP) dans ufw ou firewalld s'ils sont actifs.
 #     Le port de l'API d'administration n'est jamais ouvert : le launcher y passe par un tunnel SSH.
 #
+# Deux phases, pour que root ne touche jamais au contenu du dossier du serveur. Ce dossier appartient au
+# compte du serveur : si Minecraft ou un mod était un jour détourné, ce compte pourrait y glisser des liens
+# symboliques ou des programmes, et root, en y écrivant ou en y lançant Java, les suivrait.
+#   - root : verrou, outils, compte, création du dossier, service systemd (écrit depuis un dossier
+#     temporaire de root), pare-feu ;
+#   - le compte du serveur (runuser, --phase-compte) : Java, Fabric, mods, réglages, scripts, version.
+#     Il lit le script, le plan et les réglages préparés dans une copie que root lui prête en lecture seule.
+#
 # Utilisation (en root) :
 #   bash install-valcombe.sh --plan valcombe-plan.tsv [--envoi DOSSIER] [--a-blanc --racine DOSSIER]
 #                            [--sans-telechargement]
 #   --envoi                dossier des fichiers préparés (par défaut : celui du plan)
 #   --a-blanc              installation à blanc : tout est écrit sous --racine, les commandes du système
-#                          (compte, droits, systemd, pare-feu) sont seulement affichées ; sert à vérifier
-#                          le script depuis le PC (ValcombeLauncher.exe --verifier-vps)
+#                          (compte, droits, systemd, pare-feu, changement de compte) sont seulement
+#                          affichées ; sert à vérifier le script depuis le PC (ValcombeLauncher.exe --verifier-vps)
 #   --sans-telechargement  n'affiche que ce qui serait téléchargé
+#   (--phase-compte        usage interne : la seconde phase, lancée par le script lui-même)
 #
 # Messages pour le launcher, un par ligne (le reste est le journal de l'installation) :
 #   @@etape <pourcentage> <texte>   avancement
@@ -52,6 +61,7 @@ ENVOI=""
 A_BLANC=0
 RACINE=""
 TELECHARGER=1
+PHASE=racine
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--plan) PLAN=${2:-}; shift 2 ;;
@@ -59,6 +69,7 @@ while [ $# -gt 0 ]; do
 		--a-blanc) A_BLANC=1; shift ;;
 		--racine) RACINE=${2:-}; shift 2 ;;
 		--sans-telechargement) TELECHARGER=0; shift ;;
+		--phase-compte) PHASE=compte; shift ;;
 		*) erreur "Option inconnue : $1" ;;
 	esac
 done
@@ -67,11 +78,13 @@ done
 if [ "$A_BLANC" = 1 ]; then
 	[ -n "$RACINE" ] && [ -d "$RACINE" ] || erreur "L'installation à blanc demande un dossier --racine existant."
 	RACINE=${RACINE%/}
-	info "Installation à blanc dans $RACINE : les commandes du système sont seulement affichées."
+	[ "$PHASE" = compte ] || info "Installation à blanc dans $RACINE : les commandes du système sont seulement affichées."
 elif [ -n "$RACINE" ]; then
 	erreur "--racine ne sert qu'avec --a-blanc."
-elif [ "$(id -u)" != 0 ]; then
+elif [ "$PHASE" = racine ] && [ "$(id -u)" != 0 ]; then
 	erreur "Le script doit être lancé en root (sudo)."
+elif [ "$PHASE" = compte ] && [ "$(id -u)" = 0 ]; then
+	erreur "La phase des fichiers du serveur ne se joue jamais en root."
 fi
 
 # Commande qui change le système (compte, droits, services, pare-feu) : affichée seulement à blanc.
@@ -241,45 +254,15 @@ if [ -n "$JAVA_ARCHIVE_URL" ] && [ "${#JF_CHEMIN[@]}" -gt 0 ]; then
 	erreur "Le plan donne deux Java à la fois."
 fi
 [ -n "$JAVA_ARCHIVE_URL" ] || [ "${#JF_CHEMIN[@]}" -gt 0 ] || erreur "Le plan ne dit pas quel Java installer."
+if [ "$PHASE" = compte ] && [ "$A_BLANC" = 0 ] && [ "$(id -un)" != "$COMPTE" ]; then
+	erreur "La phase des fichiers du serveur se joue avec le compte $COMPTE."
+fi
 
 D="$RACINE$DOSSIER"
 JDIR="$D/java/$JAVA_NOM"
 JAVA_BIN="$DOSSIER/java/$JAVA_NOM/bin/java"
 UNITE="$RACINE/etc/systemd/system/$SERVICE.service"
 CHANGE=0
-info "Valcombe $VERSION (Minecraft $MINECRAFT, Fabric $CHARGEUR) dans $DOSSIER, compte $COMPTE, service $SERVICE."
-
-# ----------------------------------------------------------------------------------------------------
-# Verrou : deux installations en même temps se marcheraient dessus
-# ----------------------------------------------------------------------------------------------------
-if command -v flock >/dev/null 2>&1; then
-	mkdir -p "$RACINE/run/lock"
-	exec 9>"$RACINE/run/lock/valcombe-installation.lock"
-	flock -n 9 || erreur "Une autre installation de Valcombe est en cours sur ce serveur."
-fi
-
-# ----------------------------------------------------------------------------------------------------
-# Outils : curl (ou wget), empreintes, tar
-# ----------------------------------------------------------------------------------------------------
-etape 2 "Vérification des outils du serveur"
-if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-	if [ "$A_BLANC" = 1 ]; then
-		erreur "Ni curl ni wget sur ce poste."
-	fi
-	info "Installation de curl..."
-	if command -v apt-get >/dev/null 2>&1; then
-		DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates
-	elif command -v dnf >/dev/null 2>&1; then
-		dnf install -y -q curl ca-certificates
-	elif command -v yum >/dev/null 2>&1; then
-		yum install -y -q curl ca-certificates
-	else
-		erreur "Installez curl sur le serveur (ni curl ni wget, et aucun gestionnaire de paquets connu)."
-	fi
-fi
-for outil in sha1sum sha256sum sha512sum tar cmp install; do
-	command -v "$outil" >/dev/null 2>&1 || erreur "Outil absent du serveur : $outil (paquets coreutils, diffutils ou tar)."
-done
 
 empreinte() { # algo fichier
 	local e
@@ -297,7 +280,8 @@ telecharger() { # adresse cible [algo empreinte]
 	rm -f "$tmp"
 	local ok=0
 	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-delay 2 --connect-timeout 20 \
+		# -q (en premier) : aucun fichier .curlrc n'est lu.
+		curl -q -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-delay 2 --connect-timeout 20 \
 			-o "$tmp" "$url" && ok=1
 	else
 		wget -q --https-only --tries=3 --timeout=20 -O "$tmp" "$url" && ok=1
@@ -313,180 +297,162 @@ telecharger() { # adresse cible [algo empreinte]
 	mv -f "$tmp" "$cible"
 }
 
-# Place un fichier (copie depuis l'envoi ou fichier généré) s'il diffère, avec ses droits.
+# Place un fichier (copie depuis l'envoi ou fichier généré) s'il diffère, avec ses droits. Le fichier
+# appartient à celui qui joue la phase : le compte du serveur dans son dossier, root pour le service.
 # Rend 0 s'il a changé, 1 sinon.
-placer() { # source cible mode propriétaire
-	local source=$1 cible=$2 mode=$3 proprio=$4
+placer() { # source cible mode
+	local source=$1 cible=$2 mode=$3
 	if [ -f "$cible" ] && cmp -s "$source" "$cible"; then
 		return 1
 	fi
 	mkdir -p "$(dirname "$cible")"
+	rm -f "$cible.nouveau"
 	cp -f "$source" "$cible.nouveau"
 	chmod "$mode" "$cible.nouveau"
 	mv -f "$cible.nouveau" "$cible"
-	systeme chown "$proprio" "$cible"
 	return 0
 }
 
-# ----------------------------------------------------------------------------------------------------
-# Compte et dossier
-# ----------------------------------------------------------------------------------------------------
-etape 4 "Compte $COMPTE et dossier $DOSSIER"
-if id -u "$COMPTE" >/dev/null 2>&1 && [ "$A_BLANC" = 0 ]; then
-	info "Le compte $COMPTE existe déjà."
-else
-	NOLOGIN=/usr/sbin/nologin
-	[ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
-	systeme useradd --system --user-group --home-dir "$DOSSIER" --no-create-home --shell "$NOLOGIN" "$COMPTE"
-fi
-if [ "$A_BLANC" = 0 ] && [ -d "$(dirname "$DOSSIER")" ]; then
-	libre=$(df -Pk "$(dirname "$DOSSIER")" | awk 'NR==2 {print $4}')
-	if entier "${libre:-x}" && [ "$libre" -lt 1048576 ]; then
-		erreur "Moins de 1 Go libre sur le disque du serveur : faites de la place avant d'installer."
-	fi
-fi
-mkdir -p "$D" "$D/mods" "$D/config" "$D/java"
-chmod 750 "$D"
-systeme chown "$COMPTE:$COMPTE" "$D" "$D/mods" "$D/config"
-TMPD=$(mktemp -d "$D/.installation.XXXXXX")
-nettoyer() { rm -rf "$TMPD"; }
-trap nettoyer EXIT
+if [ "$PHASE" = compte ]; then
+	# ================================================================================================
+	# Phase du compte du serveur : tout ce qui vit dans le dossier du serveur
+	# ================================================================================================
+	mkdir -p "$D/mods" "$D/config" "$D/java"
+	TMPD=$(mktemp -d "$D/.installation.XXXXXX")
+	nettoyer() { rm -rf "$TMPD"; }
+	trap nettoyer EXIT
 
-# ----------------------------------------------------------------------------------------------------
-# Java
-# ----------------------------------------------------------------------------------------------------
-etape 8 "Java ($JAVA_NOM)"
-if [ -n "$JAVA_ARCHIVE_URL" ]; then
-	# Java d'Adoptium (machines ARM, pour lesquelles Mojang ne publie pas de Java) : une archive vérifiée.
-	if [ -f "$JDIR/.valcombe-archive" ] && [ "$(cat "$JDIR/.valcombe-archive")" = "$JAVA_ARCHIVE_SHA" ] && [ -x "$JDIR/bin/java" ]; then
-		info "Java déjà en place."
-	else
-		telecharger "$JAVA_ARCHIVE_URL" "$TMPD/java.tar.gz" sha256 "$JAVA_ARCHIVE_SHA"
-		if [ "$TELECHARGER" = 1 ]; then
-			rm -rf "$JDIR.nouveau"
-			mkdir -p "$JDIR.nouveau"
-			tar -xzf "$TMPD/java.tar.gz" -C "$JDIR.nouveau" --strip-components=1 --no-same-owner
-			printf '%s' "$JAVA_ARCHIVE_SHA" >"$JDIR.nouveau/.valcombe-archive"
-			rm -rf "$JDIR.ancien"
-			[ ! -e "$JDIR" ] || mv "$JDIR" "$JDIR.ancien"
-			mv "$JDIR.nouveau" "$JDIR"
-			rm -rf "$JDIR.ancien"
-		fi
-		CHANGE=1
-	fi
-else
-	# Java officiel de Mojang, fichier par fichier (le même que celui du jeu sur le PC des joueurs).
-	# (« ${t[@]+...} » : un tableau vide passe aussi avec set -u sur les bash anciens.)
-	for r in ${JR[@]+"${JR[@]}"}; do
-		mkdir -p "$JDIR/$r"
-	done
-	total=${#JF_CHEMIN[@]}
-	refaits=0
-	for i in ${JF_CHEMIN[@]+"${!JF_CHEMIN[@]}"}; do
-		cible="$JDIR/${JF_CHEMIN[$i]}"
-		if [ ! -f "$cible" ] || [ "$(empreinte sha1 "$cible")" != "${JF_SHA[$i]}" ]; then
-			telecharger "${JF_URL[$i]}" "$cible" sha1 "${JF_SHA[$i]}"
-			refaits=$((refaits + 1))
+	# ------------------------------------------------------------------------------------------------
+	# Java
+	# ------------------------------------------------------------------------------------------------
+	etape 8 "Java ($JAVA_NOM)"
+	if [ -n "$JAVA_ARCHIVE_URL" ]; then
+		# Java d'Adoptium (machines ARM, pour lesquelles Mojang ne publie pas de Java) : une archive vérifiée.
+		if [ -f "$JDIR/.valcombe-archive" ] && [ "$(cat "$JDIR/.valcombe-archive")" = "$JAVA_ARCHIVE_SHA" ] && [ -x "$JDIR/bin/java" ]; then
+			info "Java déjà en place."
+		else
+			telecharger "$JAVA_ARCHIVE_URL" "$TMPD/java.tar.gz" sha256 "$JAVA_ARCHIVE_SHA"
+			if [ "$TELECHARGER" = 1 ]; then
+				rm -rf "$JDIR.nouveau"
+				mkdir -p "$JDIR.nouveau"
+				tar -xzf "$TMPD/java.tar.gz" -C "$JDIR.nouveau" --strip-components=1 --no-same-owner
+				printf '%s' "$JAVA_ARCHIVE_SHA" >"$JDIR.nouveau/.valcombe-archive"
+				rm -rf "$JDIR.ancien"
+				[ ! -e "$JDIR" ] || mv "$JDIR" "$JDIR.ancien"
+				mv "$JDIR.nouveau" "$JDIR"
+				rm -rf "$JDIR.ancien"
+			fi
 			CHANGE=1
 		fi
-		if [ -f "$cible" ]; then
-			if [ "${JF_X[$i]}" = x ]; then chmod 755 "$cible"; else chmod 644 "$cible"; fi
+	else
+		# Java officiel de Mojang, fichier par fichier (le même que celui du jeu sur le PC des joueurs).
+		# (« ${t[@]+...} » : un tableau vide passe aussi avec set -u sur les bash anciens.)
+		for r in ${JR[@]+"${JR[@]}"}; do
+			mkdir -p "$JDIR/$r"
+		done
+		total=${#JF_CHEMIN[@]}
+		refaits=0
+		for i in ${JF_CHEMIN[@]+"${!JF_CHEMIN[@]}"}; do
+			cible="$JDIR/${JF_CHEMIN[$i]}"
+			if [ ! -f "$cible" ] || [ "$(empreinte sha1 "$cible")" != "${JF_SHA[$i]}" ]; then
+				telecharger "${JF_URL[$i]}" "$cible" sha1 "${JF_SHA[$i]}"
+				refaits=$((refaits + 1))
+				CHANGE=1
+			fi
+			if [ -f "$cible" ]; then
+				if [ "${JF_X[$i]}" = x ]; then chmod 755 "$cible"; else chmod 644 "$cible"; fi
+			fi
+			if [ $((i % 20)) = 0 ]; then
+				etape $((8 + 40 * i / total)) "Java : $i / $total fichiers vérifiés"
+			fi
+		done
+		for i in ${JL_CHEMIN[@]+"${!JL_CHEMIN[@]}"}; do
+			lien="$JDIR/${JL_CHEMIN[$i]}"
+			cible=${JL_CIBLE[$i]}
+			# La cible d'un lien doit rester dans le dossier de Java.
+			resolu=$(realpath -m "$(dirname "$lien")/$cible")
+			case "$resolu" in "$(realpath -m "$JDIR")"/*) ;; *) erreur "Lien de Java qui sort de son dossier : ${JL_CHEMIN[$i]}" ;; esac
+			if [ -L "$lien" ] && [ "$(readlink "$lien")" = "$cible" ]; then
+				continue
+			fi
+			if [ "$A_BLANC" = 1 ] && [ -e "$lien" ]; then
+				continue # sous Windows, un lien est une copie : déjà faite
+			fi
+			mkdir -p "$(dirname "$lien")"
+			if [ "$A_BLANC" = 1 ]; then
+				# Sous Windows, ln copie la cible : impossible si elle n'a pas été téléchargée.
+				ln -sfn "$cible" "$lien" 2>/dev/null || info "[à blanc] ln -s $cible $lien"
+			else
+				ln -sfn "$cible" "$lien"
+			fi
+			CHANGE=1
+		done
+		info "Java : $total fichiers, $refaits téléchargés."
+	fi
+	if [ "$A_BLANC" = 0 ]; then
+		# Lancé par le compte du serveur, comme le sera le serveur : root n'exécute jamais ce Java.
+		version_java=$("$JDIR/bin/java" -version 2>&1) || erreur "Java ne démarre pas sur ce serveur ($JAVA_NOM)."
+		info "${version_java%%$'\n'*}"
+	fi
+
+	# ------------------------------------------------------------------------------------------------
+	# Lanceur du serveur Fabric
+	# ------------------------------------------------------------------------------------------------
+	etape 50 "Lanceur du serveur Fabric"
+	TAMPON_FABRIC="$MINECRAFT $CHARGEUR $FABRIC_URL"
+	if [ -f "$D/fabric-server-launch.jar" ] && [ -f "$D/.valcombe-fabric" ] && [ "$(cat "$D/.valcombe-fabric")" = "$TAMPON_FABRIC" ]; then
+		info "Lanceur Fabric déjà en place."
+	else
+		telecharger "$FABRIC_URL" "$TMPD/fabric-server-launch.jar"
+		if [ "$TELECHARGER" = 1 ]; then
+			[ "$(head -c 2 "$TMPD/fabric-server-launch.jar")" = PK ] || erreur "Le lanceur Fabric reçu n'est pas une archive Java."
+			placer "$TMPD/fabric-server-launch.jar" "$D/fabric-server-launch.jar" 644 || true
+			printf '%s' "$TAMPON_FABRIC" >"$D/.valcombe-fabric"
 		fi
-		if [ $((i % 20)) = 0 ]; then
-			etape $((8 + 40 * i / total)) "Java : $i / $total fichiers vérifiés"
+		CHANGE=1
+	fi
+
+	# ------------------------------------------------------------------------------------------------
+	# Mods : ceux du plan, et aucun autre
+	# ------------------------------------------------------------------------------------------------
+	etape 58 "Mods du serveur"
+	for vieux in "$D"/mods/*.jar; do
+		[ -e "$vieux" ] || continue
+		garder=0
+		for nom in "${MOD_NOM[@]}"; do
+			if [ "$(basename "$vieux")" = "$nom" ]; then garder=1; fi
+		done
+		if [ "$garder" = 0 ]; then
+			info "Retrait de l'ancien mod $(basename "$vieux")"
+			rm -f "$vieux"
+			CHANGE=1
 		fi
 	done
-	for i in ${JL_CHEMIN[@]+"${!JL_CHEMIN[@]}"}; do
-		lien="$JDIR/${JL_CHEMIN[$i]}"
-		cible=${JL_CIBLE[$i]}
-		# La cible d'un lien doit rester dans le dossier de Java.
-		resolu=$(realpath -m "$(dirname "$lien")/$cible")
-		case "$resolu" in "$(realpath -m "$JDIR")"/*) ;; *) erreur "Lien de Java qui sort de son dossier : ${JL_CHEMIN[$i]}" ;; esac
-		if [ -L "$lien" ] && [ "$(readlink "$lien")" = "$cible" ]; then
+	total=${#MOD_NOM[@]}
+	for i in "${!MOD_NOM[@]}"; do
+		cible="$D/mods/${MOD_NOM[$i]}"
+		if [ -f "$cible" ] && [ "$(empreinte sha512 "$cible")" = "${MOD_SHA[$i]}" ]; then
 			continue
 		fi
-		if [ "$A_BLANC" = 1 ] && [ -e "$lien" ]; then
-			continue # sous Windows, un lien est une copie : déjà faite
-		fi
-		mkdir -p "$(dirname "$lien")"
-		if [ "$A_BLANC" = 1 ]; then
-			# Sous Windows, ln copie la cible : impossible si elle n'a pas été téléchargée.
-			ln -sfn "$cible" "$lien" 2>/dev/null || info "[à blanc] ln -s $cible $lien"
-		else
-			ln -sfn "$cible" "$lien"
-		fi
+		etape $((60 + 25 * i / total)) "Mod ${MOD_NOM[$i]}"
+		telecharger "${MOD_URL[$i]}" "$cible" sha512 "${MOD_SHA[$i]}"
+		[ ! -f "$cible" ] || chmod 644 "$cible"
 		CHANGE=1
 	done
-	info "Java : $total fichiers, $refaits téléchargés."
-fi
-if [ "$A_BLANC" = 0 ]; then
-	version_java=$("$JDIR/bin/java" -version 2>&1) || erreur "Java ne démarre pas sur ce serveur ($JAVA_NOM)."
-	info "${version_java%%$'\n'*}"
-fi
-systeme chown -R root:root "$JDIR"
 
-# ----------------------------------------------------------------------------------------------------
-# Lanceur du serveur Fabric
-# ----------------------------------------------------------------------------------------------------
-etape 50 "Lanceur du serveur Fabric"
-TAMPON_FABRIC="$MINECRAFT $CHARGEUR $FABRIC_URL"
-if [ -f "$D/fabric-server-launch.jar" ] && [ -f "$D/.valcombe-fabric" ] && [ "$(cat "$D/.valcombe-fabric")" = "$TAMPON_FABRIC" ]; then
-	info "Lanceur Fabric déjà en place."
-else
-	telecharger "$FABRIC_URL" "$TMPD/fabric-server-launch.jar"
-	if [ "$TELECHARGER" = 1 ]; then
-		[ "$(head -c 2 "$TMPD/fabric-server-launch.jar")" = PK ] || erreur "Le lanceur Fabric reçu n'est pas une archive Java."
-		placer "$TMPD/fabric-server-launch.jar" "$D/fabric-server-launch.jar" 644 "$COMPTE:$COMPTE" || true
-		printf '%s' "$TAMPON_FABRIC" >"$D/.valcombe-fabric"
-	fi
-	CHANGE=1
-fi
-
-# ----------------------------------------------------------------------------------------------------
-# Mods : ceux du plan, et aucun autre
-# ----------------------------------------------------------------------------------------------------
-etape 58 "Mods du serveur"
-for vieux in "$D"/mods/*.jar; do
-	[ -e "$vieux" ] || continue
-	garder=0
-	for nom in "${MOD_NOM[@]}"; do
-		if [ "$(basename "$vieux")" = "$nom" ]; then garder=1; fi
+	# ------------------------------------------------------------------------------------------------
+	# Réglages préparés par le launcher (server.properties, contrat, ports...)
+	# ------------------------------------------------------------------------------------------------
+	etape 86 "Réglages du serveur"
+	for i in ${FI_CHEMIN[@]+"${!FI_CHEMIN[@]}"}; do
+		if placer "$ENVOI/${FI_SOURCE[$i]}" "$D/${FI_CHEMIN[$i]}" "${FI_MODE[$i]}"; then
+			info "Réglages : ${FI_CHEMIN[$i]} mis à jour."
+			CHANGE=1
+		fi
 	done
-	if [ "$garder" = 0 ]; then
-		info "Retrait de l'ancien mod $(basename "$vieux")"
-		rm -f "$vieux"
-		CHANGE=1
-	fi
-done
-total=${#MOD_NOM[@]}
-for i in "${!MOD_NOM[@]}"; do
-	cible="$D/mods/${MOD_NOM[$i]}"
-	if [ -f "$cible" ] && [ "$(empreinte sha512 "$cible")" = "${MOD_SHA[$i]}" ]; then
-		continue
-	fi
-	etape $((60 + 25 * i / total)) "Mod ${MOD_NOM[$i]}"
-	telecharger "${MOD_URL[$i]}" "$cible" sha512 "${MOD_SHA[$i]}"
-	[ ! -f "$cible" ] || chmod 644 "$cible"
-	systeme chown "$COMPTE:$COMPTE" "$cible"
-	CHANGE=1
-done
 
-# ----------------------------------------------------------------------------------------------------
-# Réglages préparés par le launcher (server.properties, contrat, ports...)
-# ----------------------------------------------------------------------------------------------------
-etape 86 "Réglages du serveur"
-for i in ${FI_CHEMIN[@]+"${!FI_CHEMIN[@]}"}; do
-	if placer "$ENVOI/${FI_SOURCE[$i]}" "$D/${FI_CHEMIN[$i]}" "${FI_MODE[$i]}" "$COMPTE:$COMPTE"; then
-		info "Réglages : ${FI_CHEMIN[$i]} mis à jour."
-		CHANGE=1
-	fi
-done
-for r in "$D/config" "$D/config/voicechat"; do
-	[ ! -d "$r" ] || systeme chown "$COMPTE:$COMPTE" "$r"
-done
-
-# Scripts de lancement et de sauvegarde (les mêmes que ceux de tools/make_modpack.py, avec le Java installé ici).
-cat >"$TMPD/demarrer.sh" <<'FIN'
+	# Scripts de lancement et de sauvegarde (les mêmes que ceux de tools/make_modpack.py, avec le Java installé ici).
+	cat >"$TMPD/demarrer.sh" <<'FIN'
 #!/bin/sh
 # Lance le serveur des Cendres de Valcombe (écrit par install-valcombe.sh, réécrit à chaque mise à jour).
 # Après un arrêt, le relance si l'API d'administration l'a demandé (drapeau config/valcombe/redemarrer).
@@ -500,7 +466,7 @@ while :; do
   sleep 2
 done
 FIN
-cat >"$TMPD/sauvegarder.sh" <<'FIN'
+	cat >"$TMPD/sauvegarder.sh" <<'FIN'
 #!/bin/sh
 # Sauvegarde le monde et les réglages de Valcombe ; garde les 14 dernières archives.
 set -e
@@ -509,11 +475,121 @@ mkdir -p sauvegardes
 tar -czf "sauvegardes/valcombe-$(date +%Y-%m-%d_%H%M).tar.gz" world config server.properties whitelist.json ops.json 2>/dev/null || true
 ls -1t sauvegardes/valcombe-*.tar.gz | tail -n +15 | xargs -r rm --
 FIN
-for s in demarrer.sh sauvegarder.sh; do
-	if placer "$TMPD/$s" "$D/$s" 755 "$COMPTE:$COMPTE"; then
-		CHANGE=1
+	for s in demarrer.sh sauvegarder.sh; do
+		if placer "$TMPD/$s" "$D/$s" 755; then
+			CHANGE=1
+		fi
+	done
+
+	# Version installée (lue par le launcher).
+	printf 'version=%s\nminecraft=%s\nchargeur=%s\njava=%s\nport=%s\n' "$VERSION" "$MINECRAFT" "$CHARGEUR" "$JAVA_NOM" "$PORT_JEU" >"$TMPD/installe"
+	placer "$TMPD/installe" "$D/valcombe-installe.txt" 644 || true
+
+	# Code de sortie lu par la phase de root : 10 si le serveur a changé, 0 sinon.
+	if [ "$CHANGE" = 1 ]; then exit 10; fi
+	exit 0
+fi
+
+# ====================================================================================================
+# Phase de root
+# ====================================================================================================
+info "Valcombe $VERSION (Minecraft $MINECRAFT, Fabric $CHARGEUR) dans $DOSSIER, compte $COMPTE, service $SERVICE."
+
+# Dossiers temporaires de root (dans /tmp, que le compte du serveur ne peut ni renommer ni remplir) :
+# le service systemd y est écrit, et la copie lisible du script, du plan et des réglages y est prêtée.
+TMPR=""
+PARTAGE=""
+nettoyer_racine() { rm -rf ${TMPR:+"$TMPR"} ${PARTAGE:+"$PARTAGE"}; }
+trap nettoyer_racine EXIT
+TMPR=$(mktemp -d /tmp/valcombe-racine.XXXXXX)
+
+# ----------------------------------------------------------------------------------------------------
+# Verrou : deux installations en même temps se marcheraient dessus
+# ----------------------------------------------------------------------------------------------------
+if command -v flock >/dev/null 2>&1; then
+	mkdir -p "$RACINE/run/lock"
+	exec 9>"$RACINE/run/lock/valcombe-installation.lock"
+	flock -n 9 || erreur "Une autre installation de Valcombe est en cours sur ce serveur."
+fi
+
+# ----------------------------------------------------------------------------------------------------
+# Outils : curl (ou wget), empreintes, tar, runuser
+# ----------------------------------------------------------------------------------------------------
+etape 2 "Vérification des outils du serveur"
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+	if [ "$A_BLANC" = 1 ]; then
+		erreur "Ni curl ni wget sur ce poste."
 	fi
+	info "Installation de curl..."
+	if command -v apt-get >/dev/null 2>&1; then
+		DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y -q curl ca-certificates
+	elif command -v yum >/dev/null 2>&1; then
+		yum install -y -q curl ca-certificates
+	else
+		erreur "Installez curl sur le serveur (ni curl ni wget, et aucun gestionnaire de paquets connu)."
+	fi
+fi
+for outil in sha1sum sha256sum sha512sum tar cmp install mktemp; do
+	command -v "$outil" >/dev/null 2>&1 || erreur "Outil absent du serveur : $outil (paquets coreutils, diffutils ou tar)."
 done
+if [ "$A_BLANC" = 0 ]; then
+	command -v runuser >/dev/null 2>&1 || erreur "Outil absent du serveur : runuser (paquet util-linux)."
+fi
+
+# ----------------------------------------------------------------------------------------------------
+# Compte et dossier
+# ----------------------------------------------------------------------------------------------------
+etape 4 "Compte $COMPTE et dossier $DOSSIER"
+if id -u "$COMPTE" >/dev/null 2>&1 && [ "$A_BLANC" = 0 ]; then
+	[ "$(id -u "$COMPTE")" != 0 ] || erreur "Le compte $COMPTE a les droits de root : choisissez un autre compte pour le serveur."
+	info "Le compte $COMPTE existe déjà."
+else
+	NOLOGIN=/usr/sbin/nologin
+	[ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
+	systeme useradd --system --user-group --home-dir "$DOSSIER" --no-create-home --shell "$NOLOGIN" "$COMPTE"
+fi
+if [ "$A_BLANC" = 0 ] && [ -d "$(dirname "$DOSSIER")" ]; then
+	libre=$(df -Pk "$(dirname "$DOSSIER")" | awk 'NR==2 {print $4}')
+	if entier "${libre:-x}" && [ "$libre" -lt 1048576 ]; then
+		erreur "Moins de 1 Go libre sur le disque du serveur : faites de la place avant d'installer."
+	fi
+fi
+# Root crée le dossier lui-même (son parent est à root) puis le confie au compte ; il n'y écrit rien d'autre.
+mkdir -p "$D"
+systeme chown "$COMPTE:$COMPTE" "$D"
+chmod 750 "$D"
+
+# ----------------------------------------------------------------------------------------------------
+# Fichiers du serveur : joués par le compte du serveur, sans les droits de root
+# ----------------------------------------------------------------------------------------------------
+OPTIONS_COMPTE=()
+[ "$TELECHARGER" = 1 ] || OPTIONS_COMPTE+=(--sans-telechargement)
+code=0
+if [ "$A_BLANC" = 1 ]; then
+	info "[à blanc] runuser -u $COMPTE -- bash install-valcombe.sh --phase-compte (fichiers du serveur, sans les droits de root)"
+	bash "$0" --phase-compte --plan "$PLAN" --envoi "$ENVOI" --a-blanc --racine "$RACINE" ${OPTIONS_COMPTE[@]+"${OPTIONS_COMPTE[@]}"} 9>&- || code=$?
+else
+	# Copie lisible par le compte (groupe), que lui ne peut pas modifier : le dossier d'envoi reste privé.
+	PARTAGE=$(mktemp -d /tmp/valcombe-compte.XXXXXX)
+	mkdir "$PARTAGE/envoi"
+	cp "$0" "$PARTAGE/install-valcombe.sh"
+	cp "$PLAN" "$PARTAGE/valcombe-plan.tsv"
+	for i in ${FI_SOURCE[@]+"${!FI_SOURCE[@]}"}; do
+		cp "$ENVOI/${FI_SOURCE[$i]}" "$PARTAGE/envoi/${FI_SOURCE[$i]}"
+	done
+	chown -R "root:$COMPTE" "$PARTAGE"
+	chmod -R u=rwX,g=rX,o= "$PARTAGE"
+	(cd / && exec runuser -u "$COMPTE" -- env HOME="$DOSSIER" bash "$PARTAGE/install-valcombe.sh" --phase-compte \
+		--plan "$PARTAGE/valcombe-plan.tsv" --envoi "$PARTAGE/envoi" ${OPTIONS_COMPTE[@]+"${OPTIONS_COMPTE[@]}"}) 9>&- || code=$?
+fi
+case "$code" in
+	0) ;;
+	10) CHANGE=1 ;;
+	1) exit 1 ;; # la phase du compte a déjà dit pourquoi (@@erreur)
+	*) erreur "L'installation des fichiers du serveur s'est arrêtée (code $code)." ;;
+esac
 
 # ----------------------------------------------------------------------------------------------------
 # Service systemd
@@ -521,7 +597,7 @@ done
 etape 90 "Service systemd $SERVICE"
 PROTEGER_HOME="ProtectHome=true"
 case "$DOSSIER" in /home/* | /root/*) PROTEGER_HOME="# ProtectHome : le serveur est dans un dossier personnel" ;; esac
-cat >"$TMPD/unite" <<FIN
+cat >"$TMPR/unite" <<FIN
 # Écrit par install-valcombe.sh (launcher Valcombe) : réécrit à chaque mise à jour.
 [Unit]
 Description=Serveur Minecraft Les Cendres de Valcombe
@@ -550,7 +626,7 @@ $PROTEGER_HOME
 WantedBy=multi-user.target
 FIN
 UNITE_CHANGEE=0
-if placer "$TMPD/unite" "$UNITE" 644 root:root; then
+if placer "$TMPR/unite" "$UNITE" 644; then
 	UNITE_CHANGEE=1
 	CHANGE=1
 fi
@@ -591,12 +667,6 @@ if [ "$PARE_FEU" = oui ]; then
 else
 	info "Pare-feu laissé tel quel (réglage du launcher)."
 fi
-
-# ----------------------------------------------------------------------------------------------------
-# Version installée (lue par le launcher)
-# ----------------------------------------------------------------------------------------------------
-printf 'version=%s\nminecraft=%s\nchargeur=%s\njava=%s\nport=%s\n' "$VERSION" "$MINECRAFT" "$CHARGEUR" "$JAVA_NOM" "$PORT_JEU" >"$TMPD/installe"
-placer "$TMPD/installe" "$D/valcombe-installe.txt" 644 "$COMPTE:$COMPTE" || true
 
 if [ "$CHANGE" = 1 ]; then echo "@@change oui"; else echo "@@change non"; fi
 etape 100 "Serveur installé"

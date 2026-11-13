@@ -78,7 +78,7 @@ ssh -N -L 25570:localhost:25570 utilisateur@adresse-du-vps
 
 Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alors au serveur comme si elles venaient de la machine elle-même. Le port 25570 n'a pas besoin d'être ouvert au public pour cela.
 
-Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/Ssh`, `VpsServer.OpenAdminTunnelAsync`) : côté PC, un port libre choisi par Windows (jamais 25565, 25570 ni 24454, que le serveur personnel de l'hôte peut occuper) ; côté serveur, `127.0.0.1` et le port `tabletPort` lu dans `config/valcombe-communaute.json`. Il lit aussi la clé dans `config/valcombe/admin.json` par SSH (en root) : l'hôte n'a rien à copier. La page Serveur ne voit qu'une `IServerConnection` (adresse de base et clé).
+Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/Ssh`, `VpsServer.OpenAdminTunnelAsync`) : côté PC, un port libre choisi par Windows (jamais 25565, 25570 ni 24454, que le serveur personnel de l'hôte peut occuper) ; côté serveur, `127.0.0.1` et le port `tabletPort` lu dans `config/valcombe-communaute.json`. Il lit aussi la clé dans `config/valcombe/admin.json` par SSH (avec le compte du serveur, jamais en root) : l'hôte n'a rien à copier. La page Serveur ne voit qu'une `IServerConnection` (adresse de base et clé).
 
 ## Forme des réponses
 
