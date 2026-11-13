@@ -341,6 +341,18 @@ final class Atelier {
 					text(ex, 200, logged(owner, onServer(() -> host(owner).sender().sendMap(o.get("id").getAsString(), world(o, owner), player(owner)), 120)));
 				}
 				case "carte/supprimer" -> text(ex, 200, logged(owner, onServer(() -> maps.delete(body.trim()), 5)));
+				case "carte/atelier" -> {
+					// « Ouvrir dans un atelier » : un monde neuf où la carte est posée (déjà ouverte : on retrouve son atelier).
+					// L'opérateur en jeu reçoit un lien pour y aller ; rien ne l'y emmène sans qu'il le demande.
+					JsonObject o = object(body);
+					text(ex, 200, logged(owner, onServer(() -> {
+						MapWorkshop w = ValcombeMod.mapWorkshop();
+						if (w == null) {
+							throw new GameException("L'atelier carte n'est pas disponible sur ce serveur (voir son journal).");
+						}
+						return w.openLibrary(o.get("id").getAsString(), player(owner), false);
+					}, 30)));
+				}
 				case "carte/renommer" -> {
 					JsonObject o = JsonParser.parseString(body).getAsJsonObject();
 					text(ex, 200, logged(owner, onServer(() -> maps.rename(o.get("id").getAsString(), o.get("nom").getAsString()), 5)));

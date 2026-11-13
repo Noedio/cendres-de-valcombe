@@ -18,6 +18,9 @@ import java.util.List;
  * l'y emmène : il y retrouve sa dernière position. Un opérateur voit qui est invité à construire dans chaque atelier ;
  * un invité voit les ateliers où il construit.
  * <p>
+ * Les ateliers carte ouverts sont dans la liste ; un opérateur en ouvre un autre par « Ouvrir une carte… »
+ * ({@link MapWorkshopOpenScreen}), et, dans un atelier carte, « Atelier de la carte » mène à son écran ({@link MapWorkshopScreen}).
+ * <p>
  * La liste vient du serveur (vue {@code mondes} : {@code liste}, {@code ici}, {@code bloque}) ; une destination est
  * une ligne générique (identifiant, nom, sorte, joueurs), pour que le tableau des parties puisse s'y ajouter sans
  * tout refaire.
@@ -39,7 +42,7 @@ public class WorldsScreen extends HdScreen {
 
 	@Override
 	protected int[] panelSize() {
-		return new int[] {360, 210};
+		return new int[] {360, 224};
 	}
 
 	private static JsonObject worlds() {
@@ -79,8 +82,8 @@ public class WorldsScreen extends HdScreen {
 			case "village" -> "Le village où se joue la partie en ce moment : salle d'attente, place et maisons.";
 			case "partie" -> "Un monde de partie, avec sa propre carte.";
 			case "essai" -> "Une partie d'essai, pour répéter une carte ou un scénario sans toucher à la vraie.";
-			case "atelier-carte" -> "Un atelier de carte, pour les opérateurs et leurs invités : on y construit une carte de la "
-				+ "bibliothèque, en mode créatif et avec WorldEdit.";
+			case "atelier-carte" -> "L'atelier d'une carte, pour les opérateurs et leurs invités : on y bâtit (mode créatif, WorldEdit) "
+				+ "et on y pose ses repères. Elle s'enregistre toute seule dans la bibliothèque.";
 			case "atelier-structures" -> "L'atelier des structures, pour les opérateurs et leurs invités : toutes les structures de "
 				+ "Valcombe, chacune sur sa parcelle. On les modifie sur place, avec WorldEdit, puis « Enregistrer » à leur pupitre ; "
 				+ "une structure fournie modifiée remplace l'originale partout.";
@@ -187,17 +190,34 @@ public class WorldsScreen extends HdScreen {
 		int rx = px + lw + 20;
 		int rw = pw - lw - 30;
 		JsonObject d = selected();
-		HdButton goButton = button(rx, py + ph - 52, rw, "Y aller", () -> go(selected()));
-		if (d == null || ClientState.bool(d, "ici") || blocked() != null) {
+		boolean mapWorkshopHere = d != null && ClientState.bool(d, "ici") && "atelier-carte".equals(ClientState.str(d, "sorte"));
+		HdButton goButton = mapWorkshopHere
+			? button(rx, py + ph - 52, rw, "Atelier de la carte", () -> minecraft.gui.setScreen(new MapWorkshopScreen()))
+				.tooltip("Enregistrer, versions, envoyer à la partie, fermer l'atelier.")
+			: button(rx, py + ph - 52, rw, "Y aller", () -> go(selected()));
+		if (!mapWorkshopHere && (d == null || ClientState.bool(d, "ici") || blocked() != null)) {
 			goButton.disabled();
 		}
+		// Un opérateur ouvre une carte dans un atelier : de la bibliothèque, vierge, ou un village généré.
+		if (ClientState.obj(view(), "ateliersCarte") != null) {
+			button(rx, py + ph - 74, rw, "Ouvrir une carte…", () -> minecraft.gui.setScreen(new MapWorkshopOpenScreen()))
+				.tooltip("Une carte de la bibliothèque, une carte vierge ou un village généré, chacune dans son propre atelier.");
+		}
 		if (d != null) {
-			goButton.tooltip(ClientState.bool(d, "ici") ? "Tu es déjà dans ce monde."
-				: blocked() != null ? blocked() : "Tu y retrouves ta dernière position (la première fois : son point d'arrivée).");
+			if (!mapWorkshopHere) {
+				goButton.tooltip(ClientState.bool(d, "ici") ? "Tu es déjà dans ce monde."
+					: blocked() != null ? blocked() : "Tu y retrouves ta dernière position (la première fois : son point d'arrivée).");
+			}
+			// L'emblème de la sorte, aussi pour l'atelier carte où l'on se tient (le titre à côté lui laisse sa place).
 			addRenderableOnly(new HdIcon(rx, py + 14, 22, HdIcon.gui(emblem(ClientState.str(d, "sorte"))),
 				ClientState.str(d, "label"), null));
 		}
 		button(px + pw / 2 - 50, py + ph - 26, 100, "Retour", () -> minecraft.gui.setScreen(new MainScreen()));
+	}
+
+	/** Hauteur gardée sous le texte de droite pour ses boutons (un de plus pour l'opérateur : « Ouvrir une carte… »). */
+	private static int textGap() {
+		return ClientState.obj(view(), "ateliersCarte") != null ? 80 : 58;
 	}
 
 	@Override
@@ -215,7 +235,7 @@ public class WorldsScreen extends HdScreen {
 		hd.text(HdStyle.PETIT, hd.ellipsize(HdStyle.PETIT, subtitle(d), rw - hd.u(28)), tx, hd.px(py + 28), Hd.INK_SOFT);
 		hd.separator(rx, hd.px(py + 42), rw);
 		int y = hd.px(py + 48);
-		y += hd.paragraph(HdStyle.TEXTE, description(ClientState.str(d, "sorte")), rx, y, rw, Hd.INK, hd.px(py + ph - 58) - y);
+		y += hd.paragraph(HdStyle.TEXTE, description(ClientState.str(d, "sorte")), rx, y, rw, Hd.INK, hd.px(py + ph - textGap()) - y);
 		// Les ateliers : qui y est invité (pour un opérateur), ou que l'on y est invité.
 		String build = null;
 		List<String> g = guests(d);
@@ -225,13 +245,13 @@ public class WorldsScreen extends HdScreen {
 		} else if (ClientState.bool(d, "invite")) {
 			build = "Tu es invité à y construire : mode créatif, baguette de construction et WorldEdit.";
 		}
-		if (build != null && hd.px(py + ph - 58) - y > hd.u(10)) {
+		if (build != null && hd.px(py + ph - textGap()) - y > hd.u(10)) {
 			y += hd.u(4);
-			y += hd.paragraph(HdStyle.TEXTE, build, rx, y, rw, Hd.WINE, hd.px(py + ph - 58) - y);
+			y += hd.paragraph(HdStyle.TEXTE, build, rx, y, rw, Hd.WINE, hd.px(py + ph - textGap()) - y);
 		}
 		String why = blocked();
 		if (why != null) {
-			hd.paragraph(HdStyle.TEXTE, why, rx, y + hd.u(6), rw, Hd.WINE, hd.px(py + ph - 58) - y - hd.u(6));
+			hd.paragraph(HdStyle.TEXTE, why, rx, y + hd.u(6), rw, Hd.WINE, hd.px(py + ph - textGap()) - y - hd.u(6));
 		}
 	}
 }

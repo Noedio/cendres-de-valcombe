@@ -81,6 +81,27 @@ public final class MapStore {
 	public MapStore(Path creationsDir, java.util.function.Supplier<List<McHost>> hosts) {
 		this.dir = creationsDir.resolve("cartes");
 		this.hosts = hosts;
+		this.versions = new MapVersions(dir);
+	}
+
+	/** Les versions gardées des cartes (enregistrements de l'atelier carte), dans {@code cartes/versions}. */
+	private final MapVersions versions;
+
+	public MapVersions versions() {
+		return versions;
+	}
+
+	/**
+	 * Remet dans la bibliothèque la version versionId de la carte mapId (voir {@link MapVersions#restore}) ; la liste des
+	 * cartes la relit aussitôt.
+	 */
+	MapVersions.Version restoreVersion(String mapId, String versionId) {
+		changed();
+		try {
+			return versions.restore(mapId, versionId);
+		} finally {
+			changed();
+		}
 	}
 
 	public void setServer(MinecraftServer server) {
@@ -359,6 +380,14 @@ public final class MapStore {
 	// ------------------------------------------------------------------
 	public String delete(String id) {
 		MapDef d = def(id);
+		// Ouverte dans un atelier carte : son enregistrement automatique la remettrait dans la bibliothèque, sans les
+		// versions effacées avec elle. On ferme d'abord l'atelier (il l'enregistre), puis on la supprime.
+		MapWorkshop shop = ValcombeMod.mapWorkshop();
+		fr.valcombe.mc.worlds.WorldEntry open = shop == null ? null : shop.atelierOf(d.id);
+		if (open != null) {
+			throw new GameException("La carte « " + d.nom + " » est ouverte dans l'atelier « " + open.nom() + " » : fermez d'abord "
+				+ "l'atelier (Menu J › Mondes › « Atelier de la carte »), puis supprimez-la.");
+		}
 		changed();
 		try {
 			Files.deleteIfExists(dir.resolve(id + ".json"));
@@ -367,6 +396,7 @@ public final class MapStore {
 		} catch (IOException e) {
 			throw new GameException("Suppression impossible : " + e.getMessage());
 		}
+		versions.forget(id); // ses versions gardées partent avec elle
 		return "Carte « " + d.nom + " » supprimée de la bibliothèque.";
 	}
 

@@ -23,6 +23,7 @@
 			"fr.valcombe.gametest.MultiPartiesGameTest",
 			"fr.valcombe.gametest.SuspensGameTest",
 			"fr.valcombe.gametest.PartiesGameTest",
+			"fr.valcombe.gametest.AtelierCarteGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

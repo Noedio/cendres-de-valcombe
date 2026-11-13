@@ -359,6 +359,7 @@
 				<div><label>Envoyer à</label><select id="sendTo"></select></div>
 			</div>
 			<p class="hint">« Envoyer à la partie » remet le monde choisi à neuf, plat et vide, puis y pose la carte : il ne reste rien de l'ancienne, quelle que soit sa taille. Chaque monde de partie porte sa propre carte. Les joueurs présents attendent au hub pendant la pose (une barre la suit), puis un lien les y ramène.</p>
+			<p class="hint">« Ouvrir dans un atelier » pose la carte dans un monde à elle, pour la retoucher en jeu avec WorldEdit et ses outils de repères (trônes, maisons, centre, salle de convocation). Elle s'y enregistre toute seule dans la bibliothèque, avec des versions pour revenir en arrière ; l'atelier se gère depuis le jeu (Menu J › Mondes).</p>
 			<div class="list" id="mapList"></div>
 			<p class="hint" id="curMap"></p>
 			<h2 style="margin-top:16px" id="planTitle">Plan de la carte actuelle</h2>
@@ -1489,7 +1490,14 @@ function renderMaps() {
 			if (nom && nom.trim()) mapAction("carte/dupliquer", { id: m.id, nom: nom.trim() });
 		};
 		load_.disabled = data.partieEnCours || data.chantier;
-		bar.append(see, load_, ren, dup, del);
+		// L'atelier carte : un monde à elle, où l'on bâtit (WorldEdit) et pose ses repères ; un seul atelier par carte.
+		const shop = document.createElement("button");
+		shop.textContent = m.atelier ? "Rouvrir son atelier" : "Ouvrir dans un atelier";
+		shop.title = m.atelier
+			? "Cette carte est déjà dans son atelier : on y retrouve le travail en cours (Menu J › Mondes, ou /vc atelier carte aller " + m.id + ")."
+			: "Pose la carte dans un monde à elle, pour la retoucher avec WorldEdit et ses outils de repères ; elle s'y enregistre toute seule.";
+		shop.onclick = () => mapAction("carte/atelier", { id: m.id });
+		bar.append(see, load_, shop, ren, dup, del);
 		c.append(t, s, bar);
 		list.appendChild(c);
 	}

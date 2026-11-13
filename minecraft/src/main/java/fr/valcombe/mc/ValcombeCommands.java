@@ -149,6 +149,28 @@ public final class ValcombeCommands {
 		return lines;
 	}
 
+	/** Le joueur qui lance la commande ; une erreur claire depuis la console. */
+	private static ServerPlayer inGame(CommandContext<CommandSourceStack> x) {
+		ServerPlayer p = x.getSource().getPlayer();
+		if (p == null) {
+			throw new fr.valcombe.rules.GameException("Commande à lancer en jeu, par un joueur.");
+		}
+		return p;
+	}
+
+	// Les repères hors d'un atelier carte : ceux du village de la partie de la commande (voir host(ctx)).
+	private static String addSeat(CommandContext<CommandSourceStack> x) {
+		return host(x).addSeat(inGame(x));
+	}
+
+	private static String addHouse(CommandContext<CommandSourceStack> x) {
+		return host(x).addHouse(inGame(x));
+	}
+
+	private static String setCenter(CommandContext<CommandSourceStack> x) {
+		return host(x).setMapCenter(inGame(x));
+	}
+
 	/** L'écran du mod client qu'on ouvre à ce joueur ; sans le mod, on lui dit quoi faire à la place. */
 	private static String openScreen(ServerPlayer p, String screen, String otherwise) {
 		if (!ViewSync.hasClientMod(p)) {
@@ -193,16 +215,26 @@ public final class ValcombeCommands {
 		SuggestionProvider<CommandSourceStack> all = (c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().ids(false), b);
 		SuggestionProvider<CommandSourceStack> mine = (c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().ids(true), b);
 		// Menu de l'outil « Carte : main » : déplacer, tourner ou retirer un repère ou une structure posée.
-		root.then(Commands.literal("objet").requires(admin)
+		// Dans un atelier carte, ses invités s'en servent aussi (les repères et les structures de cet atelier seulement).
+		root.then(Commands.literal("objet").requires(s -> admin.test(s) || MapWorkshop.guestHere(s))
 			.then(Commands.argument("sorte", StringArgumentType.word())
 				.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("trone", "maison", "salle", "centre", "structure"), b))
 				.then(Commands.argument("numero", IntegerArgumentType.integer(0))
 					.then(Commands.argument("action", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(
 							List.of("deplacer", "gauche", "droite", "centre", "tourner", "retourner", "retirer"), b))
-						.executes(c -> exec(c, x -> host(x).objectAction(player(x), arg(x, "sorte"),
-							IntegerArgumentType.getInteger(x, "numero"), arg(x, "action"))))))));
-		root.then(Commands.literal("structure").requires(admin)
+						.executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(inGame(x),
+							w -> w.objectAction(inGame(x), arg(x, "sorte"), IntegerArgumentType.getInteger(x, "numero"), arg(x, "action")),
+							() -> {
+								if (!admin.test(x.getSource())) {
+									throw new fr.valcombe.rules.GameException("Ce menu sert dans l'atelier où vous êtes invité.");
+								}
+								return host(x).objectAction(inGame(x), arg(x, "sorte"),
+									IntegerArgumentType.getInteger(x, "numero"), arg(x, "action"));
+							})))))));
+		// Prendre, poser, tourner une structure du catalogue : aussi pour les invités d'un atelier carte, là où ils bâtissent.
+		// Changer le catalogue lui-même (enregistrer, renommer, supprimer, importer...) reste aux opérateurs.
+		root.then(Commands.literal("structure").requires(s -> admin.test(s) || MapWorkshop.guestHere(s))
 			.then(Commands.literal("liste").executes(c -> exec(c, x -> lines(x, catalog()))))
 			.then(Commands.literal("tenir").executes(c -> exec(c, x -> {
 				ValcombeUi.holdMapTool(player(x), ValcombeUi.MapTool.HAND);
@@ -223,28 +255,28 @@ public final class ValcombeCommands {
 			.then(Commands.literal("miroir").executes(c -> exec(c, x -> ValcombeMod.editor().mirror(player(x)))))
 			.then(Commands.literal("fin").executes(c -> exec(c, x -> ValcombeMod.editor().stopPlacing(player(x)))))
 			// La sélection WorldEdit vers le catalogue (même chose que /vc structures depuis-selection, nom en clair).
-			.then(Commands.literal("enregistrer")
+			.then(Commands.literal("enregistrer").requires(admin)
 				.then(Commands.argument("id", StringArgumentType.word())
 					.executes(c -> exec(c, x -> saveSelection(x, arg(x, "id"))))
 					.then(Commands.argument("nom", StringArgumentType.greedyString())
 						.executes(c -> exec(c, x -> saveSelection(x, arg(x, "nom")))))))
-			.then(Commands.literal("repere")
+			.then(Commands.literal("repere").requires(admin)
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(mine)
 					.then(Commands.argument("repere", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("maison", "salle", "aucun"), b))
 						.executes(c -> exec(c, x -> ValcombeMod.structures().setMark(arg(x, "id"), arg(x, "repere")))))))
-			.then(Commands.literal("renommer")
+			.then(Commands.literal("renommer").requires(admin)
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(mine)
 					.then(Commands.argument("nom", StringArgumentType.greedyString())
 						.executes(c -> exec(c, x -> ValcombeMod.structures().rename(arg(x, "id"), arg(x, "nom")))))))
-			.then(Commands.literal("supprimer")
+			.then(Commands.literal("supprimer").requires(admin)
 				.then(Commands.argument("id", StringArgumentType.word()).suggests(mine)
 					.executes(c -> exec(c, x -> ValcombeMod.structures().delete(arg(x, "id"))))))
-			.then(Commands.literal("importer")
+			.then(Commands.literal("importer").requires(admin)
 				.then(Commands.argument("fichier", StringArgumentType.greedyString())
 					.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures().importable(), b))
 					.executes(c -> exec(c, x -> ValcombeMod.structures().importFromFolder(arg(x, "fichier"))))))
-			.then(Commands.literal("recharger").executes(c -> exec(c, x -> {
+			.then(Commands.literal("recharger").requires(admin).executes(c -> exec(c, x -> {
 				ValcombeMod.structures().reload();
 				return "Catalogue relu : " + ValcombeMod.structures().list().size() + " structures.";
 			}))));
@@ -614,24 +646,34 @@ public final class ValcombeCommands {
 					.executes(c -> exec(c, x -> sender(x).sendBlank(here(x), x.getSource().getPlayer())))
 					.then(Commands.argument("monde", StringArgumentType.greedyString()).suggests(GAME_WORLDS)
 						.executes(c -> exec(c, x -> sender(x).sendBlank(arg(x, "monde"), x.getSource().getPlayer())))))
+				// Les repères : dans un atelier carte, ceux de sa carte (MapWorkshop) ; ailleurs, ceux du village de la partie.
 				.then(Commands.literal("trone")
-					.executes(c -> exec(c, x -> host(x).addSeat(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.markHere(x.getSource().getPlayer(), "trone"), () -> addSeat(x)))))
 				.then(Commands.literal("siege") // ancien nom de « trone »
-					.executes(c -> exec(c, x -> host(x).addSeat(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.markHere(x.getSource().getPlayer(), "trone"), () -> addSeat(x)))))
 				.then(Commands.literal("maison")
-					.executes(c -> exec(c, x -> host(x).addHouse(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.markHere(x.getSource().getPlayer(), "maison"), () -> addHouse(x)))))
 				.then(Commands.literal("retirer")
-					.then(Commands.literal("trone").executes(c -> exec(c, x -> host(x).removeSeat())))
-					.then(Commands.literal("siege").executes(c -> exec(c, x -> host(x).removeSeat())))
-					.then(Commands.literal("maison").executes(c -> exec(c, x -> host(x).removeHouse()))))
+					.then(Commands.literal("trone").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.removeLast(x.getSource().getPlayer(), true), () -> host(x).removeSeat()))))
+					.then(Commands.literal("siege").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.removeLast(x.getSource().getPlayer(), true), () -> host(x).removeSeat()))))
+					.then(Commands.literal("maison").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.removeLast(x.getSource().getPlayer(), false), () -> host(x).removeHouse())))))
 				.then(Commands.literal("apercu")
 					.executes(c -> exec(c, x -> preview(x, "")))
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
 						.executes(c -> exec(c, x -> preview(x, arg(x, "id"))))))
-				.then(Commands.literal("infos").executes(c -> exec(c, x -> host(x).mapInfo())))
-				.then(Commands.literal("annuler").executes(c -> exec(c, x -> host(x).undoMarker())))
-				.then(Commands.literal("ordonner").executes(c -> exec(c, x -> host(x).sortMarkers())))
+				.then(Commands.literal("infos").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+					w -> w.info(x.getSource().getPlayer()), () -> host(x).mapInfo()))))
+				.then(Commands.literal("annuler").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+					w -> w.undoMarker(x.getSource().getPlayer()), () -> host(x).undoMarker()))))
+				.then(Commands.literal("ordonner").executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+					w -> w.sortMarkers(x.getSource().getPlayer()), () -> host(x).sortMarkers()))))
 				.then(Commands.literal("renommer")
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
@@ -642,7 +684,8 @@ public final class ValcombeCommands {
 				.then(Commands.literal("construction")
 					.executes(c -> exec(c, x -> host(x).toggleConstruction(x.getSource().getPlayerOrException()))))
 				.then(Commands.literal("centre")
-					.executes(c -> exec(c, x -> host(x).setMapCenter(x.getSource().getPlayerOrException()))))
+					.executes(c -> exec(c, x -> MapWorkshop.inAtelierOr(x.getSource().getPlayer(),
+						w -> w.markHere(x.getSource().getPlayer(), "centre"), () -> setCenter(x)))))
 				.then(Commands.literal("liste").executes(c -> exec(c, x -> {
 					var list = ValcombeMod.maps().list();
 					return list.isEmpty() ? "Aucune carte enregistrée : /vc carte enregistrer <identifiant> <nom>."
@@ -979,6 +1022,8 @@ public final class ValcombeCommands {
 		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds, ValcombeMod::travel);
 		// Construction : invitations aux ateliers, « annuler » commun, baguette, sélection vers structure.
 		BuildCommands.register(root, admin);
+		// Atelier carte : un monde par carte en cours de travail (voir MapWorkshop).
+		root.then(Commands.literal("atelier").requires(admin).then(MapWorkshopCommands.build()));
 		BackupCommands.register(root, admin);
 		root.then(StructureWorkshopCommands.build());
 		var node = dispatcher.register(root);

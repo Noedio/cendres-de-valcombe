@@ -120,6 +120,18 @@ public final class ViewSync {
 				// Écran de l'atelier structures (pupitres) : les parcelles, celle qu'on a choisie, le dernier message.
 				view.put("atelierStructures", structures.view(p));
 			}
+			MapWorkshop maps = ValcombeMod.mapWorkshop();
+			if (maps != null) {
+				// Menu « Mondes » d'un opérateur : les ateliers carte ouverts, et de quoi en ouvrir un (bibliothèque, village).
+				Map<String, Object> list = maps.listView(p);
+				if (list != null) {
+					view.put("ateliersCarte", list);
+				}
+				if (maps.isAtelier(p.level())) {
+					// Écran de l'atelier carte : compte des repères, ce qui manque, versions, parties où l'envoyer.
+					view.put("atelierCarte", maps.view(p));
+				}
+			}
 			String json = GSON.toJson(view);
 			if (!json.equals(lastSent.get(name))) {
 				lastSent.put(name, json);

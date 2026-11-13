@@ -156,12 +156,43 @@ public final class MapEditor {
 	}
 
 	/**
-	 * La carte en service si l'éditeur travaille dans le monde de la partie, sinon null : les repères (maison, salle)
-	 * ne se posent qu'avec la carte de ce monde-là.
+	 * Les repères du monde où travaille l'éditeur : la carte en service dans le monde de la partie, celle d'un atelier carte
+	 * dans le sien (voir MapWorkshop) ; null ailleurs. Une structure « maison » ou « salle » pose son repère avec elle.
 	 */
 	private Village village() {
-		McHost h = work == null ? null : host();
-		return h != null && h.isGameLevel(work) ? h.village() : null;
+		if (work == null) {
+			return null;
+		}
+		McHost h = host();
+		if (h != null && h.isGameLevel(work)) {
+			return h.village();
+		}
+		MapWorkshop w = ValcombeMod.mapWorkshop();
+		return w == null ? null : w.village(work);
+	}
+
+	/** L'éditeur travaille-t-il dans un atelier carte ? */
+	private boolean inMapWorkshop() {
+		MapWorkshop w = ValcombeMod.mapWorkshop();
+		return work != null && w != null && w.isAtelier(work);
+	}
+
+	/** Un repère vient d'être posé ou retiré avec une structure : la carte de la partie, ou celle de l'atelier, le note. */
+	private void markersChanged() {
+		if (inMapWorkshop()) {
+			ValcombeMod.mapWorkshop().editorMarkersChanged(work);
+		} else if (host() != null) {
+			host().editorMarkersChanged();
+		}
+	}
+
+	/** Des blocs viennent de changer : la carte de la partie est retouchée, celle d'un atelier a changé depuis son enregistrement. */
+	private void edited() {
+		if (inMapWorkshop()) {
+			ValcombeMod.mapWorkshop().noteEdit(work);
+		} else if (village() != null) {
+			host().markEdited();
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -172,14 +203,17 @@ public final class MapEditor {
 	 * (jamais dans la partie en cours, si c'est son monde).
 	 */
 	private Desk require(ServerPlayer p) {
-		if (server == null || !Atelier.isOperator(p)) {
+		// Dans un atelier carte, ses invités s'en servent aussi, sans passer par le mode construction (ils y bâtissent déjà).
+		MapWorkshop atelier = ValcombeMod.mapWorkshop();
+		boolean inAtelier = server != null && atelier != null && atelier.buildsHere(p);
+		if (server == null || !Atelier.isOperator(p) && !inAtelier) {
 			throw new GameException("L'éditeur de carte est réservé aux opérateurs.");
 		}
 		McHost here = hosts.apply(p.level());
 		if (here != null && here.gameRunning() && here.inGameWorld(p)) {
 			throw new GameException("On ne touche pas à la carte pendant une partie.");
 		}
-		if (!McHost.isBuilder(p.getScoreboardName())) {
+		if (!inAtelier && !McHost.isBuilder(p.getScoreboardName())) {
 			throw new GameException("L'éditeur s'utilise en mode construction : /vc carte construction.");
 		}
 		if (work != p.level()) {
@@ -217,10 +251,9 @@ public final class MapEditor {
 	/** Lance une opération : elle entre dans l'historique, puis ses blocs sont posés par petits lots. */
 	private void commit(String label, Box zone, Clip before, BuildQueue.Plan plan, Marker marker) {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
-		if (village() != null) {
-			// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée.
-			host().markEdited();
-		}
+		// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée. Dans un atelier
+		// carte : elle a changé depuis son dernier enregistrement.
+		edited();
 		host().startEdit(label, level(), plan, null);
 	}
 
@@ -275,9 +308,7 @@ public final class MapEditor {
 		} else {
 			history.putUndo(inverse, now.volume());
 		}
-		if (village() != null) {
-			host().markEdited();
-		}
+		edited();
 		host().startEdit((undo ? "Annulation : " : "Rétablissement : ") + lower(c.label()), level(),
 			c.before().plan(level(), c.corner(), false, false), left > 1 ? () -> step(undo, left - 1) : null);
 		return c.label();
@@ -299,10 +330,10 @@ public final class MapEditor {
 			} else if (!m.present()) {
 				BlockPos previous = v.convocation();
 				v.setConvocation(m.pos());
-				host().editorMarkersChanged();
+				markersChanged();
 				return new Marker(m.type(), m.pos(), previous, true);
 			}
-			host().editorMarkersChanged();
+			markersChanged();
 		}
 		return new Marker(m.type(), m.pos(), m.previous(), !m.present());
 	}
@@ -492,7 +523,7 @@ public final class MapEditor {
 			with = ", avec le repère de la salle de convocation";
 		}
 		if (marker != null) {
-			host().editorMarkersChanged();
+			markersChanged();
 		}
 		commit("Pose de « " + def.nom + " »", zone, before, clip.plan(level(), corner, false, def.fournie), marker);
 		placed.add(new Placed(def.id, feet, d.turn, corner, zone, before, marker));
@@ -612,7 +643,8 @@ public final class MapEditor {
 		for (Map.Entry<String, Desk> e : desks.entrySet()) {
 			ServerPlayer p = server.getPlayerList().getPlayerByName(e.getKey());
 			Desk d = e.getValue();
-			if (p == null || !McHost.isBuilder(e.getKey()) || p.level() != work) {
+			MapWorkshop atelier = ValcombeMod.mapWorkshop();
+			if (p == null || !McHost.isBuilder(e.getKey()) && (atelier == null || !atelier.buildsHere(p)) || p.level() != work) {
 				continue;
 			}
 			boolean holding = d.structure != null && ValcombeUi.mapTool(p.getMainHandItem()) == ValcombeUi.MapTool.STRUCTURE;

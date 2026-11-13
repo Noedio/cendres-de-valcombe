@@ -101,6 +101,9 @@ public final class Workshop {
 			m.put("theme", d.theme);
 			m.put("sieges", d.sieges.size());
 			m.put("maisons", d.logis.size());
+			// L'atelier carte où l'on travaille sur elle, s'il est ouvert (un seul par carte) : « Ouvrir » y mène.
+			MapWorkshop ateliers = ValcombeMod.mapWorkshop();
+			m.put("atelier", ateliers == null ? null : ateliers.atelierIdOf(d.id));
 			if (plan) {
 				m.put("octets", maps.bytes(d.id));
 				// Repères pour le plan vu de dessus : [est, hauteur, sud] depuis le centre de la place.

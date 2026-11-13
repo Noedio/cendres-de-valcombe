@@ -255,6 +255,13 @@ public final class ValcombeMod implements ModInitializer {
 		return structureWorkshop;
 	}
 
+	private static MapWorkshop mapWorkshop;
+
+	/** L'atelier carte (un monde par carte en cours de travail) ; null sans les mondes de Valcombe. */
+	public static MapWorkshop mapWorkshop() {
+		return mapWorkshop;
+	}
+
 	private static fr.valcombe.mc.hub.Travel travel;
 	private static fr.valcombe.mc.hub.Hub hub;
 
@@ -443,6 +450,11 @@ public final class ValcombeMod implements ModInitializer {
 				Games games = new Games(server, manager);
 				Games.install(games);
 				games.start(mainGame);
+				// L'atelier carte : un monde par carte en cours de travail, enregistrée dans la bibliothèque (voir MapWorkshop).
+				// Il n'appartient à aucune partie : il envoie ses cartes au monde de partie choisi, la principale proposée d'abord.
+				mapWorkshop = new MapWorkshop(server, manager, placer, maps, sender, () -> mainGame, editor);
+				manager.addListener(mapWorkshop);
+				manager.addGuard(mapWorkshop); // un atelier supprimé autrement que par « Fermer » enregistre d'abord sa carte
 			} catch (RuntimeException | LinkageError e) {
 				LOG.error("Mondes de Valcombe indisponibles : aucune partie ne pourra se jouer (elles se jouent dans les mondes de partie)", e);
 			}
@@ -464,6 +476,15 @@ public final class ValcombeMod implements ModInitializer {
 				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
 			}
 			workshop = null;
+			if (mapWorkshop != null) {
+				// Les ateliers carte modifiés sont enregistrés dans la bibliothèque tant que leurs mondes sont ouverts.
+				try {
+					mapWorkshop.stop();
+				} catch (RuntimeException e) {
+					LOG.error("Ateliers carte non enregistrés à l'arrêt", e);
+				}
+				mapWorkshop = null;
+			}
 			if (placer != null) {
 				placer.stop(); // les poses en cours sont abandonnées avant que les mondes ne se ferment
 				placer = null;
@@ -544,6 +565,10 @@ public final class ValcombeMod implements ModInitializer {
 			var sw = structureWorkshop;
 			if (sw != null) {
 				guarded("l'atelier structures", sw::tick);
+			}
+			var mw = mapWorkshop;
+			if (mw != null) {
+				guarded("l'atelier carte", mw::tick);
 			}
 			var t = travel;
 			if (t != null) {
@@ -786,9 +811,15 @@ public final class ValcombeMod implements ModInitializer {
 			if (tool == null) {
 				// Un bloc posé à la main sur la carte d'une partie : elle ne sera plus remplacée sans sauvegarde.
 				McHost here = Games.hostAt(level);
-				if (here != null && player instanceof ServerPlayer builder
+				if (player instanceof ServerPlayer builder
 					&& player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem) {
-					here.noteEdit(builder, hit.getBlockPos());
+					if (here != null) {
+						here.noteEdit(builder, hit.getBlockPos());
+					}
+					var mw = mapWorkshop;
+					if (mw != null) {
+						mw.noteEdit(builder.level()); // dans un atelier carte : la carte a changé depuis son enregistrement
+					}
 				}
 				// Trône : clic droit pour s'asseoir (les trônes du village, dans le monde de sa partie)
 				if (here != null && player instanceof ServerPlayer sp && !player.isShiftKeyDown()
@@ -800,6 +831,32 @@ public final class ValcombeMod implements ModInitializer {
 					return InteractionResult.SUCCESS;
 				}
 				return InteractionResult.PASS;
+			}
+			// Dans un atelier carte, les outils posent les repères de sa carte, pour ses opérateurs et ses invités.
+			var mw = mapWorkshop;
+			if (mw != null && player instanceof ServerPlayer ap && mw.isAtelier(ap.level())) {
+				if (hand != net.minecraft.world.InteractionHand.MAIN_HAND) {
+					return InteractionResult.SUCCESS;
+				}
+				var clicked = hit.getBlockPos();
+				if (tool == ValcombeUi.MapTool.STRUCTURE) {
+					if (editor != null) {
+						editorClick(ap, () -> ap.isShiftKeyDown() ? editor.rotate(ap) : editor.place(ap, clicked));
+					}
+					return InteractionResult.SUCCESS;
+				}
+				try {
+					String msg = mw.useTool(ap, tool, clicked, ap.isShiftKeyDown());
+					if (!msg.isEmpty()) {
+						ap.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
+						var at = clicked.above();
+						WorldSetup.run(ap.level(), String.format(java.util.Locale.ROOT,
+							"particle minecraft:happy_villager %d %d %d 0.3 0.3 0.3 0 12", at.getX(), at.getY(), at.getZ()));
+					}
+				} catch (fr.valcombe.rules.GameException e) {
+					ap.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
+				}
+				return InteractionResult.SUCCESS;
 			}
 			if (player instanceof ServerPlayer sp
 				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
@@ -848,23 +905,31 @@ public final class ValcombeMod implements ModInitializer {
 			if (tool != ValcombeUi.MapTool.STRUCTURE) {
 				return InteractionResult.PASS;
 			}
+			var mw = mapWorkshop;
 			if (player instanceof ServerPlayer sp && editor != null && hand == net.minecraft.world.InteractionHand.MAIN_HAND
-				&& sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+				&& (sp.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
+					|| mw != null && mw.buildsHere(sp))) {
 				editorClick(sp, () -> editor.mirror(sp));
 			}
 			return InteractionResult.SUCCESS;
 		});
 		// Dans les mondes de Valcombe, ne casse que qui construit là (BuildAccess) : l'opérateur en mode créatif au hub et dans
 		// les parties, comme avant ; les opérateurs et leurs invités dans les ateliers.
-		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
-			var access = fr.valcombe.mc.worlds.BuildAccess.current();
-			return !(player instanceof ServerPlayer sp) || access == null || access.entryOf(level) == null || access.canBuild(sp);
-		});
-		// Un bloc cassé à la main sur la carte d'une partie, hors partie : même suivi que pour un bloc posé.
+		// Poser suit la même règle (PlaceGuardMixin, BucketGuardMixin) : BuildAccess.mayModify.
+		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) ->
+			!(player instanceof ServerPlayer sp) || fr.valcombe.mc.worlds.BuildAccess.mayModify(sp, level));
+		// Un bloc cassé à la main sur la carte d'une partie, hors partie, ou dans un atelier carte : même suivi que pour un
+		// bloc posé.
 		net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
-			McHost here = Games.hostAt(level);
-			if (here != null && player instanceof ServerPlayer sp) {
-				here.noteEdit(sp, pos);
+			if (player instanceof ServerPlayer sp) {
+				McHost here = Games.hostAt(level);
+				if (here != null) {
+					here.noteEdit(sp, pos);
+				}
+				var mw = mapWorkshop;
+				if (mw != null) {
+					mw.noteEdit(level);
+				}
 			}
 		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
