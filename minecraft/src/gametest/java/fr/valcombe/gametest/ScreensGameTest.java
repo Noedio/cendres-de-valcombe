@@ -715,8 +715,28 @@ public class ScreensGameTest implements FabricClientGameTest {
 			.header("X-Valcombe-Jeton", token).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
 		check(journal.body().contains("Banc du test") && journal.body().contains(trialName), "le journal note la structure copiée et la partie créée");
 		// La partie d'essai du test s'en va (son monde avec), comme on la supprime du menu « Parties ».
+		// Son village est d'abord posé (envoyé à la création) : la supprimer pendant la remise à neuf serait refusé.
 		var integrated = ctx.computeOnClient(mc -> mc.getSingleplayerServer());
+		java.util.function.Supplier<Boolean> trialIdle = () -> integrated.submit(() -> {
+			var r = fr.valcombe.mc.games.Games.byWorld(trialId);
+			var sender = fr.valcombe.mc.ValcombeMod.sender();
+			return r != null && (sender == null || sender.sendingTo(trialId) == null) && !r.host().busy()
+				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId);
+		}).join();
+		boolean idle = trialIdle.get();
+		for (int i = 0; i < 1200 && !idle; i += 5) {
+			ctx.waitTicks(5);
+			idle = trialIdle.get();
+		}
+		check(idle, "la partie d'essai de la page a reçu son village");
 		integrated.submit(() -> fr.valcombe.mc.games.Games.current().delete(trialId)).join();
+		boolean gone = false;
+		for (int i = 0; i < 600 && !gone; i += 5) {
+			ctx.waitTicks(5);
+			gone = integrated.submit(() -> fr.valcombe.mc.games.Games.byWorld(trialId) == null
+				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId)).join();
+		}
+		check(gone, "la partie d'essai de la page est supprimée");
 		// Fermer la tablette du Conteur ne ferme pas l'Atelier ; /vc atelier fermer ferme le lien de cet opérateur.
 		send(ctx, "vc tablette fermer");
 		var still = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/donnees"))

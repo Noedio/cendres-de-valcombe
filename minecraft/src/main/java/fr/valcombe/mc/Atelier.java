@@ -59,7 +59,7 @@ final class Atelier {
 	private final StructureStore structures;
 	private final Workshop workshop;
 	/** Les vignettes de repli, quand le serveur n'en produit pas (voir {@link Thumbnails}). */
-	private final Thumbnails fallback;
+	private final ThumbnailFallback fallback;
 	private MinecraftServer server;
 	/** La partie choisie sur la page par chaque opérateur (identifiant de son monde), à la place de celle qu'on déduit. */
 	private final Map<String, String> chosen = new java.util.concurrent.ConcurrentHashMap<>();
@@ -314,7 +314,9 @@ final class Atelier {
 			// Vignette d'une carte ou d'une structure : GET vignette/carte/<id>.png, vignette/structure/<id>.png.
 			Thumb thumb = thumb(path);
 			if (thumb != null) {
-				byte[] png = onServer(() -> Thumbnails.get(thumb.kind(), thumb.id(), fallback), 20);
+				// Lue sur le fil du serveur, dessinée ici : une page qui demande trente vignettes ne retient pas ses ticks.
+				java.util.function.Supplier<byte[]> job = onServer(() -> thumbnailJob(thumb), 20);
+				byte[] png = job == null ? null : job.get();
 				if (png == null) {
 					text(ex, 404, "Pas de vignette : « " + thumb.id() + " » n'existe pas.");
 				} else {
@@ -481,6 +483,15 @@ final class Atelier {
 		Thumbnails.Kind kind = Thumbnails.Kind.of(rest.substring(0, slash));
 		String id = rest.substring(slash + 1);
 		return kind == null || !id.matches("[a-z0-9_-]{1,64}") ? null : new Thumb(kind, id);
+	}
+
+	/**
+	 * Fil du serveur : la vignette de la source installée (voir {@link Thumbnails#install}) si elle en a une, sinon le
+	 * dessin de repli à faire hors de ce fil. Null si la carte ou la structure n'existe pas.
+	 */
+	private java.util.function.Supplier<byte[]> thumbnailJob(Thumb t) {
+		byte[] made = Thumbnails.get(t.kind(), t.id(), null);
+		return made != null ? () -> made : fallback.prepare(t.kind(), t.id());
 	}
 
 	/** Le corps d'une requête en objet JSON (vide : un objet vide). */

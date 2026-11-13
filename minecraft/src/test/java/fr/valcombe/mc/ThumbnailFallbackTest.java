@@ -118,4 +118,31 @@ class ThumbnailFallbackTest {
 		// Un volume dégénéré (taille inconnue) reste dessinable.
 		read(ThumbnailFallback.volume(0, 0, 0, null));
 	}
+
+	/**
+	 * La vignette en deux temps (lue sur le fil du serveur, dessinée sur celui de l'Atelier web) : le dessin est celui
+	 * de la structure telle qu'elle était lue ; rien pour une carte ou une structure absente.
+	 */
+	@Test
+	void vignettePrepareeLueAvantDEtreDessinee(@org.junit.jupiter.api.io.TempDir java.nio.file.Path creations) throws IOException {
+		java.nio.file.Path dir = creations.resolve("structures");
+		java.nio.file.Files.createDirectories(dir);
+		StructureStore.Def d = new StructureStore.Def();
+		d.id = "tour-du-guet";
+		d.nom = "La Tour du guet";
+		d.categorie = "perso";
+		d.taille = new int[] {5, 20, 5};
+		d.ancre = new int[] {2, 0, 2};
+		d.blocs = 300;
+		java.nio.file.Files.writeString(dir.resolve(d.id + ".json"), new com.google.gson.Gson().toJson(d));
+		java.nio.file.Files.write(dir.resolve(d.id + ".nbt"), new byte[] {1, 2, 3});
+		ThumbnailFallback f = new ThumbnailFallback(new MapStore(creations, List::of), new StructureStore(creations));
+		var job = f.prepare(Thumbnails.Kind.STRUCTURE, "tour-du-guet");
+		assertNotNull(job);
+		BufferedImage img = read(job.get());
+		assertEquals(ThumbnailFallback.WIDTH, img.getWidth());
+		assertTrue(f.prepare(Thumbnails.Kind.STRUCTURE, "inconnue") == null, "structure absente : pas de vignette");
+		assertTrue(f.prepare(Thumbnails.Kind.CARTE, "absente") == null, "carte absente : pas de vignette");
+		assertTrue(f.map("absente") == null && f.structure("inconnue") == null);
+	}
 }

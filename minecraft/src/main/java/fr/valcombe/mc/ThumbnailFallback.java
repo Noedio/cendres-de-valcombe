@@ -53,23 +53,49 @@ public final class ThumbnailFallback implements Thumbnails {
 
 	@Override
 	public byte[] map(String id) {
-		MapStore.MapDef d = maps.list().stream().filter(x -> x.id.equals(id)).findFirst().orElse(null);
-		if (d == null) {
-			return null;
-		}
-		byte[] png = maps.preview(id);
-		return png != null ? png : plan(d.sieges, d.logis, d.convocation, d.rayon);
+		java.util.function.Supplier<byte[]> job = prepare(Kind.CARTE, id);
+		return job == null ? null : job.get();
 	}
 
 	@Override
 	public byte[] structure(String id) {
+		java.util.function.Supplier<byte[]> job = prepare(Kind.STRUCTURE, id);
+		return job == null ? null : job.get();
+	}
+
+	/**
+	 * La vignette de repli en deux temps : ce qu'il faut lire de la bibliothèque ou du catalogue (sur le fil du
+	 * serveur, maintenant), puis le dessin, rendu par le Supplier, qui peut se faire sur un autre fil (l'Atelier web le
+	 * fait sur le sien : dessiner et compresser une image ne retient pas les ticks du serveur). Null si la carte ou la
+	 * structure n'existe pas.
+	 */
+	java.util.function.Supplier<byte[]> prepare(Kind kind, String id) {
+		if (kind == Kind.CARTE) {
+			MapStore.MapDef d = maps.list().stream().filter(x -> x.id.equals(id)).findFirst().orElse(null);
+			if (d == null) {
+				return null;
+			}
+			byte[] png = maps.preview(id);
+			if (png != null) {
+				return () -> png;
+			}
+			List<int[]> seats = d.sieges == null ? List.of() : new java.util.ArrayList<>(d.sieges);
+			List<int[]> houses = d.logis == null ? List.of() : new java.util.ArrayList<>(d.logis);
+			int[] room = d.convocation;
+			int radius = d.rayon;
+			return () -> plan(seats, houses, room, radius);
+		}
 		StructureStore.Def d;
 		try {
 			d = structures.def(id);
 		} catch (GameException e) {
 			return null;
 		}
-		return volume(d.taille[0], d.taille[1], d.taille[2], d.categorie);
+		int w = d.taille[0];
+		int h = d.taille[1];
+		int l = d.taille[2];
+		String categorie = d.categorie;
+		return () -> volume(w, h, l, categorie);
 	}
 
 	// ------------------------------------------------------------------

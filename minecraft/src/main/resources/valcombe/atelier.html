@@ -2148,10 +2148,13 @@ function renderDetail() {
 	}
 	const key = JSON.stringify([detail, item, detail.kind === "carte" ? data.parties : null, data.enJeu, detailTarget, newKind]);
 	if (key === detailShown) return;
-	// Pas de refonte sous les doigts pendant qu'on remplit la fiche « Nouvelle carte ».
+	// Pas de refonte sous les doigts pendant qu'on remplit la fiche « Nouvelle carte », ni pendant qu'on choisit une
+	// partie dans la liste (sur une tablette, la refaire fermerait le sélecteur ouvert) : ce sera fait à la suite.
 	if (detail.kind === "nouvelle" && detailShown) return;
-	detailShown = key;
 	const body = $("detailBody");
+	const focus = document.activeElement;
+	if (detailShown && focus && focus.tagName === "SELECT" && body.contains(focus)) return;
+	detailShown = key;
 	const scroll = body.scrollTop;
 	body.innerHTML = "";
 	if (detail.kind === "carte") mapDetail(item, body);
@@ -2190,7 +2193,7 @@ function mapDetail(m, body) {
 	sel.setAttribute("aria-label", "Partie qui recevra la carte");
 	for (const p of parties) sel.add(new Option(p.nom + " · " + p.statutNom.toLowerCase() + (p.visee ? " (visée)" : ""), p.id));
 	if (parties.some(p => p.id === detailTarget)) sel.value = detailTarget;
-	sel.onchange = () => { detailTarget = sel.value; renderDetail(); };
+	sel.onchange = () => { detailTarget = sel.value; sel.blur(); renderDetail(); };
 	const target = parties.find(p => p.id === sel.value);
 	const why = !target ? "Aucune partie sur ce serveur." : target.carteId === m.id && !target.bloque
 		? "Elle y est déjà en place : l'envoyer de nouveau la repose à neuf." : target.bloque;
