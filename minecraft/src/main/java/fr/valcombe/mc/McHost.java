@@ -1058,7 +1058,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Une modification des repères est faite : on garde l'état d'avant, puis on enregistre. */
 	private void markersChanged(Village.Marks before) {
 		markerUndo.push(before);
-		SharedUndo.recorded(SharedUndo.Stack.MARKERS);
+		SharedUndo.recorded(SharedUndo.Stack.MARKERS, worldId);
 		while (markerUndo.size() > MARKER_UNDO) {
 			markerUndo.removeLast();
 		}

@@ -261,6 +261,37 @@ class SharedUndoTest {
 		assertEquals(guest, l.nextUndo(guest, true, false).player());
 	}
 
+	/**
+	 * Les repères ont une pile par monde (chaque partie, chaque atelier carte) : un geste fait dans un autre monde ne
+	 * recouvre pas ceux de l'invité, et un invité ne défait jamais d'ici le repère d'un autre monde.
+	 */
+	@Test
+	void lesReperesDUnAutreMondeNeComptentPas() {
+		UUID op = OTHER;
+		UUID guest = ME;
+		Journal j = new Journal();
+		j.syncCount(Stack.MARKERS, "atelier-a", 1, List.of(guest)); // l'invité pose un trône dans l'atelier A
+		j.syncCount(Stack.MARKERS, "partie-1", 1, List.of(op)); // puis le Conteur règle un repère dans sa partie
+		assertEquals(guest, j.nextUndo(guest, true, false, "atelier-a").player(),
+			"le repère de la partie ne recouvre pas celui de l'invité dans son atelier");
+		assertEquals(1, j.undoable(guest, true, false, "atelier-a"));
+		assertEquals(List.of(Stack.MARKERS), j.lastRun(guest, true, false, "atelier-a", 5, false).stream().map(Journal.Entry::stack).toList());
+		// Dans l'atelier B, où un opérateur a posé le dernier repère, l'invité ne défait rien (pas même son repère de A).
+		j.syncCount(Stack.MARKERS, "atelier-b", 1, List.of(op));
+		assertNull(j.nextUndo(guest, true, false, "atelier-b"));
+		assertTrue(j.lastRun(guest, true, false, "atelier-b", 5, false).isEmpty());
+		// Un opérateur, lui, défait le dernier repère du monde où il se tient, pas celui d'un autre monde.
+		assertEquals("atelier-a", j.nextUndo(op, true, true, "atelier-a").place());
+		// Le repère défait directement dans un monde (bouton de l'Atelier) sort du journal pour ce monde seulement.
+		j.syncCount(Stack.MARKERS, "partie-1", 0, List.of());
+		assertEquals(2, j.order().size());
+		assertEquals(guest, j.nextUndo(guest, true, false, "atelier-a").player());
+		// Un monde fermé : ses repères sortent du journal.
+		assertTrue(j.places(Stack.MARKERS).containsAll(List.of("atelier-a", "atelier-b")));
+		j.syncCount(Stack.MARKERS, "atelier-b", 0, List.of());
+		assertEquals(java.util.Set.of("atelier-a"), j.places(Stack.MARKERS));
+	}
+
 	@Test
 	void lesGestesWorldEditDUnAutreNeBloquentPas() {
 		Journal j = new Journal();

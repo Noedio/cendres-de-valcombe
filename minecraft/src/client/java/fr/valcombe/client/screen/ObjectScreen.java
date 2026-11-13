@@ -10,7 +10,8 @@ import java.util.List;
 /**
  * Menu de l'outil « Carte : main », en haute résolution : ce qu'on peut faire de l'objet visé (trône, maison, salle,
  * centre ou structure posée). Chaque bouton envoie /vc objet, puis l'écran se ferme pour laisser voir le résultat
- * (sauf les quarts de tour d'un trône, qu'on enchaîne). Le panneau prend la hauteur de ses boutons.
+ * (sauf les huitièmes de tour d'un trône et « Regarder le centre », qu'on enchaîne). Le panneau prend
+ * la hauteur de ses boutons.
  */
 public class ObjectScreen extends HdScreen {
 	/** Pas entre deux boutons (unités ; un bouton fait 18 de haut). */
