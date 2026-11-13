@@ -1,6 +1,11 @@
 [
   {
     "date": "13 nov. 2026",
+    "title": "Version 0.13.0 : les groupes de rôles partout, et deux règles de notre feuille",
+    "text": "Les groupes de rôles voyagent dans les fichiers .valcombe et apparaissent dans l'éditeur de script du jeu : ajoutez un groupe au script, retirez-le, ou ne gardez que lui. Deux règles de notre feuille arrivent, cochées dans « La Table de Valcombe » : la Femme écarlate (l'Héritière) prend la relève même à moins de 5 vivants, et le mal se connaît dès 5 joueurs. Un guide du joueur reprend toutes les règles de la table, rôle par rôle."
+  },
+  {
+    "date": "13 nov. 2026",
     "title": "Version 0.12.0 : un éditeur de carte plus simple, et les rôles choisis par le MJ",
     "text": "Le catalogue montre chaque structure en maquette 3D, et son fantôme apparaît là où vous visez avant de la poser. Un nouvel outil, la main, déplace, tourne ou retire d'un clic un trône, une maison ou une structure posée ; les trônes s'orientent comme on veut. Régénérer un village rase d'abord toute l'ancienne carte. Le Conteur peut imposer des rôles avant de lancer, puis corriger la distribution avant la première nuit. Et l'option « Noms au-dessus des têtes » fonctionne de nouveau."
   },
