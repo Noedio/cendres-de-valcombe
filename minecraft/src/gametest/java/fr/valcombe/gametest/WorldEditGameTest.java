@@ -163,8 +163,10 @@ public class WorldEditGameTest implements FabricClientGameTest {
 		BlockPos second = feet.offset(2, 0, 1);
 		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", first.getX(), first.getY(), first.getZ()));
 		world.getServer().runCommand(String.format(Locale.ROOT, "setblock %d %d %d minecraft:stone", second.getX(), second.getY(), second.getZ()));
-		world.getServer().runOnServer(server -> ValcombeUi.mapTools(server.getPlayerList().getPlayerByName(me), true));
+		// L'éditeur de Valcombe ne répond qu'en mode construction : on y entre (il donne aussi les outils de carte).
+		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));
 		ctx.waitTicks(10);
+		check(world.getServer().computeOnServer(server -> (Boolean) ValcombeMod.editor().state(me).get("construction")), "mode construction");
 
 		check(hold(ctx, world, me, s -> ValcombeUi.mapTool(s) == ValcombeUi.MapTool.SELECT), "outil « Carte : sélection » en main");
 		ctx.runOnClient(mc -> mc.gameMode.startDestroyBlock(first, Direction.UP));
@@ -201,7 +203,7 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			server.overworld().getBlockState(second).is(Blocks.STONE)), "la baguette de WorldEdit pose son premier coin (" + wand + ")");
 		check(world.getServer().computeOnServer(server -> ValcombeMod.editor().isCorner(server.getPlayerList().getPlayerByName(me), 1, first)),
 			"le coin de Valcombe n'a pas bougé");
-		world.getServer().runOnServer(server -> ValcombeUi.mapTools(server.getPlayerList().getPlayerByName(me), false));
+		world.getServer().runOnServer(server -> ValcombeMod.host().toggleConstruction(server.getPlayerList().getPlayerByName(me)));
 		System.out.println("[valcombe-test] WorldEdit : les outils de Valcombe gardent leurs clics, //wand garde les siens");
 	}
 }

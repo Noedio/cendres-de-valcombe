@@ -112,7 +112,8 @@ public class WorldsGameTest implements FabricClientGameTest {
 			// Un bloc posé au-dessus du sol, enregistré sur le disque.
 			BlockPos marked = new BlockPos(2, WorldManager.SURFACE_Y + 1, 3);
 			server.runOnServer(s -> worlds().level(id).setBlockAndUpdate(marked, Blocks.GOLD_BLOCK.defaultBlockState()));
-			server.runCommand("save-all flush");
+			// Comme « save-all flush », qui n'existe que sur un serveur dédié (inconnue en solo).
+			server.runOnServer(s -> s.saveEverything(true, true, true));
 			ctx.waitTicks(20);
 			check(server.computeOnServer(s -> worlds().level(id).getBlockState(marked).is(Blocks.GOLD_BLOCK)), "bloc d'or posé");
 			check(server.computeOnServer(s -> Files.isDirectory(worlds().folder(id).resolve("region"))), "monde enregistré sur le disque : "

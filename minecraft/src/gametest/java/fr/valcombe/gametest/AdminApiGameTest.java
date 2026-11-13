@@ -141,8 +141,9 @@ public class AdminApiGameTest implements FabricClientGameTest {
 				ctx.waitTick();
 			}
 			check(deleted.get().isDone() && !deleted.get().isCompletedExceptionally(), "monde d'essai supprimé");
-			JsonArray after = json(get(ctx, "/admin/etat", key())).getAsJsonArray("mondes");
-			check(after.size() == mondes.size() - 1 && !after.toString().contains("\"" + worldId + "\""), "monde d'essai retiré de la liste");
+			JsonArray remaining = json(get(ctx, "/admin/etat", key())).getAsJsonArray("mondes");
+			check(remaining.size() == mondes.size() - 1 && !remaining.toString().contains("\"" + worldId + "\""),
+				"monde d'essai retiré de la liste");
 			System.out.println("[valcombe-test] admin/etat : mondes du gestionnaire listés, " + mondes.size() + " avec l'essai");
 
 			// Joueurs

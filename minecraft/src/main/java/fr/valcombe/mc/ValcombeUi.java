@@ -216,6 +216,15 @@ public final class ValcombeUi {
 				}
 			}
 		}
+		if (slot >= 9 && slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE) {
+			// Barre d'objets pleine (lanternes ramassées, objets du joueur) : l'outil est rangé dans le sac. Il prend
+			// la case choisie de la barre, et l'objet qui s'y trouvait va à sa place dans le sac.
+			int selected = inv.getSelectedSlot();
+			ItemStack held = inv.getItem(selected);
+			inv.setItem(selected, inv.getItem(slot));
+			inv.setItem(slot, held);
+			slot = selected;
+		}
 		if (slot >= 0 && slot < 9) {
 			inv.setSelectedSlot(slot);
 			p.connection.send(new net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket(slot));
