@@ -501,6 +501,11 @@ public partial class MainWindow
         {
             if (_vpsStep == 1)
             {
+                if (VpsSudoToggle.IsChecked != true)
+                {
+                    // Case décochée : plus de mot de passe sudo à part (sinon un ancien, enregistré, resterait à jamais).
+                    v.Profile.SudoPasswordProtected = "";
+                }
                 var problems = await v.SetAccountAsync(VpsUser.Text, VpsAuthKey.IsChecked == true ? SshAuthKind.PrivateKey : SshAuthKind.Password,
                     VpsPassword.Password, VpsKeyFile.Text.Length > 0 ? VpsKeyFile.Text : null, VpsPassphrase.Password,
                     VpsSudoToggle.IsChecked == true ? VpsSudo.Password : "");
@@ -718,6 +723,9 @@ public partial class MainWindow
         }
         v.Profile.SetSudoPassword(VpsSudoRetryBox.Password);
         VpsSudoRetryBox.Password = "";
+        // Le compte en garde trace : revenir à l'étape du compte ne l'efface pas (case cochée, champ vide = gardé).
+        VpsSudoToggle.IsChecked = true;
+        VpsSudo.Visibility = Visibility.Visible; // la case ne réagit qu'au clic : le champ est montré ici
         await VpsRunAsync("Nouvelle connexion avec le mot de passe sudo…", async ct =>
         {
             if (await v.ConnectAsync(null, ct) != VpsConnectResult.Connected)
@@ -1021,6 +1029,12 @@ public partial class MainWindow
             fiche.Id = _vpsEditing.Id;
         }
         _vpsFiche = fiche;
+        if (_config.AdminTarget == fiche.Id)
+        {
+            // Fiche modifiée du serveur choisi : la connexion de la page tient l'ancien profil (compte, secrets, port
+            // SSH) et son identifiant n'en dépend pas ; elle est rouverte avec le nouveau à la prochaine interrogation.
+            _srvConnId = "";
+        }
         SaveConfig();
         RefreshSrvPicker();
     }
@@ -1186,9 +1200,9 @@ public partial class MainWindow
                 _srvManaged = status;
             }
         }
-        catch (Exception ex) when (ex is AdminException or OperationCanceledException)
+        catch (Exception)
         {
-            // Par SSH non plus : l'API, elle, dit déjà pourquoi le serveur ne répond pas.
+            // Par SSH non plus (quelle que soit la panne) : l'API, elle, dit déjà pourquoi le serveur ne répond pas.
         }
         finally
         {
@@ -1222,9 +1236,10 @@ public partial class MainWindow
         {
             release = await VpsReleaseAsync(CancellationToken.None);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
-            SetStatus(ex.Message, 0);
+            // Aussi le délai dépassé de GitHub (TaskCanceledException) : rien ne sort d'un async void.
+            SetStatus(ex is InvalidOperationException ? ex.Message : "Impossible de lire la dernière version publiée de Valcombe : " + ex.Message, 0);
             return;
         }
         int players = ConnectedPlayers;
@@ -1254,8 +1269,10 @@ public partial class MainWindow
                 _srvStoppingSince = DateTime.UtcNow;
             }
         }
-        catch (Exception ex) when (ex is AdminException or InvalidOperationException or TimeoutException or IOException)
+        catch (Exception ex)
         {
+            // Tout est attrapé (une coupure SSH en pleine mise à jour lève une SshException) : un async void qui
+            // laisse filer une exception ferme le launcher.
             SetStatus("Mise à jour impossible : " + ex.Message, 0);
             MessageBox.Show(this, "La mise à jour n'a pas abouti :\n\n" + ex.Message + "\n\nRelancer la mise à jour reprend là où elle s'est arrêtée.",
                 "Les Cendres de Valcombe", MessageBoxButton.OK, MessageBoxImage.Warning);

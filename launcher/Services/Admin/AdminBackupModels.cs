@@ -237,7 +237,7 @@ public static class AdminBackupText
     /// /admin/sauvegardes/&lt;nom&gt; et le fichier enregistré sur ce PC.
     /// </summary>
     public static readonly Regex NamePattern =
-        new(@"^valcombe-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-(auto|arret|manuelle|avant-restauration)(-\d{1,4})?\.zip$", RegexOptions.Compiled);
+        new(@"^valcombe-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-(auto|arret|manuelle|avant-restauration)(-\d{1,4})?\.zip\z", RegexOptions.Compiled); // \z : « $ » laisserait passer un saut de ligne final
 
     public static bool IsName(string name) => NamePattern.IsMatch(name);
 

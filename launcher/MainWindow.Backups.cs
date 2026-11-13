@@ -57,6 +57,12 @@ public partial class MainWindow
         _bkDirty = false;
         _bkConfirm = null;
         _bkDisk = null;
+        // La connexion des téléchargements en cours se ferme : ils s'arrêtent proprement (le « .partiel » est effacé)
+        // au lieu d'échouer sur une connexion fermée.
+        foreach (var running in _bkDownloads.Values)
+        {
+            running.Cancel();
+        }
         if (BkConfirm != null)
         {
             BkConfirm.Visibility = Visibility.Collapsed;
@@ -594,6 +600,15 @@ public partial class MainWindow
         {
             BkNotify("Le serveur n'a pas répondu à temps : la sauvegarde est peut-être partie, la liste le dira.", "erreur");
         }
+        catch (Exception ex)
+        {
+            // Connexion remplacée (et fermée) pendant la requête, ou imprévu : jamais d'exception hors d'un async void,
+            // elle fermerait le launcher.
+            if (gen == _srvGen)
+            {
+                BkNotify("Sauvegarde impossible : " + ex.Message, "erreur");
+            }
+        }
         finally
         {
             _bkStarting = false;
@@ -671,8 +686,9 @@ public partial class MainWindow
                 check.Ok ? "ok" : "erreur", "Afficher", () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{target}\"")));
             SetStatus(check.Ok ? "Archive téléchargée et vérifiée." : "Archive téléchargée, mais abîmée.", check.Ok ? 1 : 0);
         }
-        catch (Exception ex) when (ex is AdminException or IOException or UnauthorizedAccessException or OperationCanceledException)
+        catch (Exception ex)
         {
+            // Tout est attrapé : appelé depuis un clic (async void), une exception qui filerait fermerait le launcher.
             TryDeleteFile(partial);
             bool cancelled = ex is OperationCanceledException;
             BkNotify(cancelled ? "Téléchargement arrêté : rien n'a été gardé." : "Téléchargement impossible : " + ex.Message, cancelled ? "info" : "erreur");
@@ -801,6 +817,16 @@ public partial class MainWindow
             BkConfirmLater.IsEnabled = true;
             BkNotify("Le serveur n'a pas répondu à temps : la restauration est peut-être prévue, la liste le dira.", "erreur");
         }
+        catch (Exception ex)
+        {
+            // Connexion remplacée pendant la requête, ou imprévu : rien ne sort d'un async void.
+            if (gen == _srvGen)
+            {
+                BkConfirmRestart.IsEnabled = true;
+                BkConfirmLater.IsEnabled = true;
+                BkNotify("Restauration impossible : " + ex.Message, "erreur");
+            }
+        }
         _bkStale = true;
         BkRender();
     }
@@ -839,9 +865,9 @@ public partial class MainWindow
             BkFollowRestore(plan.Nom, (AdminBackupText.ParseDate(plan.DemandeLe)?.UtcDateTime ?? DateTime.UtcNow));
             BkNotify(r.Message.Length > 0 ? r.Message : "Redémarrage demandé.", "info");
         }
-        catch (AdminException ex)
+        catch (Exception ex)
         {
-            BkNotify("Redémarrage refusé : " + ex.Message, "erreur");
+            BkNotify((ex is AdminException ? "Redémarrage refusé : " : "Redémarrage impossible : ") + ex.Message, "erreur");
         }
         BkRender();
     }
@@ -863,7 +889,7 @@ public partial class MainWindow
             }
             BkNotify(r.Message, "ok");
         }
-        catch (Exception ex) when (ex is AdminException or OperationCanceledException)
+        catch (Exception ex)
         {
             BkNotify("Annulation impossible : " + ex.Message, "erreur");
         }
@@ -904,7 +930,7 @@ public partial class MainWindow
             _bk?.Sauvegardes.RemoveAll(b => b.Nom == x.Nom);
             BkNotify(r.Message, "ok");
         }
-        catch (Exception ex) when (ex is AdminException or OperationCanceledException)
+        catch (Exception ex)
         {
             BkNotify("Effacement impossible : " + ex.Message, "erreur");
         }
@@ -1029,9 +1055,13 @@ public partial class MainWindow
                 BkSettingsResult.Text += " Le nouveau nombre d'archives s'applique à la prochaine sauvegarde.";
             }
         }
-        catch (Exception ex) when ((ex is AdminException or OperationCanceledException) && gen == _srvGen)
+        catch (Exception ex)
         {
-            BkSettingsMessage(ex.Message, false);
+            // Connexion remplacée pendant la requête (rien à dire), ou refus du serveur.
+            if (gen == _srvGen)
+            {
+                BkSettingsMessage(ex.Message, false);
+            }
         }
         BkRender();
     }

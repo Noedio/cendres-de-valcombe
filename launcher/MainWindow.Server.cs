@@ -947,8 +947,10 @@ public partial class MainWindow
                 _srvQuietUntil = DateTime.MinValue;
                 SrvStartedRemote();
             }
-            catch (Exception ex) when (ex is AdminException or InvalidOperationException or NotSupportedException or TimeoutException)
+            catch (Exception ex)
             {
+                // Tout est attrapé (une coupure SSH lève une SshException) : un gestionnaire async void qui laisse
+                // filer une exception ferme le launcher.
                 SetStatus("Démarrage impossible : " + ex.Message, 0);
                 MessageBox.Show(this, $"{TargetName} n'a pas démarré :\n\n{ex.Message}", "Les Cendres de Valcombe", MessageBoxButton.OK, MessageBoxImage.Warning);
             }

@@ -131,7 +131,8 @@ public sealed class SshConnection : IServerConnection, IManagedServer
             {
                 await vps.StartAsync(ct);
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                           or System.Net.Sockets.SocketException or IOException)
             {
                 throw new AdminException(0, ex.Message, inner: ex);
             }
@@ -227,7 +228,8 @@ public sealed class SshConnection : IServerConnection, IManagedServer
         {
             return await vps.StatusAsync(ct);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                       or System.Net.Sockets.SocketException or IOException)
         {
             throw new AdminException(0, ex.Message, inner: ex);
         }
@@ -244,7 +246,8 @@ public sealed class SshConnection : IServerConnection, IManagedServer
         {
             return await vps.UpdateAsync(release, progress, ct);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                       or System.Net.Sockets.SocketException or IOException)
         {
             throw new AdminException(0, ex.Message, inner: ex);
         }
