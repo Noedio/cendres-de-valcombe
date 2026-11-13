@@ -1,7 +1,7 @@
 ## Les mondes de Valcombe
 
 - **Chaque partie a son monde.** La Partie principale se joue dans un monde plat à elle, où le village de Valcombe est bâti au premier démarrage. Le monde principal de Minecraft ne sert plus.
-- **Le hub**, une salle d'accueil commune : on y arrive en se connectant. Les dalles (s'inscrire, se désinscrire, devenir Conteur), le **tableau des parties** (une fiche par partie, à cliquer pour la rejoindre ou la regarder), des **portes** vers le village de chaque partie, et le mur des rôles.
+- **Le hub**, une salle d'accueil commune : on y arrive en se connectant. Les dalles (s'inscrire, se désinscrire, devenir Conteur), le **tableau des parties** (une fiche par partie, à cliquer pour la rejoindre ou la regarder ; au-delà de six parties, il passe en pages, tournées par les flèches de ses deux bouts), des **portes** vers le village de chaque partie, et le mur des rôles.
 - **Menu J › « Mondes »** : aller d'un monde à l'autre. Chacun retrouve sa dernière position dans chaque monde. `/vc hub` ramène au hub.
 - Tous les mondes de Valcombe sont plats et paisibles ; dans les ateliers, pas de météo et toujours midi. Plus de bulles de progrès de Minecraft dans ces mondes.
 
@@ -24,16 +24,18 @@
 - **Atelier carte** : chaque carte en travail a son propre monde. On y bâtit avec WorldEdit et les outils de repères ; la carte s'**enregistre toute seule** (toutes les 5 minutes, à la fermeture, à l'arrêt) avec ses **versions** (« Revenir à cette version »). Écran « Atelier de la carte » : Enregistrer, Enregistrer sous…, Versions (n)…, Envoyer à la partie…, Fermer l'atelier…
 - **Atelier structures** : toutes les structures, fournies et les vôtres, chacune sur sa parcelle avec son pupitre. On la modifie sur place, puis « Enregistrer ». **Une structure fournie modifiée remplace l'originale partout** (villages générés compris) ; « Revenir à l'originale » la restaure. « Nouvelle structure » ouvre une parcelle vide.
 - **WorldEdit** (7.4.6) est livré avec le modpack, le serveur et le launcher, et **réservé aux ateliers**, pour les opérateurs et les joueurs qu'ils **invitent** (`/vc atelier inviter <joueur> [atelier|tous]`). Un invité laisse son inventaire à l'entrée et le retrouve en sortant.
-- Valcombe le complète : la **baguette de construction** dessinée pour le mod, la **sélection affichée en 3D** avec ses dimensions, **« Sélection → structure du catalogue »**, et un **« annuler » commun** (`/vc annuler`) qui défait dans l'ordre les gestes WorldEdit, les poses de structures et les repères.
+- Valcombe le complète : la **baguette de construction** dessinée pour le mod, la **sélection affichée en 3D** avec ses dimensions, **« Sélection → structure du catalogue »**, et un **« annuler » commun** (`/vc annuler`) qui défait dans l'ordre les gestes WorldEdit, les poses de structures et les repères. Chaque geste garde son auteur : un invité n'annule que les siens, un opérateur peut tout annuler.
+- WorldEdit **répond en français**, même à un joueur dont le jeu est réglé sur une autre langue.
 
 ## L'Atelier refait
 
-- **Dans le jeu** (menu J › Atelier) : un accueil à **quatre entrées**, **Cartes**, **Structures**, **Parties**, **Rôles et scénarios**, avec des **vignettes** faites par le serveur (cartes vues de dessus, structures de trois quarts, parties avec le ciel de leur phase), des fiches, et des parcours en étapes (« Nouvelle carte », « Nouvelle structure »). Une **corbeille** garde les cartes supprimées 30 jours.
+- **Dans le jeu** (menu J › Atelier) : un accueil à **quatre entrées**, **Cartes**, **Structures**, **Parties**, **Rôles et scénarios**, avec des **vignettes** faites par le serveur (cartes vues de dessus, structures de trois quarts, parties avec le ciel de leur phase), des fiches, et des parcours en étapes (« Nouvelle carte », « Nouvelle structure » ; une carte vierge n'a plus besoin de nom). Une **corbeille** garde les cartes supprimées 30 jours.
 - **Sur la page web** : les mêmes quatre onglets, les vignettes, le menu « Partie visée ». Les rôles et les scénarios s'y écrivent toujours ; les blocs se bâtissent dans le jeu.
 
 ## La haute résolution
 
 - Tous les écrans de Valcombe, du menu J au grimoire, sont dessinés à la résolution réelle de l'écran, avec une police lisse et des cadres nets, à toutes les tailles d'interface.
+- Autour du cercle des jetons, les noms des joueurs s'écrivent toujours à l'extérieur, sans se chevaucher ; un nom raccourci se lit en entier au survol de son jeton.
 - Les textures du mod (jetons, emblèmes, outils, trônes, objets) sont redessinées en 128 px.
 
 ## Le serveur, dans le launcher (0.14.0)

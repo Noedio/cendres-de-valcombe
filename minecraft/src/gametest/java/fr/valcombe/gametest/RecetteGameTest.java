@@ -467,6 +467,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		ctx.waitTicks(100); // les textes de la salle sont posés toutes les deux secondes
 		check(server.computeOnServer(s -> !level(st.hubId).getEntities(net.minecraft.world.entity.EntityTypes.TEXT_DISPLAY,
 			e -> e.entityTags().contains("vc_hub_fixe")).isEmpty()), "salle d'accueil : ses textes sont posés");
+		WorldView.clearChat(ctx);
 		shot(ctx, "hub-arrivee");
 
 		// Menu J › Mondes : le hub d'abord, puis le monde de la partie principale.
@@ -488,6 +489,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		}), "le tableau du hub montre la partie principale");
 		place(world, me, st.hubId, HubHall.ARRIVAL.x, HubHall.ARRIVAL.y, HubHall.ARRIVAL.z, HubHall.ARRIVAL_YAW, 8f);
 		ctx.waitTicks(40);
+		WorldView.clearChat(ctx);
 		shot(ctx, "tableau-des-parties");
 		ctx.setScreen(() -> new PartiesScreen(st.mainId));
 		check(waitClient(ctx, 60, mc -> PartiesScreen.games().stream().anyMatch(g -> st.mainId.equals(ClientState.str(g, "id")))
@@ -578,6 +580,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		BlockPos center = server.computeOnServer(s -> mw().marks(atelier).center());
 		look(world, atelier, me, (center.getX() + 0.5), (S + 14), (center.getZ() + 22.5), center.getX(), S, center.getZ());
 		ctx.waitTicks(60);
+		WorldView.clearChat(ctx);
 		shot(ctx, "atelier-carte-village");
 
 		// WorldEdit : la baguette en main, la sélection en 3D avec ses dimensions, puis //set.
@@ -594,10 +597,12 @@ public class RecetteGameTest implements FabricClientGameTest {
 		check(label.equals("L 4 × l 4 × h 3 · 48 blocs"), "étiquette de la sélection : " + label);
 		look(world, atelier, me, (a.getX() - 5.5), (S + 6), (a.getZ() - 5.5), (a.getX() + 2), (S + 1), (a.getZ() + 2));
 		ctx.waitTicks(30);
+		WorldView.clearChat(ctx);
 		shot(ctx, "worldedit-baguette-selection-3d");
 		type(ctx, "/set stone_bricks");
 		check(server.computeOnServer(s -> count(level(atelier), a, b, Blocks.STONE_BRICKS)) == 48, "//set remplit la sélection (48 blocs)");
 		ctx.waitTicks(10);
+		WorldView.clearChat(ctx);
 		shot(ctx, "worldedit-set");
 
 		// Outils de repères : un onzième trône, compté par l'atelier.
@@ -616,6 +621,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		st.seats++;
 		look(world, atelier, me, (seatAt.getX() + 0.5), (S + 5), (seatAt.getZ() + 7.5), seatAt.getX(), (S + 1), seatAt.getZ());
 		ctx.waitTicks(40);
+		WorldView.clearChat(ctx);
 		shot(ctx, "outils-de-reperes-trone-ajoute");
 		ctx.setScreen(MapWorkshopScreen::new);
 		check(waitClient(ctx, 60, mc -> {
@@ -643,6 +649,11 @@ public class RecetteGameTest implements FabricClientGameTest {
 			return mw().autosave(atelier, MapVersions.Kind.AUTO);
 		});
 		check(auto.startsWith("Enregistrement automatique"), "enregistrement automatique : " + auto);
+		String autoId = server.computeOnServer(s -> {
+			MapVersions.Version last = ValcombeMod.maps().versions().last(mapId);
+			return last != null && last.kind() == MapVersions.Kind.AUTO ? last.id() : "";
+		});
+		check(!autoId.isEmpty(), "l'enregistrement automatique a sa version");
 		String manual = server.computeOnServer(s -> ValcombeMod.maps().versions().list(mapId).stream()
 			.filter(v -> v.kind() == MapVersions.Kind.MANUELLE && v.seats() == seats).findFirst().orElseThrow().id());
 		ctx.setScreen(MapWorkshopScreen::new);
@@ -654,8 +665,12 @@ public class RecetteGameTest implements FabricClientGameTest {
 		press(ctx, "Revenir à cette version");
 		check(waitFor(ctx, world, 3000, s -> mw().idle(atelier) && level(atelier).getBlockState(extra).isAir()
 			&& count(level(atelier), a, b, Blocks.STONE_BRICKS) == 48), "retour à la version : le bloc de diamant est parti, le socle est resté");
+		// L'état d'avant le retour (le bloc de diamant) est gardé : par l'enregistrement automatique qui venait de le prendre
+		// (rien n'a changé depuis, le retour ne le reprend pas une seconde fois), ou par une version « avant un retour ».
 		check(server.computeOnServer(s -> ValcombeMod.maps().versions().list(mapId).stream()
-			.anyMatch(v -> v.kind() == MapVersions.Kind.AVANT_RETOUR)), "l'état d'avant le retour est gardé en version");
+			.anyMatch(v -> v.kind() == MapVersions.Kind.AVANT_RETOUR || v.id().equals(autoId))),
+			"l'état d'avant le retour est gardé en version : " + server.computeOnServer(s -> ValcombeMod.maps().versions().list(mapId)
+				.stream().map(v -> v.kind() + " " + v.id()).toList()));
 		ctx.setScreen(() -> null);
 
 		// La fiche de la carte dans la bibliothèque : sa vignette, faite par le serveur.
@@ -729,6 +744,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		BlockPos c = server.computeOnServer(s -> Games.main().host().village().center());
 		look(world, mainId, me, (c.getX() + 0.5), (S + 16), (c.getZ() + 24.5), c.getX(), S, c.getZ());
 		ctx.waitTicks(60);
+		WorldView.clearChat(ctx);
 		shot(ctx, "partie-principale-carte-posee");
 
 		// L'atelier de la carte se ferme : son monde est supprimé, la carte reste dans la bibliothèque.
@@ -753,8 +769,14 @@ public class RecetteGameTest implements FabricClientGameTest {
 		ctx.runOnClient(mc -> StructuresPage.resetFilters());
 		press(ctx, AtelierHome.STRUCTURES);
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructuresPage), "entrée Structures : le catalogue");
+		// La galerie ne demande que les vignettes des cases à l'écran, et le puits est plus bas (rangé par nom) : on la
+		// demande comme le fera sa fiche, puis on attend qu'elle arrive.
 		check(waitClient(ctx, 400, mc -> StructuresPage.catalog().stream().filter(o -> "puits".equals(ClientState.str(o, "id")))
-			.anyMatch(o -> Vignettes.ready("structure:puits", ClientState.str(o, "vignette")))), "vignette du puits reçue");
+			.anyMatch(o -> {
+				String stamp = ClientState.str(o, "vignette");
+				Vignettes.get("structure:puits", stamp);
+				return Vignettes.ready("structure:puits", stamp);
+			})), "vignette du puits reçue");
 		ctx.waitTicks(40);
 		shot(ctx, "structures-catalogue");
 		String puitsName = server.computeOnServer(s -> structures().def("puits").nom);
@@ -774,6 +796,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		ctx.setScreen(() -> null);
 		place(world, me, ws, puits.x() + 0.5, S + 4, puits.lecternZ() - 4.5, 0f, 25f);
 		ctx.waitTicks(60);
+		WorldView.clearChat(ctx);
 		shot(ctx, "atelier-structures-parcelle");
 
 		// Retouche avec WorldEdit : la cloche devient un bloc d'or ; « Enregistrer » au pupitre en fait la version qui sert partout.
@@ -807,6 +830,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		st.puitsTouched = false;
 		ctx.setScreen(() -> null);
 		ctx.waitTicks(20);
+		WorldView.clearChat(ctx);
 		shot(ctx, "atelier-structures-puits-original");
 
 		// Nouvelle structure depuis une sélection : une petite tour bâtie à WorldEdit hors des parcelles, puis le parcours guidé.
@@ -1062,6 +1086,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		}), "le tableau du hub montre les deux parties : " + server.computeOnServer(s -> ValcombeMod.hub().boardShown()));
 		place(world, me, st.hubId, HubHall.ARRIVAL.x, HubHall.ARRIVAL.y, HubHall.ARRIVAL.z, HubHall.ARRIVAL_YAW, 8f);
 		ctx.waitTicks(60);
+		WorldView.clearChat(ctx);
 		shot(ctx, "tableau-deux-parties");
 	}
 
@@ -1098,6 +1123,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 		check(server.computeOnServer(s -> Games.byWorld(essai).session().game().day() == 1 && Games.byWorld(essai).session().game().dayOver()),
 			"elle reprend où elle en était (fin du premier jour)");
 		ctx.waitTicks(20);
+		WorldView.clearChat(ctx);
 		shot(ctx, "partie-essai-reprise");
 	}
 
@@ -1254,6 +1280,7 @@ public class RecetteGameTest implements FabricClientGameTest {
 			&& Games.main().session().lastGame().winner() == Team.EVIL), "la principale finit : victoire du mal");
 		ctx.waitTicks(40);
 		check(ctx.computeOnClient(mc -> chatCount(mc, win + " mal") == 0), "la fin de la principale ne s'annonce pas dans la partie d'essai");
+		WorldView.clearChat(ctx);
 		shot(ctx, "fin-des-deux-parties");
 		// La remise en état des cartes attend la fin de la veillée (trente secondes au moins), puis se fait par petits lots.
 		ctx.waitTicks(700);

@@ -476,6 +476,17 @@ final class TestKit {
 			for (int j = i + 1; j < ws.size(); j++) {
 				AbstractWidget a = ws.get(i);
 				AbstractWidget b = ws.get(j);
+				if (a instanceof fr.valcombe.client.hd.HdToken && b instanceof fr.valcombe.client.hd.HdToken) {
+					// Deux jetons sont des disques (leur survol aussi, voir HdToken.isMouseOver) : sur un cercle serré, leurs
+					// carrés se croisent en biais sans que les disques se touchent.
+					double ra = a.getWidth() / 2.0;
+					double rb = b.getWidth() / 2.0;
+					if (Math.hypot(a.getX() + ra - b.getX() - rb, a.getY() + ra - b.getY() - rb) < ra + rb) {
+						return "les jetons de « " + a.getMessage().getString() + " » et de « " + b.getMessage().getString()
+							+ " » se touchent";
+					}
+					continue;
+				}
 				if (a.getX() < b.getRight() && b.getX() < a.getRight() && a.getY() < b.getBottom() && b.getY() < a.getBottom()) {
 					return "« " + a.getMessage().getString() + " » chevauche « " + b.getMessage().getString() + " »";
 				}

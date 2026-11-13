@@ -140,7 +140,7 @@ Le détail de chaque étape, l'installation à la main (sans le launcher) et les
 En vous connectant, vous arrivez au **hub**, une salle d'accueil commune à tout le serveur, sous une coupole vitrée. Un joueur assis à une partie en cours, lui, retrouve directement sa place.
 
 - **Les dalles**, au centre : la **dorée** (« S'inscrire ») inscrit à la Partie principale, la **rouge** (« Se désinscrire ») retire l'inscription, l'**obsidienne** (« Devenir Conteur », réservée aux opérateurs) fait de vous le Conteur de la Partie principale. Ce sont les mêmes dalles que dans la salle d'attente de chaque village.
-- **Le tableau des parties** : deux panneaux de trois fiches, une par partie (sa phase, ses places en pastilles, ses joueurs, son Conteur). La Partie principale porte un liseré d'or. **Cliquez sur une fiche** : l'écran **Parties** s'ouvre sur elle, pour la rejoindre ou la regarder (partie 6). Au-delà de six parties, le menu J › « Parties » les montre toutes.
+- **Le tableau des parties** : deux panneaux de trois fiches, une par partie (sa phase, ses places en pastilles, ses joueurs, son Conteur). La Partie principale porte un liseré d'or. **Cliquez sur une fiche** : l'écran **Parties** s'ouvre sur elle, pour la rejoindre ou la regarder (partie 6). Au-delà de six parties, le tableau passe en **pages** : son titre porte le numéro de page (« 1/2 »), et une **flèche à chaque bout** (◀ « Page d'avant », ▶ « Page d'après ») se clique pour tourner la page. La page tournée est la même pour tous les joueurs du hub. Le menu J › « Parties » les montre toutes d'un coup.
 - **Les portes**, trois de chaque côté : la première mène au village de la Partie principale, les suivantes aux parties d'essai. Au-dessus de chacune, le nom du monde, ce qui s'y passe et qui s'y trouve (« 3 inscrits sur 16 places · 2 joueurs », « En cours, nuit 2 · 8 joueurs »). Une porte libre attend une prochaine partie.
 - **Le mur des rôles**, au nord : les rôles du script de la Partie principale, et le panneau de la prochaine partie.
 
@@ -184,6 +184,7 @@ Menu **J** › **Parties** (au hub), ou une fiche cliquée au tableau des partie
 - **Regarder** : vous entrez dans son monde **en spectateur** (mode spectateur de Minecraft) : vous allez où vous voulez, sans voir les rôles ni entendre le vocal des joueurs. Menu J › **Arrêter de regarder** (ou `/vc partie sortir`) vous ramène au hub.
 - **Suspendre** ou **Reprendre** : pour son Conteur et les opérateurs (voir plus bas).
 - **Supprimer** (opérateurs, parties d'essai pas encore lancées) : « Confirmer » efface la partie et son monde ; ses joueurs vont au hub.
+- **Retour** ramène au menu J, ou à Atelier › Parties si vous êtes venu de l'Atelier.
 
 ### Mener une partie parmi d'autres
 
@@ -370,7 +371,7 @@ Les blocs, eux, se bâtissent dans le jeu, dans les **ateliers** : l'atelier car
 
 L'écran « Atelier de Valcombe » s'ouvre sur **quatre grandes entrées**, chacune avec ce qu'elle contient en ce moment (« 12 cartes · 2 en atelier », « 2 parties · 1 en cours ») : **Cartes**, **Structures**, **Parties**, **Rôles et scénarios**. En bas, « Page web » donne le lien de l'Atelier web dans le chat, « Fermer » referme l'écran.
 
-Sur chaque page : en haut, le fil d'Ariane (« Atelier › Cartes › Port ») mène d'un clic aux pages d'avant ; en bas, « Retour », et la réponse du serveur à la dernière action (une coche verte quand c'est fait, une croix rouge et la raison quand c'est refusé) ; en haut à droite, l'avancement d'une carte en train d'être posée. Ce qui détruit ou remplace quelque chose se confirme sur place : la fiche dit ce qui va se passer, en rouge, avec « Annuler » à côté. Le bouton de l'action suivante a un halo doré ; un bouton grisé dit pourquoi au survol. L'écran tient au clavier (Tab, flèches, Entrée, Échap) et à la molette.
+Sur chaque page : en haut, le fil d'Ariane (« Atelier › Cartes › Port ») mène d'un clic aux pages d'avant ; en bas, « Retour », et la réponse du serveur à la dernière action de la page (une coche verte quand c'est fait, une croix rouge et la raison quand c'est refusé ; elle s'efface quand on change de page, et une réponse trop longue pour ses deux lignes se lit en entier au survol) ; en haut à droite, l'avancement d'une carte en train d'être posée. Ce qui détruit ou remplace quelque chose se confirme sur place : la fiche dit ce qui va se passer, en rouge, avec « Annuler » à côté. Le bouton de l'action suivante a un halo doré ; un bouton grisé dit pourquoi au survol. L'écran tient au clavier (Tab, flèches, Entrée, Échap) et à la molette.
 
 Un joueur qui n'est pas opérateur voit à la place un mot qui le renvoie au menu « Mondes », où se trouvent les ateliers où il est invité.
 
@@ -387,7 +388,7 @@ Trois volets : **Bibliothèque**, **Ateliers ouverts**, **Corbeille**.
    - **Supprimer** : à la **corbeille**, après confirmation. La carte y reste 30 jours avec ses versions ; « Restaurer » (volet Corbeille) la remet. Une carte ouverte dans un atelier ne se supprime pas : fermez d'abord son atelier.
 3. **Nouvelle carte**, en trois étapes, une à la fois :
    - **Départ** : village généré, carte vierge, ou fichier `.schem`, `.litematic`, `.nbt` déposé dans `config/valcombe/creations/import` ;
-   - **Réglages** : le nom ; pour un village, le thème, les trônes, la taille et les maisons, avec l'aperçu du plan ;
+   - **Réglages** : le nom (facultatif : une carte vierge sans nom s'appelle « Carte vierge », numérotée si ce nom est pris, et n'en a pas besoin quand elle part directement dans une partie) ; pour un village, le thème, les trônes, la taille et les maisons, avec l'aperçu du plan ;
    - **Vérifier** : où elle naît, **dans un atelier** (« Créer dans un atelier », « Générer dans un atelier », « Importer dans un atelier ») ou **dans une partie** (« Générer dans la partie », « Envoyer une carte vierge » : son monde est remis à neuf).
 
    Ce qui manque pour passer à l'étape suivante est écrit en rouge, et le bouton à presser est mis en avant d'un halo doré.
@@ -466,7 +467,7 @@ Chaque carte en travail a son propre monde, l'**atelier carte** : plat, paisible
    - Accroupi avec l'outil maison ou salle : la construction est bâtie d'un coup (la gomme la retire avec son repère).
    - L'outil structure pose les structures du catalogue (une maison pose son repère de maison avec elle, la salle de convocation le sien).
    - **La main** : clic droit sur un trône, une maison, la salle, le centre ou une structure posée depuis le catalogue ouvre un menu : déplacer, tourner (un trône par huitièmes de tour, ou vers le centre ; une structure d'un quart de tour), retourner, retirer. Une structure retirée rend le terrain d'avant.
-   - `/vc annuler` défait aussi les repères de l'atelier. Les invités de l'atelier y bâtissent et y posent les repères comme les opérateurs.
+   - `/vc annuler` défait aussi les repères de l'atelier. Les invités de l'atelier y bâtissent et y posent les repères comme les opérateurs ; ils n'annulent que leurs propres gestes (voir partie 14).
 3. **Voir où l'on en est** : chaque repère porte une étiquette flottante, visible à travers les murs (« ♛ Trône 3 », « ⌂ Maison 3 », « ✉ Salle de convocation », « ✚ Centre de la place »), et un contour au sol ; un trait de lumière relie le trône et la maison du même numéro quand on s'en approche (le joueur du trône 3 dort dans la maison 3) ; le bord de la zone de la carte est tracé autour de vous. Au-dessus de la place, un panneau compte les repères (« 12 trônes sur 16, 12 maisons, salle de convocation : oui »), dit si la carte est **jouable** (5 trônes au moins) ou ce qui lui manque, et si elle a changé depuis son dernier enregistrement. Le même compte s'affiche au-dessus de la barre d'objets.
 4. **L'écran de l'atelier** : menu J › Mondes › **Atelier de la carte** (ou `/vc atelier carte`, ou le lien du message d'accueil). À gauche, la fiche : le compte des repères, ce qui manque, les conseils (trônes sans maison, pas de salle de convocation), le dernier enregistrement. À droite :
    - **Enregistrer** : la carte va dans la bibliothèque (toute la zone bâtie autour de la place, repères compris) et une **version** est gardée. Si rien n'a changé, rien n'est réécrit.
@@ -517,6 +518,8 @@ On construit avec **WorldEdit**, livré avec le modpack et le serveur, **dans le
 | Annuler, rétablir | `/vc annuler [fois]`, `/vc retablir [fois]` (ou `//undo`, `//redo`) |
 
 - **Annuler** : `/vc annuler` défait **dans l'ordre** vos modifications WorldEdit et les gestes de Valcombe (poses de structures du catalogue, repères), jusqu'à 40 niveaux, contenu des coffres compris. WorldEdit garde son historique, Valcombe le sien, et Valcombe tient l'ordre des gestes. `//undo`, `/vc carte annuler` et le bouton « Annuler » de l'Atelier marchent toujours : l'ordre suit. Une modification des repères annulée ne se rétablit pas : reposez le repère.
+- **Qui annule quoi** : chaque geste garde son auteur. Un invité n'annule que ses propres gestes, et seulement ceux du monde où il se trouve ; dès qu'un autre joueur a fait après lui un geste de Valcombe du même genre (une pose de structure, un repère), les siens d'avant ne s'annulent plus pour lui. Ses gestes WorldEdit, eux, sont à lui seul. Un opérateur peut tout annuler dans le monde où il est.
+- **En français** : WorldEdit répond en français dans les ateliers, même si votre jeu est réglé sur une autre langue.
 - **En faire une structure** : Atelier en jeu › Structures › « Nouvelle structure » › « Depuis la sélection » (aussi « En structure… » du volet Construire), ou `/vc structures depuis-selection <id> "<nom>" [catégorie]` (ou `/vc structure enregistrer <id> <nom>`). Tenez-vous dans la sélection, à l'endroit qui devra se trouver sur le bloc visé (sinon ce sera le milieu de sa base). La structure rejoint « Vos structures », ou le rayon donné en catégorie (`maisons`, `place`, `decor`), et se pose ensuite avec l'outil de structure. Une sélection d'une autre forme que le pavé (polygone, ellipsoïde, cylindre) ne garde que ses propres cases.
 - **Parties d'essai** : WorldEdit y est fermé ; `/vc atelier worldedit-essais oui` l'ouvre aux opérateurs (`non` le referme).
 

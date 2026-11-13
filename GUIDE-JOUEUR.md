@@ -105,6 +105,7 @@ Un serveur de Valcombe peut faire jouer **plusieurs parties en même temps**, ch
 - La nuit tombe : brume, lanternes bleues, chacun dort dans sa maison.
 - **Première nuit** : le Diablotin ne tue personne. Les Sbires apprennent qui est le Diablotin, et le Diablotin apprend ses Sbires et ses trois bluffs. Avec nos règles, c'est vrai dès 5 joueurs (voir section 9).
 - Quand votre tour vient, un écran « Tu te réveilles » s'ouvre : cliquez sur un ou deux jetons de joueurs, ou lisez votre information, puis « Je me rendors ». Avec un MJ humain, vous pouvez lui parler à ce moment, seuls au vocal.
+- Sur ces écrans, les jetons sont rangés en cercle dans l'ordre des trônes, et le nom de chaque joueur s'écrit à l'extérieur du cercle, à côté de son jeton. Quand la place manque (beaucoup de joueurs, longs pseudos), un nom est raccourci ou caché : survolez le jeton pour le lire en entier.
 - Les autres voient « Tu dors… » et peuvent relire leur carnet.
 
 ### Le jour

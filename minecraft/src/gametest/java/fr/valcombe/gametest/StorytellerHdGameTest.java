@@ -302,9 +302,18 @@ public class StorytellerHdGameTest implements FabricClientGameTest {
 			for (int j = i + 1; j < ws.size(); j++) {
 				AbstractWidget a = ws.get(i);
 				AbstractWidget b = ws.get(j);
-				int slack = a instanceof HdToken && b instanceof HdToken ? 1 : 0;
-				boolean overlap = a.getX() + slack < b.getRight() - slack && b.getX() + slack < a.getRight() - slack
-					&& a.getY() + slack < b.getBottom() - slack && b.getY() + slack < a.getBottom() - slack;
+				if (a instanceof HdToken && b instanceof HdToken) {
+					// Deux jetons sont des disques (leur survol aussi, voir HdToken.isMouseOver) : sur un cercle serré, leurs
+					// carrés se croisent en biais sans que les disques se touchent. Ils peuvent se frôler d'une unité.
+					double ra = a.getWidth() / 2.0;
+					double rb = b.getWidth() / 2.0;
+					if (Math.hypot(a.getX() + ra - b.getX() - rb, a.getY() + ra - b.getY() - rb) < ra + rb - 1) {
+						return "les jetons de « " + a.getMessage().getString() + " » et de « " + b.getMessage().getString()
+							+ " » se touchent";
+					}
+					continue;
+				}
+				boolean overlap = a.getX() < b.getRight() && b.getX() < a.getRight() && a.getY() < b.getBottom() && b.getY() < a.getBottom();
 				if (overlap) {
 					return "« " + a.getMessage().getString() + " » chevauche « " + b.getMessage().getString() + " »";
 				}

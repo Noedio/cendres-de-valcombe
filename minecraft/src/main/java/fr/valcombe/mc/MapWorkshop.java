@@ -988,12 +988,14 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 			throw new GameException("Aucune version « " + versionId + " » de cette carte. La liste : /vc atelier carte versions.");
 		}
 		Saved before = store(e, d, MapVersions.Kind.AVANT_RETOUR, null, null, false);
+		// Rien n'avait changé depuis le dernier enregistrement : l'état d'avant est déjà la dernière version.
+		MapVersions.Version kept = before.capture() != null ? before.version() : maps.versions().last(id);
 		maps.restoreVersion(id, v.id());
 		ServerLevel level = worlds.level(e.id());
 		startPlace(e, level, d, id, p, null);
 		return "Retour à la " + v.describe() + " : elle est de nouveau dans la bibliothèque, et reposée dans l'atelier."
-			+ (before.capture() != null ? " L'état d'avant est gardé (version du " + (before.version() == null ? "moment"
-				: before.version().shown()) + ")." : "") + McHost.PROGRESS;
+			+ (before.capture() != null || kept != null && !kept.id().equals(v.id()) ? " L'état d'avant est gardé (version du "
+				+ (kept == null ? "moment" : kept.shown()) + ")." : "") + McHost.PROGRESS;
 	}
 
 	// ------------------------------------------------------------------
