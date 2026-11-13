@@ -1,5 +1,11 @@
 package fr.valcombe.gametest;
 
+import static fr.valcombe.gametest.TestKit.chatText;
+import static fr.valcombe.gametest.TestKit.cleanMain;
+import static fr.valcombe.gametest.TestKit.run;
+import static fr.valcombe.gametest.TestKit.waitClient;
+import static fr.valcombe.gametest.TestKit.waitFor;
+
 import fr.valcombe.client.ClientState;
 import fr.valcombe.mc.GameSave;
 import fr.valcombe.mc.ValcombeMod;
@@ -14,16 +20,12 @@ import fr.valcombe.session.Session;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Predicate;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
-import net.minecraft.commands.CommandSource;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.scores.PlayerTeam;
@@ -53,28 +55,6 @@ public class SuspensGameTest implements FabricClientGameTest {
 		System.out.println("[valcombe-test] capture : " + ctx.takeScreenshot("valcombe-" + name));
 	}
 
-	/** Attend (au plus {@code ticks}) qu'une condition soit vraie sur le serveur ; renvoie si elle l'est devenue. */
-	private static boolean waitFor(ClientGameTestContext ctx, TestSingleplayerContext world, int ticks, Predicate<MinecraftServer> cond) {
-		for (int i = 0; i < ticks; i += 2) {
-			if (world.getServer().computeOnServer(cond::test)) {
-				return true;
-			}
-			ctx.waitTicks(2);
-		}
-		return world.getServer().computeOnServer(cond::test);
-	}
-
-	/** Attend (au plus {@code ticks}) qu'une condition soit vraie sur le client. */
-	private static boolean waitClient(ClientGameTestContext ctx, int ticks, Predicate<net.minecraft.client.Minecraft> cond) {
-		for (int i = 0; i < ticks; i += 2) {
-			if (ctx.computeOnClient(cond::test)) {
-				return true;
-			}
-			ctx.waitTicks(2);
-		}
-		return ctx.computeOnClient(cond::test);
-	}
-
 	private static ServerPlayer player(MinecraftServer s, String name) {
 		return s.getPlayerList().getPlayerByName(name);
 	}
@@ -95,91 +75,6 @@ public class SuspensGameTest implements FabricClientGameTest {
 		var g = s.game();
 		return s.lobby() + "|" + s.storyteller() + "|" + s.paused() + "|" + s.suspended() + "|" + s.nominationsOpen() + "|"
 			+ (g == null ? "-" : g.phase() + " n" + g.night() + " j" + g.day() + " " + g.players().stream().map(p -> p.name).toList());
-	}
-
-	/** Lance une commande au nom de ce joueur, là où il se trouve, et renvoie sa réponse (fil du serveur, même tick). */
-	private static String run(MinecraftServer s, ServerPlayer p, String cmd) {
-		StringBuilder out = new StringBuilder();
-		CommandSource capture = new CommandSource() {
-			@Override
-			public void sendSystemMessage(Component message) {
-				out.append(message.getString()).append(' ');
-			}
-
-			@Override
-			public boolean acceptsSuccess() {
-				return true;
-			}
-
-			@Override
-			public boolean acceptsFailure() {
-				return true;
-			}
-
-			@Override
-			public boolean shouldInformAdmins() {
-				return false;
-			}
-		};
-		s.getCommands().performPrefixedCommand(p.createCommandSourceStack().withSource(capture), cmd);
-		return out.toString().trim();
-	}
-
-	/** Le texte du chat du client (tous les messages reçus), lu par réflexion. */
-	private static String chatText(net.minecraft.client.Minecraft mc) {
-		StringBuilder out = new StringBuilder();
-		try {
-			appendMessages(mc.gui.hud.getChat(), out);
-		} catch (ReflectiveOperationException | RuntimeException e) {
-			out.append("(chat illisible : ").append(e).append(')');
-		}
-		return out.toString();
-	}
-
-	private static void appendMessages(Object chat, StringBuilder out) throws ReflectiveOperationException {
-		for (Class<?> c = chat.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-			for (var f : c.getDeclaredFields()) {
-				if (!List.class.isAssignableFrom(f.getType()) || java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
-					continue;
-				}
-				f.setAccessible(true);
-				Object list = f.get(chat);
-				if (!(list instanceof List<?> items)) {
-					continue;
-				}
-				for (Object item : List.copyOf(items)) {
-					if (item == null) {
-						continue;
-					}
-					for (var g : item.getClass().getDeclaredFields()) {
-						if (Component.class.isAssignableFrom(g.getType()) && !java.lang.reflect.Modifier.isStatic(g.getModifiers())) {
-							g.setAccessible(true);
-							Object v = g.get(item);
-							if (v instanceof Component comp) {
-								out.append(comp.getString()).append('\n');
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	/** Les parties survivent d'une classe de test à l'autre (fiches) : on repart d'une partie principale libre. */
-	private static void cleanMain(TestSingleplayerContext world, String me) {
-		world.getServer().runOnServer(s -> {
-			var session = Games.main().session();
-			if (session.game() != null) {
-				session.stop();
-			}
-			if (me.equals(session.storyteller())) {
-				session.toggleStoryteller(me);
-			}
-			if (session.lobby().contains(me)) {
-				session.leave(me);
-			}
-			session.removeBots();
-		});
 	}
 
 	@Override

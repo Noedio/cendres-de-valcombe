@@ -1,13 +1,19 @@
 package fr.valcombe.gametest;
 
+import static fr.valcombe.gametest.TestKit.buttons;
+import static fr.valcombe.gametest.TestKit.chooseRow;
+import static fr.valcombe.gametest.TestKit.greyed;
+import static fr.valcombe.gametest.TestKit.grid;
+import static fr.valcombe.gametest.TestKit.hdButton;
+import static fr.valcombe.gametest.TestKit.openInGrid;
+import static fr.valcombe.gametest.TestKit.pressHd;
+import static fr.valcombe.gametest.TestKit.primary;
+
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
 import fr.valcombe.client.Vignettes;
 import fr.valcombe.client.hd.HdButton;
-import fr.valcombe.client.hd.HdGrid;
-import fr.valcombe.client.hd.HdScreen;
-import fr.valcombe.client.hd.HdTabs;
 import fr.valcombe.client.screen.MainScreen;
 import fr.valcombe.client.screen.atelier.AtelierHome;
 import fr.valcombe.client.screen.atelier.AtelierPage;
@@ -37,8 +43,6 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -118,138 +122,23 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 	}
 
 	// ------------------------------------------------------------------
-	// L'écran
+	// L'écran (les aides de TestKit, avec les vérifications et les attentes de ce test)
 	// ------------------------------------------------------------------
-
-	private static HdButton find(Minecraft mc, String label) {
-		if (mc.gui.screen() == null) {
-			return null;
-		}
-		for (GuiEventListener w : mc.gui.screen().children()) {
-			if (w instanceof HdButton b && b.visible && b.getMessage().getString().equals(label)) {
-				return b;
-			}
-		}
-		return null;
-	}
-
-	private static String buttons(ClientGameTestContext ctx) {
-		return ctx.computeOnClient(mc -> {
-			StringBuilder out = new StringBuilder();
-			if (mc.gui.screen() != null) {
-				for (var w : mc.gui.screen().children()) {
-					if (w instanceof HdButton b) {
-						out.append(b.active ? "[" : "(").append(b.getMessage().getString()).append(b.active ? "] " : ") ");
-					}
-				}
-			}
-			return out.toString();
-		});
-	}
 
 	/** Clique le bouton qui porte ce libellé (il doit être là et actif). */
 	private static void press(ClientGameTestContext ctx, String label) {
-		boolean done = ctx.computeOnClient(mc -> {
-			HdButton b = find(mc, label);
-			if (b == null || !b.active) {
-				return false;
-			}
-			b.press();
-			return true;
-		});
+		boolean done = pressHd(ctx, label);
 		check(done, "bouton « " + label + " » parmi : " + buttons(ctx));
 		ctx.waitTicks(12);
 	}
 
-	/** Le bouton est là, grisé. */
-	private static boolean greyed(ClientGameTestContext ctx, String label) {
-		return ctx.computeOnClient(mc -> {
-			HdButton b = find(mc, label);
-			return b != null && !b.active;
-		});
-	}
-
-	/** Le bouton est là, actif et mis en avant (l'action suivante). */
-	private static boolean primary(ClientGameTestContext ctx, String label) {
-		return ctx.computeOnClient(mc -> {
-			HdButton b = find(mc, label);
-			return b != null && b.active && b.isPrimary();
-		});
-	}
-
 	private static void chooseTab(ClientGameTestContext ctx, String label) {
-		boolean ok = ctx.computeOnClient(mc -> {
-			for (var w : mc.gui.screen().children()) {
-				if (w instanceof HdTabs t) {
-					for (int i = 0; i < t.labels().size(); i++) {
-						if (t.labels().get(i).startsWith(label)) {
-							t.choose(i);
-							return true;
-						}
-					}
-				}
-			}
-			return false;
-		});
-		check(ok, "onglet « " + label + " »");
+		check(TestKit.chooseTab(ctx, label), "onglet « " + label + " »");
 		ctx.waitTicks(12);
 	}
 
-	@SuppressWarnings("unchecked")
-	private static HdGrid<JsonObject> grid(Minecraft mc) {
-		for (var w : mc.gui.screen().children()) {
-			if (w instanceof HdGrid<?> g) {
-				return (HdGrid<JsonObject>) g;
-			}
-		}
-		return null;
-	}
-
-	private static int field(Screen s, String name) {
-		try {
-			var f = fr.valcombe.client.screen.BaseScreen.class.getDeclaredField(name);
-			f.setAccessible(true);
-			return f.getInt(s);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError(e);
-		}
-	}
-
-	/** Un widget visible hors du panneau, ou deux qui se chevauchent ; null si la mise en page est bonne. */
 	private static String layoutProblem(Minecraft mc) {
-		Screen s = mc.gui.screen();
-		if (!(s instanceof HdScreen)) {
-			return "pas un écran haute résolution : " + s;
-		}
-		int px = field(s, "px");
-		int py = field(s, "py");
-		int pw = field(s, "pw");
-		int ph = field(s, "ph");
-		if (px < 0 || py - 9 < 0 || px + pw > s.width || py + ph > s.height) {
-			return "panneau hors de l'écran (" + px + ", " + py + ", " + pw + " x " + ph + ") dans " + s.width + " x " + s.height;
-		}
-		List<AbstractWidget> ws = new ArrayList<>();
-		for (GuiEventListener child : s.children()) {
-			if (child instanceof AbstractWidget w && w.visible) {
-				ws.add(w);
-			}
-		}
-		for (AbstractWidget w : ws) {
-			if (w.getX() < px + 4 || w.getY() < py + 4 || w.getRight() > px + pw - 4 || w.getBottom() > py + ph - 4) {
-				return "« " + w.getMessage().getString() + " » sort du panneau (" + w.getX() + ", " + w.getY() + ", " + w.getWidth() + " x "
-					+ w.getHeight() + ")";
-			}
-		}
-		for (int i = 0; i < ws.size(); i++) {
-			for (int j = i + 1; j < ws.size(); j++) {
-				AbstractWidget a = ws.get(i);
-				AbstractWidget b = ws.get(j);
-				if (a.getX() < b.getRight() && b.getX() < a.getRight() && a.getY() < b.getBottom() && b.getY() < a.getBottom()) {
-					return "« " + a.getMessage().getString() + " » chevauche « " + b.getMessage().getString() + " »";
-				}
-			}
-		}
-		return null;
+		return TestKit.layoutProblem(mc, true);
 	}
 
 	private static boolean scale(ClientGameTestContext ctx, int guiScale, int windowW, int windowH) {
@@ -312,47 +201,9 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 
 	/** Donne ce texte au champ de saisie de l'écran (comme tapé), puis rouvre la page pour qu'elle en tienne compte. */
 	private static void typeIn(ClientGameTestContext ctx, String text, Supplier<Screen> reopen) {
-		boolean ok = ctx.computeOnClient(mc -> {
-			for (var w : mc.gui.screen().children()) {
-				if (w instanceof fr.valcombe.client.hd.HdTextField f) {
-					f.value(text);
-					return true;
-				}
-			}
-			return false;
-		});
-		check(ok, "champ de saisie pour « " + text + " »");
+		check(TestKit.typeIn(ctx, text), "champ de saisie pour « " + text + " »");
 		ctx.setScreen(reopen::get);
 		ctx.waitTicks(8);
-	}
-
-	/** Choisit dans la liste de l'écran la ligne dont ce champ vaut ce texte. */
-	private static boolean chooseRow(ClientGameTestContext ctx, String key, String value) {
-		boolean ok = ctx.computeOnClient(mc -> {
-			for (var w : mc.gui.screen().children()) {
-				if (w instanceof fr.valcombe.client.hd.HdList<?> l) {
-					for (int i = 0; i < l.items().size(); i++) {
-						if (l.items().get(i) instanceof JsonObject o && value.equals(ClientState.str(o, key))) {
-							l.choose(i);
-							return true;
-						}
-					}
-				}
-			}
-			return false;
-		});
-		ctx.waitTicks(8);
-		return ok;
-	}
-
-	@SuppressWarnings("unchecked")
-	private static boolean openInGrid(ClientGameTestContext ctx, String name) {
-		boolean ok = ctx.computeOnClient(mc -> {
-			HdGrid<JsonObject> g = grid(mc);
-			return g != null && g.open(name);
-		});
-		ctx.waitTicks(10);
-		return ok;
 	}
 
 	private static net.minecraft.nbt.ListTag ints(int... values) {
@@ -497,7 +348,7 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		press(ctx, "Atelier");
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof AtelierHome), "le bouton Atelier du menu J ouvre l'accueil");
 		for (String tile : List.of(AtelierHome.CARTES, AtelierHome.STRUCTURES, AtelierHome.PARTIES, AtelierHome.ROLES)) {
-			check(ctx.computeOnClient(mc -> find(mc, tile) != null), "entrée « " + tile + " »");
+			check(ctx.computeOnClient(mc -> hdButton(mc, tile) != null), "entrée « " + tile + " »");
 		}
 		check(waitClient(ctx, 200, mc -> MapsPage.library().stream().anyMatch(o -> mapId.equals(ClientState.str(o, "id")))),
 			"la carte est dans la vue de l'Atelier");
@@ -564,14 +415,14 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		ctx.waitTicks(10);
 		press(ctx, MapSheetPage.DELETE);
 		check(server.computeOnServer(s -> ValcombeMod.maps().exists(copy)), "un seul clic ne supprime rien");
-		check(ctx.computeOnClient(mc -> find(mc, MapSheetPage.DELETE_CONFIRM) != null && find(mc, MapSheetPage.CANCEL) != null
-			&& find(mc, MapSheetPage.DELETE) == null), "la confirmation est demandée (« Mettre à la corbeille » ou « Annuler »)");
+		check(ctx.computeOnClient(mc -> hdButton(mc, MapSheetPage.DELETE_CONFIRM) != null && hdButton(mc, MapSheetPage.CANCEL) != null
+			&& hdButton(mc, MapSheetPage.DELETE) == null), "la confirmation est demandée (« Mettre à la corbeille » ou « Annuler »)");
 		shot(ctx, "5-suppression-a-confirmer");
 		press(ctx, MapSheetPage.DELETE_CONFIRM);
 		check(waitFor(ctx, world, 100, s -> !ValcombeMod.maps().exists(copy)), "la copie a quitté la bibliothèque");
 		check(waitClient(ctx, 100, mc -> mc.gui.screen() instanceof MapsPage), "la fiche revient d'elle-même à la bibliothèque");
 		chooseTab(ctx, "Corbeille");
-		check(waitClient(ctx, 60, mc -> grid(mc) == null && find(mc, "Restaurer") != null), "la copie est à la corbeille");
+		check(waitClient(ctx, 60, mc -> grid(mc) == null && hdButton(mc, "Restaurer") != null), "la copie est à la corbeille");
 		shot(ctx, "6-corbeille");
 		press(ctx, "Restaurer");
 		check(waitFor(ctx, world, 100, s -> ValcombeMod.maps().exists(copy)), "« Restaurer » la remet dans la bibliothèque");
@@ -625,7 +476,7 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		// Vu dans le même instant que le clic : un petit fichier est posé aussitôt et le joueur est alors conduit dans
 		// l'atelier, ce qui ferme l'écran.
 		check(ctx.computeOnClient(mc -> {
-			HdButton b = find(mc, "Importer dans un atelier");
+			HdButton b = hdButton(mc, "Importer dans un atelier");
 			if (b == null || !b.active) {
 				return false;
 			}
@@ -793,8 +644,8 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		// Échap défait la confirmation sans fermer l'Atelier ; un second Échap, lui, le fermerait.
 		ctx.getInput().pressKey(com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE);
 		ctx.waitTicks(8);
-		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage && find(mc, StructureSheetPage.DELETE) != null
-			&& find(mc, StructureSheetPage.DELETE_CONFIRM) == null), "Échap annule la confirmation, la fiche reste ouverte");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof StructureSheetPage && hdButton(mc, StructureSheetPage.DELETE) != null
+			&& hdButton(mc, StructureSheetPage.DELETE_CONFIRM) == null), "Échap annule la confirmation, la fiche reste ouverte");
 		press(ctx, StructureSheetPage.DELETE);
 		shot(ctx, "19-structure-suppression-a-confirmer");
 		press(ctx, StructureSheetPage.DELETE_CONFIRM);
@@ -825,11 +676,11 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof PartySheetPage p && p.gameId().equals(mainId)), "fiche de la partie");
 		shot(ctx, "21-fiche-partie");
 		press(ctx, PartySheetPage.MAP);
-		check(ctx.computeOnClient(mc -> find(mc, PartySheetPage.SAVE_AS) != null && find(mc, PartySheetPage.CLEAR) != null),
+		check(ctx.computeOnClient(mc -> hdButton(mc, PartySheetPage.SAVE_AS) != null && hdButton(mc, PartySheetPage.CLEAR) != null),
 			"« Carte en place » : enregistrer sous, carte vide, vider le monde");
 		shot(ctx, "22-partie-carte-en-place");
 		press(ctx, PartySheetPage.CLEAR);
-		check(ctx.computeOnClient(mc -> find(mc, PartySheetPage.CLEAR_CONFIRM) != null), "vider le monde se confirme");
+		check(ctx.computeOnClient(mc -> hdButton(mc, PartySheetPage.CLEAR_CONFIRM) != null), "vider le monde se confirme");
 		press(ctx, PartySheetPage.CANCEL);
 		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "« Annuler » : rien n'est lancé");
 
