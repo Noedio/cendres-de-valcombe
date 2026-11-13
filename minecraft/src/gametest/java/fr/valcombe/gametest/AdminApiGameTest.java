@@ -151,7 +151,9 @@ public class AdminApiGameTest implements FabricClientGameTest {
 			status(joueurs, 200, "joueurs");
 			JsonObject j = json(joueurs).getAsJsonArray("joueurs").get(0).getAsJsonObject();
 			check(j.get("nom").getAsString().equals(me) && j.get("operateur").getAsBoolean(), "joueur opérateur listé : " + joueurs.body());
-			check(j.get("monde").getAsString().equals("minecraft:overworld"), "monde du joueur");
+			// À la connexion, on arrive au hub.
+			String hubDim = "valcombe:" + world.getServer().computeOnServer(s -> fr.valcombe.mc.ValcombeMod.hub().id());
+			check(j.get("monde").getAsString().equals(hubDim), "monde du joueur : le hub (" + j.get("monde") + ")");
 
 			// Commande, puis sa trace dans la console
 			var list = post(ctx, "/admin/commande", key(), "{\"commande\": \"/list\"}");

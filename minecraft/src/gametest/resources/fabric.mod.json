@@ -11,6 +11,7 @@
 			"fr.valcombe.gametest.AdminApiGameTest",
 			"fr.valcombe.gametest.TexturesGameTest",
 			"fr.valcombe.gametest.HdGameTest",
+			"fr.valcombe.gametest.HubGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

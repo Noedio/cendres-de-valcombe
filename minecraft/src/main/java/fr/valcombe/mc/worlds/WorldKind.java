@@ -54,6 +54,14 @@ public enum WorldKind {
 	}
 
 	/**
+	 * Monde ouvert à tous les joueurs : le hub et les mondes de partie (vraies parties et parties d'essai). Les
+	 * ateliers sont réservés aux opérateurs (les invitations à construire viendront avec les ateliers).
+	 */
+	public boolean openToAll() {
+		return this == HUB || this == PARTIE || this == ESSAI;
+	}
+
+	/**
 	 * La sorte écrite par un joueur ou lue dans un fichier : le code des commandes ({@code atelier-carte}),
 	 * le nom de la constante ({@code ATELIER_CARTE}) ou un mot court ({@code carte}, {@code structures}),
 	 * sans tenir compte des majuscules ni des tirets ; null si rien ne correspond.

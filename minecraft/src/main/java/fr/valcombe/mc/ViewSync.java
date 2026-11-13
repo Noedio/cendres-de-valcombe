@@ -65,6 +65,11 @@ public final class ViewSync {
 				}
 				view.put("atelier", c.view());
 			}
+			fr.valcombe.mc.hub.Travel travel = ValcombeMod.travel();
+			if (travel != null) {
+				// Menu J, « Mondes » : les mondes où ce joueur peut aller, celui où il est, et s'il peut partir.
+				view.put("mondes", travel.view(p));
+			}
 			String json = GSON.toJson(view);
 			if (!json.equals(lastSent.get(name))) {
 				lastSent.put(name, json);

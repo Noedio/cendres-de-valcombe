@@ -170,6 +170,44 @@ public final class ValcombeMod implements ModInitializer {
 		return worlds;
 	}
 
+	private static fr.valcombe.mc.hub.Travel travel;
+	private static fr.valcombe.mc.hub.Hub hub;
+
+	/** Voyages entre les mondes (dernière position gardée par monde) ; null sans les mondes de Valcombe. */
+	public static fr.valcombe.mc.hub.Travel travel() {
+		return travel;
+	}
+
+	/** Le hub, accueil commun des joueurs ; null sans les mondes de Valcombe, ou si le hub n'a pas pu être préparé. */
+	public static fr.valcombe.mc.hub.Hub hub() {
+		return hub;
+	}
+
+	/**
+	 * Hub et voyages, branchés sur le gestionnaire de mondes : repli des mondes remis à neuf ou supprimés, arrivée
+	 * des joueurs, dalles d'inscription de la salle d'accueil. Sans hub, les voyages marchent quand même (le repli
+	 * se fait alors au village).
+	 */
+	private static void setUpHub(net.minecraft.server.MinecraftServer server, fr.valcombe.mc.worlds.WorldManager manager) {
+		var positions = new fr.valcombe.mc.hub.LastPositions(fr.valcombe.mc.hub.LastPositions.fileIn(
+			server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).normalize()));
+		positions.load();
+		var t = new fr.valcombe.mc.hub.Travel(server, manager, positions, HOST, SESSION);
+		manager.setFallback(t);
+		manager.addListener(t);
+		travel = t;
+		try {
+			var h = new fr.valcombe.mc.hub.Hub(server, manager, t, SESSION);
+			h.start();
+			manager.addListener(h);
+			HOST.setHubPads(h::padAt);
+			HOST.setHubArrival(t::toHubArrival);
+			hub = h;
+		} catch (RuntimeException | LinkageError e) {
+			LOG.error("Hub de Valcombe indisponible : les joueurs arrivent au village", e);
+		}
+	}
+
 	/** Ce que l'Atelier montre des cartes et des structures, pour la page web et l'écran en jeu ; null avant le démarrage du serveur. */
 	public static Workshop workshop() {
 		return workshop;
@@ -280,6 +318,7 @@ public final class ValcombeMod implements ModInitializer {
 				manager.start();
 				worlds = manager;
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
+				setUpHub(server, manager);
 			} catch (RuntimeException | LinkageError e) {
 				LOG.error("Mondes de Valcombe indisponibles : le jeu continue dans le monde principal", e);
 			}
@@ -312,6 +351,17 @@ public final class ValcombeMod implements ModInitializer {
 				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
 			}
 			workshop = null;
+			if (travel != null) {
+				try {
+					travel.stop(); // la position de chacun dans son monde, pour le prochain voyage
+				} catch (RuntimeException e) {
+					LOG.error("Positions des joueurs non enregistrées à l'arrêt", e);
+				}
+			}
+			HOST.setHubPads(null);
+			HOST.setHubArrival(null);
+			hub = null;
+			travel = null;
 			if (worlds != null) {
 				setWorldsView(null);
 				worlds.stop();
@@ -333,6 +383,14 @@ public final class ValcombeMod implements ModInitializer {
 			if (w != null) {
 				guarded("les mondes", w::tick);
 			}
+			var t = travel;
+			if (t != null) {
+				guarded("les voyages", t::tick);
+			}
+			var h = hub;
+			if (h != null) {
+				guarded("le hub", h::tick);
+			}
 			if (server.getTickCount() % 5 == 0) {
 				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village()));
 			}
@@ -350,18 +408,32 @@ public final class ValcombeMod implements ModInitializer {
 			ServerPlayer p = handler.getPlayer();
 			UI.giveMenuItem(p);
 			var g = SESSION.game();
-			HOST.onJoin(p, g != null && g.seatOf(p.getScoreboardName()) >= 0);
+			boolean seated = g != null && g.seatOf(p.getScoreboardName()) >= 0;
+			// Arrivée au hub, sauf pour qui la partie en cours retient au village : sa place, ou le Conteur.
+			boolean stay = seated || (g != null && g.winner() == null && p.getScoreboardName().equals(SESSION.storyteller()));
+			HOST.onJoin(p, seated, stay);
 			// Une seconde plus tard : le client a eu le temps de s'annoncer (écrans du mod ou menus coffre).
 			String joined = p.getScoreboardName();
 			HOST.schedule(20, () -> SESSION.onJoin(joined));
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			String name = handler.getPlayer().getScoreboardName();
+			var t = travel;
+			if (t != null) {
+				guarded("les voyages", () -> t.onDisconnect(handler.getPlayer()));
+			}
 			SYNC.forget(name);
 			if (workshop != null) {
 				workshop.forget(name);
 			}
 			SESSION.onDisconnect(name);
+		});
+		// Mort dans un monde de Valcombe : on réapparaît dans ce monde-là, pas au village.
+		net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.AFTER_RESPAWN.register((before, after, alive) -> {
+			var t = travel;
+			if (!alive && t != null) {
+				guarded("les voyages", () -> t.afterRespawn(before, after));
+			}
 		});
 		// Actions des écrans du mod client : ce sont des commandes /vc, vérifiées comme si elles étaient tapées.
 		ServerPlayNetworking.registerGlobalReceiver(ValcombeNet.ActionPayload.TYPE, (payload, context) -> {

@@ -116,6 +116,9 @@ public class WorldEditGameTest implements FabricClientGameTest {
 			String me = ctx.computeOnClient(mc -> mc.player.getGameProfile().name());
 			world.getServer().runCommand("op " + me);
 			ctx.waitTicks(40);
+			// On arrive au hub : ce test se passe au village actuel (monde principal).
+			ctx.runOnClient(mc -> fr.valcombe.client.ClientState.send("vc monde aller principal"));
+			ctx.waitTicks(40);
 
 			// Les commandes sont enregistrées sur le serveur et envoyées au joueur opérateur (« //wand » s'écrit
 			// « /wand » dans l'arbre des commandes).

@@ -61,7 +61,7 @@ Il y a toujours **un seul Diablotin** ; les autres « Démons » sont des Sbires
 
 | Touche ou objet | À quoi ça sert |
 | --- | --- |
-| **J** | Le menu de Valcombe : rejoindre, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique |
+| **J** | Le menu de Valcombe : rejoindre, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique, mondes |
 | **K** | Revoir sa carte de rôle |
 | **H** | Lever ou baisser la main pendant un vote |
 | **G** | Faire un signe (oui, non, question…) |
@@ -75,7 +75,7 @@ Les touches se changent dans les options de Minecraft (raccourcis clavier), rubr
 
 ### La mise en place
 
-1. Dans la **salle d'attente**, marchez sur la dalle **dorée** pour vous inscrire (la **rouge** pour vous désinscrire).
+1. En vous connectant, vous arrivez au **hub**, la salle d'accueil commune. Marchez sur la dalle **dorée** pour vous inscrire (la **rouge** pour vous désinscrire) : c'est la même chose dans la salle d'attente du village. Au début de la partie, chacun est emmené à sa place. Les portes du hub, ou le menu J, « Mondes », mènent aux autres mondes : chacun y retrouve l'endroit où il les avait quittés (`/vc hub` ramène au hub).
 2. Le MJ lance la partie. Avec un MJ humain, il vous reçoit chacun votre tour dans la **salle de convocation** : vous découvrez votre rôle face à lui, il vous l'explique, personne d'autre n'entend. Sans MJ humain, une carte tombe à l'écran et se retourne.
 3. Chacun s'assoit sur son **trône**, en cercle autour de la place. L'ordre des trônes compte : « voisins » et « assis côte à côte » se lisent sur ce cercle.
 

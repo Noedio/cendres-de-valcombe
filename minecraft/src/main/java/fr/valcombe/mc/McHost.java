@@ -182,7 +182,7 @@ public final class McHost implements Host {
 	 * Renvoie false si le bloc n'est pas un siège.
 	 */
 	public boolean sitAt(ServerPlayer p, BlockPos clicked) {
-		if (village == null || server == null) {
+		if (village == null || server == null || !inMainWorld(p)) {
 			return false;
 		}
 		int k = village.seatIndexAt(clicked);
@@ -283,23 +283,37 @@ public final class McHost implements Host {
 	private int hallGen = (int) (System.nanoTime() & 0xFFFFF);
 	private int boardGen = (int) (System.nanoTime() >> 8 & 0xFFFFF);
 
-	public void updateHall(fr.valcombe.session.Session ses) {
-		if (server == null || village == null || village.hallSpot() == null) {
-			return;
-		}
-		var g = ses.game();
+	/** Les rôles du script en cours, rangés comme sur le mur de la salle d'attente (par type, puis dans l'ordre du jeu). */
+	public static List<fr.valcombe.rules.Role> hallRoles(fr.valcombe.session.Session ses) {
 		List<fr.valcombe.rules.Role> roles = new ArrayList<>(ses.script());
 		roles.sort(java.util.Comparator.comparingInt((fr.valcombe.rules.Role r) -> r.type.ordinal()).thenComparing(Enum::ordinal));
+		return roles;
+	}
+
+	/**
+	 * Le panneau de la prochaine partie (ou de la partie en cours), affiché au-dessus des rôles du script dans la
+	 * salle d'attente du village et sur le mur des rôles du hub.
+	 */
+	public static String hallText(fr.valcombe.session.Session ses) {
+		var g = ses.game();
 		String name = ses.scenario() != null ? "« " + ses.scenario().nom + " »" : ses.scriptName();
 		List<String> lobby = ses.lobby();
 		String st = ses.storyteller();
-		String text = g != null
+		return g != null
 			? "Partie en cours (" + (g.phase() == fr.valcombe.rules.Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day()) + ")"
 				+ "\nRôles du script : " + name
 			: "Prochaine partie : " + name + "\n" + (lobby.isEmpty() ? "Personne n'est encore inscrit"
 				: lobby.size() + " inscrit(s) : " + String.join(", ", lobby.stream().limit(8).toList())
 					+ (lobby.size() > 8 ? "…" : ""))
 				+ "\nConteur : " + (st == null ? "automatique" : st);
+	}
+
+	public void updateHall(fr.valcombe.session.Session ses) {
+		if (server == null || village == null || village.hallSpot() == null) {
+			return;
+		}
+		List<fr.valcombe.rules.Role> roles = hallRoles(ses);
+		String text = hallText(ses);
 		String key = text + "|" + roles + "|" + fr.valcombe.rules.Role.customDefs().size();
 		if (key.equals(hallKey)) {
 			return;
@@ -506,12 +520,34 @@ public final class McHost implements Host {
 		this.padHandler = handler;
 	}
 
+	/** Dalles de la salle d'accueil du hub : la dalle sous les pieds d'un joueur qui s'y trouve, ou null. */
+	private java.util.function.Function<ServerPlayer, Village.Pad> hubPads;
+
+	/** Branche les dalles du hub (mêmes dalles, mêmes effets que celles de la salle d'attente du village). */
+	public void setHubPads(java.util.function.Function<ServerPlayer, Village.Pad> hubPads) {
+		this.hubPads = hubPads;
+	}
+
+	/**
+	 * Arrivée au hub d'un joueur qui se connecte : vrai s'il y a été envoyé (sinon, il va sur la place du village
+	 * comme avant les mondes de Valcombe).
+	 */
+	private java.util.function.Predicate<ServerPlayer> hubArrival;
+
+	public void setHubArrival(java.util.function.Predicate<ServerPlayer> hubArrival) {
+		this.hubArrival = hubArrival;
+	}
+
 	private void checkPads() {
-		if (village == null || padHandler == null || server == null) {
+		if (padHandler == null || server == null || (village == null && hubPads == null)) {
 			return;
 		}
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-			Village.Pad pad = village.padAt(p.blockPosition(), p.level());
+			Village.Pad pad = hubPads != null ? hubPads.apply(p) : null;
+			if (pad == null && village != null && p.level() == server.overworld()) {
+				// Seulement dans le monde principal : les mêmes blocs posés dans un autre monde ne sont pas des dalles.
+				pad = village.padAt(p.blockPosition(), p.level());
+			}
 			Village.Pad before = lastPad.put(p.getScoreboardName(), pad);
 			if (pad != null && pad != before) {
 				padHandler.accept(p, pad);
@@ -526,8 +562,17 @@ public final class McHost implements Host {
 		}
 	}
 
-	/** Arrivée d'un joueur : mode aventure (sauf opérateurs), sur la place si aucune partie ne le retient. */
+	/** Arrivée d'un joueur : comme {@link #onJoin(ServerPlayer, boolean, boolean)}, retenu au village s'il joue. */
 	public void onJoin(ServerPlayer p, boolean inGame) {
+		onJoin(p, inGame, inGame);
+	}
+
+	/**
+	 * Arrivée d'un joueur : mode aventure (sauf opérateurs). Au hub, sauf si la partie en cours le retient au
+	 * village (stay : il y a sa place, ou il en est le Conteur) ; sans hub (mondes de Valcombe indisponibles), sur
+	 * la place du village comme avant.
+	 */
+	public void onJoin(ServerPlayer p, boolean inGame, boolean stay) {
 		boolean op = p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
 		if (!op) {
 			p.setGameMode(GameType.ADVENTURE);
@@ -544,10 +589,21 @@ public final class McHost implements Host {
 				p.setGameMode(mode);
 			}
 		}
-		if (!inGame && village != null) {
+		if (stay) {
+			return; // sa place l'attend : la partie l'y ramène (Session.onJoin)
+		}
+		if (hubArrival != null && hubArrival.test(p)) {
+			return;
+		}
+		if (village != null) {
 			BlockPos s = village.spawn();
 			p.teleportTo(server.overworld(), s.getX() + 0.5, s.getY(), s.getZ() + 0.5, Set.of(), 180, 0, false);
 		}
+	}
+
+	/** Le point d'arrivée du village actuel (salle d'attente ou place), ou null sans carte en service. */
+	public BlockPos villageSpawn() {
+		return village == null ? null : village.spawn();
 	}
 
 	/** Réveil ou sommeil décidé par le Conteur, la nuit : le joueur retrouve ou perd la vue. */
@@ -590,6 +646,7 @@ public final class McHost implements Host {
 	// Carte personnalisée : /vc carte nouvelle, siege, maison, retirer, infos
 	// ------------------------------------------------------------------
 	public String customMap(ServerPlayer p) {
+		requireMainWorld(p);
 		return customMapAt(p.blockPosition().below());
 	}
 
@@ -607,6 +664,22 @@ public final class McHost implements Host {
 		return "Nouvelle carte vide : la place est en " + c.toShortString() + (inPlace ? "." : ", et l'ancienne carte est retirée du monde.")
 			+ " Posez les trônes et les maisons (mode construction, plan de l'Atelier ou /vc carte trone et /vc carte maison), "
 			+ "puis enregistrez-la." + saved;
+	}
+
+	/** Ce joueur est-il dans le monde principal, celui du village actuel ? */
+	private boolean inMainWorld(ServerPlayer p) {
+		return p != null && server != null && p.level() == server.overworld();
+	}
+
+	/**
+	 * La carte du village se travaille sur place : un geste fait depuis un autre monde (le hub, une partie d'essai)
+	 * prendrait la position du joueur dans ce monde-là pour une position du village.
+	 */
+	private void requireMainWorld(ServerPlayer p) {
+		if (p != null && !inMainWorld(p)) {
+			throw new fr.valcombe.rules.GameException("La carte du village se travaille sur place : va d'abord au village actuel "
+				+ "(menu J, « Mondes », ou /vc monde aller principal).");
+		}
 	}
 
 	private Village requireVillage() {
@@ -634,6 +707,9 @@ public final class McHost implements Host {
 	 */
 	public String importStructure(ServerPlayer p, String name) {
 		// Sans carte à remplacer, la construction arrive là où se tient l'opérateur.
+		if (village == null && abandoned == null) {
+			requireMainWorld(p);
+		}
 		BlockPos where = village == null && abandoned == null && p != null ? p.blockPosition().below() : null;
 		if (ValcombeMod.structures().importable().contains(name)) {
 			return importSchematic(name, ValcombeMod.structures().inboxFile(name), where);
@@ -778,10 +854,12 @@ public final class McHost implements Host {
 	}
 
 	public String addSeat(ServerPlayer p) {
+		requireMainWorld(p);
 		return addSeatAt(p.blockPosition());
 	}
 
 	public String addHouse(ServerPlayer p) {
+		requireMainWorld(p);
 		return addHouseAt(p.blockPosition());
 	}
 
@@ -910,6 +988,7 @@ public final class McHost implements Host {
 
 	/** Clic droit avec l'outil « Carte : main » : reposer ce qu'on porte, ou ouvrir le menu de ce qu'on vise. */
 	public String handClick(ServerPlayer p, BlockPos clicked) {
+		requireMainWorld(p);
 		Village v = requireEditable();
 		String who = p.getScoreboardName();
 		BlockPos at = clicked.above();
@@ -1051,6 +1130,7 @@ public final class McHost implements Host {
 		if (tool == ValcombeUi.MapTool.SELECT || tool == ValcombeUi.MapTool.STRUCTURE) {
 			throw new IllegalArgumentException("Outil de l'éditeur : voir MapEditor.");
 		}
+		requireMainWorld(p);
 		if (tool == ValcombeUi.MapTool.HAND) {
 			return handClick(p, clicked);
 		}
@@ -1709,6 +1789,9 @@ public final class McHost implements Host {
 			if (builders.contains(p.getScoreboardName())) {
 				continue; // un constructeur reste où il travaille
 			}
+			if (p.level() != server.overworld()) {
+				continue; // au hub ou dans un autre monde : rien à craindre du chantier du village
+			}
 			if (Math.abs(p.getX() - v.center().getX()) <= reach && Math.abs(p.getZ() - v.center().getZ()) <= reach) {
 				if (p.isPassenger()) {
 					p.stopRiding();
@@ -1899,8 +1982,9 @@ public final class McHost implements Host {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
 		requireFree();
+		// Sans carte, le village est bâti sous les pieds de l'opérateur s'il est au village, sinon au centre habituel.
 		BlockPos c = village != null ? village.center()
-			: p != null ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : mapCenter();
+			: inMainWorld(p) ? new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ()) : mapCenter();
 		Village v = Village.generated(c, theme, seatCount, size, houses);
 		// L'ancienne carte est retirée, puis le village est bâti par petits lots : le serveur reste fluide, une barre montre l'avancement.
 		String saved = replaceMap("Construction du village", v.planBuild(server.overworld()), true, raze, () -> {
@@ -1952,6 +2036,7 @@ public final class McHost implements Host {
 	}
 
 	public String setMapCenter(ServerPlayer p) {
+		requireMainWorld(p);
 		Village v = requireEditable();
 		Village.Marks before = v.marks();
 		moveCenter(v, p.blockPosition().below());
@@ -1982,6 +2067,7 @@ public final class McHost implements Host {
 		if (ValcombeMod.session().game() != null) {
 			throw new fr.valcombe.rules.GameException("Pas de construction pendant une partie.");
 		}
+		requireMainWorld(p);
 		builders.add(name);
 		if (village != null && !village.modified()) {
 			// On entre ici pour bâtir : la carte est désormais tenue pour retouchée, elle ne sera pas remplacée sans sauvegarde.
@@ -2082,6 +2168,7 @@ public final class McHost implements Host {
 			throw new fr.valcombe.rules.GameException("On change de carte entre deux parties.");
 		}
 		requireFree();
+		requireMainWorld(p);
 		BlockPos c = new BlockPos(p.getBlockX(), p.getBlockY() - 1, p.getBlockZ());
 		Village v = Village.generated(c, theme);
 		// Bâti ailleurs que l'ancienne carte, le village la remplace tout de même : elle est d'abord retirée du monde.

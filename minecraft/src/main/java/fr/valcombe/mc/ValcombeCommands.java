@@ -817,7 +817,7 @@ public final class ValcombeCommands {
 						.executes(c -> exec(c, x -> session.setting(arg(x, "cle"), arg(x, "valeur")))))));
 
 		registerEditor(root, registry, admin);
-		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds);
+		fr.valcombe.mc.worlds.WorldCommands.register(root, admin, ValcombeMod::worlds, ValcombeMod::travel);
 		var node = dispatcher.register(root);
 		dispatcher.register(Commands.literal("valcombe").redirect(node));
 	}

@@ -47,6 +47,9 @@ public final class VoiceRouter {
 		java.util.Set<String> inNooks = new java.util.HashSet<>();
 		if (day && village != null) {
 			for (ServerPlayer p : players) {
+				if (p.level() != server.overworld()) {
+					continue; // au hub ou dans un autre monde : aux mêmes coordonnées, ce n'est pas une maison du village
+				}
 				int h = village.houseAt(p.position());
 				if (h >= 0) {
 					byHouse.computeIfAbsent(h, k -> new ArrayList<>()).add(p);
@@ -75,7 +78,7 @@ public final class VoiceRouter {
 				next.put(p.getUUID(), new Route(ids, 0));
 				continue;
 			}
-			if (day && village != null) {
+			if (day && village != null && p.level() == server.overworld()) {
 				int h = village.houseAt(p.position());
 				if (h >= 0) {
 					next.put(p.getUUID(), new Route(byHouse.get(h).stream().filter(o -> o != p).map(ServerPlayer::getUUID).toList(), 0));
