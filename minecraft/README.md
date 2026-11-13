@@ -1,10 +1,11 @@
-# Les Cendres de Valcombe — mod Minecraft
+# Les Cendres de Valcombe : mod Minecraft
 
 Mod Fabric pour Minecraft Java **26.3** : un jeu de déduction sociale à Conteur.
 
-- Règles et rôles : document « Les Cendres de Valcombe — Rôles et règles ».
-- Installation pour les joueurs et l'hôte : [INSTALLATION.md](../INSTALLATION.md).
-- Avancement : [SPRINTS.md](../SPRINTS.md).
+- Règles et rôles : le [guide du joueur](../GUIDE-JOUEUR.md) et le [tutoriel](../TUTORIEL.md).
+- Installation pour les joueurs et l'hôte : [INSTALLATION.md](../INSTALLATION.md) ; serveur loué : [HEBERGEMENT.md](../HEBERGEMENT.md).
+- Avancement : [SPRINTS.md](../SPRINTS.md) et [PLAN-MONDES.md](../PLAN-MONDES.md) ; dernière version : [NOTES-0.14.0.md](../NOTES-0.14.0.md).
+- Documentation technique : [docs/](../docs) (API d'administration, atelier carte, atelier structures, interface haute résolution).
 
 Avec le mod côté client (modpack), les joueurs ont des écrans sur mesure. Sans lui, ils jouent avec des menus coffre et le chat.
 
@@ -15,7 +16,10 @@ Avec le mod côté client (modpack), les joueurs ont des écrans sur mesure. San
 | `src/main/java/fr/valcombe/rules/` | Moteur de règles : 22 rôles, nuits, votes, victoire, scripts. Aucune dépendance à Minecraft. |
 | `src/main/java/fr/valcombe/session/` | Table de jeu : inscriptions, Conteur, invites, joueurs fictifs, vue envoyée au client |
 | `src/main/java/fr/valcombe/net/` | Paquets serveur ↔ client |
-| `src/main/java/fr/valcombe/mc/` | Serveur : commandes, menus coffre, village, vocal, scripts enregistrés |
+| `src/main/java/fr/valcombe/mc/` | Serveur : commandes, menus coffre, village, vocal, scripts enregistrés, bibliothèque de cartes, ateliers, WorldEdit, API d'administration, sauvegardes |
+| `src/main/java/fr/valcombe/mc/worlds/` | Mondes de Valcombe (Fantasy) : registre, sortes de mondes, droits de construction, invitations |
+| `src/main/java/fr/valcombe/mc/hub/` | Hub commun : salle d'accueil, portes, tableau des parties, voyages entre les mondes |
+| `src/main/java/fr/valcombe/mc/games/` | Plusieurs parties en même temps : une partie par monde de partie, vocal, équipes, fiches du tableau |
 | `src/client/java/fr/valcombe/client/` | Client : écrans sur mesure, affichage en jeu, sons |
 | `src/client/java/fr/valcombe/client/hd/` | Boîte à outils d'interface haute résolution : écrans nets à la résolution de l'écran, police lisse (voir `docs/UI-HD.md` à la racine) |
 | `src/client/resources/assets/valcombe/` | Textures originales (générées par `tools/make_assets.py`, `make_models.py` et `make_tools.py` ; interface haute résolution et polices par `tools/make_ui.py`) |
@@ -43,6 +47,16 @@ Toutes les actions des écrans existent aussi en commandes. Le « meneur » est 
 | Commande | Qui | Effet |
 | --- | --- | --- |
 | `/vc`, `/vc menu` | Tous | Ouvrir le menu (et recevoir l'horloge « Menu de Valcombe ») |
+| `/vc hub`, `/vc monde [liste]`, `/vc monde aller <monde>` | Tous | Aller au hub, voir les mondes, y aller (`principal` : le village de la Partie principale) |
+| `/vc monde creer <sorte> <nom>`, `recreer <monde>`, `renommer <monde> <nom>`, `supprimer <monde>` | Opérateur | Gérer les mondes de Valcombe |
+| `/vc partie [liste]`, `/vc partie voir\|rejoindre\|regarder\|aller <partie>`, `/vc partie sortir` | Tous | Les parties du serveur : la fiche, rejoindre, regarder en spectateur, aller dans son monde, quitter les gradins |
+| `/vc partie creer <nom>`, `/vc partie supprimer <partie>` | Opérateur | Créer ou supprimer une partie d'essai |
+| `/vc partie suspendre [partie]`, `/vc partie reprendre [partie]` | Conteur de la partie, opérateur | Mettre une partie en suspens (joueurs au hub), la reprendre |
+| `/vc atelier`, `/vc atelier jeu`, `/vc atelier carte …`, `/vc structures …` | Opérateur | Atelier web, Atelier en jeu, atelier carte, atelier structures (voir le tutoriel) |
+| `/vc atelier inviter\|retirer <joueur> [atelier\|tous]`, `/vc atelier liste` | Opérateur | Invitations à construire dans les ateliers |
+| `/vc annuler [fois]`, `/vc retablir [fois]`, `/vc baguette` | Opérateur, invité | Annuler et rétablir (WorldEdit et gestes de Valcombe), baguette de construction |
+| `/vc sauvegarde [maintenant\|liste\|restaurer <nom>\|reglages]` | Console, opérateur de niveau 4 | Sauvegardes du serveur |
+| `/vc admin`, `/vc admin cle`, `/vc admin nouvellecle` | Console, opérateur de niveau 4 | API d'administration |
 | `/vc rejoindre`, `/vc quitter`, `/vc joueurs` | Tous | Inscriptions |
 | `/vc conteur` | Opérateur | Devenir ou cesser d'être le Conteur |
 | `/vc bots <n>`, `/vc bots retirer` | Meneur | Joueurs fictifs pour tester |

@@ -1,4 +1,4 @@
-# Les Cendres de Valcombe — installation
+# Les Cendres de Valcombe : installation
 
 Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game Pass PC).
 
@@ -19,14 +19,15 @@ Chaque joueur a besoin d'un compte Minecraft Java officiel (achat du jeu ou Game
    (touche O). Le launcher Valcombe, lui, les installe et les active tout seul.
 4. Lancez l'instance, puis Multijoueur → « Ajouter un serveur », avec l'adresse donnée par l'hôte.
 5. En jeu :
+   - en vous connectant, vous arrivez au **hub**. Le **tableau des parties** montre chaque partie du serveur : cliquez sur une fiche pour la **rejoindre** ou la **regarder** en spectateur (aussi : menu J › « Parties »). La dalle dorée inscrit à la Partie principale. Menu J › « Mondes » mène aux autres mondes, `/vc hub` ramène au hub ;
    - **J** ou le grimoire « Menu de Valcombe » (clic droit) : menu du jeu ;
    - **V** : réglages du vocal (Simple Voice Chat). Choisissez votre micro au premier lancement ;
    - **clic droit sur un trône** de la place : s'y asseoir (accroupi pour se lever). En partie, chacun a le sien ; cliquer sur celui d'un autre fait scintiller le vôtre ;
-   - **H** : lever ou baisser la main pendant un vote, dès que l'accusé commence sa défense ;
+   - **H** : lever ou baisser la main pendant un vote ;
    - **plume d'accusation** (donnée en début de partie) : viser un joueur, même à l'autre bout de la place, et faire un clic droit pour l'accuser. Pendant un vote, la plume lève ou baisse la main. La barre au-dessus de l'inventaire indique qui est visé ;
    - en haut à droite, le **tableau du jour** : qui a accusé qui, avec combien de voix, et qui est sur le billot ; pendant le vote, une rangée de cases montre l'aiguille, les mains comptées et quand elle arrivera à vous ;
    - menu → « S'entraîner » : une partie guidée avec des joueurs fictifs, pour apprendre les règles ;
-   - menu → « Regarder » : suivre la partie en spectateur ;
+   - menu → « Regarder » (dans le village d'une partie), ou « Regarder » de l'écran Parties (au hub) : suivre la partie en spectateur, sans voir les rôles ;
    - menu → « Appeler le Conteur » : il est prévenu et peut vous prendre à part (vocal seul à seul) ;
    - menu → « Annoncer un rôle » : le rôle que vous dites être (vrai ou bluff) s'affiche sous votre nom ;
    - menu → « Parler en privé » : invitez un joueur ; une fois accepté, vous ne vous entendez plus qu'à deux, jusqu'à la cloche, la nuit ou un vote ;
@@ -61,9 +62,11 @@ Le plus simple : **depuis le launcher**, page « Héberger une partie ».
 4. Ajoutez le pseudo de chaque ami dans « Invités » : par défaut, le serveur leur est réservé.
 5. **Jouer sur mon serveur** lance le jeu et vous connecte chez vous. Avec votre pseudo, vous êtes opérateur : vous pouvez devenir Conteur, lancer les parties et construire.
 
-Le launcher doit rester ouvert pendant la soirée : le fermer arrête le serveur (le monde et la partie en cours sont enregistrés). Tout est rangé dans `ValcombeData/serveur`, à côté du launcher.
+Le launcher doit rester ouvert pendant la soirée : le fermer arrête le serveur (les mondes et les parties en cours sont enregistrés, elles reprennent au démarrage suivant). Tout est rangé dans `ValcombeData/serveur`, à côté du launcher. À chaque démarrage, le launcher met le serveur à la dernière version publiée.
 
-Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port **25565 en TCP** (le jeu) et le port **24454 en UDP** (le vocal) vers ce PC, puis donnez-leur votre adresse publique (bouton « Voir mon adresse publique »). Sans accès à la box : un réseau privé entre amis avec Tailscale, ou un tunnel avec playit.gg (un tunnel TCP et un tunnel UDP).
+Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port **25565 en TCP** (le jeu) et le port **24454 en UDP** (le vocal) vers ce PC, puis donnez-leur votre adresse publique (bouton « Voir mon adresse publique »). Sans accès à la box : un réseau privé entre amis avec Tailscale, ou un tunnel avec playit.gg (un tunnel TCP et un tunnel UDP). Le port **25570** (tablette du Conteur, Atelier web, API d'administration) n'a pas besoin d'être ouvert.
+
+La page **Serveur** du launcher, avec « Ce PC (le serveur hébergé ici) », pilote ce serveur : état, joueurs, mondes, console, réglages (liste blanche, opérateurs, message d'accueil, prochaine soirée, joueurs au plus, port, mémoire), **parties** (suspendre, reprendre, créer ou supprimer une partie d'essai) et **sauvegardes** (sauvegarder, télécharger, restaurer). Elle pilote de la même façon un serveur loué : voir [HEBERGEMENT.md](HEBERGEMENT.md).
 
 ### À la main, sans le launcher
 
@@ -96,27 +99,27 @@ Pour que vos amis vous rejoignent **par Internet**, ouvrez sur votre box le port
 
 Serveur toujours allumé sur un VPS loué, grimoire sur tablette, compte rendu Discord et statistiques : voir [HEBERGEMENT.md](HEBERGEMENT.md).
 
-Le serveur ouvre aussi une **API d'administration**, protégée par une clé et réservée à ce PC : le launcher s'en servira pour piloter le serveur (état, console, joueurs, réglages, redémarrage). La clé s'affiche dans la console au premier démarrage ; `/vc admin cle` la réaffiche. Détails : [docs/ADMIN-API.md](docs/ADMIN-API.md).
+Le serveur ouvre aussi une **API d'administration**, protégée par une clé et réservée à ce PC : c'est par elle que la page Serveur du launcher pilote le serveur (état, console, joueurs, réglages, parties, sauvegardes, redémarrage). La clé s'affiche dans la console au premier démarrage ; `/vc admin cle` la réaffiche. Détails : [docs/ADMIN-API.md](docs/ADMIN-API.md).
 
 ## Pour le Conteur
 
-1. En jeu, ouvrez le menu (**J**), puis « Panneau du Conteur ».
-2. Le village de Valcombe est bâti tout seul au premier démarrage du serveur, dans le monde de la partie : rien à faire. Pour un village d'un autre thème, choisissez-le (« Thème ») et cliquez sur « Nouveau village », puis « Confirmer » : le monde de la partie est remis à neuf, puis le nouveau village y est bâti. Les joueurs présents attendent au hub pendant ce temps ; un lien les ramène à la fin.
-3. Les joueurs s'inscrivent depuis leur menu. Pour tester seul, ajoutez des joueurs fictifs.
+1. En jeu, allez dans le village de la partie à mener (la porte du hub, ou menu J › « Mondes »), puis ouvrez le menu (**J**) › « Panneau du Conteur » : c'est le Pupitre du Conteur. Il mène toujours la partie du monde où vous êtes : un serveur peut en faire jouer plusieurs à la fois (la Partie principale et des parties d'essai, menu J › « Parties » au hub).
+2. Le village de Valcombe est bâti tout seul au premier démarrage du serveur, dans le monde de la Partie principale : rien à faire. Pour un village d'un autre thème, choisissez-le (« Thème ») et cliquez sur « Nouveau village », puis « Confirmer » : le monde de la partie est remis à neuf, puis le nouveau village y est bâti. Les joueurs présents attendent au hub pendant ce temps ; un lien les ramène à la fin. Une carte de la bibliothèque s'envoie depuis l'Atelier (Cartes › fiche › « Envoyer à la partie… »).
+3. Les joueurs s'inscrivent au hub (dalle dorée, tableau des parties), dans la salle d'attente du village ou depuis leur menu. Pour tester seul, ajoutez des joueurs fictifs.
 4. « Lancer (automatique) » : le jeu mène tout seul. « Lancer (Conteur humain) » : vous relisez chaque information, et vous pouvez retoucher la distribution avant la première nuit en cliquant sur les jetons du grimoire.
 5. « Faire tomber la nuit », puis « Clore la journée » après les votes.
 
 6. Pendant le jour, « Discussion libre (5 min) » lance un minuteur visible de tous.
 7. Le **bâton du Conteur** (donné en début de partie) : viser un joueur affiche son rôle, son état et ses rappels ; clic droit ouvre sa ligne du grimoire ; accroupi + clic droit le prend à part (vocal seul à seul, accroupi + clic droit dans le vide pour finir). La nuit, un bandeau indique qui est réveillé et ce qu'on attend. Dans les réglages : « Coiffe des morts » (chapeau, crâne ou aucune).
 8. Le lutrin au centre de la place ouvre aussi le grimoire. Sur un siège du grimoire, « Rappel » pose un jeton de rappel (« ivre », « a choisi Bot3 »…).
-9. Scripts : « Les Cendres de Valcombe » (classique) ou « Les Brumes de Valcombe », dans l'écran Script.
+9. Scripts : « Les Cendres de Valcombe » (classique), « Les Brumes de Valcombe » ou « La Table de Valcombe » (nos règles), dans l'éditeur de script (Pupitre › « Éditer le script ») ; « Scénarios… » choisit un scénario de l'Atelier.
+10. **Mettre en suspens** : Pupitre › onglet Partie › « Mettre en suspens » (un second clic confirme). La partie est gelée et enregistrée, ses joueurs vont au hub ; « Reprendre la partie en suspens » les rappelle à leur place. Une partie en cours reprend aussi d'elle-même après un redémarrage du serveur.
 
-10. **Atelier** (opérateur) : `/vc atelier` donne un lien vers une page web, à ouvrir sur un ordinateur du même réseau. On y crée :
-    - des **rôles** : nom, camp, texte, emblème (bibliothèque de 45 pictogrammes), moment du réveil et pouvoir choisi parmi 23 modèles (informations, protection, poison, mise à mort, immunité, martyr, Étrangers en plus, pouvoir libre joué par le Conteur…) ;
-    - des **scénarios** : rôles, carte, réglages, règles spéciales (pas d'accusation le premier jour, annonces ou conversations privées interdites, discussion minutée) et texte d'ouverture. « Simuler » joue 200 parties de joueurs fictifs et donne le taux de victoire de chaque camp ; « Partie d'essai » lance une partie avec des joueurs fictifs ; « Choisir » prépare la prochaine partie ;
-    - la **bibliothèque de cartes** : enregistrer la carte actuelle, en charger une autre, générer un village réglable (5 à 20 trônes, petite, normale ou grande place, avec ou sans maisons) ;
-    - le **partage** : un fichier `.valcombe` (rôles, scénarios et cartes) à envoyer à un autre hôte, qui l'importe sur la même page.
-11. **L'Atelier dans le jeu** (opérateur) : menu J › « Atelier », ou `/vc atelier jeu`. Cartes (aperçu vu de dessus, envoyer à la partie, enregistrer, renommer, dupliquer, supprimer), générateur de village, repères, catalogue de structures, WorldEdit, scénarios et partie d'essai, sans passer par le navigateur. Dans le jeu aussi, écran Script → « Scénarios… » pour choisir un scénario, ouvrir l'Atelier ou passer en **mode construction** (`/vc carte construction` : créatif, sept outils (trône, maison, centre, salle de convocation, gomme, structure, main), une étiquette sur chaque repère, liste de contrôle ; `/vc carte ordonner` renumérote trônes et maisons dans le sens des aiguilles d'une montre). On construit avec **WorldEdit**, dans les ateliers seulement, pour les opérateurs et les joueurs qu'ils invitent (`/vc atelier inviter <joueur> [atelier|tous]`) : baguette de construction, sélection affichée avec ses dimensions, `//set`, `//copy`, `//paste`… (voir le tutoriel). `/vc annuler` défait dans l'ordre les modifications WorldEdit et les gestes de Valcombe. `/vc structure` : catalogue de structures à poser, tourner et retourner ; `/vc structures depuis-selection <id> "<nom>"` y range la sélection WorldEdit ; `importer` un `.schem`, `.litematic` ou `.nbt` déposé dans `config/valcombe/creations/import`. Commandes de carte : `/vc carte enregistrer <id> <nom>`, `envoyer <id> [monde]` (ancien nom : `charger`), `supprimer <id>`, `liste`, `generer <trônes> <petite|normale|grande> <thème> <oui|non> [monde]`, `vider [monde]`. Chaque monde de partie porte sa propre carte : lui en envoyer une autre le remet d'abord à neuf, plat et vide (l'ancienne carte, si elle a été retouchée à la main, est sauvegardée d'office dans la bibliothèque), et après chaque partie la carte est remise dans son état d'avant (`/vc reglage remise_en_etat non` pour s'en passer).
+11. **L'Atelier** (opérateurs) prépare le jeu, en deux versions qui lancent les mêmes opérations :
+    - **dans le jeu** : menu J › « Atelier », ou `/vc atelier jeu`. Quatre entrées : **Cartes** (la bibliothèque en vignettes, la fiche de chaque carte, « Nouvelle carte », les ateliers carte ouverts, la corbeille), **Structures** (le catalogue en vignettes, « Nouvelle structure », les gestes de WorldEdit), **Parties** (chaque partie avec sa carte : y aller, lui envoyer une carte, enregistrer la sienne, la suspendre, créer une partie d'essai), **Rôles et scénarios** (choisir un scénario pour une partie, lancer un essai avec des bots, importer un pack `.valcombe`) ;
+    - **sur une page web** : `/vc atelier` donne un lien, à ouvrir sur un ordinateur du même réseau (ou depuis le launcher : page « L'Atelier »). Les mêmes quatre onglets ; c'est là qu'on écrit les **rôles** (camp, emblème, pouvoir parmi 23 modèles, jusqu'à trois effets, réveil, jetons de rappel) et les **scénarios** (rôles, groupes, carte, règles spéciales, figures neutres, répartition des camps, ordre de la nuit, texte d'ouverture ; « Simuler 200 parties », « Partie d'essai », « Choisir pour la prochaine partie »), et qu'on **partage** un fichier `.valcombe` (rôles, scénarios, cartes, structures, groupes) avec un autre hôte.
+
+    On bâtit dans le jeu, dans les **ateliers** : chaque carte a son **atelier carte** (un monde plat à elle, enregistré tout seul dans la bibliothèque, avec ses versions), et l'**atelier structures** pose chaque structure sur sa parcelle pour la modifier sur place. On y construit avec **WorldEdit**, réservé aux ateliers, pour les opérateurs et les joueurs qu'ils invitent (`/vc atelier inviter <joueur> [atelier|tous]`). Une carte change de partie par « Envoyer à la partie » : le monde de la partie est remis à neuf, plat et vide, puis la carte y est posée (l'ancienne, si elle a été retouchée à la main, est d'abord sauvegardée dans la bibliothèque). Après chaque partie, la carte est remise dans son état d'avant (`/vc reglage remise_en_etat non` pour s'en passer). Le pas à pas est dans le [tutoriel](TUTORIEL.md#11-latelier--cartes-structures-parties-rôles-et-scénarios).
 
 12. **Prochaine soirée** : `/vc soiree vendredi 21 h` l'annonce dans la liste des serveurs de Minecraft et sur l'accueil du launcher, avec le nombre d'inscrits (`/vc soiree effacer` pour la retirer).
 13. La salle d'attente montre en 3D les rôles du script choisi et un panneau de la prochaine partie (scénario, inscrits, Conteur). En fin de partie, chaque joueur est révélé à tour de rôle (la veillée). Les joueurs fictifs annoncent un rôle (le mal bluffe), accusent et votent d'eux-mêmes : l'entraînement ressemble davantage à une vraie partie.
@@ -127,6 +130,6 @@ Le serveur ouvre aussi une **API d'administration**, protégée par une clé et 
     - **Le Doyen** : les deux premières minutes de chaque jour, les joueurs aguerris (3 parties ou plus sur le serveur) se taisent au vocal ;
     - **Le Sablier** : chaque journée dure dix minutes au plus ; la cloche la clôt (après le vote en cours).
 
-Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <structure>`.
+Commandes utiles : `/vc discussion <minutes>`, `/vc rappel <joueur> <texte>`, `/vc reglage effets reduits` (petites machines), `/vc reglage spectateurs_grimoire oui`, `/vc carte importer <fichier>`, `/vc partie liste`, `/vc hub`.
 
-Toutes les actions existent aussi en commandes `/vc` (voir `minecraft/README.md`).
+Toutes les actions existent aussi en commandes `/vc` (voir `minecraft/README.md` et l'aide-mémoire du [tutoriel](TUTORIEL.md#18-aide-mémoire-des-commandes)).

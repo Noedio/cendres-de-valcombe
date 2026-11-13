@@ -60,7 +60,7 @@ public partial class MainWindow
         }
         catch (AdminException ex) when (ex.Status is 404 or 405)
         {
-            _gmUnsupported = "Ce serveur ne connaît pas encore le tableau des parties : mettez-le à jour (Valcombe 0.15 ou plus récent). "
+            _gmUnsupported = "Ce serveur ne connaît pas encore le tableau des parties : mettez-le à jour (Valcombe 0.14 ou plus récent). "
                 + "Réponse du serveur : " + ex.Message;
             return null;
         }

@@ -9,7 +9,7 @@ Un monde de Valcombe (sorte `atelier-structures`, un seul) où **toutes les stru
 - Ou l'Atelier en jeu (menu J › Atelier › Structures) : la fiche d'une structure a « Aller sur sa parcelle », qui conduit devant son pupitre d'où que l'on soit (`/vc structures aller <id>`), et « Nouvelle structure » › « Parcelle vide » ouvre une parcelle neuve et vous y conduit (`/vc structures nouvelle <taille> <nom>`, lui aussi utilisable hors de l'atelier).
 - Ou, depuis l'Atelier web, « Aller à l'atelier des structures », et « Voir dans l'atelier » sur une structure (devant sa parcelle).
 - **Première visite** : on arrive en vol au-dessus de l'accueil, un peu en retrait au nord-ouest, le regard plongeant sur les rangées : toutes les parcelles sont en vue (le point de vue recule pour un très grand catalogue, `StructurePlots.overview`). On descend ensuite où l'on veut ; les visites suivantes reprennent la dernière position.
-- Réservé aux opérateurs et, quand les invitations seront branchées, à leurs invités (voir « Droits »).
+- Réservé aux opérateurs et aux joueurs qu'ils y invitent (`/vc atelier inviter <joueur> atelier-structures`, ou `tous` ; voir « Droits »). Un invité voit l'atelier dans le menu « Mondes » et y va depuis le hub.
 
 ## Ce qu'on y trouve
 
