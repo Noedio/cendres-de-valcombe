@@ -183,7 +183,7 @@ public class MainScreen extends BaseScreen {
 		JsonObject v = view();
 		String phase = ClientState.phase();
 		boolean night = phase.equals("NIGHT");
-		Theme.image(g, Theme.tex(night ? "moon" : "sun"), px + 12, py + 12, 12, 12, 16, 16);
+		Theme.image(g, Theme.tex(night ? "moon" : "sun"), px + 12, py + 12, 12, 12, Theme.HUD_TEX, Theme.HUD_TEX);
 		Theme.ink(g, font, phaseLabel(), px + 28, py + 14, Theme.WINE);
 
 		JsonObject role = ClientState.obj(v, "role");
