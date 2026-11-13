@@ -265,7 +265,7 @@ def main():
             "cd \"$(dirname \"$0\")\"\n"
             "while :; do\n"
             "  rm -f config/valcombe/redemarrer\n"
-            "  java -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"
+            "  \"${VALCOMBE_JAVA:-java}\" -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"
             "  code=$?\n"
             "  [ -f config/valcombe/redemarrer ] || exit $code\n"
             "  echo \"Redémarrage demandé par l'API d'administration : relance du serveur.\"\n"

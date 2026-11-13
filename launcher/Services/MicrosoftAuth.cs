@@ -1,7 +1,6 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -183,61 +182,5 @@ public sealed class MicrosoftAuth
             throw new InvalidOperationException($"Connexion impossible ({(int)resp.StatusCode}) sur {new Uri(url).Host}.");
         }
         return JsonNode.Parse(text)!;
-    }
-
-    // ------------------------------------------------------------------
-    // Chiffrement local (DPAPI, lié à la session Windows)
-    // ------------------------------------------------------------------
-    private static class Dpapi
-    {
-        [StructLayout(LayoutKind.Sequential)]
-        private struct Blob
-        {
-            public int Size;
-            public IntPtr Data;
-        }
-
-        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern bool CryptProtectData(ref Blob input, string? desc, IntPtr entropy, IntPtr reserved,
-            IntPtr prompt, int flags, ref Blob output);
-
-        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern bool CryptUnprotectData(ref Blob input, IntPtr desc, IntPtr entropy, IntPtr reserved,
-            IntPtr prompt, int flags, ref Blob output);
-
-        [DllImport("kernel32.dll")]
-        private static extern IntPtr LocalFree(IntPtr mem);
-
-        private static byte[] Run(byte[] data, bool protect)
-        {
-            var input = new Blob { Size = data.Length, Data = Marshal.AllocHGlobal(data.Length) };
-            Marshal.Copy(data, 0, input.Data, data.Length);
-            var output = new Blob();
-            try
-            {
-                bool ok = protect
-                    ? CryptProtectData(ref input, "Valcombe", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output)
-                    : CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref output);
-                if (!ok)
-                {
-                    throw new InvalidOperationException("Chiffrement Windows indisponible.");
-                }
-                var result = new byte[output.Size];
-                Marshal.Copy(output.Data, result, 0, output.Size);
-                return result;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(input.Data);
-                if (output.Data != IntPtr.Zero)
-                {
-                    LocalFree(output.Data);
-                }
-            }
-        }
-
-        public static byte[] Protect(byte[] d) => Run(d, true);
-
-        public static byte[] Unprotect(byte[] d) => Run(d, false);
     }
 }

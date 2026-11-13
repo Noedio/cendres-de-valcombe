@@ -191,19 +191,9 @@ public sealed class Engine
     public static async Task<Plan> PrepareJavaAsync(string mcVersion, CancellationToken ct = default)
     {
         var plan = new Plan { MinecraftVersion = mcVersion };
-        var manifest = await GetJsonAsync(VersionManifest, ct);
-        string? versionUrl = manifest["versions"]!.AsArray()
-            .FirstOrDefault(v => v!["id"]!.GetValue<string>() == mcVersion)?["url"]?.GetValue<string>();
-        if (versionUrl == null)
-        {
-            throw new InvalidOperationException($"Version de Minecraft inconnue : {mcVersion}");
-        }
-        var version = await GetJsonAsync(versionUrl, ct);
-        plan.JavaComponent = version["javaVersion"]?["component"]?.GetValue<string>() ?? "java-runtime-delta";
-        var runtimes = await GetJsonAsync(JavaRuntimes, ct);
-        var entry = runtimes["windows-x64"]?[plan.JavaComponent]?.AsArray().FirstOrDefault()
+        plan.JavaComponent = (await JavaRequirementAsync(mcVersion, ct)).Component;
+        var javaFiles = await JavaRuntimeFilesAsync("windows-x64", plan.JavaComponent, ct)
             ?? throw new InvalidOperationException($"Java {plan.JavaComponent} indisponible pour Windows.");
-        var javaFiles = (await GetJsonAsync(entry["manifest"]!["url"]!.GetValue<string>(), ct))["files"]!.AsObject();
         string runtimeDir = Path.Combine(Runtimes, plan.JavaComponent);
         foreach (var (rel, f) in javaFiles)
         {
@@ -215,6 +205,39 @@ public sealed class Engine
         }
         plan.JavaExe = Path.Combine(runtimeDir, "bin", "javaw.exe");
         return plan;
+    }
+
+    /// <summary>
+    /// Le Java que demande cette version de Minecraft : composant de Mojang (« java-runtime-epsilon »...) et
+    /// version majeure (25...). Partagé avec l'installation sur un serveur loué (Ssh/VpsPlan).
+    /// </summary>
+    public static async Task<(string Component, int Major)> JavaRequirementAsync(string mcVersion, CancellationToken ct = default)
+    {
+        var manifest = await GetJsonAsync(VersionManifest, ct);
+        string? versionUrl = manifest["versions"]!.AsArray()
+            .FirstOrDefault(v => v!["id"]!.GetValue<string>() == mcVersion)?["url"]?.GetValue<string>();
+        if (versionUrl == null)
+        {
+            throw new InvalidOperationException($"Version de Minecraft inconnue : {mcVersion}");
+        }
+        var version = await GetJsonAsync(versionUrl, ct);
+        return (version["javaVersion"]?["component"]?.GetValue<string>() ?? "java-runtime-delta",
+            version["javaVersion"]?["majorVersion"]?.GetValue<int>() ?? 21);
+    }
+
+    /// <summary>
+    /// Les fichiers du Java officiel de Mojang pour un système (« windows-x64 », « linux »...) : chemin relatif,
+    /// puis l'entrée du manifeste (type « file », « directory » ou « link »). Null si Mojang ne le publie pas.
+    /// </summary>
+    public static async Task<JsonObject?> JavaRuntimeFilesAsync(string platform, string component, CancellationToken ct = default)
+    {
+        var runtimes = await GetJsonAsync(JavaRuntimes, ct);
+        var entry = runtimes[platform]?[component]?.AsArray().FirstOrDefault();
+        if (entry == null)
+        {
+            return null;
+        }
+        return (await GetJsonAsync(entry["manifest"]!["url"]!.GetValue<string>(), ct))["files"]!.AsObject();
     }
 
     // ------------------------------------------------------------------

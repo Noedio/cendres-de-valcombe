@@ -25,4 +25,14 @@
     <Resource Include="Assets\valcombe.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Serveur loué (VPS) : connexion, SFTP et tunnels SSH (Services/Ssh). -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Script d'installation envoyé au VPS par SFTP : il vit dans le dépôt, le launcher l'embarque tel quel. -->
+    <EmbeddedResource Include="Services\Ssh\install-valcombe.sh" LogicalName="install-valcombe.sh" />
+  </ItemGroup>
+
 </Project>

@@ -14,9 +14,11 @@ Un seul `ValcombeLauncher.exe`, portable : il range tout dans le dossier `Valcom
 5. **Héberger une partie** : il installe et démarre le serveur de Valcombe sur le PC de l'hôte (`ValcombeData/serveur` : Java de Mojang, lanceur du serveur Fabric, mods du serveur), suit son journal, donne les adresses à transmettre, tient la liste des invités et l'arrête proprement. L'hôte accepte lui-même le contrat de Minecraft dans la page.
 6. **L'Atelier** : un bouton démarre ce serveur si besoin et ouvre l'Atelier dans le navigateur. Le launcher dépose pour cela un lien secret (`config/valcombe-hote.json`), que le mod lit puis efface au démarrage ; ce lien ne vaut que tant que le serveur tourne.
 
+7. **Serveur loué (VPS)** : `Services/Ssh` le pilote par SSH (bibliothèque SSH.NET), sans interface propre : connexion par mot de passe ou clé (gardés chiffrés avec DPAPI), empreinte de la clé du serveur confirmée au premier contact puis exigée, détection du système, installation et mise à jour par `Services/Ssh/install-valcombe.sh` (envoyé par SFTP, idempotent, mêmes mods et même Java que le serveur local), service systemd (démarrer, arrêter, redémarrer, journal), et tunnel vers l'API d'administration (`IServerConnection`). Marche à suivre : [HEBERGEMENT.md](../HEBERGEMENT.md).
+
 Pages : Accueil (nouvelles, serveur), Guide du joueur, Mon carnet, Héberger une partie, L'Atelier, Options du jeu, Apparence (couleur d'accent, ambiance, braises), Réglages (serveurs, mémoire, réparation, avancé), Compte.
 
-Le fond est une illustration originale dessinée par `tools/make_hero.py` (`Assets/hero.png`). Deux vérifications sans fenêtre à manipuler : `ValcombeLauncher.exe --capture <dossier>` (une capture par page) et `--verifier-serveur <rapport.txt>` (installe le serveur local sans le démarrer).
+Le fond est une illustration originale dessinée par `tools/make_hero.py` (`Assets/hero.png`). Deux vérifications sans fenêtre à manipuler : `ValcombeLauncher.exe --capture <dossier>` (une capture par page) et `--verifier-serveur <rapport.txt>` (installe le serveur local sans le démarrer). Pour le serveur loué : `--verifier-vps <rapport.txt> [--sans-telechargement]` joue l'installation, la mise à jour et le pilotage du service à blanc avec le vrai script (bash de Git pour Windows, dans un dossier temporaire), et `--essai-vps <rapport.txt> --hote ...` essaie un vrai VPS (voir HEBERGEMENT.md).
 
 ## Premier lancement
 

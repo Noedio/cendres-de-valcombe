@@ -5,6 +5,63 @@ Deux façons d'accueillir vos amis :
 - **Sur votre PC** : le plus simple pour commencer. Voir [INSTALLATION.md](INSTALLATION.md), partie « Pour l'hôte ».
 - **Sur un petit serveur loué** (VPS Linux) : le serveur reste allumé sans votre PC. C'est l'objet de ce guide.
 
+Pour le serveur loué, deux chemins : **depuis le launcher**, qui fait tout par SSH (partie suivante), ou **à la main**, étape par étape (parties 1 à 8). Les deux donnent le même serveur : même dossier `/opt/valcombe`, même compte `valcombe`, même service `valcombe.service`. On peut passer de l'un à l'autre.
+
+## Depuis le launcher (SSH)
+
+Le launcher se connecte au VPS par SSH et s'occupe du reste : il installe Java, le lanceur Fabric et les mods de la dernière version publiée, crée le compte et le service, puis démarre, arrête, redémarre et met à jour le serveur, et lit son journal. Pour le reste (joueurs, console, liste blanche, opérateurs), il passe par l'API d'administration du mod (partie 8), dans un tunnel SSH qu'il ouvre lui-même.
+
+### Ce qu'il faut
+
+- Un VPS **Linux avec systemd**, processeur **x86_64 ou ARM (aarch64)**. Prévu pour **Debian 12/13 et Ubuntu 24.04** ; les autres systèmes avec systemd devraient convenir, le launcher le signale. 2 cœurs et 4 Go de mémoire au minimum.
+- Son **adresse**, et un **compte SSH** : `root`, ou un compte qui a `sudo` (`debian`, `ubuntu` sur les images des hébergeurs). Avec un mot de passe, ou mieux une **clé SSH** (formats OpenSSH, PEM ou PuTTY, avec ou sans phrase de passe).
+- Si le compte se connecte par clé mais que `sudo` demande un mot de passe, indiquez aussi ce **mot de passe sudo**.
+
+Les mots de passe, la clé privée et sa phrase de passe sont gardés **chiffrés** sur votre PC (DPAPI de Windows, comme la connexion Microsoft du launcher), dans `ValcombeData/serveurs-loues.json`. Ils ne se déchiffrent que dans votre session Windows. Le mot de passe sudo est passé à `sudo` par son entrée standard, jamais sur une ligne de commande.
+
+### Pas à pas
+
+1. **Ajouter le serveur** dans la page Serveur du launcher : un nom, l'adresse, le port SSH (22 d'habitude), le compte, le mot de passe ou la clé.
+2. **Première connexion : l'empreinte.** Le launcher affiche l'empreinte de la clé du serveur (`SHA256:...`). Comparez-la à celle que donne votre hébergeur (ou, sur la console web de l'hébergeur, `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`), puis acceptez-la. Le launcher la retient (`ValcombeData/ssh-hotes-connus.json`) et **refuse ensuite toute autre clé** : si le serveur a été réinstallé, oubliez son ancienne empreinte dans le launcher ; sinon, quelqu'un se fait peut-être passer pour lui.
+3. **Le launcher examine le système** : Linux, processeur, distribution, systemd, mémoire, place libre, droits d'administration. Ce qui empêche l'installation est dit clairement ; le reste (peu de mémoire, système non essayé) est signalé.
+4. **Réglages du serveur**, tous modifiables : dossier (`/opt/valcombe`), compte du serveur (`valcombe`), nom du service (`valcombe`), port du jeu (**25565**, le port standard d'un serveur Minecraft : sur une machine louée, c'est le bon choix), port du chat vocal (24454, UDP), port de l'API d'administration (celui du mod, 25570, sauf choix contraire : il n'est jamais ouvert au public), mémoire donnée à Java (4 Go), ouverture du pare-feu.
+5. **Contrat de Minecraft** : lisez-le (https://aka.ms/MinecraftEULA) et acceptez-le pour ce serveur. Sans cela, le launcher n'installe rien.
+6. **Installer.** Le launcher envoie le script `install-valcombe.sh` et un plan d'installation par SFTP dans un dossier temporaire du VPS, puis le lance en root. Le script :
+   - crée le compte système `valcombe` (sans mot de passe ni connexion possible) ;
+   - télécharge le **Java officiel de Mojang** pour Linux (le même que celui du jeu ; sur un VPS ARM, Mojang n'en publie pas et c'est le Java d'Adoptium, de la même version), le **lanceur du serveur Fabric** et les **mods du serveur** (Fabric API, Simple Voice Chat, WorldEdit, Valcombe) : chaque fichier est vérifié par son empreinte, et seuls des sites connus sont acceptés (Mojang, Fabric, GitHub, Modrinth) ;
+   - écrit `server.properties` (monde plat, liste blanche active au premier lancement ; un fichier existant n'est que retouché), `eula.txt`, `demarrer.sh` et `sauvegarder.sh` ;
+   - installe le service `valcombe.service` (compte dédié, protections de systemd), l'active au démarrage de la machine, sans le démarrer ;
+   - ouvre le port du jeu (TCP) et celui du chat vocal (UDP) dans `ufw` ou `firewalld` **s'ils sont déjà actifs** (il n'active jamais un pare-feu : cela pourrait couper SSH). Chez certains hébergeurs, ouvrez aussi ces ports dans leur interface web.
+7. **Démarrer.** Le premier démarrage télécharge Minecraft et crée le monde : une à deux minutes. La clé d'administration est tirée à ce moment-là ; le launcher la lit lui-même sur le serveur, il n'y a rien à copier.
+8. **Ajoutez-vous** à la liste blanche et aux opérateurs depuis le launcher (il passe par l'API d'administration), puis invitez vos amis.
+
+### Ensuite
+
+- **Mettre à jour** : un clic quand une nouvelle version est publiée. Le launcher relance le même script : seul ce qui a changé est téléchargé, un mod qui n'est plus dans la version est retiré, les réglages changés entre-temps (port, joueurs max, liste blanche...) sont gardés. Si le serveur tournait et que quelque chose a changé, il est redémarré : la partie en cours est enregistrée et reprend.
+- **Démarrer, arrêter, redémarrer** : par systemd, même quand le serveur ne répond plus. L'arrêt laisse jusqu'à deux minutes à Minecraft pour enregistrer les mondes.
+- **Journal** : les dernières lignes du service, ou en direct ; utile surtout quand le serveur ne démarre pas (la console de l'API d'administration prend le relais ensuite).
+- **API d'administration** : le launcher ouvre un tunnel SSH d'un port libre de votre PC (choisi par Windows, jamais 25565, 25570 ni 24454) vers l'API du serveur, et lui parle par là. Rien à ouvrir dans le pare-feu du VPS.
+
+### Si ça ne marche pas
+
+| Message | Que faire |
+| --- | --- |
+| « ne répond pas » | Adresse ou port SSH faux, serveur éteint, ou pare-feu de l'hébergeur qui bloque SSH. |
+| « a refusé la connexion » | Mot de passe faux, connexion par mot de passe désactivée sur le serveur, ou clé publique absente de `~/.ssh/authorized_keys`. |
+| « la clé a changé » | Serveur réinstallé : oubliez l'ancienne empreinte. Sinon, ne vous connectez pas. |
+| « n'a pas les droits d'administration » | Connectez-vous en `root`, ou avec un compte qui a `sudo` (indiquez son mot de passe sudo). |
+| « Une autre installation est en cours » | Attendez la fin de l'autre (deux launchers sur le même serveur). |
+| Le serveur ne démarre pas | Lisez le journal du service dans le launcher, ou `sudo journalctl -u valcombe -n 100` sur le VPS. |
+
+### Vérifier sans VPS, ou essayer sur un VPS en ligne de commande
+
+- `ValcombeLauncher.exe --verifier-vps rapport.txt` : contrôles internes, plan d'installation de la dernière version publiée, puis installation, mise à jour et pilotage du service **à blanc**, avec le vrai script, dans un dossier temporaire de votre PC (il faut Git pour Windows, dont le launcher emprunte `bash`). Rien n'est installé sur le PC, aucun port n'est ouvert. `--sans-telechargement` évite les 120 Mo de Java et des mods.
+- `ValcombeLauncher.exe --essai-vps rapport.txt --hote adresse --utilisateur root --cle C:\chemin\id_ed25519` : essai sur un vrai VPS, en lecture seule (système, état du service, journal, et `GET /admin/etat` par le tunnel si le serveur tourne). Au premier contact, le rapport donne l'empreinte ; relancez avec `--empreinte SHA256:...` pour l'accepter. Ajoutez `--installer --contrat-accepte` pour installer ou mettre à jour, `--demarrer` pour démarrer. Mot de passe : `--mot-de-passe-env NOM` (lu dans la variable d'environnement `NOM`), phrase de passe : `--phrase-env NOM`.
+
+## À la main
+
+Les parties 1 à 8 décrivent l'installation sans le launcher, commande par commande.
+
 ## Ce qu'il faut
 
 - Un VPS sous **Debian 12/13 ou Ubuntu 24.04**, avec **2 cœurs et 4 Go de mémoire** au minimum (8 Go au-delà de 12 joueurs). Les offres d'entrée de gamme des hébergeurs français suffisent.
