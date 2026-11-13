@@ -348,6 +348,18 @@ public class PartiesGameTest implements FabricClientGameTest {
 			}), "le tableau montre la principale en cours et l'essai ouvert : "
 				+ server.computeOnServer(s -> ValcombeMod.hub().boardShown()));
 
+			// La vignette de la partie d'essai, demandée du hub : faite sans charger un seul tronçon de son monde (ce qui y est
+			// déjà chargé, ou la carte de la bibliothèque qu'elle porte).
+			int chunksBefore = server.computeOnServer(s -> ValcombeMod.worlds().level(essai).getChunkSource().getLoadedChunksCount());
+			String essaiStamp = server.computeOnServer(s -> fr.valcombe.mc.Vignettes.stampOf("partie:" + essai));
+			check(!essaiStamp.isEmpty(), "la partie d'essai a une vignette");
+			check(waitClient(ctx, 200, mc -> {
+				fr.valcombe.client.Vignettes.get("partie:" + essai, essaiStamp);
+				return fr.valcombe.client.Vignettes.ready("partie:" + essai, "");
+			}), "vignette de la partie d'essai reçue");
+			int chunksAfter = server.computeOnServer(s -> ValcombeMod.worlds().level(essai).getChunkSource().getLoadedChunksCount());
+			check(chunksAfter <= chunksBefore, "la vignette n'a chargé aucun tronçon : " + chunksBefore + " puis " + chunksAfter);
+
 			// Captures : de l'entrée, de près à l'ouest et à l'est, et de dos depuis les dalles.
 			place(world, me, hubId, HubHall.ARRIVAL.x, HubHall.ARRIVAL.y, HubHall.ARRIVAL.z, HubHall.ARRIVAL_YAW, 8f);
 			ctx.waitTicks(60);
