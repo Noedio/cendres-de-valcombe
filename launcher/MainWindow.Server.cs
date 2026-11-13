@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -151,7 +152,7 @@ public partial class MainWindow
         SrvPicker.Items.Add(new ComboBoxItem { Content = "Ce PC (le serveur hébergé ici)", Tag = LocalTarget });
         foreach (var r in _config.RemoteServers)
         {
-            SrvPicker.Items.Add(new ComboBoxItem { Content = $"{r.Name}  ·  {(r.KeyFromServer ? r.Host + " (tunnel SSH)" : r.Endpoint)}", Tag = r.Id });
+            SrvPicker.Items.Add(new ComboBoxItem { Content = $"{r.Name}  ·  {(r.KeyFromServer ? r.Host + " (SSH)" : r.Endpoint)}", Tag = r.Id });
         }
         if (SelectedRemote == null)
         {
@@ -177,8 +178,13 @@ public partial class MainWindow
         _config.AdminTarget = (string)item.Tag;
         SaveConfig();
         SrvEditButton.Visibility = IsLocalTarget ? Visibility.Collapsed : Visibility.Visible;
+        if (_vpsOpen)
+        {
+            VpsClose(keepSelection: true);
+        }
         SrvCloseForm();
         SrvResultsBox.Visibility = Visibility.Collapsed;
+        BkNotice.Visibility = Visibility.Collapsed;
         SrvCommandResult.Visibility = Visibility.Collapsed;
         _srvFieldsFilled = false;
         SrvEnsureConnection();
@@ -235,7 +241,10 @@ public partial class MainWindow
             {
                 if (_captureDir != null)
                 {
-                    return new DemoConnection(_srvDemoRemote ??= new DemoAdminApi { RefuseRemote = true }, remote.Endpoint);
+                    // Un serveur loué fictif (installé en v0.13.1 : la mise à jour est proposée), ou un accès direct refusé.
+                    return remote.KeyFromServer
+                        ? _srvDemoManaged ??= new DemoManagedConnection(new DemoAdminApi { Version = "0.13.1" }, "debian@" + remote.Host, "v0.13.1")
+                        : new DemoConnection(_srvDemoRemote ??= new DemoAdminApi { RefuseRemote = true }, remote.Endpoint);
                 }
                 // La clé est déchiffrée une fois ici pour savoir si elle se lit sur ce compte Windows ;
                 // la connexion la redéchiffre à chaque requête, elle ne reste pas en clair en mémoire.
@@ -277,6 +286,8 @@ public partial class MainWindow
         _srvStopping = "";
         _srvPlayersShown = "\0";
         _srvWorldsShown = "\0";
+        BkReset();
+        SrvManagedReset();
         if (!_srvFormOpen)
         {
             _srvFieldsFilled = false;
@@ -314,6 +325,7 @@ public partial class MainWindow
             bool full = force || _srvState == null || _srvTick % 3 == 0;
             bool readConsole = full || _srvTab == "console";
             bool readSettings = _srvSettingsStale || (_srvTab == "reglages" && _srvTick % 15 == 0);
+            var (readBackups, readBackupSettings) = BkWanted(force);
             _srvTick++;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             try
@@ -335,10 +347,13 @@ public partial class MainWindow
                 {
                     batch = await feed.PollAsync(client, cts.Token);
                 }
+                var backups = readBackups || readBackupSettings
+                    ? await BkReadAsync(client, readBackups, readBackupSettings, cts.Token) : (null, null);
                 if (gen != _srvGen)
                 {
                     return; // autre serveur choisi pendant la requête
                 }
+                BkReceived(backups.List, backups.Settings);
                 if (state != null)
                 {
                     _srvState = state;
@@ -633,7 +648,8 @@ public partial class MainWindow
                 };
                 if (_srvError.Status == 0 && _srvStopping == "arret")
                 {
-                    detail = "Il ne se relance pas depuis le launcher : depuis son hébergeur, ou par SSH (bientôt dans le launcher).";
+                    detail = _srvConn.CanStartServer ? "Arrêté proprement. Relancez-le d'ici quand vous voulez (bouton Démarrer)."
+                        : "Un serveur en accès direct ne se relance pas depuis le launcher : relancez-le depuis son hébergeur.";
                 }
                 else if (_srvError.Status == 0 && !_srvHalted)
                 {
@@ -659,6 +675,8 @@ public partial class MainWindow
             ? (_srvError == null ? $"Console en direct, par l'API d'administration ({_srvClient.Connection.Description})." : "Console : " + _srvError.Message)
             : IsLocalTarget ? "Journal du serveur de ce PC, tel que le launcher le reçoit."
             : "La console s'affiche une fois le serveur joint.";
+        SrvRenderManaged(st);
+        BkRender();
     }
 
     private static string Describe(AdminState st)
@@ -880,18 +898,25 @@ public partial class MainWindow
         {
             _srvSettingsStale = true;
         }
+        if (_srvTab == "sauvegardes")
+        {
+            _bkStale = true;
+            _bkSettingsStale = _bkSettingsStale || !_bkDirty;
+            BkRender();
+        }
         if (PageServer.Visibility == Visibility.Visible)
         {
-            _ = SrvPollAsync(force: _srvTab != "sauvegardes");
+            _ = SrvPollAsync(force: true);
         }
     }
 
     private void SrvShowTab()
     {
-        bool form = _srvFormOpen;
+        bool form = _srvFormOpen || _vpsOpen;
         SrvStateCard.Visibility = form ? Visibility.Collapsed : Visibility.Visible;
         SrvTabs.Visibility = form ? Visibility.Collapsed : Visibility.Visible;
-        SrvFormPanel.Visibility = form ? Visibility.Visible : Visibility.Collapsed;
+        SrvFormPanel.Visibility = _srvFormOpen && !_vpsOpen ? Visibility.Visible : Visibility.Collapsed;
+        VpsPanel.Visibility = _vpsOpen ? Visibility.Visible : Visibility.Collapsed;
         SrvOverview.Visibility = !form && _srvTab == "apercu" ? Visibility.Visible : Visibility.Collapsed;
         SrvConsolePanel.Visibility = !form && _srvTab == "console" ? Visibility.Visible : Visibility.Collapsed;
         SrvSettingsPanel.Visibility = !form && _srvTab == "reglages" ? Visibility.Visible : Visibility.Collapsed;
@@ -913,16 +938,23 @@ public partial class MainWindow
         }
         if (_srvConn is { CanStartServer: true } conn)
         {
+            SrvStartButton.IsEnabled = false;
+            SrvStartText.Text = "Démarrage…";
             try
             {
                 await conn.StartServerAsync(new Progress<(string, double)>(p => SetStatus(p.Item1, p.Item2)), CancellationToken.None);
                 _srvHalted = false;
                 _srvQuietUntil = DateTime.MinValue;
+                SrvStartedRemote();
             }
             catch (Exception ex)
             {
+                // Tout est attrapé (une coupure SSH lève une SshException) : un gestionnaire async void qui laisse
+                // filer une exception ferme le launcher.
                 SetStatus("Démarrage impossible : " + ex.Message, 0);
+                MessageBox.Show(this, $"{TargetName} n'a pas démarré :\n\n{ex.Message}", "Les Cendres de Valcombe", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            SrvRender();
         }
     }
 
@@ -939,8 +971,9 @@ public partial class MainWindow
         int players = ConnectedPlayers;
         if (MessageBox.Show(this, $"Arrêter {TargetName} ?"
                 + (players > 0 ? $" {players} joueur(s) sont connectés : la soirée s'interrompt pour eux." : "")
-                + "\n\nLe monde et la partie en cours sont enregistrés. Un serveur distant arrêté ne se relance pas depuis le launcher : "
-                + "relancez-le depuis son hébergeur (ou par SSH, bientôt dans le launcher).",
+                + "\n\nLe monde et la partie en cours sont enregistrés. "
+                + (_srvConn?.CanStartServer == true ? "Vous pourrez le relancer d'ici (bouton Démarrer)."
+                    : "Un serveur en accès direct ne se relance pas depuis le launcher : relancez-le depuis son hébergeur."),
                 "Les Cendres de Valcombe", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
         {
             return;
@@ -1526,7 +1559,11 @@ public partial class MainWindow
     // ------------------------------------------------------------------
     // Serveurs distants : ajouter, modifier, tester, retirer
     // ------------------------------------------------------------------
-    private void SrvAdd(object sender, RoutedEventArgs e)
+    /// <summary>« Ajouter un serveur » : le choix entre un serveur loué (parcours guidé par SSH) et l'accès direct.</summary>
+    private void SrvAdd(object sender, RoutedEventArgs e) => VpsOpenChoice();
+
+    /// <summary>Le formulaire de l'accès direct : adresse, port et clé de l'API.</summary>
+    private void SrvAddDirect()
     {
         _srvEditing = null;
         SrvFormTitle.Text = "Ajouter un serveur distant";
@@ -1545,6 +1582,12 @@ public partial class MainWindow
         var r = SelectedRemote;
         if (r == null)
         {
+            return;
+        }
+        if (r.KeyFromServer)
+        {
+            // Serveur loué : le parcours guidé, prérempli (secrets gardés s'ils sont laissés vides).
+            VpsOpenEdit(r);
             return;
         }
         _srvEditing = r;
@@ -1728,6 +1771,17 @@ public partial class MainWindow
             await SrvPollAsync(force: true);
             await Task.Delay(300);
         }
+        async Task Until(Func<bool> done, string what)
+        {
+            for (int i = 0; i < 300 && !done(); i++)
+            {
+                await Task.Delay(50);
+            }
+            if (!done())
+            {
+                throw new InvalidOperationException("Page Serveur : " + what + " n'est pas arrivé.");
+            }
+        }
         _config.AdminTarget = LocalTarget;
         RefreshSrvPicker();
         // Ce PC, serveur arrêté : le bouton Démarrer, et le port et la mémoire qui restent réglables.
@@ -1735,6 +1789,10 @@ public partial class MainWindow
         await SrvPollAsync(force: true);
         await Task.Delay(300);
         await SnapshotAsync(dir, "Server-arrete");
+        // ... et ses sauvegardes, lues dans son dossier.
+        await Tab("sauvegardes");
+        await SnapshotAsync(dir, "Server-sauvegardes-arrete");
+        await Tab("apercu");
         _srvCaptureStopped = false;
         await SrvPollAsync(force: true);
         await Task.Delay(300);
@@ -1754,16 +1812,73 @@ public partial class MainWindow
         await Task.Delay(300);
         await SnapshotAsync(dir, "Server-reglages");
 
+        // Sauvegardes : la liste, une sauvegarde suivie en direct, un téléchargement contrôlé, une restauration.
+        var api = _srvDemo!;
+        api.BackupDuration = TimeSpan.FromSeconds(4);
         await Tab("sauvegardes");
         await SnapshotAsync(dir, "Server-sauvegardes");
+        BkBackupNow(this, new RoutedEventArgs());
+        await Task.Delay(1700);
+        await SrvPollAsync(force: true);
+        await Task.Delay(150);
+        await SnapshotAsync(dir, "Server-sauvegardes-en-cours");
+        await Until(() => _bk is { EnCours: null } && _bk.Sauvegardes.Count == 8 && BkNotice.Visibility == Visibility.Visible, "la fin de la sauvegarde");
+        var fresh = _bk!.Sauvegardes[0];
+        string target = Path.Combine(Path.GetTempPath(), "valcombe-apercu-sauvegarde", fresh.Nom);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        if (!await BkDownloadToAsync(_srvClient!, fresh, target) || !File.Exists(target))
+        {
+            throw new InvalidOperationException("Page Serveur : le téléchargement d'une sauvegarde a échoué.");
+        }
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-sauvegardes-telechargee");
+        BkAskRestore(_bk.Sauvegardes[2], undo: false);
+        await Task.Delay(250);
+        await SnapshotAsync(dir, "Server-sauvegardes-restaurer");
+        string restored = _bk.Sauvegardes[2].Nom;
+        BkConfirmRestore(BkConfirmRestart, new RoutedEventArgs());
+        await Until(() => _bkRestoring == null && BkRestored.Visibility == Visibility.Visible, "le compte rendu de la restauration");
+        if (_bk.DerniereRestauration?.Nom != restored || api.Restarts == 0)
+        {
+            throw new InvalidOperationException("Page Serveur : la restauration n'a pas été suivie jusqu'au bout.");
+        }
+        SrvBackupsPanel.ScrollToTop();
+        await Task.Delay(250);
+        await SnapshotAsync(dir, "Server-sauvegardes-restauree");
 
+        // Serveur loué (tunnel SSH fictif) : en ligne avec une mise à jour proposée, puis arrêté et démarré d'ici.
         await Tab("apercu");
         SrvPicker.SelectedIndex = 1;
+        await SrvPollAsync(force: true);
+        await Until(() => SrvUpdateButton.Visibility == Visibility.Visible, "la mise à jour proposée");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-loue");
+        var vpsApi = _srvDemoManaged!.Api;
+        vpsApi.Halt();
+        _srvManagedAt = DateTime.MinValue;
+        await SrvPollAsync(force: true);
+        await Until(() => SrvStartButton.Visibility == Visibility.Visible && _srvManaged is { Active: false }, "le serveur loué arrêté");
+        await Task.Delay(150);
+        await SnapshotAsync(dir, "Server-loue-arrete");
+        SrvStart(this, new RoutedEventArgs());
+        await Until(() => _srvStartingSince != null, "le démarrage");
+        vpsApi.Halt(); // il « démarre » encore : l'API ne répond pas tout de suite
+        await SrvPollAsync(force: true);
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-loue-demarrage");
+        vpsApi.Start();
+
+        // Accès direct refusé (adminLocalOnly) : l'explication.
+        SrvPicker.SelectedIndex = 2;
         await SrvPollAsync(force: true);
         await Task.Delay(300);
         await SnapshotAsync(dir, "Server-distant");
 
-        SrvAdd(this, new RoutedEventArgs());
+        // Ajouter un serveur : le choix, puis le parcours du serveur loué, étape par étape.
+        await CaptureVpsAsync(dir);
+
+        VpsOpenChoice();
+        VpsChooseDirect(this, new RoutedEventArgs());
         SrvFormName.Text = "Serveur de Léa";
         SrvFormHost.Text = "lea.exemple.fr";
         SrvFormKey.Password = DemoAdminApi.Key;
@@ -1771,9 +1886,10 @@ public partial class MainWindow
         await SnapshotAsync(dir, "Server-ajout");
         // Enregistrer (en mémoire seulement : les captures n'écrivent pas launcher.json) : la clé passe par DPAPI,
         // le serveur est ajouté à la liste et choisi.
+        int before = SrvPicker.Items.Count;
         SrvFormSave(this, new RoutedEventArgs());
         await SrvPollAsync(force: true);
-        if (SelectedRemote?.Name != "Serveur de Léa" || SelectedRemote.ReadKey() != DemoAdminApi.Key || SrvPicker.Items.Count != 3)
+        if (SelectedRemote?.Name != "Serveur de Léa" || SelectedRemote.ReadKey() != DemoAdminApi.Key || SrvPicker.Items.Count != before + 1)
         {
             throw new InvalidOperationException("Page Serveur : l'enregistrement d'un serveur distant a échoué.");
         }

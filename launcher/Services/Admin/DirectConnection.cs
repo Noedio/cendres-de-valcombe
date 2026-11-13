@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -81,6 +82,104 @@ public sealed class DirectConnection : IServerConnection
         }
     }
 
+    /// <summary>Un téléchargement qui ne reçoit plus rien pendant ce temps est interrompu.</summary>
+    public static readonly TimeSpan DownloadStall = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Client des téléchargements, à part : sans délai global (le délai de 40 s du client des requêtes couperait
+    /// une grosse archive), la surveillance se faisant lecture par lecture (<see cref="DownloadStall"/>).
+    /// </summary>
+    private HttpClient? _downloadHttp;
+
+    public async Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress,
+        CancellationToken ct)
+    {
+        _downloadHttp ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(5) })
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_base, path));
+        string? key = _key();
+        if (!string.IsNullOrEmpty(key))
+        {
+            request.Headers.Add(KeyHeader, key);
+        }
+        long done = 0;
+        try
+        {
+            HttpResponseMessage response;
+            using (var headers = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                headers.CancelAfter(TimeSpan.FromSeconds(40));
+                try
+                {
+                    response = await _downloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headers.Token);
+                }
+                catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+                {
+                    throw new AdminException(0, $"{Description} ne répond pas (délai dépassé).", inner: ex);
+                }
+            }
+            using (response)
+            {
+                if ((int)response.StatusCode != 200)
+                {
+                    string body = await response.Content.ReadAsStringAsync(ct);
+                    return new AdminReply((int)response.StatusCode, body, response.Headers.RetryAfter?.Delta);
+                }
+                long? total = response.Content.Headers.ContentLength;
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                var buffer = new byte[128 * 1024];
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                progress?.Report((0, total));
+                while (true)
+                {
+                    int n;
+                    using (var stall = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                    {
+                        stall.CancelAfter(DownloadStall);
+                        try
+                        {
+                            n = await stream.ReadAsync(buffer, stall.Token);
+                        }
+                        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+                        {
+                            throw new AdminException(0, $"{Description} n'envoie plus rien depuis {DownloadStall.TotalSeconds:0} s : "
+                                + "téléchargement interrompu.", inner: ex);
+                        }
+                        catch (IOException ex)
+                        {
+                            // Connexion coupée en plein envoi (serveur arrêté, tunnel fermé) : rien ne garantit l'archive.
+                            throw new AdminException(0, $"Téléchargement coupé après {done} octets : {ex.Message}", inner: ex);
+                        }
+                    }
+                    if (n == 0)
+                    {
+                        break;
+                    }
+                    await destination.WriteAsync(buffer.AsMemory(0, n), ct);
+                    done += n;
+                    // Au plus dix nouvelles par seconde : la page n'a pas à redessiner sa barre à chaque paquet.
+                    if (clock.ElapsedMilliseconds >= 100)
+                    {
+                        clock.Restart();
+                        progress?.Report((done, total));
+                    }
+                }
+                progress?.Report((done, total));
+                if (total != null && done != total.Value)
+                {
+                    throw new AdminException(0, $"Téléchargement incomplet : {done} octets reçus sur {total.Value} annoncés.");
+                }
+                return new AdminReply(200, "");
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new AdminException(0, done > 0 ? $"Téléchargement coupé après {done} octets : {ex.Message}" : Unreachable(ex), inner: ex);
+        }
+    }
+
     /// <summary>Un message clair pour les pannes de réseau les plus courantes.</summary>
     private string Unreachable(HttpRequestException ex)
     {
@@ -98,6 +197,7 @@ public sealed class DirectConnection : IServerConnection
     public ValueTask DisposeAsync()
     {
         _http.Dispose();
+        _downloadHttp?.Dispose();
         return ValueTask.CompletedTask;
     }
 }

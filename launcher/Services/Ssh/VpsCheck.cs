@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using Valcombe.Launcher.Services.Admin;
 
 namespace Valcombe.Launcher.Services.Ssh;
 
@@ -92,6 +93,10 @@ public static class VpsCheck
             CheckKnownHosts(r, Path.Combine(work, "hotes.json"));
             CheckSystemParsing(r);
             CheckProperties(r);
+
+            r.Note("");
+            r.Note("== Parcours d'enregistrement d'un serveur loué (page Serveur), avec le serveur loué fictif ==");
+            await CheckSetupAsync(r, work);
 
             r.Note("");
             r.Note("== Plan d'installation de la dernière version publiée ==");
@@ -278,6 +283,147 @@ public static class VpsCheck
             "server.properties existant : seuls les réglages du launcher changent", string.Join(" | ", kept));
     }
 
+    /// <summary>Un suivi appelé tout de suite (Progress&lt;T&gt; passerait par le fil de l'interface, plus tard).</summary>
+    private sealed class Inline<T> : IProgress<T>
+    {
+        private readonly Action<T> _report;
+
+        public Inline(Action<T> report)
+        {
+            _report = report;
+        }
+
+        public void Report(T value) => _report(value);
+    }
+
+    /// <summary>
+    /// Le parcours de la page Serveur (<see cref="VpsSetup"/>) de bout en bout, contre le serveur loué fictif
+    /// (<see cref="DemoVpsConnector"/>) : adresse collée, secrets, empreinte (inconnue, fausse, acceptée, changée,
+    /// oubliée), pannes (hôte injoignable, mot de passe faux, sudo refusé), examen, installation (contrat exigé, journal
+    /// en direct), démarrage jusqu'à l'API, opérateur et liste blanche, fiche enregistrée sans secret en clair,
+    /// modification qui garde les secrets, et retrait qui efface tout.
+    /// </summary>
+    private static async Task CheckSetupAsync(Report r, string work)
+    {
+        string hostsFile = Path.Combine(work, "parcours-hotes.json");
+        string profilesFile = Path.Combine(work, "parcours-serveurs-loues.json");
+        var known = new KnownHosts(hostsFile);
+        var demo = new DemoVpsConnector(known) { StepDelay = TimeSpan.FromMilliseconds(5) };
+        var release = new Release("v0.14.0", "", new Dictionary<string, string>(), new PackManifest { Version = "0.14.0", Minecraft = "26.3" });
+        var ct = CancellationToken.None;
+
+        using var setup = new VpsSetup(demo);
+        var problems = setup.SetAddress("", "ssh://debian@vps-parcours.exemple.fr:2222", "22", out string? user);
+        r.Check(problems.Count == 0 && user == "debian" && setup.Profile.Host == "vps-parcours.exemple.fr" && setup.Profile.SshPort == 2222
+                && setup.Profile.Name == "vps-parcours.exemple.fr",
+            "Adresse collée telle quelle (ssh://compte@hôte:port) : compte, hôte et port remis à leur place");
+        r.Check(new VpsSetup(demo).SetAddress("x", "vps exemple.fr", "22", out _).Count == 1
+                && new VpsSetup(demo).SetAddress("x", "vps.exemple.fr", "70000", out _).Count == 1,
+            "Adresse avec une espace, port hors bornes : refusés");
+        setup.SetAddress("Parcours", "vps-parcours.exemple.fr", "22", out _);
+        problems = await setup.SetAccountAsync("debian", SshAuthKind.Password, "", null, "", "");
+        r.Check(problems.Count == 1 && problems[0].Contains("mot de passe"), "Compte sans mot de passe : demandé");
+        problems = await setup.SetAccountAsync("debian", SshAuthKind.PrivateKey, "", Path.Combine(work, "absente"), "", "");
+        r.Check(problems.Count == 1 && problems[0].Contains("illisible"), "Clé privée introuvable : message clair", problems.FirstOrDefault());
+
+        // Mot de passe faux : il n'est essayé qu'une fois l'empreinte acceptée (comme SSH, qui vérifie l'hôte d'abord).
+        await setup.SetAccountAsync("debian", SshAuthKind.Password, "mauvais", null, "", "");
+        var first = await setup.ConnectAsync(null, ct);
+        string fingerprint = DemoVpsConnector.FingerprintOf("vps-parcours.exemple.fr", 22);
+        r.Check(first == VpsConnectResult.UnknownKey && setup.PendingKey?.Fingerprint == fingerprint && known.Find("vps-parcours.exemple.fr", 22) == null,
+            "Premier contact : rien n'est accepté, l'empreinte SHA256 est rendue à l'interface", fingerprint);
+        var wrongKey = await setup.ConnectAsync("SHA256:" + new string('A', 43), ct);
+        r.Check(wrongKey == VpsConnectResult.UnknownKey && known.Find("vps-parcours.exemple.fr", 22) == null, "Une autre empreinte que celle du serveur : refusée");
+        var badPassword = await setup.ConnectAsync(fingerprint, ct);
+        r.Check(badPassword == VpsConnectResult.Failed && setup.Error.Contains("mot de passe incorrect") && known.Find("vps-parcours.exemple.fr", 22) != null,
+            "Empreinte acceptée et retenue, puis mot de passe faux : message clair", setup.Error);
+        await setup.SetAccountAsync("debian", SshAuthKind.Password, "bon", null, "", "");
+        r.Check(await setup.ConnectAsync(null, ct) == VpsConnectResult.Connected, "Bon mot de passe : connecté sans redemander l'empreinte");
+
+        using (var unreachable = new VpsSetup(demo))
+        {
+            unreachable.SetAddress("", "injoignable.exemple.fr", "22", out _);
+            await unreachable.SetAccountAsync("root", SshAuthKind.Password, "x", null, "", "");
+            r.Check(await unreachable.ConnectAsync(null, ct) == VpsConnectResult.Failed && unreachable.Error.Contains("ne répond pas"),
+                "Hôte injoignable : message clair", unreachable.Error);
+        }
+        using (var reinstalled = new VpsSetup(demo))
+        {
+            reinstalled.SetAddress("", "vps-reinstalle.exemple.fr", "22", out _);
+            await reinstalled.SetAccountAsync("root", SshAuthKind.Password, "x", null, "", "");
+            var changed = await reinstalled.ConnectAsync(null, ct);
+            var forced = await reinstalled.ConnectAsync(DemoVpsConnector.FingerprintOf("vps-reinstalle.exemple.fr", 22), ct);
+            r.Check(changed == VpsConnectResult.ChangedKey && forced == VpsConnectResult.ChangedKey && reinstalled.Error.Contains("a changé"),
+                "Clé du serveur changée : refus net, même avec la nouvelle empreinte en main", reinstalled.Error);
+            reinstalled.ForgetKey();
+            r.Check(await reinstalled.ConnectAsync(null, ct) == VpsConnectResult.UnknownKey, "Ancienne empreinte oubliée : la nouvelle est à confirmer");
+        }
+        using (var noSudo = new VpsSetup(demo))
+        {
+            noSudo.SetAddress("", "vps-parcours.exemple.fr", "22", out _);
+            await noSudo.SetAccountAsync("sanssudo", SshAuthKind.Password, "x", null, "", "");
+            await noSudo.ConnectAsync(null, ct);
+            await noSudo.ExamineAsync(ct);
+            r.Check(noSudo.RootProblem?.Contains("sudo refuse") == true && !noSudo.SystemInfo!.CanInstall, "sudo refusé : dit clairement, installation impossible", noSudo.RootProblem);
+            await r.ThrowsAsync(() => noSudo.Session!.InstallAsync(release, new Inline<(string, double)>(_ => { }), new Inline<string>(_ => { }), ct),
+                "Installation sans droits d'administration : refusée", "droits d'administration");
+        }
+
+        await setup.ExamineAsync(ct);
+        r.Check(setup.SystemInfo is { CanInstall: true } && setup.Status is { Installed: false } && setup.NeedsInstall(release),
+            "Examen : Debian 12, installation possible, Valcombe absent", setup.SystemInfo?.Summary);
+        r.Check(VpsSetup.SuggestedMemoryMb(7851) == 4096 && VpsSetup.SuggestedMemoryMb(2048) == 1024 && VpsSetup.SuggestedMemoryMb(3500) == 2048,
+            "Mémoire proposée : 4 Go, moins sur une petite machine (1 Go laissé au système)");
+        await r.ThrowsAsync(() => setup.InstallAsync(release, new Inline<(string, double)>(_ => { }), new Inline<string>(_ => { }), ct),
+            "Installer sans le contrat de Minecraft accepté : refusé", "EULA");
+        setup.Profile.EulaAccepted = true;
+        var lines = new List<string>();
+        var steps = new List<double>();
+        var installed = await setup.InstallAsync(release, new Inline<(string, double)>(p => steps.Add(p.Item2)), new Inline<string>(lines.Add), ct);
+        r.Check(installed.Changed && lines.Count >= 8 && steps.Count >= 8 && steps.Zip(steps.Skip(1)).All(p => p.Second >= p.First)
+                && setup.Status is { Installed: true } && !setup.NeedsInstall(release),
+            $"Installation : {lines.Count} lignes de journal en direct, avancement croissant, version notée");
+        var said = new List<string>();
+        await using (var admin = await setup.StartAndReachAsync(new Inline<string>(said.Add), ct))
+        {
+            var state = await new AdminClient(admin).GetStateAsync(ct);
+            r.Check(state.Api == AdminClient.ContractVersion && said.Any(s => s.Contains("Premier démarrage")) && admin is IManagedServer,
+                "Démarrage suivi jusqu'à ce que l'API réponde par le tunnel", said.LastOrDefault());
+            var (names, bad) = VpsSetup.ParseNames("Lea, hugo ;Léa\nHugo  Ines");
+            r.Check(names.SequenceEqual(new[] { "Lea", "hugo", "Ines" }) && bad.SequenceEqual(new[] { "Léa" }),
+                "Liste blanche saisie : séparateurs, doublons sans casse, pseudo invalide relevé");
+            var change = VpsSetup.PlayersChange("Yoann", names, true);
+            r.Check(change.OperatorsAdd.SequenceEqual(new[] { "Yoann" }) && change.WhitelistAdd.First() == "Yoann" && change.WhitelistActive == true,
+                "Premier opérateur : aussi sur la liste blanche, sinon il ne pourrait pas entrer");
+            var applied = await new AdminClient(admin).ChangeSettingsAsync(change, ct);
+            r.Check(applied.Ok && applied.Reglages!.ListeBlanche.Joueurs.Count == 4 && applied.Reglages.Operateurs.Single().Nom == "Yoann",
+                "Opérateur et liste blanche envoyés par l'API (POST /admin/reglages)");
+        }
+
+        var fiches = new List<Admin.RemoteServer>();
+        var fiche = setup.Save(fiches, profilesFile);
+        string stored = File.ReadAllText(profilesFile);
+        r.Check(fiches.Count == 1 && fiche.Access == Admin.RemoteServer.AccessSsh && fiche.VpsId == setup.Profile.Id && fiche.KeyFromServer
+                && fiche.Name == "Parcours" && !stored.Contains("\"bon\"") && stored.Contains("PasswordProtected"),
+            "Fiche enregistrée : tunnel SSH, profil à part, mot de passe chiffré (jamais en clair)");
+
+        // Modification : le mot de passe laissé vide est gardé ; un autre compte est pris.
+        var saved = VpsProfiles.Load(profilesFile).Single();
+        using (var edit = new VpsSetup(demo, saved))
+        {
+            var kept = await edit.SetAccountAsync("admin", SshAuthKind.Password, "", null, "", "");
+            r.Check(kept.Count == 0 && edit.Profile.GetPassword() == "bon" && edit.Profile.User == "admin" && edit.Profile.Id == saved.Id,
+                "Modifier une fiche : secret laissé vide gardé, compte changé, même identifiant");
+            edit.SetAddress("Parcours bis", "vps-parcours.exemple.fr", "22", out _);
+            edit.Save(fiches, profilesFile);
+            r.Check(fiches.Count == 1 && fiches[0].Name == "Parcours bis" && VpsProfiles.Load(profilesFile).Single().User == "admin",
+                "Fiche modifiée : mise à jour sur place, pas de doublon");
+        }
+        VpsSetup.Remove(fiches[0], fiches, known, profilesFile);
+        r.Check(fiches.Count == 0 && VpsProfiles.Load(profilesFile).Count == 0 && known.Find("vps-parcours.exemple.fr", 22) == null,
+            "Retirer la fiche : profil, secrets et empreinte effacés de ce PC");
+    }
+
     // ------------------------------------------------------------------
     // Installation à blanc
     // ------------------------------------------------------------------
@@ -358,8 +504,16 @@ public static class VpsCheck
         var steps = new List<string>();
         var progress = new Progress<(string, double)>(p => steps.Add(p.Item1));
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var first = await server.InstallAsync(release, progress, download);
+        var streamed = new List<string>();
+        var first = await server.InstallAsync(release, progress, download, log: new Inline<string>(line =>
+        {
+            lock (streamed)
+            {
+                streamed.Add(line);
+            }
+        }));
         r.Check(first.Changed, "Première installation", $"{clock.Elapsed.TotalSeconds:0} s, « {first.Summary} »");
+        r.Check(streamed.Count == first.Log.Count && streamed.Count > 0, $"Journal de l'installation remonté en direct ({streamed.Count} lignes)");
         r.Note("        Journal de l'installation :");
         foreach (string line in first.Log.Where(l => !l.StartsWith("[à blanc] chown", StringComparison.Ordinal)).Take(40))
         {

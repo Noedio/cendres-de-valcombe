@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 
 namespace Valcombe.Launcher.Services.Admin;
@@ -33,20 +34,50 @@ public interface IServerConnection : IAsyncDisposable
     /// Envoie une requête à l'API et rend la réponse telle quelle, sans lever pour un statut d'erreur HTTP
     /// (401, 429… : c'est <see cref="AdminClient"/> qui les traduit).
     /// </summary>
-    /// <param name="method">GET ou POST.</param>
+    /// <param name="method">GET, POST ou DELETE.</param>
     /// <param name="path">Chemin et requête, commençant par <c>/admin/</c> (« /admin/console?depuis=12 »).</param>
     /// <param name="json">Corps JSON d'un POST, ou null.</param>
     /// <exception cref="AdminException">Serveur injoignable ou délai dépassé (statut 0).</exception>
     Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct);
 
     /// <summary>
+    /// Télécharge un fichier de l'API (une archive de sauvegarde, <c>GET /admin/sauvegardes/&lt;nom&gt;</c>) dans
+    /// <paramref name="destination"/>, au fil de l'eau : une archive de plusieurs centaines de Mo ne passe jamais
+    /// en mémoire. Rend <c>200</c> et un corps vide une fois tout reçu, ou la réponse d'erreur du serveur telle
+    /// quelle (404, 401…), sans rien écrire. Pas de délai global (un gros monde prend du temps), mais un serveur
+    /// qui n'envoie plus rien pendant une minute interrompt le téléchargement.
+    /// </summary>
+    /// <param name="progress">Octets reçus, et taille annoncée par le serveur (null si inconnue).</param>
+    /// <exception cref="AdminException">Serveur injoignable, téléchargement coupé ou incomplet (statut 0).</exception>
+    Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress, CancellationToken ct);
+
+    /// <summary>
     /// Cette connexion sait démarrer le serveur quand il est arrêté (l'API, elle, s'arrête avec lui).
-    /// Faux pour l'accès direct ; le tunnel SSH le pourra. Le serveur de ce PC est démarré par la page elle-même.
+    /// Faux pour l'accès direct ; vrai pour le tunnel SSH (par systemd). Le serveur de ce PC est démarré par la page elle-même.
     /// </summary>
     bool CanStartServer { get; }
 
     /// <summary>Démarre le serveur arrêté (seulement si <see cref="CanStartServer"/>).</summary>
     Task StartServerAsync(IProgress<(string, double)> progress, CancellationToken ct);
+}
+
+/// <summary>
+/// Un serveur que le launcher a installé lui-même et sait donc mettre à jour : le serveur loué piloté par SSH
+/// (<see cref="SshConnection"/>). La page Serveur s'en sert pour comparer la version installée à la dernière
+/// version publiée et proposer la mise à jour, sans rien savoir de SSH.
+/// </summary>
+public interface IManagedServer
+{
+    /// <summary>Par où passe l'installation, à montrer tel quel (« debian@vps.exemple.fr »).</summary>
+    string Where { get; }
+
+    /// <summary>État du service et version installée.</summary>
+    /// <exception cref="AdminException">Serveur injoignable par SSH (statut 0, message lisible).</exception>
+    Task<Ssh.VpsServiceStatus> ServiceStatusAsync(CancellationToken ct);
+
+    /// <summary>Met le serveur à jour vers cette version ; il redémarre s'il tournait et que quelque chose a changé.</summary>
+    /// <exception cref="AdminException">Mise à jour impossible (statut 0, message lisible).</exception>
+    Task<Ssh.VpsInstallResult> UpdateAsync(Release release, IProgress<(string, double)> progress, CancellationToken ct);
 }
 
 /// <summary>Réponse brute de l'API : statut HTTP, corps, et délai d'attente demandé par un 429.</summary>

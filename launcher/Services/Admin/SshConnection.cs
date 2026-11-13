@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using Valcombe.Launcher.Services.Ssh;
 
@@ -17,7 +18,7 @@ namespace Valcombe.Launcher.Services.Admin;
 /// <see cref="SshRemote.ConnectAsync"/>) : sinon la connexion échoue avec un message qui la donne, et n'est plus
 /// retentée tant que la page ne rouvre pas l'accès (une empreinte ne se confirme pas en insistant).
 /// </summary>
-public sealed class SshConnection : IServerConnection
+public sealed class SshConnection : IServerConnection, IManagedServer
 {
     private readonly VpsProfile _profile;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -76,12 +77,20 @@ public sealed class SshConnection : IServerConnection
         }
     }
 
-    public async Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct)
+    public Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct) =>
+        ThroughTunnelAsync(direct => direct.SendAsync(method, path, json, ct));
+
+    public Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress,
+        CancellationToken ct) =>
+        ThroughTunnelAsync(direct => direct.DownloadAsync(path, destination, progress, ct));
+
+    /// <summary>Une requête par le tunnel ; une panne de réseau devient un message qui parle du serveur loué.</summary>
+    private async Task<AdminReply> ThroughTunnelAsync(Func<DirectConnection, Task<AdminReply>> call)
     {
         var direct = _direct ?? throw new AdminException(0, $"Le {Description} n'est pas ouvert.");
         try
         {
-            return await direct.SendAsync(method, path, json, ct);
+            return await call(direct);
         }
         catch (AdminException ex) when (ex.Status == 0)
         {
@@ -122,7 +131,8 @@ public sealed class SshConnection : IServerConnection
             {
                 await vps.StartAsync(ct);
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                           or System.Net.Sockets.SocketException or IOException)
             {
                 throw new AdminException(0, ex.Message, inner: ex);
             }
@@ -170,19 +180,76 @@ public sealed class SshConnection : IServerConnection
         _vps = null;
         try
         {
-            _vps = await VpsServer.ConnectAsync(_profile, null, ct);
+            _vps = await OpenVpsAsync(_profile, ct);
             return _vps;
+        }
+        catch (AdminException ex) when (ex.InnerException is SshHostKeyException)
+        {
+            // Empreinte jamais confirmée, ou clé du serveur changée : rien ne sert de réessayer.
+            _refused = ex;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Une connexion SSH au serveur du profil, ou une <see cref="AdminException"/> qui dit pourquoi elle est impossible.
+    /// Ouverte hors du fil de l'interface : la lecture d'une clé privée protégée par une phrase de passe peut prendre
+    /// une seconde, et la page ne doit jamais se figer.
+    /// </summary>
+    public static async Task<VpsServer> OpenVpsAsync(VpsProfile profile, CancellationToken ct)
+    {
+        try
+        {
+            return await Task.Run(() => VpsServer.ConnectAsync(profile, null, ct), ct);
         }
         catch (SshHostKeyException ex)
         {
-            // Empreinte jamais confirmée, ou clé du serveur changée : rien ne sert de réessayer.
-            _refused = new AdminException(0, ex.Message, inner: ex);
-            throw _refused;
+            throw new AdminException(0, ex.Message, inner: ex);
         }
         catch (Exception ex) when (ex is InvalidOperationException or Renci.SshNet.Common.SshException
                                        or System.Net.Sockets.SocketException or TimeoutException)
         {
-            throw new AdminException(0, $"Connexion SSH à {_profile.Display} impossible : {ex.Message}", inner: ex);
+            // SshRemote donne déjà un message complet (« ... a refusé la connexion de debian : mot de passe incorrect »).
+            throw new AdminException(0, ex is InvalidOperationException ? ex.Message
+                : $"Connexion SSH à {profile.Display} impossible : {ex.Message}", inner: ex);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // IManagedServer : le serveur installé par le launcher
+    // ------------------------------------------------------------------
+    public string Where => _profile.Display;
+
+    /// <summary>État du service et version installée, par une connexion SSH à part (la page continue d'interroger l'API).</summary>
+    public async Task<VpsServiceStatus> ServiceStatusAsync(CancellationToken ct)
+    {
+        using var vps = await OpenVpsAsync(_profile, ct);
+        try
+        {
+            return await vps.StatusAsync(ct);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                       or System.Net.Sockets.SocketException or IOException)
+        {
+            throw new AdminException(0, ex.Message, inner: ex);
+        }
+    }
+
+    /// <summary>
+    /// Met le serveur à jour vers <paramref name="release"/> (redémarré seulement s'il tournait et que quelque chose a
+    /// changé), par une connexion SSH à part : le tunnel de la page reste ouvert jusqu'au redémarrage, puis se rouvre.
+    /// </summary>
+    public async Task<VpsInstallResult> UpdateAsync(Release release, IProgress<(string, double)> progress, CancellationToken ct)
+    {
+        using var vps = await OpenVpsAsync(_profile, ct);
+        try
+        {
+            return await vps.UpdateAsync(release, progress, ct);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or Renci.SshNet.Common.SshException
+                                       or System.Net.Sockets.SocketException or IOException)
+        {
+            throw new AdminException(0, ex.Message, inner: ex);
         }
     }
 
@@ -222,6 +289,9 @@ public sealed class FailedConnection : IServerConnection
 
     public Task<AdminReply> SendAsync(HttpMethod method, string path, string? json, CancellationToken ct) =>
         throw new AdminException(0, _why);
+
+    public Task<AdminReply> DownloadAsync(string path, Stream destination, IProgress<(long Done, long? Total)>? progress,
+        CancellationToken ct) => throw new AdminException(0, _why);
 
     public Task StartServerAsync(IProgress<(string, double)> progress, CancellationToken ct) =>
         throw new NotSupportedException(_why);
