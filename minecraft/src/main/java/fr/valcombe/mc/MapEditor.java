@@ -106,16 +106,25 @@ public final class MapEditor {
 	private record Change(String label, BlockPos corner, Clip before, Marker marker) {
 	}
 
-	private final McHost host;
+	/**
+	 * L'hôte de la partie qui se joue dans un monde, ou, pour un monde sans partie (atelier, hub), celui de la partie
+	 * principale : ses chantiers posent alors les blocs de l'éditeur, et ses repères ne sont pas touchés.
+	 */
+	private final java.util.function.Function<net.minecraft.world.level.Level, McHost> hosts;
 	private final StructureStore store;
 	private MinecraftServer server;
 	private final Map<String, Desk> desks = new HashMap<>();
 	private final History<Change> history = new History<>(HISTORY_DEPTH, HISTORY_CELLS);
 	private long ticks;
 
-	public MapEditor(McHost host, StructureStore store) {
-		this.host = host;
+	public MapEditor(java.util.function.Function<net.minecraft.world.level.Level, McHost> hosts, StructureStore store) {
+		this.hosts = hosts;
 		this.store = store;
+	}
+
+	/** L'hôte du monde où travaille l'éditeur (voir {@link #hosts}). */
+	private McHost host() {
+		return hosts.apply(work);
 	}
 
 	public void setServer(MinecraftServer server) {
@@ -151,7 +160,8 @@ public final class MapEditor {
 	 * ne se posent qu'avec la carte de ce monde-là.
 	 */
 	private Village village() {
-		return work != null && host.isGameLevel(work) ? host.village() : null;
+		McHost h = work == null ? null : host();
+		return h != null && h.isGameLevel(work) ? h.village() : null;
 	}
 
 	// ------------------------------------------------------------------
@@ -165,10 +175,11 @@ public final class MapEditor {
 		if (server == null || !Atelier.isOperator(p)) {
 			throw new GameException("L'éditeur de carte est réservé aux opérateurs.");
 		}
-		if (ValcombeMod.session().game() != null && host.inGameWorld(p)) {
+		McHost here = hosts.apply(p.level());
+		if (here != null && here.gameRunning() && here.inGameWorld(p)) {
 			throw new GameException("On ne touche pas à la carte pendant une partie.");
 		}
-		if (!host.isBuilder(p.getScoreboardName())) {
+		if (!McHost.isBuilder(p.getScoreboardName())) {
 			throw new GameException("L'éditeur s'utilise en mode construction : /vc carte construction.");
 		}
 		if (work != p.level()) {
@@ -208,9 +219,9 @@ public final class MapEditor {
 		history.record(new Change(label, zone.min(), before, marker), before.volume());
 		if (village() != null) {
 			// Dans le monde de la partie : sa carte est retouchée, elle sera sauvegardée avant d'être remplacée.
-			host.markEdited();
+			host().markEdited();
 		}
-		host.startEdit(label, level(), plan, null);
+		host().startEdit(label, level(), plan, null);
 	}
 
 	/** « Pose de « Maison gothique » » → « pose de « Maison gothique » », pour la glisser dans une phrase. */
@@ -238,7 +249,7 @@ public final class MapEditor {
 
 	private String swap(ServerPlayer p, boolean undo, int times) {
 		require(p);
-		host.requireFree();
+		host().requireFree();
 		int n = Math.min(Math.max(1, times), undo ? history.undoable() : history.redoable());
 		if (n == 0) {
 			throw new GameException(undo ? "Rien à annuler." : "Rien à rétablir.");
@@ -265,9 +276,9 @@ public final class MapEditor {
 			history.putUndo(inverse, now.volume());
 		}
 		if (village() != null) {
-			host.markEdited();
+			host().markEdited();
 		}
-		host.startEdit((undo ? "Annulation : " : "Rétablissement : ") + lower(c.label()), level(),
+		host().startEdit((undo ? "Annulation : " : "Rétablissement : ") + lower(c.label()), level(),
 			c.before().plan(level(), c.corner(), false, false), left > 1 ? () -> step(undo, left - 1) : null);
 		return c.label();
 	}
@@ -288,10 +299,10 @@ public final class MapEditor {
 			} else if (!m.present()) {
 				BlockPos previous = v.convocation();
 				v.setConvocation(m.pos());
-				host.editorMarkersChanged();
+				host().editorMarkersChanged();
 				return new Marker(m.type(), m.pos(), previous, true);
 			}
-			host.editorMarkersChanged();
+			host().editorMarkersChanged();
 		}
 		return new Marker(m.type(), m.pos(), m.previous(), !m.present());
 	}
@@ -339,7 +350,7 @@ public final class MapEditor {
 	 */
 	public String actOnPlaced(ServerPlayer p, int index, String action) {
 		Desk d = require(p);
-		host.requireFree();
+		host().requireFree();
 		Placed pl = placedEntry(index);
 		String nom = placedName(index);
 		switch (action) {
@@ -453,7 +464,7 @@ public final class MapEditor {
 	/** Pose la structure en main sur le bloc cliqué, dans l'orientation choisie, avec son repère s'il y a une carte. */
 	public String place(ServerPlayer p, BlockPos clicked) {
 		Desk d = require(p);
-		host.requireFree();
+		host().requireFree();
 		StructureStore.Def def = chosen(d);
 		Clip clip = store.clip(def.id).turned(d.turn);
 		BlockPos feet = clicked.above();
@@ -463,7 +474,7 @@ public final class MapEditor {
 		boolean house = v != null && def.repere.equals("maison");
 		boolean room = v != null && def.repere.equals("salle");
 		if (house) {
-			host.requireRoom(v, false);
+			host().requireRoom(v, false);
 		}
 		if (house || room) {
 			McHost.requireNear(v, feet);
@@ -481,7 +492,7 @@ public final class MapEditor {
 			with = ", avec le repère de la salle de convocation";
 		}
 		if (marker != null) {
-			host.editorMarkersChanged();
+			host().editorMarkersChanged();
 		}
 		commit("Pose de « " + def.nom + " »", zone, before, clip.plan(level(), corner, false, def.fournie), marker);
 		placed.add(new Placed(def.id, feet, d.turn, corner, zone, before, marker));
@@ -599,9 +610,9 @@ public final class MapEditor {
 			return;
 		}
 		for (Map.Entry<String, Desk> e : desks.entrySet()) {
-			ServerPlayer p = host.player(e.getKey());
+			ServerPlayer p = server.getPlayerList().getPlayerByName(e.getKey());
 			Desk d = e.getValue();
-			if (p == null || !host.isBuilder(e.getKey()) || p.level() != work) {
+			if (p == null || !McHost.isBuilder(e.getKey()) || p.level() != work) {
 				continue;
 			}
 			boolean holding = d.structure != null && ValcombeUi.mapTool(p.getMainHandItem()) == ValcombeUi.MapTool.STRUCTURE;
@@ -690,7 +701,7 @@ public final class MapEditor {
 		ServerPlayer p = server == null ? null : server.getPlayerList().getPlayerByName(player);
 		WorldEditGate gate = WorldEditGate.current();
 		WorldEditLink.Selection sel = gate == null || p == null ? null : gate.link().selection(p);
-		out.put("construction", host.isBuilder(player));
+		out.put("construction", McHost.isBuilder(player));
 		var access = fr.valcombe.mc.worlds.BuildAccess.current();
 		out.put("worldedit", access != null && p != null && access.canUseWorldEdit(p));
 		out.put("selection", sel == null || !sel.complete() || sel.level() != p.level() ? null

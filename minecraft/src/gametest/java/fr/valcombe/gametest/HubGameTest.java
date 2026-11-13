@@ -129,7 +129,7 @@ public class HubGameTest implements FabricClientGameTest {
 			// La session de Valcombe survit d'une classe de test à l'autre (même jeu) : un test d'avant a pu laisser ce
 			// joueur Conteur, et le Conteur ne s'inscrit pas par la dalle dorée. On repart d'un joueur ordinaire.
 			server.runOnServer(s -> {
-				var session = ValcombeMod.session();
+				var session = fr.valcombe.mc.games.Games.main().session();
 				if (me.equals(session.storyteller())) {
 					session.toggleStoryteller(me);
 				}
@@ -190,13 +190,13 @@ public class HubGameTest implements FabricClientGameTest {
 			shot(ctx, "hub-mur-des-roles");
 
 			// 2. Dalles : la dalle dorée inscrit (et emmène au village de la partie), la rouge désinscrit.
-			String gameId = server.computeOnServer(s -> ValcombeMod.host().worldId());
+			String gameId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().worldId());
 			String gameDim = "valcombe:" + gameId;
 			place(world, me, hubId, HubHall.JOIN_X + 0.5, HubHall.FEET, HubHall.JOIN_Z + 0.5, 180f, 0f);
-			check(waitFor(ctx, world, 60, s -> ValcombeMod.session().lobby().contains(me)), "inscrit par la dalle dorée du hub");
+			check(waitFor(ctx, world, 60, s -> fr.valcombe.mc.games.Games.main().session().lobby().contains(me)), "inscrit par la dalle dorée du hub");
 			check(waitFor(ctx, world, 60, s -> dimensionOf(s, me).equals(gameDim)), "inscrit, il rejoint le monde de la partie");
 			place(world, me, hubId, HubHall.LEAVE_X + 0.5, HubHall.FEET, 0.5, 180f, 0f);
-			check(waitFor(ctx, world, 60, s -> !ValcombeMod.session().lobby().contains(me)), "désinscrit par la dalle rouge du hub");
+			check(waitFor(ctx, world, 60, s -> !fr.valcombe.mc.games.Games.main().session().lobby().contains(me)), "désinscrit par la dalle rouge du hub");
 
 			// 3. Aller-retour par les commandes : chacun retrouve sa position et son orientation dans chaque monde.
 			String name = "Essai du hub " + (System.currentTimeMillis() % 100000);

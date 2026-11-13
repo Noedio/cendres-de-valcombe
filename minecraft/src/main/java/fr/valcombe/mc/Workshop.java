@@ -7,7 +7,6 @@ import com.google.gson.JsonObject;
 import fr.valcombe.rules.Distribution;
 import fr.valcombe.rules.GameException;
 import fr.valcombe.rules.RoleDef;
-import fr.valcombe.session.Session;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -25,29 +24,32 @@ import net.minecraft.server.level.ServerPlayer;
  * (Atelier) et pour l'écran en jeu (ViewSync). Les actions, elles, sont les méthodes de McHost,
  * MapStore, MapEditor, StructureStore et Session, appelées telles quelles par les routes de la
  * page et par les commandes /vc que lance l'écran.
+ * <p>
+ * La « carte actuelle » est celle de la partie que vise l'opérateur (celle du monde où il se tient, sinon sa table
+ * d'attache ou la partie principale, voir {@link fr.valcombe.mc.games.Games#forPlayer}) : jamais « la seule » partie.
  */
 public final class Workshop {
 	private static final Gson GSON = new Gson();
 	/** Côté de l'aperçu envoyé à l'écran en jeu, en cases (chacune y est dessinée en deux pixels). */
 	static final int PREVIEW_SIDE = 48;
 
-	private final Session session;
 	private final CreationStore creations;
 	private final MapStore maps;
-	private final McHost host;
 	private final StructureStore structures;
 	private final MapEditor editor;
 	private final MinecraftServer server;
 
-	Workshop(MinecraftServer server, Session session, CreationStore creations, MapStore maps, McHost host,
-			StructureStore structures, MapEditor editor) {
+	Workshop(MinecraftServer server, CreationStore creations, MapStore maps, StructureStore structures, MapEditor editor) {
 		this.server = server;
-		this.session = session;
 		this.creations = creations;
 		this.maps = maps;
-		this.host = host;
 		this.structures = structures;
 		this.editor = editor;
+	}
+
+	/** La partie que vise cet opérateur (voir la classe), ou null sans parties. */
+	static fr.valcombe.mc.games.GameRoom roomOf(ServerPlayer p) {
+		return fr.valcombe.mc.games.Games.forPlayer(p);
 	}
 
 	// ------------------------------------------------------------------
@@ -115,9 +117,9 @@ public final class Workshop {
 		return out;
 	}
 
-	/** La carte actuelle sur le serveur, ou null ; plan : avec ses repères et les joueurs connectés. */
-	public Map<String, Object> current(boolean plan) {
-		Village v = host.village();
+	/** La carte en service dans la partie de cet hôte, ou null ; plan : avec ses repères et les joueurs de son monde. */
+	public Map<String, Object> current(McHost host, boolean plan) {
+		Village v = host == null ? null : host.village();
 		if (v == null) {
 			return null;
 		}
@@ -184,13 +186,16 @@ public final class Workshop {
 	/** Ce que l'écran « Atelier » du jeu affiche à cet opérateur (joint à sa vue de la partie). */
 	public Map<String, Object> gameView(ServerPlayer p) {
 		Map<String, Object> out = new LinkedHashMap<>();
-		Map<String, Object> cur = current(false);
+		fr.valcombe.mc.games.GameRoom room = roomOf(p);
+		McHost host = room == null ? null : room.host();
+		Map<String, Object> cur = current(host, false);
 		out.put("carte", cur);
 		out.put("resume", describe(cur));
 		out.put("bref", brief(cur));
 		out.put("cartes", library(false));
-		out.put("chantier", host.busy());
-		out.put("essai", session.trialPending());
+		out.put("chantier", host != null && host.busy());
+		out.put("essai", room != null && room.session().trialPending());
+		out.put("partie", room == null ? null : room.name()); // la partie dont c'est la carte actuelle
 		out.put("editeur", editor.state(p.getScoreboardName()));
 		List<Map<String, Object>> list = new ArrayList<>();
 		for (StructureStore.Def d : structures.list()) {
@@ -246,7 +251,9 @@ public final class Workshop {
 	 * commande, un chantier qui commence ou finit, ce qu'il a en main dans l'éditeur. Le reste se rafraîchit chaque seconde.
 	 */
 	int changeKey(ServerPlayer p) {
-		return java.util.Objects.hash(replyCount, host.busy(), editor.state(p.getScoreboardName()));
+		fr.valcombe.mc.games.GameRoom room = roomOf(p);
+		return java.util.Objects.hash(replyCount, room == null ? null : room.id(), room != null && room.host().busy(),
+			editor.state(p.getScoreboardName()));
 	}
 
 	/** Les commandes dont l'écran de l'Atelier affiche la réponse. */
@@ -262,9 +269,9 @@ public final class Workshop {
 	// ------------------------------------------------------------------
 	/**
 	 * L'aperçu d'une carte, réduit à quelques dizaines de cases : couleurs vues de dessus (trois octets par
-	 * case, en base 64) et repères. id vide ou « actuelle » : la carte actuelle.
+	 * case, en base 64) et repères. id vide ou « actuelle » : la carte actuelle de la partie de cet hôte.
 	 */
-	public String preview(String id) {
+	public String preview(McHost host, String id) {
 		boolean currentMap = id == null || id.isBlank() || id.equals("actuelle");
 		byte[] png;
 		int radius;
@@ -273,7 +280,7 @@ public final class Workshop {
 		int[] room;
 		String name;
 		if (currentMap) {
-			Village v = host.village();
+			Village v = host == null ? null : host.village();
 			if (v == null) {
 				throw new GameException("Aucune carte sur le serveur.");
 			}

@@ -370,8 +370,40 @@ final class AdminApi {
 		m.put("prochaineSoiree", community.nextEvening());
 		m.put("motd", s.getMotd());
 		m.put("mondes", worlds());
+		m.put("parties", games());
 		m.put("redemarrageNecessaire", !pendingRestart(s).isEmpty());
 		return m;
+	}
+
+	/**
+	 * Les parties du serveur, une par monde de partie (la principale d'abord) : ce qui s'y passe, qui y est inscrit,
+	 * assis, qui la conte, et combien de joueurs se trouvent dans son monde. Fil du serveur.
+	 */
+	private static List<Map<String, Object>> games() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		try {
+			for (fr.valcombe.mc.games.GameRoom r : fr.valcombe.mc.games.Games.all()) {
+				Map<String, Object> m = new LinkedHashMap<>();
+				var session = r.session();
+				var g = session.game();
+				m.put("id", r.id());
+				m.put("nom", r.name());
+				m.put("sorte", r.kind().code());
+				m.put("principale", r.main());
+				m.put("etat", r.state());
+				m.put("enCours", r.inProgress());
+				m.put("phase", g == null ? null : g.phase().name().toLowerCase(java.util.Locale.ROOT));
+				m.put("inscrits", session.lobby().size());
+				m.put("assis", g == null ? 0 : g.size());
+				m.put("conteur", session.storyteller());
+				var level = r.levelIfReady();
+				m.put("joueurs", level == null ? 0 : level.players().size());
+				out.add(m);
+			}
+		} catch (RuntimeException e) {
+			ValcombeMod.LOG.warn("API d'administration : liste des parties illisible", e);
+		}
+		return out;
 	}
 
 	private static List<Map<String, Object>> worlds() {

@@ -2,6 +2,8 @@ package fr.valcombe.mc.hub;
 
 import fr.valcombe.mc.McHost;
 import fr.valcombe.mc.Village;
+import fr.valcombe.mc.games.GameRoom;
+import fr.valcombe.mc.games.Games;
 import fr.valcombe.mc.worlds.WorldEntry;
 import fr.valcombe.mc.worlds.WorldKind;
 import fr.valcombe.mc.worlds.WorldManager;
@@ -73,7 +75,6 @@ public final class Hub implements WorldManager.Listener {
 	private final MinecraftServer server;
 	private final WorldManager worlds;
 	private final Travel travel;
-	private final Session session;
 	private final Map<Group, String> keys = new HashMap<>();
 	private final Map<Group, Integer> gens = new HashMap<>();
 	/** La porte où se trouve chaque joueur (pour ne la déclencher qu'en y entrant). */
@@ -82,11 +83,14 @@ public final class Hub implements WorldManager.Listener {
 	private final String[] doors = new String[HubHall.PORTALS.size()];
 	private int tick;
 
-	public Hub(MinecraftServer server, WorldManager worlds, Travel travel, Session session) {
+	/**
+	 * Le mur des rôles montre la partie principale ; chaque porte qui mène à un monde de partie dit ce qui s'y passe
+	 * (partie trouvée par {@link Games#byWorld}). Le tableau des parties du hub les présente toutes.
+	 */
+	public Hub(MinecraftServer server, WorldManager worlds, Travel travel) {
 		this.server = server;
 		this.worlds = worlds;
 		this.travel = travel;
-		this.session = session;
 		int seed = (int) (System.nanoTime() & 0xFFFFF);
 		for (Group g : Group.values()) {
 			gens.put(g, seed + g.ordinal() * 7);
@@ -325,9 +329,13 @@ public final class Hub implements WorldManager.Listener {
 		}
 		update(level, Group.NOMS, names.toString(), () -> doorNames(level, labels));
 		update(level, Group.VOILES, open.toString(), () -> veils(level));
-		List<Role> roles = McHost.hallRoles(session);
-		String board = McHost.hallText(session);
-		update(level, Group.MUR, board + "|" + roles + "|" + Role.customDefs().size(), () -> roleWall(level, board, roles));
+		GameRoom main = Games.main();
+		if (main != null) {
+			Session session = main.session();
+			List<Role> roles = McHost.hallRoles(session);
+			String board = McHost.hallText(session);
+			update(level, Group.MUR, board + "|" + roles + "|" + Role.customDefs().size(), () -> roleWall(level, board, roles));
+		}
 	}
 
 	private void update(ServerLevel level, Group g, String key, Runnable pose) {
@@ -378,8 +386,10 @@ public final class Hub implements WorldManager.Listener {
 		if (e == null) {
 			return new String[] {"Porte libre", "Une partie viendra s'ouvrir ici"};
 		}
-		if (dest.equals(travel.game())) {
-			// Le village de la partie : ce qui s'y passe en ce moment.
+		GameRoom room = Games.byWorld(dest);
+		if (room != null) {
+			// Le village d'une partie : ce qui s'y passe en ce moment.
+			Session session = room.session();
 			Game g = session.game();
 			String state = g != null && g.winner() == null
 				? "partie en cours, " + (g.phase() == Game.Phase.NIGHT ? "nuit " + g.night() : "jour " + g.day())

@@ -74,12 +74,13 @@ public final class MapStore {
 	}
 
 	private final Path dir;
-	private final McHost host;
+	/** Les hôtes des parties du serveur (une par monde de partie) : une carte renommée l'est aussi là où elle est en service. */
+	private final java.util.function.Supplier<List<McHost>> hosts;
 	private MinecraftServer server;
 
-	public MapStore(Path creationsDir, McHost host) {
+	public MapStore(Path creationsDir, java.util.function.Supplier<List<McHost>> hosts) {
 		this.dir = creationsDir.resolve("cartes");
-		this.host = host;
+		this.hosts = hosts;
 	}
 
 	public void setServer(MinecraftServer server) {
@@ -191,8 +192,12 @@ public final class MapStore {
 	// ------------------------------------------------------------------
 	// Enregistrer la carte actuelle
 	// ------------------------------------------------------------------
-	public String saveCurrent(String id, String nom) {
+	/** Enregistre dans la bibliothèque la carte en service dans la partie de cet hôte (celle du monde où l'on travaille). */
+	public String saveCurrent(McHost host, String id, String nom) {
 		checkId(id);
+		if (host == null) {
+			throw new GameException("Aucune partie ici : la carte à enregistrer est celle d'un monde de partie (va dans son monde).");
+		}
 		Village v = host.village();
 		if (v == null) {
 			throw new GameException("Aucune carte à enregistrer : construisez ou générez d'abord un village.");
@@ -204,7 +209,7 @@ public final class MapStore {
 			throw new GameException("Une construction est en cours : enregistrez la carte à la fin de la barre de progression.");
 		}
 		boolean replaced = exists(id);
-		MapDef d = write(v, id, nom);
+		MapDef d = write(host, v, id, nom);
 		v.setLibrary(d.id, d.nom);
 		host.mapSaved(v);
 		return "Carte « " + d.nom + " » enregistrée (" + d.sieges.size() + " trônes, " + d.logis.size() + " maisons)"
@@ -216,7 +221,7 @@ public final class MapStore {
 	 * recevoir une autre (voir MapSender) : elle va dans la bibliothèque telle quelle (même inachevée), sous un nom
 	 * daté. Renvoie ce nom.
 	 */
-	String backup(Village v) {
+	String backup(McHost host, Village v) {
 		var now = java.time.LocalDateTime.now();
 		String base = "sauvegarde-" + now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
 		String id = base;
@@ -224,7 +229,7 @@ public final class MapStore {
 			id = base + "-" + n;
 		}
 		String nom = "Sauvegarde du " + now.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy 'à' HH'h'mm"));
-		String written = write(v, id, nom).nom;
+		String written = write(host, v, id, nom).nom;
 		java.util.Map<String, String> names = new java.util.HashMap<>();
 		for (MapDef d : list()) {
 			names.put(d.id, d.nom);
@@ -257,8 +262,8 @@ public final class MapStore {
 		return auto.size() <= KEPT_BACKUPS ? List.of() : new ArrayList<>(auto.subList(0, auto.size() - KEPT_BACKUPS));
 	}
 
-	/** Écrit la carte v (blocs, repères, aperçu) dans la bibliothèque. */
-	private MapDef write(Village v, String id, String nom) {
+	/** Écrit la carte v, en service dans la partie de cet hôte (blocs, repères, aperçu), dans la bibliothèque. */
+	private MapDef write(McHost host, Village v, String id, String nom) {
 		if (v.farthest() > MAX_RADIUS) {
 			throw new GameException("Un repère est à plus de " + (MAX_RADIUS - 8) + " blocs de la place : rapprochez-le ou retirez-le "
 				+ "avant d'enregistrer la carte.");
@@ -374,10 +379,12 @@ public final class MapStore {
 		String old = d.nom;
 		d.nom = nom.trim();
 		changed();
-		Village v = host.village();
-		if (v != null && id.equals(v.libraryId())) {
-			v.setLibrary(id, d.nom); // la carte actuelle porte ce nom
-			host.saveVillage();
+		for (McHost host : hosts == null ? List.<McHost>of() : hosts.get()) {
+			Village v = host.village();
+			if (v != null && id.equals(v.libraryId())) {
+				v.setLibrary(id, d.nom); // la carte en service dans cette partie porte ce nom
+				host.saveVillage();
+			}
 		}
 		try {
 			Files.writeString(dir.resolve(id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);

@@ -336,7 +336,8 @@ public final class ValcombeUi {
 		return stack.is(Items.CLOCK) && n != null && n.getString().equals(MENU_ITEM_NAME);
 	}
 
-	public void giveMenuItem(ServerPlayer p) {
+	/** Donne le grimoire « Menu de Valcombe » (commun à toutes les parties : il ouvre le menu de la partie du joueur). */
+	public static void giveMenuItem(ServerPlayer p) {
 		for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
 			if (isMenuItem(p.getInventory().getItem(i))) {
 				if (!p.getInventory().getItem(i).has(DataComponents.ITEM_MODEL)) {

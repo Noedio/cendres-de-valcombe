@@ -47,12 +47,43 @@ import net.minecraft.world.phys.Vec3;
  * les décors, les ménages, l'heure et les chantiers ne touchent qu'à ce monde ; la fiche du village, l'instantané de la
  * carte et la marque de chantier sont rangés dans son dossier et disparaissent avec lui quand il est remis à neuf. Le
  * monde principal de Minecraft ne sert plus au jeu : les joueurs arrivent au hub.
+ * <p>
+ * <b>Un hôte par partie.</b> Plusieurs parties se jouent en même temps, chacune dans son monde de partie, chacune avec
+ * son hôte et sa session (voir {@link fr.valcombe.mc.games.Games}, qui les crée et les relie). Ce qu'un hôte montre et
+ * fait entendre (annonces, titres, sons, barres) ne va qu'aux joueurs qui se trouvent dans son monde : on ne voit ni
+ * n'entend jamais une autre partie que celle du monde où l'on est.
  */
 public final class McHost implements Host, WorldManager.Listener, WorldManager.Guard {
 	private record Task(long due, Runnable run) {
 	}
 
 	private record SeatPos(ServerLevel level, Vec3 pos, float yaw) {
+	}
+
+	/** La session de cette partie (branchée par Games à la création de la partie, avant tout le reste). */
+	private fr.valcombe.session.Session session;
+
+	public void setSession(fr.valcombe.session.Session session) {
+		this.session = session;
+	}
+
+	/** La session de cette partie. */
+	public fr.valcombe.session.Session session() {
+		return session;
+	}
+
+	/**
+	 * Le monde de cette partie est celui de la partie principale : il ne se supprime pas (il se remet seulement à neuf)
+	 * et il reçoit les dalles du hub. Les parties d'essai, elles, se suppriment entre deux parties.
+	 */
+	private boolean mainGame = true;
+
+	public void setMainGame(boolean main) {
+		this.mainGame = main;
+	}
+
+	public boolean mainGame() {
+		return mainGame;
 	}
 
 	private MinecraftServer server;
@@ -256,20 +287,21 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	/**
-	 * Le monde de la partie ne se supprime pas, et ne se remet pas à neuf pendant une partie (ses joueurs y sont
-	 * assis). Branché sur le gestionnaire de mondes.
+	 * Le monde de la partie principale ne se supprime pas ; aucun monde de partie ne se remet à neuf ni ne se supprime
+	 * pendant une partie (ses joueurs y sont assis). Branché sur le gestionnaire de mondes.
 	 */
 	@Override
 	public String refuse(WorldEntry e, boolean recreate) {
 		if (worldId == null || !worldId.equals(e.id())) {
 			return null;
 		}
-		if (!recreate) {
-			return "« " + e.nom() + " » est le monde de la partie : il ne se supprime pas. /vc monde recreer " + e.id()
+		if (!recreate && mainGame) {
+			return "« " + e.nom() + " » est le monde de la partie principale : il ne se supprime pas. /vc monde recreer " + e.id()
 				+ " le remet à neuf, plat et vide.";
 		}
 		if (gameRunning()) {
-			return "Une partie se joue dans « " + e.nom() + " » : arrêtez-la d'abord (/vc arreter), puis remettez ce monde à neuf.";
+			return "Une partie se joue dans « " + e.nom() + " » : arrêtez-la d'abord (/vc arreter), puis "
+				+ (recreate ? "remettez ce monde à neuf." : "supprimez-le.");
 		}
 		Village v = village;
 		if (sending == null && v != null && v.modified()) {
@@ -280,14 +312,15 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 				if (maps == null) {
 					throw new fr.valcombe.rules.GameException("bibliothèque de cartes indisponible");
 				}
-				String saved = maps.backup(v);
+				String saved = maps.backup(this, v);
 				mapSaved(v);
-				ValcombeMod.LOG.info("Monde de la partie « {} » remis à neuf : sa carte retouchée à la main est sauvegardée dans la "
-					+ "bibliothèque (« {} »).", e.nom(), saved);
+				ValcombeMod.LOG.info("Monde de la partie « {} » {} : sa carte retouchée à la main est sauvegardée dans la "
+					+ "bibliothèque (« {} »).", e.nom(), recreate ? "remis à neuf" : "supprimé", saved);
 				tellOperators("La carte de « " + e.nom() + " », retouchée à la main, est sauvegardée dans la bibliothèque : « "
 					+ saved + " ».");
 			} catch (fr.valcombe.rules.GameException ex) {
-				return "Rien n'est remis à neuf : la carte de « " + e.nom() + " » a été retouchée à la main et sa sauvegarde "
+				return "Rien n'est " + (recreate ? "remis à neuf" : "supprimé") + " : la carte de « " + e.nom()
+					+ " » a été retouchée à la main et sa sauvegarde "
 					+ "automatique a échoué (" + ex.getMessage() + "). Enregistrez-la d'abord : /vc carte enregistrer <id> <nom>.";
 			}
 		}
@@ -308,7 +341,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	/** Une partie se joue-t-elle dans ce monde ? On n'y change pas de carte, on ne le remet pas à neuf. */
 	public boolean gameRunning() {
-		return ValcombeMod.session().game() != null;
+		return session != null && session.game() != null;
 	}
 
 	// ------------------------------------------------------------------
@@ -390,6 +423,15 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	 * du sol plat quand le monde ne porte aucune carte.
 	 */
 	public void prepareWorld() {
+		prepareWorld(true);
+	}
+
+	/**
+	 * Comme {@link #prepareWorld()} ; build faux : un monde sans carte reste plat et vide, parce que sa carte arrive
+	 * d'elle-même juste après (une partie d'essai créée reçoit son village par « Envoyer à la partie », posé par petits
+	 * lots avec sa barre, au lieu d'être bâti d'un coup).
+	 */
+	public void prepareWorld(boolean build) {
 		ServerLevel level = levelIfReady();
 		if (level == null && worlds != null && worldId != null) {
 			try {
@@ -403,7 +445,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			return;
 		}
 		WorldSetup.apply(level);
-		if (village == null && noMap && startupWarning == null) {
+		if (village == null && noMap && startupWarning == null && build) {
 			// La place sur le sol plat, au centre du monde : on y arrive en entrant dans le monde.
 			Village v = Village.generated(new BlockPos(0, WorldManager.SURFACE_Y, 0));
 			v.build(level);
@@ -665,7 +707,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	 * on voit leur silhouette à travers les murs, pour savoir qui est où.
 	 */
 	private void councilGlow() {
-		var ses = ValcombeMod.session();
+		var ses = session;
 		var g = ses.game();
 		boolean council = g != null && g.phase() == fr.valcombe.rules.Game.Phase.DAY && !g.dayOver()
 			&& (ses.nominationsOpen() || ses.voteOpen());
@@ -709,7 +751,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	/** Indication dans la barre d'action quand on tient la plume : qui est visé, ou comment voter. */
 	private void featherHints() {
-		var ses = ValcombeMod.session();
+		var ses = session;
 		var g = ses.game();
 		// Bâton du Conteur : le rôle du joueur visé, comme dans le grimoire
 		String st = ses.storyteller();
@@ -827,6 +869,28 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			if (pad != null && pad != before) {
 				padHandler.accept(p, pad);
 			}
+		}
+	}
+
+	/**
+	 * L'avertissement du démarrage de cette partie (fiche illisible, chantier coupé), redit à un opérateur qui se
+	 * connecte : les autres parties du serveur l'appellent pour lui, la sienne le dit dans {@link #onJoin}.
+	 */
+	public void warnOperator(ServerPlayer p) {
+		if (startupWarning != null && p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)) {
+			p.sendSystemMessage(Component.literal("[Valcombe] " + startupWarning).withStyle(ChatFormatting.RED));
+		}
+	}
+
+	/**
+	 * Un joueur arrive sans être de cette partie (une autre l'accueille) : s'il y avait joué en mode aventure, un
+	 * opérateur retrouve son mode de jeu d'avant.
+	 */
+	public void restoreMode(ServerPlayer p) {
+		GameType mode = previousMode.remove(p.getScoreboardName());
+		if (mode != null && p.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
+			&& (session == null || !session.holds(p.getScoreboardName()))) {
+			p.setGameMode(mode);
 		}
 	}
 
@@ -960,7 +1024,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Les repères ne se modifient que sur une carte en place, hors partie et hors chantier : même règle pour le jeu et l'Atelier. */
 	Village requireEditable() {
 		Village v = requireVillage();
-		if (ValcombeMod.session().game() != null) {
+		if (session.game() != null) {
 			throw new fr.valcombe.rules.GameException("On ne touche pas à la carte pendant une partie.");
 		}
 		requireFree();
@@ -1055,7 +1119,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	 */
 	public void noteEdit(ServerPlayer p, BlockPos pos) {
 		Village v = village;
-		if (v == null || server == null || v.modified() || ValcombeMod.session().game() != null || !inGameWorld(p)
+		if (v == null || server == null || v.modified() || session.game() != null || !inGameWorld(p)
 			|| p.gameMode.getGameModeForPlayer() == GameType.ADVENTURE || p.gameMode.getGameModeForPlayer() == GameType.SPECTATOR) {
 			return;
 		}
@@ -1509,7 +1573,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Depuis l'Atelier : amène l'opérateur sur un repère, pour voir dans le jeu ce que montre le plan. */
 	public String visitMarker(ServerPlayer p, String type, int index) {
 		Village v = requireVillage();
-		var game = ValcombeMod.session().game();
+		var game = session.game();
 		if (game != null && game.seatOf(p.getScoreboardName()) >= 0) {
 			throw new fr.valcombe.rules.GameException("Vous jouez cette partie : on ne se déplace pas sur la carte en pleine partie.");
 		}
@@ -1682,8 +1746,17 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			+ (v.convocation() != null ? "posée." : "absente.");
 	}
 
-	private java.nio.file.Path saveFile() {
-		return server.getServerDirectory().resolve("config").resolve("valcombe-partie.json");
+	/**
+	 * La sauvegarde de cette partie : {@code config/valcombe-partie.json} pour la partie principale (comme avant les
+	 * parties multiples), {@code config/valcombe/parties/<monde>.json} pour une partie d'essai. Chaque partie a la sienne :
+	 * deux parties en cours ne s'écrasent jamais, et chacune reprend dans son monde au redémarrage.
+	 */
+	public java.nio.file.Path saveFile() {
+		java.nio.file.Path config = server.getServerDirectory().resolve("config");
+		if (mainGame || worldId == null) {
+			return config.resolve("valcombe-partie.json");
+		}
+		return config.resolve("valcombe").resolve("parties").resolve(worldId + ".json");
 	}
 
 	@Override
@@ -1836,7 +1909,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	/** Ce joueur est-il en mode construction ? */
-	boolean isBuilder(String name) {
+	static boolean isBuilder(String name) {
 		return builders.contains(name);
 	}
 
@@ -1953,7 +2026,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			return;
 		}
 		dropSnapshot();
-		if (editor != null) {
+		if (editor != null && editor.worksIn(levelIfReady())) {
 			editor.forgetHistory(); // après la partie, la carte est remise en état : plus rien à annuler
 		}
 		if (village == null) {
@@ -2005,7 +2078,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	 * pu reprendre, la carte n'est pas laissée à moitié refaite : la remise en état repart.
 	 */
 	public void resumeRestore() {
-		if (server != null && ValcombeMod.session().game() == null && hasSnapshot()) {
+		if (server != null && session.game() == null && hasSnapshot()) {
 			ValcombeMod.LOG.info("Carte laissée en l'état par l'arrêt du serveur : sa remise en état reprend");
 			restoreAt = tick + 100;
 		}
@@ -2089,14 +2162,14 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		carrying.clear();
 		prefabs.clear();
 		markerUndo.clear();
-		if (editor != null) {
+		if (editor != null && editor.worksIn(levelIfReady())) {
 			editor.forgetHistory();
 		}
 		refreshLabels();
 	}
 
 	/** Fin des messages qui lancent un chantier : valable dans le jeu comme sur la page de l'Atelier. */
-	static final String PROGRESS = " Dans le jeu, une barre en haut de l'écran suit le chantier.";
+	public static final String PROGRESS =" Dans le jeu, une barre en haut de l'écran suit le chantier.";
 
 	/** Le village généré v vient d'être bâti : sa salle de convocation, sa salle d'attente, et il devient la carte. */
 	private void adoptGenerated(Village v) {
@@ -2116,8 +2189,12 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		return "Centre de la place posé ici.";
 	}
 
-	private final java.util.Set<String> builders = new java.util.HashSet<>();
-	private final Map<String, GameType> builderModes = new HashMap<>();
+	/**
+	 * Les opérateurs en mode construction, et leur mode de jeu d'avant. C'est un état du joueur, pas d'une partie : il
+	 * le garde d'un monde à l'autre (l'éditeur travaille là où il se tient), et toutes les parties le voient pareil.
+	 */
+	private static final java.util.Set<String> builders = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private static final Map<String, GameType> builderModes = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/** Mode construction : créatif, baguette de carte, repères lumineux et liste de contrôle. */
 	public String toggleConstruction(ServerPlayer p) {
@@ -2137,7 +2214,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 		// Le mode construction sert dans n'importe quel monde (l'éditeur travaille là où se tient l'opérateur) ; les
 		// repères, eux, ne se posent que dans le monde de la partie. Pendant une partie, on ne bâtit pas dans son monde.
-		if (ValcombeMod.session().game() != null && inGameWorld(p)) {
+		if (session.game() != null && inGameWorld(p)) {
 			throw new fr.valcombe.rules.GameException("Pas de construction pendant une partie.");
 		}
 		builders.add(name);
@@ -2158,8 +2235,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	}
 
 	private void showMarkers() {
-		if (editor != null) {
-			// L'éditeur sert aussi sans carte : sa ligne d'état (sélection, structure en main) passe d'abord.
+		if (editor != null && mainGame) {
+			// L'éditeur sert aussi sans carte : sa ligne d'état (sélection, structure en main) passe d'abord. Il est commun à
+			// toutes les parties : la partie principale seule la donne, une fois, à chaque constructeur où qu'il soit.
 			for (String name : builders) {
 				ServerPlayer p = player(name);
 				String status = p == null ? null : editor.status(p);
@@ -2230,12 +2308,9 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		}
 	}
 
-	/** Message à tous les joueurs connectés. */
+	/** Message à tous les joueurs du monde de cette partie (la remise en état de sa carte, par exemple). */
 	void announceAll(String text) {
-		if (server == null) {
-			return;
-		}
-		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+		for (ServerPlayer p : here()) {
 			p.sendSystemMessage(Component.literal("[Valcombe] " + text).withStyle(ChatFormatting.GOLD));
 		}
 	}
@@ -2246,6 +2321,21 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	public ServerPlayer player(String name) {
 		return server == null ? null : server.getPlayerList().getPlayerByName(name);
+	}
+
+	/**
+	 * Les joueurs qui se trouvent dans le monde de cette partie : les seuls à voir et entendre ce qu'elle annonce
+	 * (messages à tous, titres, sons, barres). Ailleurs (hub, atelier, autre partie), on n'en reçoit rien.
+	 */
+	public List<ServerPlayer> here() {
+		ServerLevel level = levelIfReady();
+		return level == null ? List.of() : List.copyOf(level.players());
+	}
+
+	/** Ce joueur, s'il est connecté et dans le monde de cette partie ; sinon null (il ne reçoit ni titre, ni son, ni barre). */
+	private ServerPlayer present(String name) {
+		ServerPlayer p = player(name);
+		return p != null && inGameWorld(p) ? p : null;
 	}
 
 	// ------------------------------------------------------------------
@@ -2285,12 +2375,18 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		return out;
 	}
 
+	/** Annonce de la partie : aux joueurs de son monde seulement (une autre partie, le hub et les ateliers n'en savent rien). */
 	@Override
 	public void announce(String text) {
-		if (server != null) {
-			server.getPlayerList().broadcastSystemMessage(
-				Component.empty().append(PREFIX).append(Component.literal(text).withStyle(ChatFormatting.GOLD)), false);
+		if (server == null) {
+			return;
 		}
+		Component line = Component.empty().append(PREFIX).append(Component.literal(text).withStyle(ChatFormatting.GOLD));
+		for (ServerPlayer p : here()) {
+			p.sendSystemMessage(line);
+		}
+		// Le journal du serveur garde la trace de toutes les parties, avec le nom de la partie.
+		server.sendSystemMessage(Component.literal("[" + worldName() + "] ").append(line));
 	}
 
 	@Override
@@ -2316,7 +2412,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			: Component.literal(title).withStyle(ChatFormatting.GOLD)
 				.append(subtitle.isEmpty() ? Component.empty() : Component.literal(" : " + subtitle).withStyle(ChatFormatting.GRAY));
 		for (String name : players) {
-			ServerPlayer p = player(name);
+			ServerPlayer p = present(name);
 			if (p != null) {
 				p.connection.send(new ClientboundSetTitlesAnimationPacket(8, 40, 12));
 				p.connection.send(new ClientboundSetSubtitleTextPacket(sub));
@@ -2337,7 +2433,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			net.minecraft.resources.Identifier.fromNamespaceAndPath("valcombe", id)));
 		float pitch = 1f;
 		for (String name : players) {
-			ServerPlayer p = player(name);
+			ServerPlayer p = present(name);
 			if (p != null) {
 				p.connection.send(new ClientboundSoundPacket(event, SoundSource.MASTER, p.getX(), p.getY(), p.getZ(),
 					1f, pitch, p.level().getRandom().nextLong()));
@@ -2364,7 +2460,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 
 	@Override
 	public void voteScene(fr.valcombe.session.VoteScene scene) {
-		stage.setFullEffects(ValcombeMod.session().settings().fullEffects);
+		stage.setFullEffects(session.settings().fullEffects);
 		stage.vote(scene);
 	}
 
@@ -2403,7 +2499,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		var bar = new net.minecraft.server.level.ServerBossEvent(java.util.UUID.randomUUID(), Component.literal(title),
 			net.minecraft.world.BossEvent.BossBarColor.YELLOW, net.minecraft.world.BossEvent.BossBarOverlay.NOTCHED_10);
 		for (String name : players) {
-			ServerPlayer p = player(name);
+			ServerPlayer p = present(name);
 			if (p != null) {
 				bar.addPlayer(p);
 			}
@@ -2439,11 +2535,44 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		nightBar.setCreateWorldFog(true);
 		nightBar.setDarkenScreen(true);
 		for (String name : players) {
-			ServerPlayer p = player(name);
+			ServerPlayer p = present(name);
 			if (p != null) {
 				nightBar.addPlayer(p);
 			}
 		}
+	}
+
+	/**
+	 * Les barres de la partie (minuteur, nuit) ne suivent pas un joueur hors de son monde : qui part au hub ou dans
+	 * une autre partie les perd aussitôt (appelé deux fois par seconde).
+	 */
+	private void pruneBars() {
+		for (var bar : new net.minecraft.server.level.ServerBossEvent[] {timerBar, nightBar}) {
+			if (bar == null) {
+				continue;
+			}
+			for (ServerPlayer p : List.copyOf(bar.getPlayers())) {
+				if (!inGameWorld(p) || p.isRemoved()) {
+					bar.removePlayer(p);
+				}
+			}
+		}
+	}
+
+	/** Le minuteur affiché en ce moment par cette partie, ou null (pour les tests en jeu). */
+	public String timerTitle() {
+		return timerBar == null ? null : timerBar.getName().getString();
+	}
+
+	/** Les joueurs qui voient en ce moment une barre de cette partie (minuteur, nuit), pour les tests en jeu. */
+	public java.util.Set<String> barViewers() {
+		java.util.Set<String> out = new java.util.TreeSet<>();
+		for (var bar : new net.minecraft.server.level.ServerBossEvent[] {timerBar, nightBar}) {
+			if (bar != null) {
+				bar.getPlayers().forEach(p -> out.add(p.getScoreboardName()));
+			}
+		}
+		return out;
 	}
 
 	@Override
@@ -2613,7 +2742,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 				p.removeEffect(MobEffects.INVISIBILITY);
 			}
 		}
-		String hat = ValcombeMod.session().settings().deadHat;
+		String hat = session.settings().deadHat;
 		for (String name : seats.keySet()) {
 			ServerPlayer p = player(name);
 			if (p != null) {
@@ -2736,16 +2865,15 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	/** Appelé à chaque tick serveur. */
 	public void onTick() {
 		tick++;
-		if (restoreAt >= 0 && tick >= restoreAt && server != null && !builds.busy() && ValcombeMod.session().game() == null) {
+		if (restoreAt >= 0 && tick >= restoreAt && server != null && !builds.busy() && session.game() == null) {
 			restoreAt = -1;
 			startRestore();
 		}
 		builds.tick(server);
-		if (editor != null) {
-			editor.tick();
-		}
+		// L'éditeur de carte est commun à toutes les parties : son tick est fait une fois, par le mod (voir Games.tick).
 		if (tick % 10 == 0) {
 			checkPads();
+			pruneBars();
 		}
 		if (tick % 20 == 0) {
 			cleanChairs();
@@ -2784,7 +2912,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 				ValcombeMod.LOG.error("Erreur dans une tâche de partie", e);
 			}
 		}
-		if (tick % 30 == 0 && !ghostNames.isEmpty() && ValcombeMod.session().settings().fullEffects) {
+		if (tick % 30 == 0 && !ghostNames.isEmpty() && session.settings().fullEffects) {
 			for (String name : ghostNames) {
 				ServerPlayer p = player(name);
 				if (inGameWorld(p)) {

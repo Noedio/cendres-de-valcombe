@@ -132,6 +132,13 @@ public final class WorldManager {
 	 * terminée) : le hub y rebâtit sa salle d'accueil, les voyages y oublient les positions gardées dans ce monde.
 	 */
 	public interface Listener {
+		/**
+		 * Ce monde vient d'être créé, plat et vide, et ouvert ({@link #create}) : la liste des parties y ouvre une partie
+		 * quand c'est un monde de partie (voir fr.valcombe.mc.games.Games).
+		 */
+		default void created(WorldEntry entry, ServerLevel level) {
+		}
+
 		/** Ce monde vient d'être recréé, plat et vide ; {@code level} est le nouveau monde, déjà ouvert. */
 		default void recreated(WorldEntry entry, ServerLevel level) {
 		}
@@ -402,6 +409,14 @@ public final class WorldManager {
 			throw new GameException("Le monde n'a pas pu être créé : " + ex.getMessage());
 		}
 		LOG.info("Monde de Valcombe créé : {} ({}, « {} »).", e.id(), kind.label(), e.nom());
+		ServerLevel level = server.getLevel(key(e.id()));
+		for (Listener l : listeners) {
+			try {
+				l.created(e, level);
+			} catch (RuntimeException ex) {
+				LOG.error("Après la création du monde « " + e.id() + " »", ex);
+			}
+		}
 		return e;
 	}
 
@@ -428,6 +443,16 @@ public final class WorldManager {
 	/** Ajoute un {@link Guard}, consulté avant chaque remise à neuf et chaque suppression. */
 	public void addGuard(Guard guard) {
 		guards.add(guard);
+	}
+
+	/** Retire un {@link Guard} (la partie d'un monde supprimé). */
+	public void removeGuard(Guard guard) {
+		guards.remove(guard);
+	}
+
+	/** Retire un {@link Listener} (la partie d'un monde supprimé). */
+	public void removeListener(Listener listener) {
+		listeners.remove(listener);
 	}
 
 	/** Change le nom affiché du monde ; son identifiant, son monde Minecraft et ses fichiers restent les mêmes. */

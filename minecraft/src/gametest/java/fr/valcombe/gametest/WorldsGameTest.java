@@ -161,7 +161,7 @@ public class WorldsGameTest implements FabricClientGameTest {
 			send(ctx, "vc monde aller " + id);
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals("valcombe:" + id)), "de retour dans le monde");
 			send(ctx, "vc monde aller principal");
-			String gameDim = "valcombe:" + server.computeOnServer(s -> ValcombeMod.host().worldId());
+			String gameDim = "valcombe:" + server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().worldId());
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(gameDim)), "/vc monde aller principal mène au monde de la partie");
 			check(server.computeOnServer(s -> !dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
 				"jamais dans le monde principal");

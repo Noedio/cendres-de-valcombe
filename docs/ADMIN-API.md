@@ -140,6 +140,7 @@ Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/
   "prochaineSoiree": "vendredi 21 h",
   "motd": "Prochaine soirée : vendredi 21 h\nSalon ouvert",
   "mondes": [],
+  "parties": [],
   "redemarrageNecessaire": false
 }
 ```
@@ -157,7 +158,15 @@ Le launcher ouvre ce tunnel lui-même pour un serveur loué (`launcher/Services/
 {"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "etat": "charge", "joueurs": 6}
 ```
 
-  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. Un atelier a en plus `invites` : les joueurs invités à y construire (invitations à cet atelier et à tous les ateliers), en plus des opérateurs, par exemple `"invites": ["Alice", "Bob"]`. D'autres champs pourront s'ajouter (l'état des parties au sprint 12).
+  `sorte` : `hub`, `partie`, `essai`, `atelier-carte`, `atelier-structures`. `etat` : `charge` (ouvert), `remise-a-neuf` (recréation ou suppression en cours), `decharge` (fermé, il s'ouvrira à la demande). `joueurs` : joueurs présents dans ce monde. Un atelier a en plus `invites` : les joueurs invités à y construire (invitations à cet atelier et à tous les ateliers), en plus des opérateurs, par exemple `"invites": ["Alice", "Bob"]`. D'autres champs pourront s'ajouter.
+- `parties` : les parties du serveur, une par monde de partie (la partie principale d'abord, puis les parties d'essai). Elles se jouent en même temps, séparées : chacune a ses joueurs, son Conteur, ses minuteurs et sa sauvegarde. Liste vide si les mondes de Valcombe n'ont pas pu démarrer. Chaque partie a la forme :
+
+```json
+{"id": "partie-principale", "nom": "Partie principale", "sorte": "partie", "principale": true, "etat": "jour 2",
+ "enCours": true, "phase": "day", "inscrits": 7, "assis": 7, "conteur": "Alice", "joueurs": 8}
+```
+
+  `id` : l'identifiant de son monde (le même que dans `mondes`). `sorte` : `partie` ou `essai`. `etat` : ce qui s'y passe, en clair (`salon ouvert`, `3 inscrit(s)`, `nuit 1`, `jour 2`, `mise en place`). `enCours` : des joueurs y sont assis (les sauvegardes automatiques attendent alors la fin de toutes les parties). `phase` : `setup`, `ready`, `night`, `day`, `ended`, ou `null` sans partie lancée. `inscrits` : joueurs au salon. `assis` : joueurs de la partie lancée (joueurs fictifs compris). `conteur` : le Conteur, ou `null` (Conteur automatique). `joueurs` : joueurs présents dans son monde.
 - `redemarrageNecessaire` : un réglage enregistré n'agira qu'au prochain démarrage (voir `/admin/reglages`).
 
 ### GET /admin/joueurs

@@ -143,6 +143,47 @@ public final class Session {
 		return bots.contains(name);
 	}
 
+	// ------------------------------------------------------------------
+	// Plusieurs tables sur un même serveur (voir fr.valcombe.mc.games.Games)
+	// ------------------------------------------------------------------
+	/**
+	 * Consultée avant d'asseoir un vrai joueur à cette table (inscription, Conteur, spectateur, entraînement,
+	 * voyageur) : elle le libère des autres tables où il n'est qu'en attente, et renvoie pourquoi il ne peut pas venir
+	 * ici (il joue ou conte une partie en cours ailleurs), ou null. Null : une seule table (tests, simulation).
+	 */
+	public java.util.function.Function<String, String> admission;
+
+	/** Fait passer ce joueur par {@link #admission} ; une GameException s'il est retenu à une autre table. */
+	private void admit(String name) {
+		var a = admission;
+		if (a == null || bots.contains(name)) {
+			return;
+		}
+		String why = a.apply(name);
+		if (why != null) {
+			throw new GameException(why);
+		}
+	}
+
+	/**
+	 * Ce joueur appartient-il à cette table : inscrit, assis à la partie en cours (même mort), Conteur, élève de
+	 * l'entraînement ou spectateur ?
+	 */
+	public boolean belongs(String name) {
+		Game g = game;
+		return name != null && (lobby.contains(name) || name.equals(storyteller) || spectators.contains(name)
+			|| name.equals(trainee) || (g != null && g.seatOf(name) >= 0));
+	}
+
+	/**
+	 * Ce joueur est-il retenu par la partie en cours de cette table : il y est assis, ou il la conte, et elle n'est
+	 * pas finie ? Il ne peut alors s'asseoir à aucune autre table.
+	 */
+	public boolean holds(String name) {
+		Game g = game;
+		return name != null && g != null && g.winner() == null && (g.seatOf(name) >= 0 || name.equals(storyteller));
+	}
+
 	/** Micro coupé ? La nuit, pour tous les joueurs de la partie sauf le Conteur. */
 	public boolean isMuted(String name) {
 		Game g = game;
@@ -443,6 +484,7 @@ public final class Session {
 		if (name.equals(storyteller)) {
 			throw new GameException("Le Conteur ne joue pas.");
 		}
+		admit(name);
 		fr.valcombe.rules.Team team = camp == null ? (rng.chance(0.25) ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD)
 			: camp.startsWith("m") ? fr.valcombe.rules.Team.EVIL : fr.valcombe.rules.Team.GOOD;
 		g.addTraveller(name, team);
@@ -891,6 +933,7 @@ public final class Session {
 		if (name.equals(storyteller)) {
 			throw new GameException("Le Conteur ne peut pas être spectateur.");
 		}
+		admit(name);
 		spectators.add(name);
 		host.toTable(name); // on regarde la partie là où elle se joue
 		host.spectator(name, true);
@@ -911,6 +954,7 @@ public final class Session {
 		if (game != null) {
 			throw new GameException("Une partie est déjà en cours.");
 		}
+		admit(name);
 		if (name.equals(storyteller)) {
 			storyteller = null;
 		}
@@ -950,6 +994,7 @@ public final class Session {
 		if (lobby.contains(name)) {
 			throw new GameException("Tu es déjà inscrit.");
 		}
+		admit(name);
 		lobby.add(name);
 		announce(name + " rejoint la partie (" + lobby.size() + " inscrits).");
 		host.toTable(name); // inscrit depuis le hub : il rejoint le monde de la partie
@@ -1031,6 +1076,7 @@ public final class Session {
 		if (lobby.contains(name)) {
 			throw new GameException("Désinscris-toi avant : le Conteur ne joue pas.");
 		}
+		admit(name);
 		storyteller = name;
 		announce(name + " est le Conteur.");
 		host.toTable(name);

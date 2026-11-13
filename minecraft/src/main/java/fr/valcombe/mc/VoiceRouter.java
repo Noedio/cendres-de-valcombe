@@ -40,18 +40,35 @@ public final class VoiceRouter {
 	}
 
 	/**
-	 * Recalcule les routes. level : le monde de la partie (null s'il n'est pas prêt). Seuls les joueurs qui s'y
-	 * trouvent sont dans la partie : un joueur au hub ou dans un atelier garde le vocal de proximité de son monde, et
-	 * n'entend jamais la table (ni la nuit, ni le Conseil).
+	 * Recalcule les routes de toutes les parties du serveur. Chaque partie route les joueurs de son monde, et
+	 * seulement eux : une route ne mène jamais à un joueur d'un autre monde. On n'entend donc jamais une autre partie,
+	 * et un joueur au hub ou dans un atelier garde le vocal de proximité de son monde.
 	 */
-	static void update(MinecraftServer server, Session session, Village village, ServerLevel level) {
+	static void update(MinecraftServer server, List<fr.valcombe.mc.games.GameRoom> rooms) {
 		Map<UUID, Route> next = new HashMap<>();
-		List<ServerPlayer> players = server.getPlayerList().getPlayers();
+		java.util.Set<String> inNooks = new java.util.HashSet<>();
+		for (fr.valcombe.mc.games.GameRoom room : rooms) {
+			route(server, room.session(), room.host().village(), room.host().levelIfReady(), next, inNooks);
+		}
+		hideNames(server, inNooks);
+		routes = next;
+	}
+
+	/**
+	 * Les routes d'une partie. level : son monde (null s'il n'est pas prêt). Seuls les joueurs qui s'y trouvent sont
+	 * dans la partie : un joueur au hub, dans un atelier ou dans une autre partie n'entend jamais cette table (ni la
+	 * nuit, ni le Conseil).
+	 */
+	private static void route(MinecraftServer server, Session session, Village village, ServerLevel level, Map<UUID, Route> next,
+			java.util.Set<String> inNooks) {
+		if (level == null) {
+			return;
+		}
+		List<ServerPlayer> players = List.copyOf(level.players());
 		boolean day = session.game() != null && session.game().phase() == fr.valcombe.rules.Game.Phase.DAY;
 		Map<Integer, List<ServerPlayer>> byHouse = new HashMap<>();
 		Map<Integer, List<ServerPlayer>> byNook = new HashMap<>();
-		java.util.Set<String> inNooks = new java.util.HashSet<>();
-		if (day && village != null && level != null) {
+		if (day && village != null) {
 			for (ServerPlayer p : players) {
 				if (p.level() != level) {
 					continue; // au hub ou dans un autre monde : aux mêmes coordonnées, ce n'est pas une maison du village
@@ -67,12 +84,11 @@ public final class VoiceRouter {
 				}
 			}
 		}
-		hideNames(server, inNooks);
 		if (!VOICE) {
 			return; // pas de Simple Voice Chat sur ce serveur : aucune route à calculer
 		}
 		for (ServerPlayer p : players) {
-			if (level == null || p.level() != level) {
+			if (p.level() != level) {
 				continue; // hors du monde de la partie : vocal de proximité ordinaire, dans son monde
 			}
 			Session.VoiceRule rule = session.voiceRule(p.getScoreboardName());
@@ -113,7 +129,6 @@ public final class VoiceRouter {
 				next.put(p.getUUID(), new Route(ids, (float) rule.range()));
 			}
 		}
-		routes = next;
 	}
 
 	private static final String HIDDEN_TEAM = "valcombe_cache";

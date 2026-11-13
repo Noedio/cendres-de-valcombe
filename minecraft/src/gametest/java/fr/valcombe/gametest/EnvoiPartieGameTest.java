@@ -65,7 +65,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 
 	/** Attend la fin de l'envoi en cours vers le monde de la partie (remise à neuf, pose par petits lots, adoption). */
 	private static void waitSent(ClientGameTestContext ctx, TestSingleplayerContext world, String what) {
-		check(waitFor(ctx, world, 2400, s -> !ValcombeMod.host().busy()), what);
+		check(waitFor(ctx, world, 2400, s -> !fr.valcombe.mc.games.Games.main().host().busy()), what);
 		ctx.waitTicks(10);
 	}
 
@@ -126,7 +126,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 	/** La session survit d'une classe de test à l'autre : on repart d'un salon vide, sans partie ni Conteur. */
 	private static void cleanSession(TestSingleplayerContext world, String me) {
 		world.getServer().runOnServer(s -> {
-			var session = ValcombeMod.session();
+			var session = fr.valcombe.mc.games.Games.main().session();
 			if (session.game() != null) {
 				session.stop();
 			}
@@ -150,7 +150,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			ctx.waitTicks(40);
 			cleanSession(world, me);
 			waitSent(ctx, world, "la partie est libre au départ");
-			String gameId = server.computeOnServer(s -> ValcombeMod.host().worldId());
+			String gameId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().worldId());
 			String gameDim = "valcombe:" + gameId;
 			String hubId = server.computeOnServer(s -> ValcombeMod.hub().id());
 			String hubDim = "valcombe:" + hubId;
@@ -163,7 +163,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			BlockPos tower = center.offset(110, 1, 0);
 			server.runOnServer(s -> {
 				for (int y = 0; y < 15; y++) {
-					ValcombeMod.host().level().setBlockAndUpdate(tower.above(y), Blocks.STONE_BRICKS.defaultBlockState());
+					fr.valcombe.mc.games.Games.main().host().level().setBlockAndUpdate(tower.above(y), Blocks.STONE_BRICKS.defaultBlockState());
 				}
 			});
 			send(ctx, "vc carte enregistrer " + MAP_A + " Envoi A");
@@ -183,7 +183,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			BlockPos near = center.offset(9, 1, 9);
 			BlockPos far = center.offset(180, 6, -170);
 			server.runOnServer(s -> {
-				ServerLevel level = ValcombeMod.host().level();
+				ServerLevel level = fr.valcombe.mc.games.Games.main().host().level();
 				level.setBlockAndUpdate(near, Blocks.SPONGE.defaultBlockState()); // aucun village n'en a
 				level.setBlockAndUpdate(far, Blocks.DIAMOND_BLOCK.defaultBlockState());
 			});
@@ -201,7 +201,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				} catch (GameException e) {
 					twice = e.getMessage();
 				}
-				return "occupée " + ValcombeMod.host().busy() + " | seconde carte : " + twice;
+				return "occupée " + fr.valcombe.mc.games.Games.main().host().busy() + " | seconde carte : " + twice;
 			});
 			check(sending.startsWith("occupée true"), "la partie est occupée pendant l'envoi : " + sending);
 			check(sending.contains("reçoit déjà"), "une seconde carte attend la fin de la première : " + sending);
@@ -214,13 +214,13 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 
 			// 4. Un monde neuf : les deux traces ont disparu ; la carte A est en place avec ses trônes et ses repères.
 			String fresh = server.computeOnServer(s -> {
-				ServerLevel level = ValcombeMod.host().level();
+				ServerLevel level = fr.valcombe.mc.games.Games.main().host().level();
 				return "près " + !level.getBlockState(near).is(Blocks.SPONGE) + " | loin " + level.getBlockState(far).isAir()
 					+ " | sol " + level.getBlockState(far.atY(WorldManager.SURFACE_Y)).is(Blocks.GRASS_BLOCK);
 			});
 			check(fresh.equals("près true | loin true | sol true"), "monde remis à neuf, aucune trace d'avant : " + fresh);
 			String placedA = server.computeOnServer(s -> {
-				var host = ValcombeMod.host();
+				var host = fr.valcombe.mc.games.Games.main().host();
 				ServerLevel level = host.level();
 				Village v = host.village();
 				boolean seats = true;
@@ -244,19 +244,19 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			send(ctx, "vc monde aller " + gameId);
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(gameDim)), "retour au village de la partie");
 			check(server.computeOnServer(s -> {
-				BlockPos spawn = ValcombeMod.host().villageSpawn();
+				BlockPos spawn = fr.valcombe.mc.games.Games.main().host().villageSpawn();
 				ServerPlayer p = player(s, me);
 				return spawn != null && Math.abs(p.getX() - (spawn.getX() + 0.5)) < 2 && Math.abs(p.getZ() - (spawn.getZ() + 0.5)) < 2;
 			}), "à la salle d'attente de la carte envoyée");
 			shot(ctx, "envoi-carte-a");
 
 			// 6. Envoyer la carte B, plus petite : rien ne reste de la carte A, ni sa tour au loin, ni ses trônes sculptés.
-			int beforeB = server.computeOnServer(s -> builtInRing(ValcombeMod.host().level(), center, rayonB + 1, rayonA));
+			int beforeB = server.computeOnServer(s -> builtInRing(fr.valcombe.mc.games.Games.main().host().level(), center, rayonB + 1, rayonA));
 			check(beforeB >= 15, "la carte A a bâti au-delà de l'emprise de B (" + beforeB + " blocs)");
 			send(ctx, "vc carte envoyer " + MAP_B);
 			waitSent(ctx, world, "carte B posée");
 			String placedB = server.computeOnServer(s -> {
-				var host = ValcombeMod.host();
+				var host = fr.valcombe.mc.games.Games.main().host();
 				ServerLevel level = host.level();
 				Village v = host.village();
 				int[] t = thrones(level, v);
@@ -273,12 +273,12 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			server.runCommand("vc bots 4");
 			ctx.waitTicks(10);
 			server.runCommand("vc lancer auto");
-			check(waitFor(ctx, world, 200, s -> ValcombeMod.session().game() != null && dimensionOf(s, me).equals(gameDim)),
+			check(waitFor(ctx, world, 200, s -> fr.valcombe.mc.games.Games.main().session().game() != null && dimensionOf(s, me).equals(gameDim)),
 				"partie lancée dans le monde de la partie");
 			check(waitFor(ctx, world, 100, s -> {
-				double[] seat = ValcombeMod.host().seatPosition(me);
+				double[] seat = fr.valcombe.mc.games.Games.main().host().seatPosition(me);
 				ServerPlayer p = player(s, me);
-				Village v = ValcombeMod.host().village();
+				Village v = fr.valcombe.mc.games.Games.main().host().village();
 				boolean onB = false;
 				for (int i = 0; seat != null && i < v.seatCount(); i++) {
 					var f = v.seatFeet(i);
@@ -291,7 +291,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			String during = refusal(world, () -> ValcombeMod.sender().sendMap(MAP_A, null, null));
 			check(during != null && during.contains("Une partie se joue"), "rien n'est envoyé pendant la partie : " + during);
 			server.runCommand("vc arreter");
-			check(waitFor(ctx, world, 1200, s -> ValcombeMod.session().game() == null && !ValcombeMod.host().busy()),
+			check(waitFor(ctx, world, 1200, s -> fr.valcombe.mc.games.Games.main().session().game() == null && !fr.valcombe.mc.games.Games.main().host().busy()),
 				"partie arrêtée, carte remise en état");
 			cleanSession(world, me);
 
@@ -300,8 +300,8 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			check(toHub != null && toHub.contains("monde de partie"), "le hub ne reçoit pas de carte : " + toHub);
 			server.runCommand("vc carte poser " + MAP_A + " " + gameId);
 			ctx.waitTicks(5);
-			check(server.computeOnServer(s -> !ValcombeMod.placer().busy(ValcombeMod.host().level())
-				&& MAP_B.equals(ValcombeMod.host().village().libraryId())), "pose directe dans le monde de la partie refusée");
+			check(server.computeOnServer(s -> !ValcombeMod.placer().busy(fr.valcombe.mc.games.Games.main().host().level())
+				&& MAP_B.equals(fr.valcombe.mc.games.Games.main().host().village().libraryId())), "pose directe dans le monde de la partie refusée");
 
 			// 9. Une partie d'essai reçoit sa propre carte : la fiche de son village l'attend, la partie garde la sienne.
 			String essai = server.computeOnServer(s -> ValcombeMod.worlds().create(WorldKind.ESSAI, "Essai envoi "
@@ -315,7 +315,7 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 				Village v = Village.load(folder.resolve(Village.FILE)).village();
 				var placed = ValcombeMod.placer().placed(level);
 				return "fiche " + (v != null && v.seatCount() == 8 && MAP_A.equals(v.libraryId())) + " | carte " + (placed != null
-					&& placed.mapId().equals(MAP_A)) + " | partie " + ValcombeMod.host().village().libraryId();
+					&& placed.mapId().equals(MAP_A)) + " | partie " + fr.valcombe.mc.games.Games.main().host().village().libraryId();
 			});
 			check(trial.equals("fiche true | carte true | partie " + MAP_B), "partie d'essai : " + trial);
 			AtomicReference<CompletableFuture<Void>> gone = new AtomicReference<>();
@@ -326,9 +326,9 @@ public class EnvoiPartieGameTest implements FabricClientGameTest {
 			send(ctx, "vc carte construire");
 			waitSent(ctx, world, "nouveau village");
 			check(server.computeOnServer(s -> {
-				Village v = ValcombeMod.host().village();
+				Village v = fr.valcombe.mc.games.Games.main().host().village();
 				return v.isGenerated() && v.libraryId().isEmpty() && v.seatCount() == Village.SEATS && v.hasHall()
-					&& v.convocation() != null && thrones(ValcombeMod.host().level(), v)[1] == 0;
+					&& v.convocation() != null && thrones(fr.valcombe.mc.games.Games.main().host().level(), v)[1] == 0;
 			}), "nouveau village généré sur un monde neuf");
 
 			// Ménage : la bibliothèque est commune aux tests.
