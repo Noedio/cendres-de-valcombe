@@ -318,7 +318,7 @@ Le mod ne peut pas se relancer lui-même : c'est **celui qui a lancé le serveur
 - Si le drapeau ne peut pas être écrit, rien n'est arrêté et la réponse est `500`.
 - **Qui le lit** :
   - `demarrer.sh` et `demarrer.bat`, fournis avec le serveur (`tools/make_modpack.py`), relancent le serveur tant que le drapeau est posé. Le service systemd `valcombe.service` lance `demarrer.sh` : un redémarrage par l'API ne passe donc pas par systemd.
-  - Le launcher, quand il lance lui-même le serveur (vague 2), applique la même règle.
+  - Le launcher, quand il lance lui-même le serveur (page Héberger ou Serveur), applique la même règle (`LocalServer`) : il relance le serveur avec les mêmes réglages. Un arrêt qu'il a lui-même demandé ne relance jamais rien, même si un drapeau traîne.
   - Un serveur lancé autrement (commande `java` à la main, hébergeur avec son propre panneau) s'arrête simplement : il faut le relancer soi-même.
 
 ## Exemples avec curl
@@ -333,6 +333,16 @@ curl -s -H "X-Valcombe-Admin: $CLE" -H "Content-Type: application/json" \
      -d '{"listeBlanche": {"ajouter": ["Alice"]}}' http://localhost:25570/admin/reglages
 curl -s -X POST -H "X-Valcombe-Admin: $CLE" http://localhost:25570/admin/redemarrer
 ```
+
+## Le client du launcher
+
+La page **Serveur** du launcher est écrite contre ce contrat (`launcher/Services/Admin`) :
+
+- `IServerConnection` : un chemin vers l'API. `DirectConnection` envoie les requêtes à une adresse (le serveur de ce PC sur `127.0.0.1`, ou un serveur joignable sans tunnel) ; le tunnel SSH implémentera la même interface. `ServerConnections.Open` choisit d'après le champ `Access` du serveur enregistré.
+- `AdminClient` : un appel par point d'accès ; une erreur devient `AdminException`, avec le message `erreur` du serveur. Après un `401`, un `403` ou un `404`, la page cesse d'interroger le serveur jusqu'à « Réessayer » (insister avec une mauvaise clé mènerait au blocage) ; après un `429`, elle attend `Retry-After`.
+- `ConsoleFeed` : le suivi de `/admin/console` (une lecture par seconde sur l'onglet Console, `depuis`, changement d'`instance`, `plusLoin`).
+- Pour le serveur de ce PC, la clé est lue dans `config/valcombe/admin.json` et le port dans la ligne du journal « API d'administration prête sur le port … ». Une clé de serveur distant est gardée chiffrée avec DPAPI dans `launcher.json`.
+- `ValcombeLauncher.exe --verifier-admin rapport.txt` essaie le client contre un serveur HTTP fictif qui suit ce contrat (`DemoAdminApi`, refus compris) ; `--capture` montre la page avec ce même serveur fictif.
 
 ## Ce qui viendra
 

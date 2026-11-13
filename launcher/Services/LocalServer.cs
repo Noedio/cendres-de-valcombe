@@ -28,8 +28,14 @@ public sealed class LocalServer
     private static string StampFile => Path.Combine(Dir, "valcombe-serveur.txt");
     private static string PropertiesFile => Path.Combine(Dir, "server.properties");
     private static string HostLinkFile => Path.Combine(Dir, "config", "valcombe-hote.json");
+    /// <summary>Clé de l'API d'administration, tirée par le mod au premier démarrage (docs/ADMIN-API.md).</summary>
+    private static string AdminKeyFile => Path.Combine(Dir, "config", "valcombe", "admin.json");
+    /// <summary>Drapeau de redémarrage posé par POST /admin/redemarrer : à sa vue, celui qui a lancé le serveur le relance.</summary>
+    private static string RestartFlagFile => Path.Combine(Dir, "config", "valcombe", "redemarrer");
 
     private Process? _process;
+    /// <summary>De quoi relancer le serveur à l'identique quand il demande à redémarrer.</summary>
+    private (Release Release, LauncherConfig Config, string HostName, IProgress<(string, double)> Progress)? _lastStart;
     private readonly object _gate = new();
     private readonly List<string> _players = new();
     private readonly LinkedList<string> _log = new();
@@ -40,6 +46,17 @@ public sealed class LocalServer
     /// <summary>Lien secret de l'Atelier, donné au mod au démarrage.</summary>
     public string AtelierToken { get; private set; } = "";
     public int Port { get; private set; } = 25565;
+    /// <summary>
+    /// Port de l'API d'administration annoncé par le mod dans son journal (0 tant qu'elle n'est pas ouverte, ou
+    /// avec une version du mod qui ne l'a pas encore).
+    /// </summary>
+    public int AdminPort { get; private set; }
+    /// <summary>Pourquoi l'API d'administration ne s'est pas ouverte, d'après le journal du mod (port pris, API coupée), ou chaîne vide.</summary>
+    public string AdminProblem { get; private set; } = "";
+    /// <summary>Moment où le serveur a été prêt (l'API s'annonce un instant après).</summary>
+    public DateTime RunningSince { get; private set; }
+    /// <summary>Nombre de démarrages faits par ce launcher, relances comprises (la page Serveur s'y recale).</summary>
+    public int Starts { get; private set; }
     /// <summary>Dernière erreur lisible (port occupé, contrat non accepté…), ou chaîne vide.</summary>
     public string LastError { get; private set; } = "";
 
@@ -73,6 +90,28 @@ public sealed class LocalServer
     }
 
     public bool IsInstalled => File.Exists(LauncherJar) && File.Exists(StampFile);
+
+    /// <summary>
+    /// La clé d'administration du serveur de ce PC, lue dans son dossier (champ <c>key</c> de
+    /// config/valcombe/admin.json), ou null tant que le mod ne l'a pas tirée. Relue à chaque appel :
+    /// <c>/vc admin nouvellecle</c> la change pendant que le serveur tourne.
+    /// </summary>
+    public static string? ReadAdminKey()
+    {
+        try
+        {
+            if (!File.Exists(AdminKeyFile))
+            {
+                return null;
+            }
+            using var doc = JsonDocument.Parse(File.ReadAllText(AdminKeyFile));
+            return doc.RootElement.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Pour les essais du développeur seulement (--mod-local) : ce fichier remplace le mod publié,
@@ -128,10 +167,27 @@ public sealed class LocalServer
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Les lignes du journal écrites après la ligne numéro <paramref name="after"/> (numéros croissants depuis
+    /// le lancement du launcher), et le numéro de la dernière. Sert à la console de la page Serveur quand l'API
+    /// du mod n'est pas (encore) là.
+    /// </summary>
+    public (long Last, List<string> Lines) LogSince(long after)
+    {
+        lock (_gate)
+        {
+            long first = _logTotal - _log.Count + 1;
+            return (_logTotal, _log.Skip((int)Math.Clamp(after - first + 1, 0, _log.Count)).ToList());
+        }
+    }
+
+    private long _logTotal;
+
     private void AddLog(string line)
     {
         lock (_gate)
         {
+            _logTotal++;
             _log.AddLast(line);
             while (_log.Count > 400)
             {
@@ -258,13 +314,18 @@ public sealed class LocalServer
     /// Démarre le serveur. hostName : pseudo Minecraft de l'hôte (il devient opérateur), ou chaîne vide.
     /// Le contrat de Minecraft doit avoir été accepté par l'hôte dans le launcher.
     /// </summary>
-    public async Task StartAsync(Release release, LauncherConfig config, string hostName, IProgress<(string, double)> progress,
-        CancellationToken ct = default)
+    public Task StartAsync(Release release, LauncherConfig config, string hostName, IProgress<(string, double)> progress,
+        CancellationToken ct = default) => StartAsync(release, config, hostName, progress, relaunch: false, ct);
+
+    /// <param name="relaunch">Relance demandée par le serveur (drapeau de redémarrage) : le journal est gardé.</param>
+    private async Task StartAsync(Release release, LauncherConfig config, string hostName, IProgress<(string, double)> progress,
+        bool relaunch, CancellationToken ct)
     {
         if (Current != State.Stopped)
         {
             return;
         }
+        _lastStart = (release, config, hostName, progress);
         if (!config.HostEulaAccepted)
         {
             throw new InvalidOperationException("Avant d'héberger, lisez et acceptez le contrat de Minecraft (page Héberger).");
@@ -301,10 +362,15 @@ public sealed class LocalServer
             Directory.CreateDirectory(Path.GetDirectoryName(HostLinkFile)!);
             File.WriteAllText(HostLinkFile, JsonSerializer.Serialize(new Dictionary<string, string> { ["nom"] = owner, ["jeton"] = AtelierToken }));
 
+            AdminPort = 0;
+            AdminProblem = "";
             lock (_gate)
             {
                 _players.Clear();
-                _log.Clear();
+                if (!relaunch)
+                {
+                    _log.Clear();
+                }
             }
             var psi = new ProcessStartInfo(File.Exists(java) ? java : javaw)
             {
@@ -333,21 +399,30 @@ public sealed class LocalServer
             p.Exited += (_, _) =>
             {
                 int code = p.ExitCode;
-                if (Current != State.Stopping && code != 0 && LastError.Length == 0)
+                // Arrêt demandé par le launcher (bouton, fermeture) : jamais de relance, même si un drapeau traîne.
+                bool wanted = Current == State.Stopping;
+                bool restart = TakeRestartFlag();
+                if (!wanted && !restart && code != 0 && LastError.Length == 0)
                 {
                     LastError = "Le serveur s'est arrêté tout seul : lisez la fin de son journal ci-dessous.";
                 }
                 _process = null;
                 AtelierPort = 0;
+                AdminPort = 0;
                 lock (_gate)
                 {
                     _players.Clear();
                 }
                 AddLog($"[launcher] Serveur arrêté (code {code}).");
                 Set(State.Stopped);
+                if (restart && !wanted)
+                {
+                    _ = RelaunchAsync();
+                }
             };
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
+            Starts++;
             Set(State.Starting);
             progress.Report(("Démarrage du serveur… (la première fois, il télécharge Minecraft et crée le monde)", 0));
         }
@@ -356,6 +431,53 @@ public sealed class LocalServer
             LastError = ex.Message;
             Set(State.Stopped);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Règle du drapeau de redémarrage (docs/ADMIN-API.md) : le serveur s'est arrêté après POST /admin/redemarrer.
+    /// Le drapeau est effacé dans tous les cas ; vrai s'il était posé.
+    /// </summary>
+    private static bool TakeRestartFlag()
+    {
+        try
+        {
+            if (!File.Exists(RestartFlagFile))
+            {
+                return false;
+            }
+            File.Delete(RestartFlagFile);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Un drapeau qu'on ne peut pas effacer relancerait le serveur en boucle : on ne relance pas.
+            return false;
+        }
+    }
+
+    /// <summary>Relance le serveur avec les réglages de son dernier démarrage, une fois son port libéré.</summary>
+    private async Task RelaunchAsync()
+    {
+        if (_lastStart is not { } last)
+        {
+            return;
+        }
+        AddLog("[launcher] Redémarrage demandé par le serveur : relance…");
+        Changed?.Invoke();
+        try
+        {
+            // Le système peut garder le port quelques instants après la fin du processus.
+            for (int i = 0; i < 15 && PortBusy(last.Config.HostPort); i++)
+            {
+                await Task.Delay(1000);
+            }
+            await StartAsync(last.Release, last.Config, last.HostName, last.Progress, relaunch: true, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            LastError = "Relance du serveur impossible : " + ex.Message;
+            Changed?.Invoke();
         }
     }
 
@@ -377,6 +499,8 @@ public sealed class LocalServer
     private static readonly Regex Joined = new(@"\]: (\w{1,16}) joined the game", RegexOptions.Compiled);
     private static readonly Regex Left = new(@"\]: (\w{1,16}) left the game", RegexOptions.Compiled);
     private static readonly Regex Atelier = new(@"\[valcombe\] Atelier de l'h.te ouvert sur le port (\d+)", RegexOptions.Compiled);
+    private static readonly Regex AdminReady = new(@"\[valcombe\] API d'administration pr.te sur le port (\d+)", RegexOptions.Compiled);
+    private static readonly Regex AdminDown = new(@"API d'administration (indisponible : .*|d.sactiv.e.*)$", RegexOptions.Compiled);
 
     private void OnLine(string? line, LauncherConfig config, string hostName)
     {
@@ -389,6 +513,14 @@ public sealed class LocalServer
         if (m.Success)
         {
             AtelierPort = int.Parse(m.Groups[1].Value);
+        }
+        if ((m = AdminReady.Match(line)).Success)
+        {
+            AdminPort = int.Parse(m.Groups[1].Value);
+        }
+        else if ((m = AdminDown.Match(line)).Success)
+        {
+            AdminProblem = m.Groups[1].Value.Trim();
         }
         if ((m = Joined.Match(line)).Success)
         {
@@ -434,6 +566,7 @@ public sealed class LocalServer
                     Send("whitelist add " + guest);
                 }
             }
+            RunningSince = DateTime.UtcNow;
             Set(State.Running);
             return;
         }
