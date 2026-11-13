@@ -40,7 +40,12 @@ public final class Community {
 		boolean tabletLocalOnly = true;
 		/** Prochaine soirée annoncée par l'hôte (description du serveur, accueil du launcher). */
 		String nextEvening = "";
+		/** Message d'accueil : première ligne de la description du serveur quand aucune soirée n'est annoncée ; vide : le nom du jeu. */
+		String welcome = "";
 	}
+
+	/** Message d'accueil par défaut. */
+	public static final String DEFAULT_WELCOME = "Les Cendres de Valcombe";
 
 	/** Statistiques d'un joueur. */
 	static final class Stats {
@@ -341,6 +346,33 @@ public final class Community {
 		saveConfig();
 		return config().nextEvening.isEmpty() ? "Prochaine soirée effacée."
 			: "Prochaine soirée annoncée : « " + config().nextEvening + " ». Elle s'affiche dans la liste des serveurs et sur le launcher.";
+	}
+
+	/** Message d'accueil réglé par l'hôte, ou chaîne vide (message par défaut). */
+	public String welcome() {
+		return config().welcome == null ? "" : config().welcome;
+	}
+
+	/** Message d'accueil tel qu'il s'affiche : celui de l'hôte, ou le nom du jeu. */
+	public String welcomeShown() {
+		String w = welcome();
+		return w.isEmpty() ? DEFAULT_WELCOME : w;
+	}
+
+	/**
+	 * Change le message d'accueil (une ligne, 60 caractères au plus) ; vide : revenir au nom du jeu. Il s'affiche
+	 * dans la liste des serveurs quand aucune soirée n'est annoncée.
+	 */
+	public String setWelcome(String text) {
+		String w = text == null ? "" : text.strip();
+		String problem = fr.valcombe.admin.AdminSettings.textProblem("Message d'accueil", w, fr.valcombe.admin.AdminSettings.MAX_TEXT);
+		if (problem != null) {
+			throw new GameException(problem + ".");
+		}
+		config().welcome = w;
+		saveConfig();
+		return w.isEmpty() ? "Message d'accueil remis par défaut : « " + DEFAULT_WELCOME + " »."
+			: "Message d'accueil : « " + w + " »" + (nextEvening().isEmpty() ? "." : " (affiché quand aucune soirée n'est annoncée).");
 	}
 
 	/** Titre honorifique affiché sous le nom du joueur, ou chaîne vide. */

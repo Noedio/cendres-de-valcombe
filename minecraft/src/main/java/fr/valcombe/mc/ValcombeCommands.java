@@ -284,6 +284,52 @@ public final class ValcombeCommands {
 			}))));
 	}
 
+	/** /vc admin : où en est l'API d'administration. */
+	private static String adminStatus() {
+		AdminApi api = ValcombeMod.admin();
+		if (api == null) {
+			throw new GameException("API d'administration indisponible : voir le journal du serveur (config/valcombe/admin.json).");
+		}
+		Tablet t = ValcombeMod.tablet();
+		if (!api.key().enabled()) {
+			return "API d'administration désactivée (\"enabled\": false dans config/valcombe/admin.json).";
+		}
+		if (t == null || !t.adminOpen()) {
+			return "API d'administration fermée : elle ne s'ouvre que sur un serveur dédié. Clé : /vc admin cle";
+		}
+		return "API d'administration ouverte sur le port " + t.port() + ", "
+			+ (api.key().localOnly() ? "pour les requêtes de cette machine seulement (tunnel SSH depuis un autre PC)."
+				: "pour les requêtes de toute adresse.")
+			+ " Clé : /vc admin cle";
+	}
+
+	/**
+	 * Affiche la clé d'administration (ou en tire une nouvelle). À un joueur, elle s'affiche à lui seul, et un clic
+	 * la copie ; à la console, elle s'écrit dans le journal du serveur, comme au premier démarrage.
+	 */
+	private static String showAdminKey(CommandSourceStack src, boolean renew) throws java.io.IOException {
+		AdminApi api = ValcombeMod.admin();
+		if (api == null) {
+			throw new GameException("API d'administration indisponible : voir le journal du serveur (config/valcombe/admin.json).");
+		}
+		String key = renew ? api.newKey() : api.key().key();
+		String title = renew ? "Nouvelle clé d'administration (l'ancienne ne fonctionne plus) : " : "Clé d'administration : ";
+		ServerPlayer p = src.getPlayer();
+		if (p != null) {
+			p.sendSystemMessage(Component.literal(title).withStyle(net.minecraft.ChatFormatting.GOLD)
+				.append(Component.literal(key).withStyle(st -> st.withColor(net.minecraft.ChatFormatting.AQUA).withUnderlined(true)
+					.withClickEvent(new net.minecraft.network.chat.ClickEvent.CopyToClipboard(key))
+					.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal("Cliquer pour la copier"))))));
+		} else {
+			src.sendSuccess(() -> Component.literal(title + key), false);
+		}
+		if (renew) {
+			ValcombeMod.LOG.info("[valcombe] Clé d'administration remplacée par {}", src.getTextName());
+		}
+		return "Elle donne tout pouvoir sur le serveur : ne la partagez pas."
+			+ (renew ? " Donnez la nouvelle au launcher qui pilote ce serveur." : " Pour en changer : /vc admin nouvellecle");
+	}
+
 	public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext registry, Session session,
 			ValcombeUi ui) {
 		Predicate<CommandSourceStack> admin = src -> src.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
@@ -719,6 +765,11 @@ public final class ValcombeCommands {
 					.then(Commands.argument("camp", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(List.of("bien", "mal"), b))
 						.executes(c -> exec(c, x -> session.addTraveller(arg(x, "joueur"), arg(x, "camp")))))))
+			// Clé de l'API d'administration : la console, ou un opérateur de plein droit (niveau 4, celui de /stop et /op).
+			.then(Commands.literal("admin").requires(src -> src.permissions().hasPermission(Permissions.COMMANDS_OWNER))
+				.executes(c -> exec(c, x -> adminStatus()))
+				.then(Commands.literal("cle").executes(c -> exec(c, x -> showAdminKey(x.getSource(), false))))
+				.then(Commands.literal("nouvellecle").executes(c -> exec(c, x -> showAdminKey(x.getSource(), true)))))
 			.then(Commands.literal("soiree").requires(admin)
 				.then(Commands.literal("effacer").executes(c -> exec(c, x -> ValcombeMod.community().setNextEvening(""))))
 				.then(Commands.argument("quand", StringArgumentType.greedyString())

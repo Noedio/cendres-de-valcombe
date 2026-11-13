@@ -226,18 +226,37 @@ def main():
             "generate-structures=false\n"
             + FLAT_WORLD,
             encoding="utf-8")
+    # Les deux scripts de lancement relancent le serveur quand l'API d'administration l'a demandé :
+    # POST /admin/redemarrer pose le drapeau config/valcombe/redemarrer puis arrête le serveur (docs/ADMIN-API.md).
     (server / "demarrer.bat").write_text(
         "@echo off\r\n"
         "rem Lance le serveur. Il faut Java 25 et le fichier fabric-server-launch.jar (voir INSTALLATION.md).\r\n"
+        "rem Après un arrêt, le relance si l'API d'administration l'a demandé (drapeau config\\valcombe\\redemarrer).\r\n"
+        "cd /d \"%~dp0\"\r\n"
+        ":lancer\r\n"
+        "if exist config\\valcombe\\redemarrer del config\\valcombe\\redemarrer\r\n"
         "java -Xmx4G -jar fabric-server-launch.jar nogui\r\n"
+        "if exist config\\valcombe\\redemarrer (\r\n"
+        "  echo Redemarrage demande par l'API d'administration : relance du serveur.\r\n"
+        "  timeout /t 2 /nobreak >nul\r\n"
+        "  goto lancer\r\n"
+        ")\r\n"
         "pause\r\n", encoding="utf-8")
     # Serveur loué sous Linux (voir HEBERGEMENT.md) : lancement, service systemd, sauvegardes.
     linux = {
         "demarrer.sh": (
             "#!/bin/sh\n"
             "# Lance le serveur (Java 25 et fabric-server-launch.jar requis, voir HEBERGEMENT.md).\n"
+            "# Après un arrêt, le relance si l'API d'administration l'a demandé (drapeau config/valcombe/redemarrer).\n"
             "cd \"$(dirname \"$0\")\"\n"
-            "exec java -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"),
+            "while :; do\n"
+            "  rm -f config/valcombe/redemarrer\n"
+            "  java -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"
+            "  code=$?\n"
+            "  [ -f config/valcombe/redemarrer ] || exit $code\n"
+            "  echo \"Redémarrage demandé par l'API d'administration : relance du serveur.\"\n"
+            "  sleep 2\n"
+            "done\n"),
         "sauvegarder.sh": (
             "#!/bin/sh\n"
             "# Sauvegarde le monde et les réglages de Valcombe ; garde les 14 dernières archives.\n"
@@ -257,6 +276,8 @@ def main():
             "ExecStart=/opt/valcombe/demarrer.sh\n"
             "Restart=on-failure\n"
             "RestartSec=10\n"
+            "# Le temps d'enregistrer les mondes et la partie en cours à l'arrêt.\n"
+            "TimeoutStopSec=120\n"
             "\n"
             "[Install]\n"
             "WantedBy=multi-user.target\n"),
