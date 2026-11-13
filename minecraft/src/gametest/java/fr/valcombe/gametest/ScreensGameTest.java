@@ -42,6 +42,18 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(10);
 	}
 
+	/** Attend (au plus {@code ticks}) qu'une condition soit vraie sur le client ; renvoie si elle l'est devenue. */
+	private static boolean waitClient(ClientGameTestContext ctx, int ticks,
+			java.util.function.Predicate<net.minecraft.client.Minecraft> cond) {
+		for (int i = 0; i < ticks; i += 2) {
+			if (ctx.computeOnClient(cond::test)) {
+				return true;
+			}
+			ctx.waitTicks(2);
+		}
+		return ctx.computeOnClient(cond::test);
+	}
+
 	/** Attend la fin d'un chantier de carte : les blocs sont posés par petits lots, sur plusieurs ticks. */
 	private static void waitBuild(ClientGameTestContext ctx, TestSingleplayerContext world) {
 		for (int i = 0; i < 240 && world.getServer().computeOnServer(server -> fr.valcombe.mc.ValcombeMod.host().busy()); i++) {
@@ -1006,7 +1018,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 				ctx.waitTicks(20);
 				shot(ctx, "5b-defense");
 				world.getServer().runCommand("vc voter");
-				ctx.waitTicks(50);
+				// Le premier vote commence un court temps après la fin des accusations (2 × Settings.stepDelayTicks,
+				// 60 ticks du serveur). On attend l'invite de vote et son écran, ouvert de lui-même : un nombre fixe de
+				// ticks du client tombait tantôt juste avant (la capture ne montrait que le bandeau de jeu), tantôt après.
+				check(waitClient(ctx, 200, mc -> {
+					JsonObject vp = ClientState.obj(ClientState.view(), "prompt");
+					return vp != null && "vote".equals(ClientState.str(vp, "type")) && mc.gui.screen() instanceof PromptScreen;
+				}), "écran de vote ouvert de lui-même au début du vote");
+				ctx.waitTicks(20);
 				shot(ctx, "5c-vote-horloge-hud");
 				ctx.waitTicks(50);
 				JsonObject p = prompt(ctx);

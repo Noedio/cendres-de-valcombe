@@ -9,9 +9,12 @@ import java.util.List;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -30,6 +33,8 @@ import net.minecraft.world.item.Items;
 public class TexturesGameTest implements FabricClientGameTest {
 	private static final String[] ROLES = { "commere", "goule", "templier", "veilleuse", "e_rose", "e_lanterne" };
 	private static final String[] MARKERS = { "poison", "protect", "drunk", "herring", "master", "ghost" };
+	private static final String[] FACES = { "item/scene/dos", "item/scene/mort", "item/scene/fantome", "item/scene/role_goule",
+		"item/scene/role_e_rose_mal", "item/scene/tranche" };
 
 	private static void check(boolean ok, String what) {
 		if (!ok) {
@@ -132,6 +137,32 @@ public class TexturesGameTest implements FabricClientGameTest {
 				g.item(model(name), x, y);
 				x += 20;
 			}
+			// Un jeton 3D se montre de dos dans une interface (les quatre premiers objets ci-dessus) : ses faces, telles
+			// que les joueurs les voient au-dessus des sièges, sont dessinées ici depuis l'atlas des objets.
+			y += 24;
+			Theme.ink(g, font, "Faces des jetons 3D (48 px) : dos, mort, fantôme, rôles, tranche", 6, y, Theme.PARCH);
+			y += 12;
+			x = 6;
+			for (String face : FACES) {
+				var sprite = sprite(face);
+				if (sprite != null) {
+					g.blitSprite(RenderPipelines.GUI_TEXTURED, sprite, x, y, 48, 48);
+				}
+				x += 54;
+			}
+		}
+
+		/** La texture d'objet {@code valcombe:<path>} dans l'atlas du jeu qui la contient, ou null. */
+		private static TextureAtlasSprite sprite(String path) {
+			Identifier id = Identifier.fromNamespaceAndPath("valcombe", path);
+			TextureAtlasSprite[] found = new TextureAtlasSprite[1];
+			Minecraft.getInstance().getAtlasManager().forEach((atlasId, atlas) -> {
+				var s = atlas.getSprite(id);
+				if (found[0] == null && !s.contents().name().equals(MissingTextureAtlasSprite.getLocation())) {
+					found[0] = s;
+				}
+			});
+			return found[0];
 		}
 
 		@Override

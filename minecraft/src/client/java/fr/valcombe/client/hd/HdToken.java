@@ -20,6 +20,12 @@ import net.minecraft.network.chat.Component;
  * (centre et taille en unités d'interface) ; les images viennent des textures du jeu, à n'importe quelle définition.
  */
 public class HdToken extends AbstractButton implements HdTooltipped {
+	/**
+	 * Nom d'un mort sur sa plaque d'encre : une cendre claire. La cendre des textes sur parchemin (Hd.ASH) ne se
+	 * lisait pas sur la plaque sombre (contraste de 1,7 sur parchemin) ; celle-ci atteint 4,5 tout en restant éteinte.
+	 */
+	static final int DEAD_LABEL = 0xFFB8AEB0;
+
 	private final String name;
 	private final String roleId;
 	private final String team;
@@ -155,7 +161,7 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 			default -> y + size + hd.u(1);
 		};
 		hd.fill(lx - tw / 2 - padX, ly, lx + tw / 2 + padX, ly + lh, 0xC01B1214);
-		hd.text(st, label, lx - tw / 2, ly, alive ? Hd.PARCH : Hd.ASH);
+		hd.text(st, label, lx - tw / 2, ly, alive ? Hd.PARCH : DEAD_LABEL);
 		if (caption != null) {
 			hd.textCentered(st, caption, cx, y + size + lh + hd.u(2), Hd.GOLD);
 		}
