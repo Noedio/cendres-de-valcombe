@@ -2,7 +2,6 @@ package fr.valcombe.mc.hub;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -104,7 +103,7 @@ class HubHallTest {
 		assertTrue(WorldKind.ESSAI.openToAll());
 		assertFalse(WorldKind.ATELIER_CARTE.openToAll(), "les ateliers : opérateurs (et leurs invités, plus tard)");
 		assertFalse(WorldKind.ATELIER_STRUCTURES.openToAll());
-		assertNotNull(Travel.MAIN_NAME);
+		assertEquals("village", Travel.GAME_KIND, "le monde de la partie garde l'emblème du village dans le menu « Mondes »");
 		assertEquals("principal", Travel.MAIN);
 	}
 }

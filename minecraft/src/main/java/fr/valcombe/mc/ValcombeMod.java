@@ -186,7 +186,7 @@ public final class ValcombeMod implements ModInitializer {
 
 	/**
 	 * Gestionnaire des mondes de Valcombe (hub, parties, ateliers) ; null avant le démarrage du serveur, ou si
-	 * les mondes n'ont pas pu être préparés (le jeu dans le monde principal continue alors sans eux).
+	 * les mondes n'ont pas pu être préparés (la partie, qui se joue dans un monde de partie, est alors indisponible).
 	 */
 	public static fr.valcombe.mc.worlds.WorldManager worlds() {
 		return worlds;
@@ -228,6 +228,10 @@ public final class ValcombeMod implements ModInitializer {
 		manager.setFallback(t);
 		manager.addListener(t);
 		travel = t;
+		// Les joueurs que la partie amène à sa table (inscription, Conteur, lancement) voyagent comme les autres : leur
+		// position dans le monde qu'ils quittent est gardée.
+		HOST.setLeaving(t::remember);
+		HOST.setBring(t::toGame);
 		try {
 			var h = new fr.valcombe.mc.hub.Hub(server, manager, t, SESSION);
 			h.start();
@@ -357,18 +361,25 @@ public final class ValcombeMod implements ModInitializer {
 			} catch (RuntimeException e) {
 				LOG.error("Sauvegardes indisponibles", e);
 			}
-			HOST.prepareWorld();
 			// Mondes de Valcombe (Fantasy) : rouverts avant l'arrivée des joueurs, qui peuvent s'y être déconnectés.
 			try {
 				var manager = new fr.valcombe.mc.worlds.WorldManager(server, fr.valcombe.mc.worlds.WorldManager.defaultFile(server));
 				manager.start();
 				worlds = manager;
+				// La partie se joue dans son monde : « Partie principale », créé (plat) au premier démarrage. Ce monde-là
+				// ne se supprime pas, ne se remet pas à neuf pendant une partie, et la partie oublie sa carte quand il
+				// est remis à neuf.
+				var main = manager.ensureMainGame();
+				HOST.bindWorld(manager, main.entry().id());
+				manager.addGuard(HOST);
+				manager.addListener(HOST);
 				placer = new MapPlacer(maps, manager, server);
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
 				setUpHub(server, manager);
 			} catch (RuntimeException | LinkageError e) {
-				LOG.error("Mondes de Valcombe indisponibles : le jeu continue dans le monde principal", e);
+				LOG.error("Mondes de Valcombe indisponibles : la partie ne pourra pas se jouer (elle se joue dans un monde de partie)", e);
 			}
+			HOST.prepareWorld();
 			String saved = HOST.savedGame();
 			if (saved != null) {
 				try {
@@ -415,6 +426,8 @@ public final class ValcombeMod implements ModInitializer {
 			}
 			HOST.setHubPads(null);
 			HOST.setHubArrival(null);
+			HOST.setLeaving(null);
+			HOST.setBring(null);
 			hub = null;
 			travel = null;
 			if (worlds != null) {
@@ -463,7 +476,7 @@ public final class ValcombeMod implements ModInitializer {
 				guarded("le hub", h::tick);
 			}
 			if (server.getTickCount() % 5 == 0) {
-				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village()));
+				guarded("le vocal", () -> VoiceRouter.update(server, SESSION, HOST.village(), HOST.levelIfReady()));
 			}
 			if (server.getTickCount() % 40 == 0) {
 				guarded("l'accueil", () -> {
@@ -629,9 +642,9 @@ public final class ValcombeMod implements ModInitializer {
 					&& player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem) {
 					HOST.noteEdit(builder, hit.getBlockPos());
 				}
-				// Trône : clic droit pour s'asseoir
+				// Trône : clic droit pour s'asseoir (les trônes du village, dans le monde de la partie)
 				if (player instanceof ServerPlayer sp && !player.isShiftKeyDown() && !ValcombeUi.isAccuseItem(player.getItemInHand(hand))
-					&& HOST.village() != null && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
+					&& HOST.village() != null && HOST.inGameWorld(sp) && HOST.village().seatIndexAt(hit.getBlockPos()) >= 0) {
 					if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
 						HOST.sitAt(sp, hit.getBlockPos());
 					}
@@ -660,7 +673,7 @@ public final class ValcombeMod implements ModInitializer {
 						return InteractionResult.SUCCESS; // le menu de l'objet visé s'est ouvert
 					}
 					sp.sendSystemMessage(Gui.plain(msg, net.minecraft.ChatFormatting.GREEN));
-					WorldSetup.run(sp.level().getServer(), String.format(java.util.Locale.ROOT,
+					WorldSetup.run(sp.level(), String.format(java.util.Locale.ROOT,
 						"particle minecraft:happy_villager %d %d %d 0.3 0.3 0.3 0 12", at.getX(), at.getY(), at.getZ()));
 				} catch (fr.valcombe.rules.GameException e) {
 					sp.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));

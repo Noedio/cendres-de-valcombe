@@ -257,7 +257,7 @@ public final class MapStore {
 			throw new GameException("Un repère est à plus de " + (MAX_RADIUS - 8) + " blocs de la place : rapprochez-le ou retirez-le "
 				+ "avant d'enregistrer la carte.");
 		}
-		ServerLevel level = server.overworld();
+		ServerLevel level = host.level(); // la carte en service est celle du monde de la partie
 		int r = v.extent();
 		BlockPos c = v.center();
 		BlockPos corner = c.offset(-r, -BELOW, -r);
@@ -287,7 +287,7 @@ public final class MapStore {
 	/**
 	 * Écrit une carte dans la bibliothèque : sa fiche d, ses blocs (le volume capturé autour de la place, coin le plus
 	 * bas BELOW blocs sous le centre) et son aperçu vu de dessus (png, ou null). Sert à l'enregistrement de la carte
-	 * du monde principal comme à la capture d'une carte posée dans un monde de Valcombe (voir MapPlacer). La fiche est
+	 * du monde de la partie comme à la capture d'une carte posée dans un autre monde de Valcombe (voir MapPlacer). La fiche est
 	 * contrôlée avant toute écriture : une carte qu'on ne pourrait pas recharger n'est pas enregistrée.
 	 */
 	MapDef writeMap(MapDef d, Clip clip, byte[] png) {
@@ -350,7 +350,7 @@ public final class MapStore {
 		checkDef(d);
 		host.requireFree();
 		Clip clip = readClip(d);
-		ServerLevel level = server.overworld();
+		ServerLevel level = host.level(); // chargée à la place de la carte du monde de la partie
 		BlockPos c = host.mapCenter();
 		BlockPos corner = c.offset(-d.rayon, -BELOW, -d.rayon);
 		// L'ancienne carte est retirée, le terrain rasé, puis la carte posée : le tout par petits lots (le serveur reste fluide).
@@ -361,7 +361,7 @@ public final class MapStore {
 				Village v = Village.restored(c, d.genere, d.theme, d.places, d.taille, d.maisons, d.salle, d.sieges, d.logis, d.convocation);
 				v.setLibrary(d.id, d.nom);
 				v.setRelSeatYaws(d.orientations);
-				v.placeThrones(server);
+				v.placeThrones(level);
 				host.useVillage(v);
 				host.announceAll("Carte « " + d.nom + " » chargée.");
 			});
@@ -393,7 +393,7 @@ public final class MapStore {
 		Village v = host.village();
 		if (v != null && id.equals(v.libraryId())) {
 			v.setLibrary(id, d.nom); // la carte actuelle porte ce nom
-			v.save(server);
+			host.saveVillage();
 		}
 		try {
 			Files.writeString(dir.resolve(id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);

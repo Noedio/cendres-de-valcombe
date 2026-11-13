@@ -114,7 +114,7 @@ public final class MapPlacer {
 		WorldEntry e = worlds.entryOf(level);
 		if (e == null) {
 			throw new GameException("Les cartes de la bibliothèque se posent dans les mondes de Valcombe (/vc monde liste). "
-				+ "Dans le monde principal : /vc carte charger <id>.");
+				+ "La carte de la partie, elle, se charge dans son monde : /vc carte charger <id>.");
 		}
 		if (worlds.busy(e.id()) || server.getLevel(level.dimension()) != level) {
 			throw new GameException("Le monde « " + e.nom() + " » est en cours de remise à neuf : réessayez dans un instant.");

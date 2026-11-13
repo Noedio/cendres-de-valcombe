@@ -262,9 +262,10 @@ final class Atelier {
 					text(ex, 200, logged(owner, onServer(() -> maps.saveCurrent(o.get("id").getAsString(), o.get("nom").getAsString()), 60)));
 				}
 				case "carte/nouvelle" -> text(ex, 200, logged(owner, onServer(() -> {
-					// Carte vide à compléter à la main : là où se tient l'opérateur, ou au point d'apparition s'il n'est pas en jeu.
+					// Carte vide à compléter à la main : là où se tient l'opérateur s'il est dans le monde de la partie, sinon à
+					// la place de la carte actuelle (ou au centre de ce monde).
 					ServerPlayer p = server.getPlayerList().getPlayerByName(owner);
-					return p != null ? host.customMap(p) : host.customMapAt(host.mapCenter());
+					return host.inGameWorld(p) ? host.customMap(p) : host.customMapAt(host.mapCenter());
 				}, 30)));
 				case "carte/oublier" -> text(ex, 200, logged(owner, onServer(host::forgetVillage, 10)));
 				case "carte/salle" -> text(ex, 200, logged(owner, onServer(host::buildHall, 30)));

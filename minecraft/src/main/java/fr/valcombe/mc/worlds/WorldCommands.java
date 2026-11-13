@@ -35,9 +35,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Commandes des mondes.
  * <ul>
- * <li>Pour tous : {@code /vc hub}, {@code /vc monde [liste]} et {@code /vc monde aller <id>} ({@code principal} :
- * le village actuel). Un joueur retrouve sa dernière position dans chaque monde (voir {@link Travel}). Les autres
- * joueurs que les opérateurs ne voient que le hub, le village actuel et les mondes de partie.</li>
+ * <li>Pour tous : {@code /vc hub}, {@code /vc monde [liste]} et {@code /vc monde aller <id>} ({@code principal} ou
+ * {@code village} : le monde de la partie). Un joueur retrouve sa dernière position dans chaque monde (voir
+ * {@link Travel}). Les autres joueurs que les opérateurs ne voient que le hub et les mondes de partie.</li>
  * <li>Pour les opérateurs : {@code /vc monde creer <sorte> <nom> | recreer <id> | supprimer <id>
  * | renommer <id> <nom>}.</li>
  * </ul>
@@ -94,7 +94,7 @@ public final class WorldCommands {
 			WorldManager w = worlds.get();
 			Travel t = travel.get();
 			ServerPlayer p = c.getSource().getPlayer();
-			List<String> all = new ArrayList<>(List.of(Travel.MAIN));
+			List<String> all = new ArrayList<>();
 			if (w != null) {
 				for (WorldEntry e : w.list()) {
 					if (t == null || p == null || t.canSee(p, e)) {
@@ -140,9 +140,12 @@ public final class WorldCommands {
 			.withHoverEvent(new HoverEvent.ShowText(Component.literal(hover + "Cliquer pour y aller."))));
 	}
 
-	/** Une ligne de la liste : identifiant, nom, sorte, carte, état, joueurs présents. */
-	private static Component line(WorldManager w, WorldEntry e, boolean details) {
+	/** Une ligne de la liste : identifiant, nom, sorte, carte, état, joueurs présents ; game : le monde de la partie. */
+	private static Component line(WorldManager w, WorldEntry e, boolean details, boolean game) {
 		StringBuilder s = new StringBuilder("  ").append(e.id()).append(" · « ").append(e.nom()).append(" » · ").append(e.sorte().label());
+		if (game) {
+			s.append(" · la partie du serveur se joue ici");
+		}
 		if (details && e.carte() != null) {
 			s.append(" · carte ").append(e.carte());
 		}
@@ -172,12 +175,10 @@ public final class WorldCommands {
 			return "Aucun monde de Valcombe pour l'instant. Pour en créer un : /vc monde creer <sorte> <nom> (sortes : "
 				+ String.join(", ", Arrays.stream(WorldKind.values()).map(WorldKind::code).toList()) + ").";
 		}
-		src.sendSuccess(() -> Component.literal("Mondes de Valcombe (" + (shown.size() + 1) + ") :").withStyle(ChatFormatting.GOLD), false);
-		Component main = clickable("  " + Travel.MAIN + " · « " + Travel.MAIN_NAME + " » · monde principal, où se joue la partie",
-			Travel.MAIN, "Le village de la partie en cours.\n");
-		src.sendSuccess(() -> main, false);
+		src.sendSuccess(() -> Component.literal("Mondes de Valcombe (" + shown.size() + ") :").withStyle(ChatFormatting.GOLD), false);
+		String game = t == null ? null : t.game();
 		for (WorldEntry e : shown) {
-			Component c = line(w, e, all);
+			Component c = line(w, e, all, e.id().equals(game));
 			src.sendSuccess(() -> c, false);
 		}
 		return "Cliquer sur un monde pour y aller (chacun y retrouve sa dernière position) ; /vc hub ramène au hub.";
@@ -207,10 +208,6 @@ public final class WorldCommands {
 		}
 		if (!operator) {
 			throw new GameException("Les voyages entre mondes ne sont pas disponibles sur ce serveur (voir son journal).");
-		}
-		if (Travel.MAIN.equalsIgnoreCase(id) || "village".equalsIgnoreCase(id)) {
-			WorldManager.toMainWorld(p);
-			return "Te voilà dans le monde principal.";
 		}
 		WorldEntry e = w.get(id);
 		w.teleport(p, e.id());

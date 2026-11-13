@@ -55,8 +55,33 @@ public final class WorldRegistry {
 	public static final String ID = "[a-z0-9-]{2,30}";
 	/** Identifiant d'une carte de la bibliothèque (même règle que la bibliothèque). */
 	private static final String MAP_ID = "[a-z0-9-]{2,30}";
-	/** Mots réservés aux commandes : {@code /vc monde aller principal} ramène au monde principal. */
+	/** Mots réservés aux commandes : {@code /vc monde aller principal} mène au monde de la partie. */
 	public static final Set<String> RESERVED = Set.of("principal");
+	/** Identifiant du monde de la partie principale, créé au premier démarrage (voir WorldManager.ensureMainGame). */
+	public static final String MAIN_GAME_ID = "partie-principale";
+	/** Nom donné au monde de la partie principale quand il est créé (on peut le renommer ; son identifiant reste). */
+	public static final String MAIN_GAME_NAME = "Partie principale";
+
+	/**
+	 * Parmi ces fiches, le monde de la partie principale : le monde de partie {@value #MAIN_GAME_ID}, sinon le premier
+	 * monde de partie {@code partie-principale-<n>} (créé ainsi quand un dossier sans fiche occupait le nom) ; null
+	 * s'il n'y en a pas. Un monde d'une autre sorte qui porterait cet identifiant n'est jamais pris pour lui.
+	 */
+	public static WorldEntry mainGame(List<WorldEntry> entries) {
+		WorldEntry numbered = null;
+		for (WorldEntry e : entries) {
+			if (e.sorte() != WorldKind.PARTIE) {
+				continue;
+			}
+			if (e.id().equals(MAIN_GAME_ID)) {
+				return e;
+			}
+			if (numbered == null && e.id().matches(java.util.regex.Pattern.quote(MAIN_GAME_ID) + "-\\d+")) {
+				numbered = e;
+			}
+		}
+		return numbered;
+	}
 	public static final int MAX_NAME = 50;
 	public static final int MAX_STATE = 500;
 

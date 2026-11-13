@@ -139,9 +139,13 @@ public final class Workshop {
 			p.put("sieges", v.relSeats());
 			p.put("maisons", v.relHouses());
 			p.put("salle", v.relConvocation());
-			// Les joueurs connectés, pour se repérer : [nom, est, sud] depuis le centre de la place.
+			// Les joueurs du monde de la partie, pour se repérer : [nom, est, sud] depuis le centre de la place. Ceux qui
+			// sont ailleurs (hub, atelier) n'y sont pas : leurs coordonnées n'ont rien à voir avec ce plan.
 			List<List<Object>> here = new ArrayList<>();
 			for (ServerPlayer p2 : server.getPlayerList().getPlayers()) {
+				if (!host.inGameWorld(p2)) {
+					continue;
+				}
 				here.add(List.of(p2.getScoreboardName(), p2.getBlockX() - v.center().getX(), p2.getBlockZ() - v.center().getZ()));
 			}
 			p.put("joueurs", here);

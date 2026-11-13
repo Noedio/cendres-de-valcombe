@@ -71,7 +71,7 @@ public final class HubHall {
 	 * Une porte vers un monde, dans le mur ouest ({@code west}) ou est, centrée en {@code z}. L'ouverture fait 3 blocs
 	 * de large et 4 de haut ; on la traverse en y entrant.
 	 *
-	 * @param index rang de la porte (0 : le village actuel)
+	 * @param index rang de la porte (0 : le village de la partie)
 	 */
 	public record Portal(int index, boolean west, int z) {
 		/** Le plan du mur où s'ouvre la porte. */
@@ -106,8 +106,8 @@ public final class HubHall {
 	}
 
 	/**
-	 * Les six portes, dans l'ordre où les mondes y sont rangés : le village actuel au milieu du mur ouest, puis les
-	 * mondes de partie en face, puis au nord et au sud de chaque mur.
+	 * Les six portes, dans l'ordre où les mondes y sont rangés : le village de la partie au milieu du mur ouest, puis
+	 * les autres mondes de partie en face, puis au nord et au sud de chaque mur.
 	 */
 	public static final List<Portal> PORTALS = List.of(
 		new Portal(0, true, 0), new Portal(1, false, 0),

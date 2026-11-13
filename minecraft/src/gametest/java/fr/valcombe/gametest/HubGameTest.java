@@ -24,7 +24,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 
@@ -97,7 +96,7 @@ public class HubGameTest implements FabricClientGameTest {
 	/** Place le joueur ici, dans ce monde, côté serveur (comme s'il y avait marché). */
 	private static void place(TestSingleplayerContext world, String me, String id, double x, double y, double z, float yaw, float pitch) {
 		world.getServer().runOnServer(s -> {
-			ServerLevel level = Travel.MAIN.equals(id) ? s.overworld() : ValcombeMod.worlds().level(id);
+			ServerLevel level = ValcombeMod.worlds().level(id);
 			player(s, me).teleportTo(level, x, y, z, java.util.Set.of(), yaw, pitch, false);
 		});
 	}
@@ -190,9 +189,12 @@ public class HubGameTest implements FabricClientGameTest {
 			ctx.waitTicks(20);
 			shot(ctx, "hub-mur-des-roles");
 
-			// 2. Dalles : la dalle dorée inscrit, la rouge désinscrit.
+			// 2. Dalles : la dalle dorée inscrit (et emmène au village de la partie), la rouge désinscrit.
+			String gameId = server.computeOnServer(s -> ValcombeMod.host().worldId());
+			String gameDim = "valcombe:" + gameId;
 			place(world, me, hubId, HubHall.JOIN_X + 0.5, HubHall.FEET, HubHall.JOIN_Z + 0.5, 180f, 0f);
 			check(waitFor(ctx, world, 60, s -> ValcombeMod.session().lobby().contains(me)), "inscrit par la dalle dorée du hub");
+			check(waitFor(ctx, world, 60, s -> dimensionOf(s, me).equals(gameDim)), "inscrit, il rejoint le monde de la partie");
 			place(world, me, hubId, HubHall.LEAVE_X + 0.5, HubHall.FEET, 0.5, 180f, 0f);
 			check(waitFor(ctx, world, 60, s -> !ValcombeMod.session().lobby().contains(me)), "désinscrit par la dalle rouge du hub");
 
@@ -239,7 +241,7 @@ public class HubGameTest implements FabricClientGameTest {
 				}
 				return -1;
 			});
-			check(server.computeOnServer(s -> Travel.MAIN.equals(ValcombeMod.hub().door(0))), "première porte : le village actuel");
+			check(server.computeOnServer(s -> gameId.equals(ValcombeMod.hub().door(0))), "première porte : le monde de la partie");
 			if (door >= 0) {
 				HubHall.Portal portal = HubHall.PORTALS.get(door);
 				place(world, me, hubId, portal.wallX() + 0.5, HubHall.FEET, portal.z() + 0.5, portal.west() ? 90f : -90f, 0f);
@@ -258,12 +260,12 @@ public class HubGameTest implements FabricClientGameTest {
 			}
 			HubHall.Portal village = HubHall.PORTALS.get(0);
 			place(world, me, hubId, village.wallX() + 0.5, HubHall.FEET, village.z() + 0.5, 90f, 0f);
-			check(waitFor(ctx, world, 60, s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
-				"la porte du village actuel mène au monde principal");
+			check(waitFor(ctx, world, 60, s -> dimensionOf(s, me).equals(gameDim)),
+				"la première porte mène au village de la partie, dans son monde");
 			send(ctx, "vc hub");
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(hubDim)), "retour au hub depuis le village");
 
-			// 5. Menu J, « Mondes » : l'entrée existe, l'écran liste le hub, le village actuel et l'essai ; « Y aller ».
+			// 5. Menu J, « Mondes » : l'entrée existe, l'écran liste le hub, le monde de la partie et l'essai ; « Y aller ».
 			ctx.setScreen(MainScreen::new);
 			ctx.waitTicks(10);
 			check(click(ctx, "Mondes"), "entrée « Mondes » du menu J");
@@ -271,8 +273,8 @@ public class HubGameTest implements FabricClientGameTest {
 			ctx.setScreen(() -> new WorldsScreen(id));
 			ctx.waitTicks(10);
 			List<String> ids = ctx.computeOnClient(mc -> WorldsScreen.destinations().stream().map(d -> ClientState.str(d, "id")).toList());
-			check(ids.contains(hubId) && ids.contains(Travel.MAIN) && ids.contains(id) && ids.indexOf(hubId) == 0,
-				"destinations listées, hub d'abord : " + ids);
+			check(ids.contains(hubId) && ids.contains(gameId) && ids.contains(id) && ids.indexOf(hubId) == 0 && ids.indexOf(gameId) == 1
+				&& !ids.contains(Travel.MAIN), "destinations listées, hub puis monde de la partie : " + ids);
 			shot(ctx, "hub-ecran-mondes");
 			check(click(ctx, "Y aller"), "bouton « Y aller »");
 			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals("valcombe:" + id)), "« Y aller » mène à l'essai");
@@ -316,8 +318,8 @@ public class HubGameTest implements FabricClientGameTest {
 			});
 			check(waitFor(ctx, world, 600, s -> fresh.get().isDone()), "hub remis à neuf");
 			check(!fresh.get().isCompletedExceptionally(), "remise à neuf du hub sans erreur");
-			check(server.computeOnServer(s -> dimensionOf(s, me).equals(Level.OVERWORLD.identifier().toString())),
-				"les joueurs du hub remis à neuf vont au village");
+			check(server.computeOnServer(s -> dimensionOf(s, me).equals(gameDim)),
+				"les joueurs du hub remis à neuf vont au village de la partie");
 			check(server.computeOnServer(s -> ValcombeMod.worlds().level(hubId).getBlockState(new BlockPos(0, HubHall.FLOOR, 0))
 				.is(Blocks.GILDED_BLACKSTONE)), "salle d'accueil rebâtie");
 			send(ctx, "vc hub");

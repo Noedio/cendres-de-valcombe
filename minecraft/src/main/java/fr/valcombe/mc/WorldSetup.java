@@ -7,19 +7,23 @@ import net.minecraft.world.level.gamerules.GameRule;
 import net.minecraft.world.level.gamerules.GameRules;
 
 /**
- * Un vrai monde de partie : pas de créatures, pas de dégâts du décor, ni cycle jour/nuit
+ * Le monde d'une partie : pas de créatures, pas de dégâts du décor, ni cycle jour/nuit
  * ni météo naturels (l'heure suit la phase de la partie), messages de mort et de progrès masqués.
+ * <p>
+ * Tout se fait dans <b>un monde donné</b> (celui de la partie, voir {@link McHost#level()}), jamais dans le monde
+ * principal de Minecraft : les commandes partent de ce monde, les entités qu'on y vise sont les siennes, l'heure est
+ * celle de son horloge (les mondes de Valcombe ont chacun la leur).
  */
 public final class WorldSetup {
 	private WorldSetup() {
 	}
 
-	private static void off(GameRules rules, GameRule<Boolean> rule, MinecraftServer server) {
-		rules.set(rule, false, server);
-	}
-
-	public static void apply(MinecraftServer server) {
-		ServerLevel level = server.overworld();
+	/**
+	 * Règles de la partie dans ce monde. Le gestionnaire de mondes les pose déjà à l'ouverture d'un monde de
+	 * Valcombe ; elles sont reposées ici pour qu'un réglage changé à la main (/gamerule) ne gâche pas la partie.
+	 */
+	public static void apply(ServerLevel level) {
+		MinecraftServer server = level.getServer();
 		GameRules r = level.getGameRules();
 		for (GameRule<Boolean> rule : java.util.List.of(
 				GameRules.SPAWN_MOBS, GameRules.SPAWN_MONSTERS, GameRules.SPAWN_PATROLS, GameRules.SPAWN_PHANTOMS,
@@ -28,31 +32,45 @@ public final class WorldSetup {
 				GameRules.FALL_DAMAGE, GameRules.FIRE_DAMAGE, GameRules.DROWNING_DAMAGE, GameRules.FREEZE_DAMAGE,
 				GameRules.MOB_GRIEFING, GameRules.TNT_EXPLODES, GameRules.PVP,
 				GameRules.SHOW_ADVANCEMENT_MESSAGES, GameRules.SHOW_DEATH_MESSAGES, GameRules.LOCATOR_BAR)) {
-			off(r, rule, server);
+			r.set(rule, false, server);
 		}
 		r.set(GameRules.KEEP_INVENTORY, true, server);
 		r.set(GameRules.IMMEDIATE_RESPAWN, true, server);
 		r.set(GameRules.RANDOM_TICK_SPEED, 0, server);
+		// La difficulté et la météo valent pour tout le serveur : paisible et ciel clair partout.
 		server.setDifficulty(Difficulty.PEACEFUL, true);
-		run(server, "weather clear");
-		day(server);
+		run(level, "weather clear");
+		day(level);
 	}
 
-	public static void day(MinecraftServer server) {
-		run(server, "time set 6000");
+	/** Midi dans ce monde (son horloge à lui : les autres mondes gardent leur heure). */
+	public static void day(ServerLevel level) {
+		run(level, "time set 6000");
 	}
 
-	public static void night(MinecraftServer server) {
-		run(server, "time set 18000");
+	/** Minuit dans ce monde. */
+	public static void night(ServerLevel level) {
+		run(level, "time set 18000");
 	}
 
-	static void run(MinecraftServer server, String command) {
-		server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), command);
-	}
-
-	/** Lance une commande dans ce monde-ci (ses blocs et ses entités), sans rien afficher : une carte posée hors du monde principal. */
+	/**
+	 * Lance une commande dans ce monde-ci (ses blocs, ses entités, son horloge), sans rien afficher. Attention : un
+	 * sélecteur {@code @e} ou {@code @a} sans position vise tous les mondes ; pour s'en tenir à celui-ci, ajouter
+	 * {@code distance=0..} (voir {@link #HERE}).
+	 */
 	static void run(ServerLevel level, String command) {
 		MinecraftServer server = level.getServer();
 		server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withLevel(level).withSuppressedOutput(), command);
+	}
+
+	/**
+	 * À ajouter aux arguments d'un sélecteur {@code @e[...]} ou {@code @a[...]} pour ne viser que le monde où la
+	 * commande est lancée : sans position ni distance, Minecraft cherche dans tous les mondes.
+	 */
+	static final String HERE = "distance=0..";
+
+	/** Retire de ce monde (et de lui seul) les entités que désignent ces arguments de sélecteur ({@code tag=vc_scene}). */
+	static void kill(ServerLevel level, String filter) {
+		run(level, "kill @e[" + filter + "," + HERE + "]");
 	}
 }

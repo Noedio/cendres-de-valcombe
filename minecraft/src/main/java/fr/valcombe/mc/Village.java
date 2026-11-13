@@ -11,7 +11,6 @@ import java.util.List;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -26,7 +25,8 @@ import net.minecraft.world.phys.Vec3;
  * Le lieu des parties : un centre (la place), des sièges et des maisons.
  * Soit généré (village de Valcombe, 16 sièges et 16 maisons), soit placé à la main
  * sur une carte personnalisée avec /vc carte siege et /vc carte maison.
- * Enregistré dans config/valcombe-village.json.
+ * Sa fiche est enregistrée dans le dossier du monde de la partie qui le porte ({@link #FILE}, voir McHost) : elle
+ * disparaît avec ce monde quand il est remis à neuf.
  */
 public final class Village {
 	/** Trônes d'un village généré par défaut. */
@@ -1364,11 +1364,11 @@ public final class Village {
 			return;
 		}
 		String summon = throneDisplay(new Vec3(center.getX() + x + 0.5, center.getY() + 1, center.getZ() + z + 0.5));
-		MinecraftServer server = level.getServer();
+		// Dans le monde où le village est bâti (celui de la partie), jamais dans le monde principal.
 		if (plan != null) {
-			plan.after.add(() -> WorldSetup.run(server, summon)); // le trône sculpté attend que son estrade soit posée
+			plan.after.add(() -> WorldSetup.run(level, summon)); // le trône sculpté attend que son estrade soit posée
 		} else {
-			WorldSetup.run(server, summon);
+			WorldSetup.run(level, summon);
 		}
 	}
 
@@ -1387,20 +1387,10 @@ public final class Village {
 	}
 
 	/**
-	 * Village généré rechargé de la bibliothèque : la structure enregistrée ne contient que des blocs,
-	 * les trônes sculptés (des entités) sont donc reposés sur chaque estrade.
+	 * Village généré rechargé de la bibliothèque, ou posé dans un monde de Valcombe (voir MapPlacer) : la structure
+	 * enregistrée ne contient que des blocs, les trônes sculptés (des entités) sont donc reposés sur chaque estrade,
+	 * dans ce monde-ci.
 	 */
-	public void placeThrones(MinecraftServer server) {
-		if (!generated) {
-			return;
-		}
-		decorGen++;
-		for (int k = 0; k < seats.size(); k++) {
-			WorldSetup.run(server, throneDisplay(feet(seats.get(k)), seatYaw(k)));
-		}
-	}
-
-	/** Comme placeThrones(server), dans ce monde-ci : un village généré posé dans un monde de Valcombe (voir MapPlacer). */
 	public void placeThrones(ServerLevel level) {
 		if (!generated) {
 			return;
@@ -1596,9 +1586,8 @@ public final class Village {
 	// ------------------------------------------------------------------
 	// Enregistrement
 	// ------------------------------------------------------------------
-	private static Path file(MinecraftServer server) {
-		return server.getServerDirectory().resolve("config").resolve("valcombe-village.json");
-	}
+	/** Nom de la fiche du village, dans le dossier du monde de la partie (voir McHost). */
+	public static final String FILE = "valcombe-village.json";
 
 	private static int[] arr(BlockPos p) {
 		return new int[] {p.getX(), p.getY(), p.getZ()};
@@ -1608,16 +1597,11 @@ public final class Village {
 		return new BlockPos(a[0], a[1], a[2]);
 	}
 
-	public void save(MinecraftServer server) {
-		save(file(server), false);
-	}
-
-	/** Carte oubliée : la fiche garde son emprise, pour que la prochaine carte bâtie la retire du monde. */
-	public void saveForgotten(MinecraftServer server) {
-		save(file(server), true);
-	}
-
-	void save(Path f, boolean forgotten) {
+	/**
+	 * Écrit la fiche dans ce fichier : la carte en service, ou (forgotten) une carte oubliée, dont la fiche garde
+	 * l'emprise pour que la prochaine carte bâtie la retire du monde.
+	 */
+	public void save(Path f, boolean forgotten) {
 		Data d = new Data();
 		d.modified = modified;
 		d.built = built;
@@ -1680,11 +1664,8 @@ public final class Village {
 		}
 	}
 
-	public static Loaded load(MinecraftServer server) {
-		return load(file(server));
-	}
-
-	static Loaded load(Path json) {
+	/** Relit la fiche de ce fichier (celle du monde de la partie, voir McHost). */
+	public static Loaded load(Path json) {
 		try {
 			if (SafeFile.exists(json)) {
 				String text = SafeFile.read(json, Village::valid);

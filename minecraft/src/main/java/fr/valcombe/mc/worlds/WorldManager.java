@@ -141,11 +141,34 @@ public final class WorldManager {
 		}
 	}
 
+	/**
+	 * Ce qui peut refuser qu'un monde soit remis à neuf ou supprimé : la partie qui s'y joue (voir McHost). Appelé sur
+	 * le fil du serveur, avant que rien ne bouge.
+	 */
+	@FunctionalInterface
+	public interface Guard {
+		/** Pourquoi ce monde ne peut pas être recréé ({@code recreate}) ou supprimé maintenant, ou null s'il le peut. */
+		String refuse(WorldEntry entry, boolean recreate);
+	}
+
+	/**
+	 * Identifiant du monde de la partie principale : le monde de partie que le serveur crée au premier démarrage, où
+	 * se joue la partie du serveur (voir {@link #ensureMainGame()}).
+	 */
+	public static final String MAIN_GAME_ID = WorldRegistry.MAIN_GAME_ID;
+	/** Nom donné au monde de la partie principale quand il est créé (on peut le renommer ; son identifiant reste). */
+	public static final String MAIN_GAME_NAME = WorldRegistry.MAIN_GAME_NAME;
+
+	/** Le monde de la partie principale, et s'il vient d'être créé (il est alors plat et vide). */
+	public record MainGame(WorldEntry entry, boolean created) {
+	}
+
 	private final MinecraftServer server;
 	private final WorldRegistry registry;
 	/** Recréations et suppressions en cours, par identifiant. */
 	private final Map<String, Pending> pending = new LinkedHashMap<>();
 	private final List<Listener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private final List<Guard> guards = new java.util.concurrent.CopyOnWriteArrayList<>();
 	private volatile Fallback fallback = MAIN_WORLD;
 
 	/**
@@ -377,6 +400,31 @@ public final class WorldManager {
 		return e;
 	}
 
+	/**
+	 * Le monde de la partie principale, créé (plat et vide) s'il n'existe pas : au démarrage, le jeu s'y lie. C'est le
+	 * monde de partie {@value #MAIN_GAME_ID} ; si ce nom est pris par un dossier sans fiche (registre illisible mis de
+	 * côté), le monde créé à sa place s'appelle {@code partie-principale-2} et il est retrouvé aux démarrages suivants
+	 * (le premier monde de partie dont l'identifiant commence ainsi). Fil du serveur.
+	 */
+	public MainGame ensureMainGame() {
+		requireServerThread();
+		WorldEntry e = WorldRegistry.mainGame(registry.list());
+		if (e != null) {
+			return new MainGame(e, false);
+		}
+		WorldEntry created = create(WorldKind.PARTIE, MAIN_GAME_NAME);
+		if (!created.id().equals(MAIN_GAME_ID)) {
+			LOG.warn("Monde de la partie principale créé sous l'identifiant {} : un dossier {} sans fiche occupe déjà la place.",
+				created.id(), MAIN_GAME_ID);
+		}
+		return new MainGame(created, true);
+	}
+
+	/** Ajoute un {@link Guard}, consulté avant chaque remise à neuf et chaque suppression. */
+	public void addGuard(Guard guard) {
+		guards.add(guard);
+	}
+
 	/** Change le nom affiché du monde ; son identifiant, son monde Minecraft et ses fichiers restent les mêmes. */
 	public WorldEntry rename(String id, String name) {
 		return registry.rename(id, name);
@@ -424,6 +472,12 @@ public final class WorldManager {
 		WorldEntry e = registry.get(id);
 		if (pending.containsKey(e.id())) {
 			throw new GameException("Le monde « " + e.nom() + " » est déjà en cours de remise à neuf ou de suppression.");
+		}
+		for (Guard g : guards) {
+			String why = g.refuse(e, recreate);
+			if (why != null) {
+				throw new GameException(why);
+			}
 		}
 		// Noté d'abord : un arrêt du serveur pendant l'opération n'empêchera pas l'effacement.
 		registry.markWipe(e.id());
@@ -625,7 +679,11 @@ public final class WorldManager {
 		}
 	}
 
-	/** Téléporte ce joueur au point d'apparition du monde principal. */
+	/**
+	 * Téléporte ce joueur au point d'apparition du monde principal. Le monde principal ne sert plus au jeu : c'est le
+	 * dernier recours d'un joueur qu'il faut sortir d'un monde remis à neuf quand ni le hub ni le monde de la partie ne
+	 * peuvent l'accueillir (le seul usage légitime du monde principal, avec le passage d'un tick à la connexion).
+	 */
 	public static void toMainWorld(ServerPlayer player) {
 		MinecraftServer server = player.level().getServer();
 		ServerLevel level = server.findRespawnDimension();
