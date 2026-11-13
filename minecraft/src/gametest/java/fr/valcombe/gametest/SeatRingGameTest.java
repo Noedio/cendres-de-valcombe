@@ -247,6 +247,17 @@ public class SeatRingGameTest implements FabricClientGameTest {
 			for (int j = i + 1; j < widgets.size(); j++) {
 				AbstractWidget a = widgets.get(i);
 				AbstractWidget b = widgets.get(j);
+				if (a instanceof HdToken ta && b instanceof HdToken tb) {
+					// Deux jetons sont des disques (leur survol aussi, voir HdToken.isMouseOver) : sur un cercle serré, leurs
+					// carrés se croisent en biais sans que les disques se touchent.
+					double ra = ta.getWidth() / 2.0;
+					double rb = tb.getWidth() / 2.0;
+					if (Math.hypot(ta.getX() + ra - tb.getX() - rb, ta.getY() + ra - tb.getY() - rb) < ra + rb) {
+						return "les jetons de « " + a.getMessage().getString() + " » et de « " + b.getMessage().getString()
+							+ " » se touchent";
+					}
+					continue;
+				}
 				if (overlap(a.getX(), a.getY(), a.getWidth(), a.getHeight(), b.getX(), b.getY(), b.getWidth(), b.getHeight())) {
 					return "« " + a.getMessage().getString() + " » chevauche « " + b.getMessage().getString() + " »";
 				}

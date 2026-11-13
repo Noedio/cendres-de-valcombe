@@ -174,7 +174,9 @@ public partial class MainWindow
         grid.Children.Add(badge);
 
         var text = new StackPanel();
-        var title = new TextBlock { FontSize = 14.5, Foreground = Res("Ink"), TextTrimming = TextTrimming.CharacterEllipsis };
+        // Le nom, l'état et la nuit passent à la ligne plutôt que d'être coupés : « En suspens · Nuit 3 » se lit en entier
+        // même à côté de l'étiquette « essai » et d'un nom long.
+        var title = new TextBlock { FontSize = 14.5, Foreground = Res("Ink"), TextWrapping = TextWrapping.Wrap };
         title.Inlines.Add(new Run(x.Nom.Length > 0 ? x.Nom : x.Id) { FontWeight = FontWeights.SemiBold });
         title.Inlines.Add(new Run("   " + x.StatusText) { FontSize = 12.5, Foreground = color, FontWeight = FontWeights.SemiBold });
         if (x.Status != "ouverte" && x.PhaseTexte.Length > 0)

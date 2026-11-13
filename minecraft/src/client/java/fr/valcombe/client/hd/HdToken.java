@@ -125,7 +125,15 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 
 	@Override
 	public boolean isMouseOver(double mouseX, double mouseY) {
-		return super.isMouseOver(mouseX, mouseY) || isActive() && visible && plate != null && plate.contains(mouseX, mouseY);
+		if (!isActive() || !visible) {
+			return false;
+		}
+		// Le jeton est rond : sur un cercle serré, les carrés de deux voisins se croisent en biais, et un clic dans le coin
+		// du carré de l'un tomberait sur le disque de l'autre. Seuls le disque et la plaque du nom comptent.
+		double r = getWidth() / 2.0;
+		double dx = mouseX - (getX() + r);
+		double dy = mouseY - (getY() + r);
+		return dx * dx + dy * dy <= r * r || plate != null && plate.contains(mouseX, mouseY);
 	}
 
 	/** Lance l'action du jeton, comme un clic. */
