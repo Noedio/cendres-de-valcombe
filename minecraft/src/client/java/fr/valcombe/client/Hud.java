@@ -116,7 +116,7 @@ public final class Hud {
 		if (flip > 0) {
 			g.fill(x, y, x + cw, y + ch, (alpha << 24) | 0x5A1E2A);
 			g.outline(x + 3, y + 3, cw - 6, ch - 6, (alpha << 24) | 0xD9B45A);
-			Theme.image(g, Theme.tex("token_neutral"), cx - cw / 4, cy - cw / 4, cw / 2, cw / 2, 32, 32);
+			Theme.image(g, Theme.tex("token_neutral"), cx - cw / 4, cy - cw / 4, cw / 2, cw / 2, Theme.TOKEN_TEX, Theme.TOKEN_TEX);
 		} else {
 			g.fill(x, y, x + cw, y + ch, (alpha << 24) | 0xE8D9B5);
 			g.outline(x + 3, y + 3, cw - 6, ch - 6, (alpha << 24) | (evil ? 0xA83232 : 0x3F6FA8));
@@ -491,7 +491,7 @@ public final class Hud {
 		int x = w / 2 - tw / 2;
 		g.fill(x, 4, x + tw, 20, 0xD01B1214);
 		g.outline(x, 4, tw, 16, Theme.BRONZE);
-		Theme.image(g, Theme.tex(phase.equals("NIGHT") ? "moon" : "sun"), x + 4, 6, 12, 12, 16, 16);
+		Theme.image(g, Theme.tex(phase.equals("NIGHT") ? "moon" : "sun"), x + 4, 6, 12, 12, Theme.HUD_TEX, Theme.HUD_TEX);
 		g.text(mc.font, label, x + 20, 8, Theme.GOLD, false);
 
 		JsonObject vote = ClientState.obj(v, "vote");
@@ -506,7 +506,7 @@ public final class Hud {
 			int vx = w / 2 - vw / 2;
 			g.fill(vx, 24, vx + vw, 38, 0xD05A1E2A);
 			g.outline(vx, 24, vw, 14, Theme.GOLD);
-			Theme.image(g, Theme.tex("hourglass"), vx + 4, 25, 12, 12, 16, 16);
+			Theme.image(g, Theme.tex("hourglass"), vx + 4, 25, 12, 12, Theme.HUD_TEX, Theme.HUD_TEX);
 			g.text(mc.font, text, vx + 20, 27, Theme.PARCH, false);
 			if (!defense) {
 				float frac = Math.min(1f, count / (float) threshold);

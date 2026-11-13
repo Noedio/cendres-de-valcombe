@@ -56,14 +56,14 @@
 	.token { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none;
 		background: #e8d9b5; border: 3px solid var(--good); }
 	.token.EVIL, .token.SBIRE, .token.DEMON { border-color: var(--evil); }
-	.token img { width: 26px; height: 26px; image-rendering: pixelated; }
+	.token img { width: 26px; height: 26px; }
 	.big { width: 84px; height: 84px; border-width: 5px; }
 	.big img { width: 60px; height: 60px; }
 	.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
 	.emblems { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; }
 	.emblems button { padding: 4px; min-height: 0; width: 44px; height: 44px; background: #e8d9b5; }
 	.emblems button.on { outline: 3px solid var(--gold); }
-	.emblems img { width: 32px; height: 32px; image-rendering: pixelated; display: block; }
+	.emblems img { width: 32px; height: 32px; display: block; }
 	.preview { display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
 	.preview .t { color: var(--muted); }
 	.msg { margin-top: 10px; min-height: 1.4em; white-space: pre-wrap; }
@@ -72,7 +72,7 @@
 	.bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
 	.pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; }
 	.pick label.check { font-size: .9rem; margin: 2px 0; }
-	.pick img { width: 22px; height: 22px; image-rendering: pixelated; background: #e8d9b5; border-radius: 50%; padding: 2px; }
+	.pick img { width: 22px; height: 22px; background: #e8d9b5; border-radius: 50%; padding: 2px; }
 	.camp { color: var(--gold); margin: 12px 0 4px; }
 	.meter { height: 14px; border-radius: 7px; overflow: hidden; display: flex; background: var(--panel-2); margin: 8px 0; }
 	.meter .g { background: var(--good); }
