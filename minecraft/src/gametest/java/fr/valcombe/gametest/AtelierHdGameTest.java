@@ -297,6 +297,23 @@ public class AtelierHdGameTest implements FabricClientGameTest {
 			ctx.setScreen(page::get);
 			ctx.waitTicks(6);
 			String problem = ctx.computeOnClient(AtelierHdGameTest::layoutProblem);
+			if (problem == null && i == 0) {
+				// Accueil : aucun nom d'entrée coupé, à aucune taille (plus petit, ou sur deux lignes).
+				problem = ctx.computeOnClient(mc -> {
+					int sc = mc.getWindow().getGuiScale();
+					for (var w : mc.gui.screen().children()) {
+						if (w instanceof AtelierHome.Tile t) {
+							var fit = t.titleAt(sc);
+							String title = t.getMessage().getString();
+							if (fit.lines().size() > 2 || !String.join(" ", fit.lines()).equals(title)
+								|| fit.lines().stream().anyMatch(l -> l.endsWith("…"))) {
+								return "nom d'entrée coupé : « " + title + " » → " + fit.lines();
+							}
+						}
+					}
+					return null;
+				});
+			}
 			if (problem == null) {
 				System.out.println("[valcombe-test] atelier hd : mise en page « " + names[i] + " » (" + suffix + ") : bonne");
 			} else {
