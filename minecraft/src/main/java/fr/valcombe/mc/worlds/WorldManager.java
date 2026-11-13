@@ -735,7 +735,10 @@ public final class WorldManager {
 
 	/** Ouvre (ou crée) le monde Fantasy de cette fiche. */
 	private ServerLevel open(WorldEntry e) {
-		return Fantasy.get(server).getOrOpenPersistentLevel(key(e.id()).identifier(), config(e.sorte())).asLevel();
+		ServerLevel level = Fantasy.get(server).getOrOpenPersistentLevel(key(e.id()).identifier(), config(e.sorte())).asLevel();
+		// Pas d'annonce de progrès Minecraft dans un monde de Valcombe, même si la règle a été changée à la main.
+		fr.valcombe.mc.WorldSetup.quiet(level);
+		return level;
 	}
 
 	/** Les règles de jeu d'un monde de Valcombe : paisible et sans dégâts, comme le monde de la partie. */

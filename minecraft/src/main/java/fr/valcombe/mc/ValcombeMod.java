@@ -414,7 +414,7 @@ public final class ValcombeMod implements ModInitializer {
 			creations.load();
 			baseMotd = server.getMotd();
 			workshop = new Workshop(server, creations, maps, structures, editor);
-			Atelier atelier = new Atelier(creations, maps, structures, editor, workshop);
+			Atelier atelier = new Atelier(creations, maps, structures, workshop);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
 			setUpAdmin(server);

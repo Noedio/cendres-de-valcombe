@@ -16,7 +16,7 @@ Un monde de Valcombe par carte en cours de travail (sorte `atelier-carte`) : pla
 | Menu J › Mondes › « Ouvrir une carte… » | onglet Bibliothèque | onglet Carte vierge | onglet Village généré |
 | Commande (opérateurs) | `/vc atelier carte ouvrir <carte>` | `/vc atelier carte nouvelle <nom>` | `/vc atelier carte village <trônes> [<taille> <thème> <oui\|non> <nom>]` |
 | Atelier en jeu | onglet Cartes, « Ouvrir dans un atelier » | | onglet Village, « Générer dans un atelier » |
-| Atelier web | « Ouvrir dans un atelier » sur chaque carte (route `carte/atelier`) | | |
+| Atelier web | « Ouvrir dans un atelier » sur la fiche de chaque carte (route `carte/atelier`) ; « Nouvelle carte » : vierge (`carte/atelier/nouvelle`) ou village généré (`carte/atelier/village`) ; « Y aller dans le jeu » (`carte/atelier/aller`) | | |
 
 La carte de la bibliothèque est posée au centre d'un monde neuf (`MapPlacer.place`) ; le village est bâti par petits lots (`MapPlacer.build`), puis sa salle de convocation et sa salle d'attente. Une barre suit l'avancement ; celui qui a ouvert l'atelier y est conduit à la fin (depuis l'Atelier web : un lien « [Y aller] » dans le chat).
 

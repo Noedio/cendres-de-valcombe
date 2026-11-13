@@ -1051,8 +1051,10 @@ public final class StructureWorkshop implements WorldManager.Listener {
 		}
 		queue.tick(server);
 		if (level == null || level.players().isEmpty()) {
+			hover.clear();
 			return;
 		}
+		hover();
 		if (ticks % 100 == 50 && !queue.busy()) {
 			sync(level);
 		}
@@ -1129,14 +1131,55 @@ public final class StructureWorkshop implements WorldManager.Listener {
 				worlds.teleport(p, e.id());
 			}
 		}
-		if (first && p.level() == level) {
-			// Première visite : face aux rangées, le pupitre d'accueil devant soi.
-			p.teleportTo(level, 0.5, S + 1, 0.5, Set.of(), 0f, 10f, false);
-		}
+		boolean above = first && p.level() == level && overlook(p, level);
 		int n = layout(level).parcelles.size();
 		return (created ? "Atelier des structures créé. " : "") + "Te voilà dans l'atelier des structures : " + n + " parcelles"
 			+ (queue.busy() ? " (la pose est en cours, une barre suit l'avancement)" : "")
+			+ (above ? ", vues d'en haut depuis l'accueil" : "")
 			+ ". Le pupitre de chaque parcelle ouvre ses actions ; celui de l'accueil, la liste et « Nouvelle structure ».";
+	}
+
+	/**
+	 * La vue d'arrivée (voir {@link StructurePlots#overview}), en coordonnées du monde : { x, y, z, yaw, pitch }. En vol
+	 * au-dessus de l'accueil, toutes les rangées en vue. Fil du serveur.
+	 */
+	public double[] overview() {
+		ServerLevel level = levelIfOpen();
+		StructurePlots.View v = StructurePlots.overview(level == null ? new StructurePlots.Layout() : layout(level));
+		return new double[] {v.x(), S + 1 + v.height(), v.z(), v.yaw(), v.pitch()};
+	}
+
+	/**
+	 * Première visite : le joueur arrive en vol au-dessus de l'accueil, le regard plongeant sur les rangées de parcelles
+	 * (il voit d'un coup tout ce que l'atelier contient, puis descend où il veut). Sans le droit de voler, il retombe au
+	 * sol sans dommage : les mondes de Valcombe n'ont pas de dégâts de chute.
+	 */
+	private boolean overlook(ServerPlayer p, ServerLevel level) {
+		StructurePlots.View v = StructurePlots.overview(layout(level));
+		p.teleportTo(level, v.x(), S + 1 + v.height(), v.z(), Set.of(), v.yaw(), v.pitch(), false);
+		// Le mode créatif de l'atelier peut n'arriver qu'au tick suivant : le vol est donné dès qu'il est permis.
+		hover.put(p.getUUID(), 40);
+		hover();
+		return true;
+	}
+
+	/** Joueurs arrivés en l'air (vue d'arrivée) à mettre en vol dès que leur mode le permet, et ticks restants pour cela. */
+	private final Map<UUID, Integer> hover = new HashMap<>();
+
+	private void hover() {
+		hover.entrySet().removeIf(e -> {
+			ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
+			if (p == null || !isWorkshop(p.level())) {
+				return true;
+			}
+			if (p.getAbilities().mayfly) {
+				p.getAbilities().flying = true;
+				p.onUpdateAbilities();
+				return true;
+			}
+			e.setValue(e.getValue() - 1);
+			return e.getValue() <= 0;
+		});
 	}
 
 	/** Marque cette parcelle comme choisie par le joueur (l'écran, avant une action) ; renvoie son nom. */
