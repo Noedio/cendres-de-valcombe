@@ -374,7 +374,12 @@ public class RecetteGameTest implements FabricClientGameTest {
 			case "info", "grimoire" -> send(ctx, "vc dormir");
 			case "vote" -> send(ctx, "vc vote oui");
 			case "confirm" -> send(ctx, "vc envoyer");
-			default -> ctx.waitTicks(5);
+			// Décision en direct du Conteur (« ... trompe-t-il ... ? », Goule) : la première réponse proposée.
+			case "decide" -> send(ctx, "vc decider 0");
+			default -> {
+				System.out.println("[valcombe-test] recette : invite « " + type + " » sans réponse, on attend");
+				ctx.waitTicks(5);
+			}
 		}
 	}
 
