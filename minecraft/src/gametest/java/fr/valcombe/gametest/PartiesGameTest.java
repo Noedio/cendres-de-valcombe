@@ -1,12 +1,14 @@
 package fr.valcombe.gametest;
 
+import static fr.valcombe.gametest.AdminHttp.json;
+import static fr.valcombe.gametest.TestKit.clickHd;
+import static fr.valcombe.gametest.TestKit.hdButton;
+import static fr.valcombe.gametest.TestKit.layoutProblem;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.hd.HdButton;
-import fr.valcombe.client.hd.HdScreen;
 import fr.valcombe.client.screen.MainScreen;
 import fr.valcombe.client.screen.PartiesScreen;
 import fr.valcombe.mc.ValcombeMod;
@@ -18,11 +20,6 @@ import fr.valcombe.mc.hub.Hub;
 import fr.valcombe.mc.hub.HubHall;
 import fr.valcombe.mc.worlds.WorldEntry;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -30,9 +27,6 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -50,7 +44,8 @@ import net.minecraft.world.level.block.Blocks;
  * le monde par une commande fait de même ; l'API d'administration liste, crée et supprime les parties.
  */
 public class PartiesGameTest implements FabricClientGameTest {
-	private static final String HEADER = "X-Valcombe-Admin";
+	/** L'API d'administration (réponse attendue au plus 600 ticks), ouverte à l'étape 8. */
+	private AdminHttp api;
 
 	private static void check(boolean ok, String what) {
 		if (!ok) {
@@ -122,78 +117,6 @@ public class PartiesGameTest implements FabricClientGameTest {
 	// Écran
 	// ------------------------------------------------------------------
 
-	private static int field(Screen s, String name) {
-		try {
-			var f = fr.valcombe.client.screen.BaseScreen.class.getDeclaredField(name);
-			f.setAccessible(true);
-			return f.getInt(s);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError(e);
-		}
-	}
-
-	/** Un widget visible hors du panneau, ou deux qui se chevauchent ; null si la mise en page est bonne. */
-	private static String layoutProblem(Minecraft mc) {
-		Screen s = mc.gui.screen();
-		if (!(s instanceof HdScreen)) {
-			return "pas un écran haute résolution : " + s;
-		}
-		int px = field(s, "px");
-		int py = field(s, "py");
-		int pw = field(s, "pw");
-		int ph = field(s, "ph");
-		if (px < 0 || py - 9 < 0 || px + pw > s.width || py + ph > s.height) {
-			return "panneau hors de l'écran (" + px + ", " + py + ", " + pw + " x " + ph + ") dans " + s.width + " x " + s.height;
-		}
-		List<AbstractWidget> ws = new ArrayList<>();
-		for (GuiEventListener child : s.children()) {
-			if (child instanceof AbstractWidget w && w.visible) {
-				ws.add(w);
-			}
-		}
-		for (AbstractWidget w : ws) {
-			if (w.getX() < px + 4 || w.getY() < py + 4 || w.getRight() > px + pw - 4 || w.getBottom() > py + ph - 4) {
-				return "« " + w.getMessage().getString() + " » sort du panneau";
-			}
-		}
-		for (int i = 0; i < ws.size(); i++) {
-			for (int j = i + 1; j < ws.size(); j++) {
-				AbstractWidget a = ws.get(i);
-				AbstractWidget b = ws.get(j);
-				if (a.getX() < b.getRight() && b.getX() < a.getRight() && a.getY() < b.getBottom() && b.getY() < a.getBottom()) {
-					return "« " + a.getMessage().getString() + " » chevauche « " + b.getMessage().getString() + " »";
-				}
-			}
-		}
-		return null;
-	}
-
-	private static HdButton find(Minecraft mc, String label) {
-		if (mc.gui.screen() == null) {
-			return null;
-		}
-		for (GuiEventListener w : mc.gui.screen().children()) {
-			if (w instanceof HdButton b && b.visible && b.getMessage().getString().equals(label)) {
-				return b;
-			}
-		}
-		return null;
-	}
-
-	/** Clique le bouton de l'écran ouvert qui porte ce libellé ; faux s'il n'y est pas ou s'il est grisé. */
-	private static boolean click(ClientGameTestContext ctx, String label) {
-		boolean done = ctx.computeOnClient(mc -> {
-			HdButton b = find(mc, label);
-			if (b == null || !b.active) {
-				return false;
-			}
-			b.press();
-			return true;
-		});
-		ctx.waitTicks(12);
-		return done;
-	}
-
 	private static void scale(ClientGameTestContext ctx, int guiScale, int windowW, int windowH) {
 		ctx.getInput().resizeWindow(windowW, windowH);
 		ctx.runOnClient(mc -> {
@@ -245,30 +168,6 @@ public class PartiesGameTest implements FabricClientGameTest {
 	// ------------------------------------------------------------------
 	// API d'administration
 	// ------------------------------------------------------------------
-
-	private HttpClient http;
-	private String base;
-
-	private HttpResponse<String> fetch(ClientGameTestContext ctx, HttpRequest req) {
-		var future = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
-		for (int i = 0; i < 600 && !future.isDone(); i++) {
-			ctx.waitTick();
-		}
-		return future.join();
-	}
-
-	private HttpResponse<String> get(ClientGameTestContext ctx, String path) {
-		return fetch(ctx, HttpRequest.newBuilder(URI.create(base + path)).header(HEADER, ValcombeMod.adminKey().key()).build());
-	}
-
-	private HttpResponse<String> post(ClientGameTestContext ctx, String path, String body) {
-		return fetch(ctx, HttpRequest.newBuilder(URI.create(base + path)).header(HEADER, ValcombeMod.adminKey().key())
-			.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build());
-	}
-
-	private static JsonObject json(HttpResponse<String> r) {
-		return JsonParser.parseString(r.body()).getAsJsonObject();
-	}
 
 	private static JsonObject gameIn(JsonArray list, String id) {
 		for (var e : list) {
@@ -402,33 +301,33 @@ public class PartiesGameTest implements FabricClientGameTest {
 			// 5. L'écran, à 427 × 240 : mise en page, boutons, captures sur la partie d'essai et sur la principale en cours.
 			scale(ctx, 2, 854, 480);
 			ctx.setScreen(() -> new PartiesScreen(essai));
-			check(waitClient(ctx, 60, mc -> PartiesScreen.games().size() >= 2 && find(mc, "Rejoindre") != null), "écran rempli");
-			String problem = ctx.computeOnClient(PartiesGameTest::layoutProblem);
+			check(waitClient(ctx, 60, mc -> PartiesScreen.games().size() >= 2 && hdButton(mc, "Rejoindre") != null), "écran rempli");
+			String problem = ctx.computeOnClient(mc -> layoutProblem(mc, false));
 			check(problem == null, "mise en page de l'écran Parties : " + problem);
-			check(ctx.computeOnClient(mc -> find(mc, "Regarder") != null && find(mc, "Créer une partie d'essai") != null
-				&& find(mc, "Retour") != null && find(mc, "Supprimer") != null), "boutons de l'écran, opérateur compris");
+			check(ctx.computeOnClient(mc -> hdButton(mc, "Regarder") != null && hdButton(mc, "Créer une partie d'essai") != null
+				&& hdButton(mc, "Retour") != null && hdButton(mc, "Supprimer") != null), "boutons de l'écran, opérateur compris");
 			shot(ctx, "parties-ecran-essai");
 			ctx.setScreen(() -> new PartiesScreen(mainId));
-			check(waitClient(ctx, 40, mc -> find(mc, "Rejoindre") != null), "fiche de la principale");
-			check(ctx.computeOnClient(mc -> !find(mc, "Rejoindre").active && find(mc, "Regarder").active
-				&& find(mc, "Suspendre") != null && find(mc, "Supprimer") == null),
+			check(waitClient(ctx, 40, mc -> hdButton(mc, "Rejoindre") != null), "fiche de la principale");
+			check(ctx.computeOnClient(mc -> !hdButton(mc, "Rejoindre").active && hdButton(mc, "Regarder").active
+				&& hdButton(mc, "Suspendre") != null && hdButton(mc, "Supprimer") == null),
 				"partie en cours : on la regarde, on ne la rejoint pas ; elle se met en suspens, elle ne se supprime pas");
-			problem = ctx.computeOnClient(PartiesGameTest::layoutProblem);
+			problem = ctx.computeOnClient(mc -> layoutProblem(mc, false));
 			check(problem == null, "mise en page, fiche de la principale : " + problem);
 			shot(ctx, "parties-ecran-en-cours");
 			// Supprimer demande une confirmation.
 			ctx.setScreen(() -> new PartiesScreen(essai));
 			ctx.waitTicks(10);
-			check(click(ctx, "Supprimer"), "« Supprimer »");
-			check(waitClient(ctx, 20, mc -> find(mc, "Confirmer") != null && find(mc, "Annuler") != null), "confirmation demandée");
+			check(clickHd(ctx, "Supprimer"), "« Supprimer »");
+			check(waitClient(ctx, 20, mc -> hdButton(mc, "Confirmer") != null && hdButton(mc, "Annuler") != null), "confirmation demandée");
 			shot(ctx, "parties-ecran-confirmer");
-			check(click(ctx, "Annuler"), "« Annuler »");
+			check(clickHd(ctx, "Annuler"), "« Annuler »");
 			check(server.computeOnServer(s -> Games.byWorld(essai) != null), "rien de supprimé sans confirmation");
 
 			// 6. Rejoindre : inscrit au salon de la partie d'essai, et emmené dans son monde.
 			ctx.setScreen(() -> new PartiesScreen(essai));
 			ctx.waitTicks(10);
-			check(click(ctx, "Rejoindre"), "« Rejoindre »");
+			check(clickHd(ctx, "Rejoindre"), "« Rejoindre »");
 			check(waitFor(ctx, world, 200, s -> Games.byWorld(essai).session().lobby().contains(me) && dimensionOf(s, me).equals(essaiDim)),
 				"inscrit à la partie d'essai, dans son monde");
 			check(server.computeOnServer(s -> !Games.main().session().belongs(me)), "et à aucune autre table");
@@ -441,7 +340,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 			GameType before = server.computeOnServer(s -> mode(s, me));
 			ctx.setScreen(() -> new PartiesScreen(mainId));
 			ctx.waitTicks(10);
-			check(click(ctx, "Regarder"), "« Regarder »");
+			check(clickHd(ctx, "Regarder"), "« Regarder »");
 			check(waitFor(ctx, world, 200, s -> Games.main().session().isWatcher(me) && dimensionOf(s, me).equals(mainDim)),
 				"dans le monde de la partie principale, dans ses gradins");
 			check(server.computeOnServer(s -> mode(s, me) == GameType.SPECTATOR), "en mode spectateur");
@@ -463,8 +362,8 @@ public class PartiesGameTest implements FabricClientGameTest {
 			place(world, me, mainId, center.getX() + 0.5, center.getY() + 18, center.getZ() + 16.5, 180f, 40f);
 			shot(ctx, "parties-regarder");
 			ctx.setScreen(MainScreen::new);
-			check(waitClient(ctx, 40, mc -> find(mc, "Arrêter de regarder") != null), "menu J : « Arrêter de regarder »");
-			check(click(ctx, "Arrêter de regarder"), "« Arrêter de regarder »");
+			check(waitClient(ctx, 40, mc -> hdButton(mc, "Arrêter de regarder") != null), "menu J : « Arrêter de regarder »");
+			check(clickHd(ctx, "Arrêter de regarder"), "« Arrêter de regarder »");
 			check(waitFor(ctx, world, 200, s -> dimensionOf(s, me).equals(hubDim) && !Games.main().session().isWatcher(me)
 				&& !Games.main().session().isSpectator(me)), "retour au hub, sorti des gradins");
 			check(server.computeOnServer(s -> mode(s, me) == before), "son mode de jeu lui est rendu : " + before);
@@ -477,18 +376,8 @@ public class PartiesGameTest implements FabricClientGameTest {
 			check(waitClient(ctx, 100, mc -> ClientState.obj(ClientState.view(), "parties") != null), "au hub, le tableau revient dans sa vue");
 
 			// 8. L'API d'administration : la liste, l'état des mondes, la création et la suppression.
-			if (ValcombeMod.community().tabletPort() != 25591) {
-				ValcombeMod.community().setTabletPort(25591);
-			}
-			int port;
-			try {
-				port = ValcombeMod.tablet().adminOpen() ? ValcombeMod.tablet().port() : ValcombeMod.tablet().openAdmin();
-			} catch (java.io.IOException e) {
-				throw new AssertionError("API d'administration non ouverte", e);
-			}
-			http = HttpClient.newHttpClient();
-			base = "http://127.0.0.1:" + port;
-			var list = get(ctx, "/admin/parties");
+			api = AdminHttp.open(600);
+			var list = api.get(ctx, "/admin/parties");
 			check(list.statusCode() == 200, "GET /admin/parties : " + list.statusCode() + " " + list.body());
 			JsonObject board = json(list);
 			JsonObject mainCard = gameIn(board.getAsJsonArray("parties"), mainId);
@@ -498,7 +387,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 			check(mainCard != null && "en-cours".equals(mainCard.get("statut").getAsString()) && mainCard.get("places").getAsInt() > 0
 				&& essaiCard != null && "ouverte".equals(essaiCard.get("statut").getAsString()) && essaiCard.get("participants").getAsInt() == 3,
 				"chaque partie avec son statut, ses places et ses participants");
-			JsonObject etat = json(get(ctx, "/admin/etat"));
+			JsonObject etat = json(api.get(ctx, "/admin/etat"));
 			boolean worldState = false;
 			for (var w : etat.getAsJsonArray("mondes")) {
 				JsonObject o = w.getAsJsonObject();
@@ -507,18 +396,18 @@ public class PartiesGameTest implements FabricClientGameTest {
 				}
 			}
 			check(worldState, "l'état donne la partie de chaque monde de partie");
-			check(post(ctx, "/admin/parties", "{}").statusCode() == 400, "créer sans nom : 400");
-			var mainDelete = post(ctx, "/admin/parties/supprimer", "{\"partie\": \"" + mainId + "\"}");
+			check(api.post(ctx, "/admin/parties", "{}").statusCode() == 400, "créer sans nom : 400");
+			var mainDelete = api.post(ctx, "/admin/parties/supprimer", "{\"partie\": \"" + mainId + "\"}");
 			check(mainDelete.statusCode() == 409, "la partie principale ne se supprime pas : " + mainDelete.statusCode());
-			check(post(ctx, "/admin/parties/supprimer", "{\"partie\": \"aucune-" + stamp + "\"}").statusCode() == 404, "partie inconnue : 404");
+			check(api.post(ctx, "/admin/parties/supprimer", "{\"partie\": \"aucune-" + stamp + "\"}").statusCode() == 404, "partie inconnue : 404");
 			String apiName = "Essai API " + stamp;
-			var created = post(ctx, "/admin/parties", "{\"nom\": \"" + apiName + "\"}");
+			var created = api.post(ctx, "/admin/parties", "{\"nom\": \"" + apiName + "\"}");
 			check(created.statusCode() == 200, "POST /admin/parties : " + created.statusCode() + " " + created.body());
 			String apiId = json(created).getAsJsonObject("partie").get("id").getAsString();
 			check(server.computeOnServer(s -> Games.byWorld(apiId) != null), "partie d'essai créée par l'API : " + apiId);
 			check(waitFor(ctx, world, 2400, s -> !ValcombeMod.sender().busy(apiId)), "son village posé");
 			check(waitFor(ctx, world, 200, s -> cardOf(s, hubId, apiId) != null), "sa fiche paraît au tableau du hub");
-			var deleted = post(ctx, "/admin/parties/supprimer", "{\"partie\": \"" + apiId + "\"}");
+			var deleted = api.post(ctx, "/admin/parties/supprimer", "{\"partie\": \"" + apiId + "\"}");
 			check(deleted.statusCode() == 200 && json(deleted).get("ok").getAsBoolean(), "POST /admin/parties/supprimer : " + deleted.body());
 			check(waitFor(ctx, world, 600, s -> Games.byWorld(apiId) == null && ValcombeMod.worlds().find(apiId) == null
 				&& !ValcombeMod.worlds().busy(apiId)), "partie et monde supprimés");
@@ -547,7 +436,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 					mc.gui.setScreen(new PartiesScreen(pick));
 				});
 				ctx.waitTicks(3);
-				problem = ctx.computeOnClient(PartiesGameTest::layoutProblem);
+				problem = ctx.computeOnClient(mc -> layoutProblem(mc, false));
 				check(problem == null, "mise en page, vue fabriquée (" + pick + ") : " + problem);
 				System.out.println("[valcombe-test] capture : " + ctx.takeScreenshot("valcombe-parties-vignettes-" + pick));
 			}
@@ -555,7 +444,7 @@ public class PartiesGameTest implements FabricClientGameTest {
 			scale(ctx, 3, 1600, 900);
 			ctx.setScreen(() -> new PartiesScreen(mainId));
 			ctx.waitTicks(10);
-			problem = ctx.computeOnClient(PartiesGameTest::layoutProblem);
+			problem = ctx.computeOnClient(mc -> layoutProblem(mc, false));
 			check(problem == null, "mise en page à l'échelle 3 : " + problem);
 			shot(ctx, "parties-ecran-echelle-3");
 			ctx.setScreen(() -> null);

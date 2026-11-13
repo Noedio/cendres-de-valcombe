@@ -1883,11 +1883,33 @@ public partial class MainWindow
 
         // Serveur loué (tunnel SSH fictif) : en ligne avec une mise à jour proposée, puis arrêté et démarré d'ici.
         await Tab("apercu");
+        // Le compte rendu de la restauration de ce PC ne suit pas sur les images du serveur loué.
+        SetStatus("Prêt.", 0);
         SrvPicker.SelectedIndex = 1;
         await SrvPollAsync(force: true);
         await Until(() => SrvUpdateButton.Visibility == Visibility.Visible, "la mise à jour proposée");
         await Task.Delay(200);
         await SnapshotAsync(dir, "Server-loue");
+        // Ses onglets, par le tunnel : la console, les réglages, les parties et les sauvegardes du serveur loué.
+        await Tab("console");
+        SrvCommandBox.Text = "list";
+        SrvSendCommand(this, new RoutedEventArgs());
+        await Task.Delay(200);
+        await SrvPollAsync(force: true);
+        await Task.Delay(300);
+        await SnapshotAsync(dir, "Server-loue-console");
+        await Tab("reglages");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-loue-reglages");
+        await Tab("parties");
+        await Until(() => _gm != null && GmList.Children.Count > 0, "le tableau des parties du serveur loué");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-loue-parties");
+        await Tab("sauvegardes");
+        await Until(() => _bk is { Sauvegardes.Count: > 0 }, "les sauvegardes du serveur loué");
+        await Task.Delay(200);
+        await SnapshotAsync(dir, "Server-loue-sauvegardes");
+        await Tab("apercu");
         var vpsApi = _srvDemoManaged!.Api;
         vpsApi.Halt();
         _srvManagedAt = DateTime.MinValue;
