@@ -115,8 +115,10 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		final String world;
 		/** Les repères (et réglages) de la carte ; null tant qu'une pose est en cours. */
 		Village v;
-		/** Pose en cours : « carte » (de la bibliothèque) ou « village » (généré) ; null sinon. */
+		/** Pose en cours : « carte » (de la bibliothèque), « village » (généré) ou « import » (fichier) ; null sinon. */
 		String pose;
+		/** Fichier du dossier d'import en cours de pose (pour la reprendre après un arrêt). */
+		String fichier;
 		/** Réglages du village généré en cours de pose (pour la reprendre après un arrêt). */
 		int places = Village.SEATS;
 		int taille = 1;
@@ -152,6 +154,7 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		int portee;
 		String enregistreLe;
 		String pose;
+		String fichier;
 		int places = Village.SEATS;
 		int taille = 1;
 		String theme = "gothique";
@@ -327,7 +330,8 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 			d.signature = s.signature;
 			d.reach = Math.max(0, s.portee);
 			d.savedAt = s.enregistreLe == null ? null : Instant.parse(s.enregistreLe);
-			d.pose = "carte".equals(s.pose) || "village".equals(s.pose) ? s.pose : null;
+			d.pose = "carte".equals(s.pose) || "village".equals(s.pose) || "import".equals(s.pose) && s.fichier != null ? s.pose : null;
+			d.fichier = s.fichier;
 			d.places = s.places;
 			d.taille = s.taille;
 			d.theme = s.theme == null ? "gothique" : s.theme;
@@ -343,6 +347,7 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		s.portee = d.reach;
 		s.enregistreLe = d.savedAt == null ? null : d.savedAt.toString();
 		s.pose = d.pose;
+		s.fichier = d.fichier;
 		s.places = d.places;
 		s.taille = d.taille;
 		s.theme = d.theme;
@@ -383,6 +388,8 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		try {
 			if ("village".equals(d.pose)) {
 				startVillage(e, level, d, MapSender.village(d.places, d.taille, d.theme, d.maisons), null);
+			} else if ("import".equals(d.pose)) {
+				startImport(e, level, d, d.fichier, importClip(d.fichier), null);
 			} else {
 				String id = mapId(e);
 				if (!maps.exists(id)) {
@@ -521,6 +528,88 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 					}
 				}
 			});
+	}
+
+	/** Les blocs d'un fichier du dossier d'import (.schem, .litematic, .nbt), lus et contrôlés ; une GameException sinon. */
+	private Clip importClip(String fileName) {
+		StructureStore store = ValcombeMod.structures();
+		if (store == null) {
+			throw new GameException("Le catalogue de structures n'est pas prêt : réessayez dans un instant.");
+		}
+		return SchematicImporter.read(fileName, store.inboxFile(fileName),
+			server.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK));
+	}
+
+	/**
+	 * Pose une construction importée au centre de cet atelier, comme un envoi à la partie le ferait : elle arrive sans
+	 * repères (on les pose ensuite avec les outils), et la carte est à enregistrer.
+	 */
+	private void startImport(WorldEntry e, ServerLevel level, Draft d, String fileName, Clip clip, ServerPlayer watcher) {
+		d.pose = "import";
+		d.fichier = fileName;
+		d.v = null;
+		writeState(e, d);
+		BlockPos corner = CENTER.offset(-clip.width / 2, 0, -clip.length / 2);
+		int radius = Math.min(MapStore.MAX_RADIUS, Math.max(clip.width, clip.length) / 2 + 2);
+		UUID viewer = watcher == null ? null : watcher.getUUID();
+		placer.build("Import de « " + fileName + " » dans l'atelier « " + e.nom() + " »", level, clip.plan(level, corner, false, false),
+			CENTER, radius, p -> p.getUUID().equals(viewer)).whenComplete((ok, error) -> {
+				if (drafts.get(e.id()) != d) {
+					return;
+				}
+				if (error != null) {
+					d.failedAt = ticks;
+					tellWorld(level, Component.literal("[Valcombe] L'import de « " + fileName + " » dans l'atelier « " + e.nom()
+						+ " » a échoué : " + failure(error)).withStyle(ChatFormatting.RED));
+					return;
+				}
+				Village v = Village.custom(CENTER);
+				v.setLibrary(mapId(e), e.nom());
+				d.v = v;
+				d.pose = null;
+				d.fichier = null;
+				d.undo.clear();
+				d.prefabs.clear();
+				// Tout ce qui vient d'être posé est à enregistrer, jusqu'au bord de la construction.
+				d.reach = Math.max(d.reach, radius);
+				saveDraft(e, d);
+				d.signature = null;
+				d.changed = true;
+				d.lastSave = ticks;
+				writeState(e, d);
+				ServerPlayer p = viewer == null ? null : server.getPlayerList().getPlayer(viewer);
+				if (p != null) {
+					try {
+						arrive(p, e, d);
+					} catch (GameException ex) {
+						p.sendSystemMessage(Component.literal("[Valcombe] La construction est posée dans son atelier, mais " + ex.getMessage()
+							+ " ").withStyle(ChatFormatting.GOLD).append(link("[Y aller]", "/vc atelier carte aller " + e.id(), "Aller dans l'atelier")));
+					}
+				}
+			});
+	}
+
+	/**
+	 * Ouvre un atelier sur une construction importée : un fichier .schem, .litematic ou .nbt déposé dans le dossier
+	 * d'import du serveur, posé au centre d'un monde neuf. On y pose ensuite les repères, puis on l'enregistre.
+	 */
+	public String openImport(String fileName, String name, ServerPlayer by) {
+		requireOperator(by);
+		Clip clip = importClip(fileName); // lu et contrôlé avant de créer le monde : un fichier abîmé ne laisse pas d'atelier vide
+		String base = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+		String nom = AtelierLinks.cleanName(name == null || name.isBlank() ? base.replace('_', ' ') : name);
+		if (nom == null) {
+			throw new GameException("Nom de carte : 1 à 50 caractères, sans code de mise en forme.");
+		}
+		String id = freeMapId(nom);
+		WorldEntry e = worlds.create(WorldKind.ATELIER_CARTE, nom);
+		e = worlds.setCarte(e.id(), id);
+		Draft d = new Draft(e.id());
+		d.lastSave = ticks;
+		drafts.put(e.id(), d);
+		startImport(e, worlds.level(e.id()), d, fileName, clip, by);
+		return "Import de « " + fileName + " » (" + clip.dims() + ") dans l'atelier « " + nom + " » : vous y serez conduit à la fin. "
+			+ "Posez ensuite les trônes et les maisons, puis enregistrez." + McHost.PROGRESS;
 	}
 
 	private static String failure(Throwable t) {
@@ -769,10 +858,34 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		return e;
 	}
 
+	/**
+	 * L'atelier carte que désigne text (identifiant de sa carte, identifiant ou nom de l'atelier), pour agir dessus sans
+	 * y être (Atelier en jeu, liste des ateliers ouverts) ; une GameException s'il n'y en a pas.
+	 */
+	private WorldEntry named(String text) {
+		WorldEntry e = atelierOf(text == null ? null : text.strip());
+		if (e == null) {
+			if (ateliers().isEmpty()) {
+				throw new GameException("Aucun atelier carte ouvert.");
+			}
+			e = WorldLookup.resolve(ateliers(), text);
+		}
+		return e;
+	}
+
 	/** « Enregistrer » : la carte de l'atelier où se tient ce joueur va dans la bibliothèque, avec une version. */
 	public String save(ServerPlayer p) {
 		requireOperator(p);
-		WorldEntry e = here(p);
+		return save(here(p));
+	}
+
+	/** « Enregistrer » un atelier désigné (voir named), d'où que l'on soit : réservé aux opérateurs. */
+	public String save(ServerPlayer p, String atelier) {
+		requireOperator(p);
+		return save(named(atelier));
+	}
+
+	private String save(WorldEntry e) {
 		Draft d = ready(e);
 		Saved s = store(e, d, MapVersions.Kind.MANUELLE, null, null, false);
 		if (s.capture() == null) {
@@ -929,7 +1042,17 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 	 */
 	public String close(ServerPlayer p, boolean confirm) {
 		requireOperator(p);
-		WorldEntry e = here(p);
+		return close(p, here(p), confirm, "/vc atelier carte fermer confirmer");
+	}
+
+	/** « Fermer l'atelier » désigné (voir named), d'où que l'on soit : réservé aux opérateurs. */
+	public String close(ServerPlayer p, String atelier, boolean confirm) {
+		requireOperator(p);
+		WorldEntry e = named(atelier);
+		return close(p, e, confirm, "/vc atelier carte fermer " + e.id() + " confirmer");
+	}
+
+	private String close(ServerPlayer p, WorldEntry e, boolean confirm, String confirmCommand) {
 		Draft d = draft(e);
 		if (d.v == null && !placing(e) && confirm) {
 			// La pose de la carte a échoué : rien à enregistrer, l'atelier est fermé tel quel.
@@ -942,7 +1065,7 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 		if (!confirm) {
 			p.sendSystemMessage(Component.literal("Fermer l'atelier de « " + nom + " » ? La carte est d'abord enregistrée, puis le monde "
 				+ "de l'atelier est supprimé (ceux qui s'y trouvent vont au hub). ").withStyle(ChatFormatting.GOLD)
-				.append(link("[Fermer l'atelier]", "/vc atelier carte fermer confirmer", "Enregistrer, puis fermer l'atelier")));
+				.append(link("[Fermer l'atelier]", confirmCommand, "Enregistrer, puis fermer l'atelier")));
 			return "";
 		}
 		String id = mapId(e);
@@ -1898,6 +2021,8 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 			ServerLevel level = server.getLevel(WorldManager.key(e.id()));
 			o.put("joueurs", level == null ? 0 : level.players().size());
 			o.put("ici", here != null && here.id().equals(e.id()));
+			// Pose ou construction en cours (carte, village, import) : rien ne s'y enregistre encore.
+			o.put("pose", d == null ? pendingPose(e) : d.v == null || placing(e));
 			list.add(o);
 		}
 		m.put("ateliers", list);

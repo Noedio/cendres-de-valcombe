@@ -140,6 +140,22 @@ final class BuildQueue {
 		jobs.add(new Job(label, level, plan, done, audience, cancelled));
 	}
 
+	/**
+	 * Un chantier en cours ou en attente : son libellé (celui de la barre), son monde et son avancement (0 à 1 ; 0 pour
+	 * un chantier qui attend son tour). Pour les écrans qui suivent les chantiers (l'Atelier en jeu).
+	 */
+	record Progress(String label, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> level, float done) {
+	}
+
+	/** Les chantiers de la file, le chantier en cours d'abord. */
+	List<Progress> progress() {
+		List<Progress> out = new ArrayList<>();
+		for (Job j : jobs) {
+			out.add(new Progress(j.label, j.level.dimension(), j.total == 0 ? 0f : Math.min(1f, (float) ((double) j.cursor / j.total))));
+		}
+		return out;
+	}
+
 	/** Un chantier est-il en cours ou en attente dans ce monde ? */
 	boolean busy(ServerLevel level) {
 		return jobs.stream().anyMatch(j -> j.level == level);

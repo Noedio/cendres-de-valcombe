@@ -335,6 +335,29 @@ public final class MapVersions {
 		cache.remove(mapId);
 	}
 
+	/**
+	 * La carte part à la corbeille : ses versions la suivent dans le dossier to (rien si elle n'en a pas), pour revenir
+	 * avec elle si on la restaure.
+	 */
+	synchronized void moveOut(String mapId, Path to) throws IOException {
+		Path from = dir(mapId);
+		cache.remove(mapId);
+		if (Files.isDirectory(from)) {
+			Files.createDirectories(to.getParent());
+			Files.move(from, to);
+		}
+	}
+
+	/** La carte revient de la corbeille (sous mapId, peut-être un autre identifiant) : ses versions aussi. */
+	synchronized void moveIn(Path from, String mapId) throws IOException {
+		Path to = dir(mapId);
+		cache.remove(mapId);
+		if (Files.isDirectory(from) && !Files.exists(to)) {
+			Files.createDirectories(root);
+			Files.move(from, to);
+		}
+	}
+
 	/** Efface ce dossier et tout ce qu'il contient (une erreur est notée dans le journal, sans plus). */
 	private static void deleteTree(Path dir) {
 		if (!Files.exists(dir)) {

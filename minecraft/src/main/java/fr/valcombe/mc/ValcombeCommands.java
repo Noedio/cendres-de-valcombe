@@ -708,6 +708,16 @@ public final class ValcombeCommands {
 					.then(Commands.argument("id", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
 						.executes(c -> exec(c, x -> ValcombeMod.maps().delete(arg(x, "id"))))))
+				// La corbeille : une carte supprimée y reste un mois, ses versions avec elle.
+				.then(Commands.literal("restaurer")
+					.then(Commands.argument("corbeille", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().trashed().stream().map(e -> e.id()), b))
+						.executes(c -> exec(c, x -> ValcombeMod.maps().restore(arg(x, "corbeille"))))))
+				// Un fichier .valcombe dans le dossier des partages du serveur, à envoyer à qui le veut.
+				.then(Commands.literal("exporter")
+					.then(Commands.argument("id", StringArgumentType.word())
+						.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.maps().list().stream().map(d -> d.id), b))
+						.executes(c -> exec(c, x -> ValcombeMod.workshop().exportMap(arg(x, "id"))))))
 				.then(Commands.literal("generer")
 					.then(Commands.argument("places", IntegerArgumentType.integer(Village.MIN_SEATS, Village.MAX_SEATS))
 						.executes(c -> exec(c, x -> sender(x).sendVillage(IntegerArgumentType.getInteger(x, "places"), 1,

@@ -63,6 +63,21 @@ public class HdButton extends WaxButton implements HdTooltipped, HdKeyed {
 		return style;
 	}
 
+	/**
+	 * Action principale de l'écran (« la suite », celle qu'on attend de l'utilisateur) : un halo doré qui respire
+	 * l'entoure tant qu'elle est active. Une seule par écran.
+	 */
+	public HdButton primary() {
+		this.primary = true;
+		return this;
+	}
+
+	public boolean isPrimary() {
+		return primary;
+	}
+
+	private boolean primary;
+
 	@Override
 	protected void extractContents(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
 		try (Hd hd = Hd.begin(g)) {
@@ -70,10 +85,28 @@ public class HdButton extends WaxButton implements HdTooltipped, HdKeyed {
 			int y = hd.px(getY());
 			int w = hd.px(getWidth());
 			int h = hd.px(getHeight());
+			if (primary && active) {
+				halo(hd, x, y, w, h);
+			}
 			HdSprites.Sprite sp = !active ? HdSprites.BOUTON_INACTIF
 				: isHoveredOrFocused() ? HdSprites.BOUTON_SURVOL : HdSprites.BOUTON;
 			hd.sprite(sp, x, y, w, h);
+			if (primary && active) {
+				hd.frame(x + hd.u(1), y + hd.u(1), w - 2 * hd.u(1), h - hd.u(LIP) - 2 * hd.u(1), Math.max(1, hd.u(0.5)), 0xA0F2C14E);
+			}
 			drawFace(hd, x, y, w, h - hd.u(LIP));
+		}
+	}
+
+	/** Le halo d'une action principale : trois contours dorés de plus en plus pâles, qui respirent lentement. */
+	private static void halo(Hd hd, int x, int y, int w, int h) {
+		double breath = 0.65 + 0.35 * Math.sin(net.minecraft.util.Util.getMillis() / 420.0);
+		for (int i = 1; i <= 3; i++) {
+			int d = hd.u(i * 0.75);
+			int alpha = (int) Math.round(breath * (0x70 - i * 0x18));
+			if (alpha > 0) {
+				hd.frame(x - d, y - d, w + 2 * d, h + 2 * d, Math.max(1, hd.u(0.75)), alpha << 24 | 0xF2C14E);
+			}
 		}
 	}
 

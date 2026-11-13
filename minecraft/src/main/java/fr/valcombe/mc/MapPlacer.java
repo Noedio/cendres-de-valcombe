@@ -132,6 +132,11 @@ public final class MapPlacer {
 		return queue.busy(level);
 	}
 
+	/** Les poses en cours et en attente, avec leur avancement (pour l'Atelier en jeu). */
+	List<BuildQueue.Progress> progress() {
+		return queue.progress();
+	}
+
 	// ------------------------------------------------------------------
 	// Poser
 	// ------------------------------------------------------------------

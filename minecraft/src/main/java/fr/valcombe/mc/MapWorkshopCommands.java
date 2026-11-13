@@ -26,9 +26,11 @@ import net.minecraft.server.level.ServerPlayer;
  * <ul>
  * <li>{@code liste}, {@code aller <carte|atelier>} ;</li>
  * <li>{@code ouvrir <carte>} (de la bibliothèque ; déjà en atelier : on y va), {@code nouvelle <nom>} (carte vierge),
- * {@code village <trônes> [<taille> <thème> <maisons> <nom>]} (village généré) ;</li>
+ * {@code village <trônes> [<taille> <thème> <maisons> <nom>]} (village généré), {@code importer <fichier> [nom]}
+ * (fichier .schem, .litematic ou .nbt du dossier d'import, entre guillemets s'il contient des espaces) ;</li>
  * <li>dans un atelier : {@code enregistrer}, {@code enregistrer-sous <nom>}, {@code versions}, {@code revenir <version>},
- * {@code envoyer [monde]}, {@code fermer [confirmer]}, {@code outils}.</li>
+ * {@code envoyer [monde]}, {@code fermer [confirmer]}, {@code outils} ;</li>
+ * <li>d'où que l'on soit (Atelier en jeu) : {@code enregistrer <atelier>}, {@code fermer <atelier> [confirmer]}.</li>
  * </ul>
  * Les repères se posent avec les outils, ou avec {@code /vc carte trone|maison|centre|annuler|ordonner}, qui visent
  * l'atelier où l'on se tient.
@@ -133,6 +135,10 @@ final class MapWorkshopCommands {
 			}
 			return SharedSuggestionProvider.suggest(all, b);
 		};
+		SuggestionProvider<CommandSourceStack> atelierIds = (c, b) -> {
+			MapWorkshop w = ValcombeMod.mapWorkshop();
+			return SharedSuggestionProvider.suggest(w == null ? List.of() : w.ateliers().stream().map(WorldEntry::id).toList(), b);
+		};
 		SuggestionProvider<CommandSourceStack> parties = (c, b) -> {
 			MapWorkshop w = ValcombeMod.mapWorkshop();
 			return SharedSuggestionProvider.suggest(w == null ? List.of() : w.parties().stream().map(WorldEntry::id).toList(), b);
@@ -168,7 +174,15 @@ final class MapWorkshopCommands {
 								.then(Commands.argument("nom", StringArgumentType.greedyString())
 									.executes(c -> exec(c, (p, w, x) -> w.openVillage(IntegerArgumentType.getInteger(x, "trones"),
 										size(arg(x, "taille")), arg(x, "theme"), yes(arg(x, "maisons")), arg(x, "nom"), p)))))))))
-			.then(Commands.literal("enregistrer").executes(c -> exec(c, (p, w, x) -> w.save(p))))
+			.then(Commands.literal("importer").then(Commands.argument("fichier", StringArgumentType.string())
+				.suggests((c, b) -> SharedSuggestionProvider.suggest(ValcombeMod.structures() == null ? List.of()
+					: ValcombeMod.structures().importable().stream().map(f -> f.matches("[A-Za-z0-9_.+-]+") ? f : "\"" + f + "\"").toList(), b))
+				.executes(c -> exec(c, (p, w, x) -> w.openImport(arg(x, "fichier"), null, p)))
+				.then(Commands.argument("nom", StringArgumentType.greedyString())
+					.executes(c -> exec(c, (p, w, x) -> w.openImport(arg(x, "fichier"), arg(x, "nom"), p))))))
+			.then(Commands.literal("enregistrer").executes(c -> exec(c, (p, w, x) -> w.save(p)))
+				.then(Commands.argument("atelier", StringArgumentType.greedyString()).suggests(ateliers)
+					.executes(c -> exec(c, (p, w, x) -> w.save(p, arg(x, "atelier"))))))
 			.then(Commands.literal("enregistrer-sous").then(Commands.argument("nom", StringArgumentType.greedyString())
 				.executes(c -> exec(c, (p, w, x) -> w.saveAs(p, arg(x, "nom"))))))
 			.then(Commands.literal("versions").executes(c -> exec(c, (p, w, x) -> lines(x, w.versions(p)))))
@@ -180,7 +194,11 @@ final class MapWorkshopCommands {
 					.executes(c -> exec(c, (p, w, x) -> w.send(p, arg(x, "monde"))))))
 			.then(Commands.literal("fermer")
 				.executes(c -> exec(c, (p, w, x) -> w.close(p, false)))
-				.then(Commands.literal("confirmer").executes(c -> exec(c, (p, w, x) -> w.close(p, true)))))
+				.then(Commands.literal("confirmer").executes(c -> exec(c, (p, w, x) -> w.close(p, true))))
+				// Un atelier désigné (identifiant de l'atelier ou de sa carte), d'où que l'on soit : l'Atelier en jeu.
+				.then(Commands.argument("atelier", StringArgumentType.word()).suggests(atelierIds)
+					.executes(c -> exec(c, (p, w, x) -> w.close(p, arg(x, "atelier"), false)))
+					.then(Commands.literal("confirmer").executes(c -> exec(c, (p, w, x) -> w.close(p, arg(x, "atelier"), true))))))
 			.then(Commands.literal("infos").executes(c -> exec(c, (p, w, x) -> w.info(p))))
 			.then(Commands.literal("outils").executes(c -> exec(c, (p, w, x) -> {
 				if (!w.buildsHere(p)) {

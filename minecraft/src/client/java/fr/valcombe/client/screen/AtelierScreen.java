@@ -174,7 +174,7 @@ public class AtelierScreen extends BaseScreen {
 		});
 		button(px + pw - 112, py + ph - 26, 100, "Retour", () -> {
 			armed = null;
-			minecraft.gui.setScreen(new MainScreen());
+			minecraft.gui.setScreen(new fr.valcombe.client.screen.atelier.AtelierHome());
 		});
 		if (a == null) {
 			return;

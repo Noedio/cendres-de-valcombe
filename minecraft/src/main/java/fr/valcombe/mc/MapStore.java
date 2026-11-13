@@ -82,6 +82,7 @@ public final class MapStore {
 		this.dir = creationsDir.resolve("cartes");
 		this.hosts = hosts;
 		this.versions = new MapVersions(dir);
+		this.trash = new MapTrash(dir, versions);
 	}
 
 	/** Les versions gardées des cartes (enregistrements de l'atelier carte), dans {@code cartes/versions}. */
@@ -119,6 +120,7 @@ public final class MapStore {
 	/** La bibliothèque vient de changer : la prochaine liste relit le dossier. */
 	private void changed() {
 		listed = null;
+		trashed = null;
 	}
 
 	public synchronized List<MapDef> list() {
@@ -389,15 +391,95 @@ public final class MapStore {
 				+ "l'atelier (Menu J › Mondes › « Atelier de la carte »), puis supprimez-la.");
 		}
 		changed();
+		// Elle part à la corbeille, ses versions gardées avec elle : « Restaurer » la remet telle quelle.
+		MapTrash.Entry e;
 		try {
-			Files.deleteIfExists(dir.resolve(id + ".json"));
-			Files.deleteIfExists(dir.resolve(id + ".nbt"));
-			Files.deleteIfExists(dir.resolve(id + ".png"));
-		} catch (IOException e) {
-			throw new GameException("Suppression impossible : " + e.getMessage());
+			e = trash.put(d.id);
+		} finally {
+			changed();
 		}
-		versions.forget(id); // ses versions gardées partent avec elle
-		return "Carte « " + d.nom + " » supprimée de la bibliothèque.";
+		return "Carte « " + d.nom + " » mise à la corbeille (elle y reste " + MapTrash.KEEP_DAYS + " jours). Pour la remettre dans "
+			+ "la bibliothèque : /vc carte restaurer " + e.id() + ".";
+	}
+
+	/** La corbeille de la bibliothèque (cartes supprimées, restaurables). */
+	private final MapTrash trash;
+
+	/** Les cartes à la corbeille, la plus récemment jetée d'abord (relues au plus toutes les trois secondes, et à chaque changement). */
+	public List<MapTrash.Entry> trashed() {
+		List<MapTrash.Entry> known = trashed;
+		if (known == null || System.currentTimeMillis() - trashedAt > 3000) {
+			known = List.copyOf(trash.list());
+			trashed = known;
+			trashedAt = System.currentTimeMillis();
+		}
+		return known;
+	}
+
+	private volatile List<MapTrash.Entry> trashed;
+	private long trashedAt;
+
+	/** Remet une carte de la corbeille dans la bibliothèque (sous un autre identifiant si le sien a été repris). */
+	public String restore(String trashId) {
+		changed();
+		String id;
+		try {
+			id = trash.restore(trashId, this::exists, this::copyId);
+		} finally {
+			changed();
+		}
+		MapDef d = def(id);
+		return "Carte « " + d.nom + " » remise dans la bibliothèque" + (trashId.startsWith(id + "_") ? "." : " sous l'identifiant « " + id
+			+ " » (le sien a été repris entre-temps).");
+	}
+
+	/** Date de la dernière modification d'une carte de la bibliothèque (ses fichiers), en millisecondes ; 0 si elle n'y est pas. */
+	public long modifiedAt(String id) {
+		return fileInfo(id).modified();
+	}
+
+	/**
+	 * Empreinte des fichiers d'une carte (dates et tailles) : elle change dès que la carte change. Les vignettes de
+	 * l'Atelier en jeu s'y fient pour savoir qu'il faut les refaire.
+	 */
+	public String stamp(String id) {
+		return id == null || !id.matches(ID) ? "" : fileInfo(id).stamp();
+	}
+
+	/** Date et empreinte des fichiers d'une carte. */
+	private record FileInfo(long modified, String stamp) {
+	}
+
+	/** Les dates et empreintes déjà lues : relues avec la liste (toutes les trois secondes au plus, et à chaque changement). */
+	private final java.util.Map<String, FileInfo> infos = new java.util.concurrent.ConcurrentHashMap<>();
+	private List<MapDef> infosOf;
+
+	private FileInfo fileInfo(String id) {
+		List<MapDef> now = list();
+		if (now != infosOf) {
+			infos.clear();
+			infosOf = now;
+		}
+		return infos.computeIfAbsent(id, this::readInfo);
+	}
+
+	private FileInfo readInfo(String id) {
+		long at = 0;
+		long h = 17;
+		for (String ext : List.of(".json", ".nbt", ".png")) {
+			try {
+				Path f = dir.resolve(id + ext);
+				if (Files.exists(f)) {
+					long t = Files.getLastModifiedTime(f).toMillis();
+					at = Math.max(at, t);
+					h = h * 31 + t;
+					h = h * 31 + Files.size(f);
+				}
+			} catch (IOException | RuntimeException e) {
+				h = h * 31 + 1; // fichier disparu entre-temps : on garde la date des autres
+			}
+		}
+		return new FileInfo(at, Long.toHexString(h));
 	}
 
 	/** Change le nom affiché d'une carte (son identifiant, lui, ne change pas : les scénarios s'y réfèrent). */
@@ -425,7 +507,7 @@ public final class MapStore {
 	}
 
 	/** Identifiant libre pour une copie : « port-copie », puis « port-copie-2 »… */
-	private String copyId(String id) {
+	String copyId(String id) {
 		String base = (id.length() > 22 ? id.substring(0, 22) : id) + "-copie";
 		String out = base;
 		for (int n = 2; Files.exists(dir.resolve(out + ".json")); n++) {

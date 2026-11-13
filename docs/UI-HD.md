@@ -166,6 +166,41 @@ Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 - **Données** : le champ `parties` de la vue (`liste`, `operateur`, `regarde`), envoyé seulement hors des mondes de partie : dans une partie, on ne voit qu'elle. Chaque bouton est une commande `/vc partie rejoindre|regarder|suspendre|reprendre|supprimer|creer`.
 - **Test en jeu** : `PartiesGameTest` (mise en page à 427 × 240 et à l'échelle 3, captures `valcombe-parties-*.png`, vignettes de tous les états sur une vue fabriquée).
 
+## Atelier en jeu
+
+Paquet `fr.valcombe.client.screen.atelier` (Sprint 16). Menu J › « Atelier », `/vc atelier jeu` (le serveur envoie `atelier`) : `AtelierPage.open()` repart de l'accueil.
+
+| Classe | Rôle |
+| --- | --- |
+| `AtelierPage` | Cadre commun : panneau de 720 × 420 (réduit à la fenêtre), fil d'Ariane en haut (`trail()` : une `Crumb(libellé, page)` par étape, la dernière est la page en cours), avancement de la pose de carte en cours en haut à droite (`atelier.chantiers`), « Retour » et retour du serveur en bas. Une page donne `trail()`, `buildPage()`, `drawPage(hd)`, au besoin `footerReserve()` (unités prises à droite du pied par ses boutons). Zone libre : `left()`, `right()`, `top()`, `bottom()`. Sans la vue `atelier` (pas opérateur), la page dit pourquoi et mène aux « Mondes ». |
+| `AtelierHome` | Accueil : quatre `Tile` (illustration peinte, nom, contenu en une ligne, infobulle). `AtelierHome.structures()`, `parties()`, `roles()` disent où mène chaque entrée : c'est là que les pages Structures et Rôles et scénarios se branchent. |
+| `MapsPage` | Cartes : volets Bibliothèque (galerie `HdGrid`, recherche, tri), Ateliers ouverts, Corbeille ; « Nouvelle carte ». |
+| `MapSheetPage` | Fiche d'une carte : grande vignette, détails, actions ; confirmations sur place (renommer, envoyer, supprimer). |
+| `NewMapPage` | Parcours « Nouvelle carte » en trois étapes. |
+| `AtelierArt` | Pastilles (`chip`, `ribbon`), étapes d'un parcours (`steps`), illustrations peintes (`mapScroll`, `structures`, `roles`, `compass`, `frameArt`). |
+
+Conventions :
+
+- **Chaque action** passe par `run(commande, "ce qu'on fait")` : la commande `/vc` part au serveur, « ce qu'on fait… » s'affiche (trois points) jusqu'à sa réponse, qui la remplace au pied de la page (coche verte, ou croix rouge et le refus ; le texte entier au survol). Le serveur capte la réponse des commandes `vc carte`, `vc structure(s)`, `vc atelier`, `vc scenario`, `vc annuler`, `vc retablir`, `vc baguette` (voir `Workshop.shows`) et l'envoie dans `atelier.reponse` ; `AtelierPage.reply()` ne montre que celles reçues depuis l'ouverture de l'Atelier.
+- **L'action suivante** est mise en avant : `HdButton.primary()` (halo doré qui respire, une seule par écran). Ce qui manque pour la faire est dit en rouge à côté, et le bouton reste grisé avec la raison en infobulle.
+- **Ce qui détruit** se confirme sur place : le bouton laisse la place à « Confirmer… » et « Annuler », avec la conséquence écrite en rouge.
+- L'état d'une page (volet, choix, étape) est gardé en champs statiques : il survit aux reconstructions (une par nouvelle vue du serveur) et à un aller-retour.
+
+Composants ajoutés à la boîte à outils :
+
+| Outil | Rôle |
+| --- | --- |
+| `HdGrid<T>` | Galerie de cases égales (autant de colonnes qu'il en tient, élargies pour remplir), défilement comme `HdList`, flèches dans les quatre sens. `.cell(dessin)`, `.openOnClick()`, `.onActivate()`, `.key()`, `.empty()`, `.open(nom)` (tests), `.labels()`. |
+| `HdButton.primary()` | L'action principale de l'écran. `isPrimary()` pour les tests. |
+| `HdList.choose(i)` | Choisit une ligne comme un clic (prévient `onSelect`), pour les tests. |
+| `fr.valcombe.client.Vignettes` | Images vues de dessus faites par le serveur, gardées en textures nettes avec leurs réductions : `Vignettes.draw(hd, clé, empreinte, x, y, w, h)` dessine l'image (ou un fond qui miroite en attendant, « Pas d'aperçu » si le serveur n'a pas pu). La demande part toute seule, une fois par empreinte. |
+
+Vignettes, côté serveur (`fr.valcombe.mc.Vignettes`) : paquets `valcombe:vignette_demande` (client → serveur, la clé) et `valcombe:vignette` (serveur → client : clé, empreinte, PNG de 512 × 512). Clés : `carte:<id>` (vue de dessus enregistrée avec la carte, couleurs de carte des blocs, ou tirée de ses blocs ; repères par-dessus), `village:<thème>:<trônes>:<taille>:<oui|non>` (plan d'un village généré avant de le bâtir), `partie:<monde>` (la carte en place dans un monde de partie, refaite au plus une fois par minute). L'empreinte est dans la vue (`cartes[].vignette`, `parties[].vignette`) : quand la carte change, elle change, et le client redemande l'image. Réservé aux opérateurs. Pour une autre sorte de vignette (une structure vue de dessus, par exemple), ajouter un cas à `Vignettes.stamp` et à `handle`.
+
+Vue `atelier` (opérateurs, `Workshop.gameView`) : `cartes` (par carte : `id`, `nom`, `sieges`, `maisons`, `salle`, `cote`, `hauteur`, `jouable`, `verdict`, `manques`, `modifieeLe`, `modifieeTexte`, `vignette`, `versions`, `octets`, `atelier`, `atelierNom`, `genere`, `theme`), `parties` (mondes de partie : `id`, `nom`, `principale`, `carte`, `carteNom`, `envoi`, `enCours`, `joueurs`, `vignette`), `fichiers` et `dossierImport` (import), `corbeille`, `chantiers` (`texte`, `monde`, `avance` de 0 à 1), `structures`, `roles`, `themes`, `tronesMin`, `tronesMax`, `reponse`. Les ateliers carte ouverts sont dans `ateliersCarte.ateliers` (avec `pose`).
+
+Test en jeu : `AtelierHdGameTest` (captures `valcombe-atelier-hd-*.png`, mise en page vérifiée à 427 × 240, à l'échelle 3, à l'échelle 1 et en 2560 × 1440).
+
 ## Écrans du Conteur
 
 Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), éditeur de script, scénarios, durées et minuteurs, ordre de réveil et distribution des rôles sont passés à `HdScreen`, avec les mêmes boutons et les mêmes commandes. Ils tiennent tous dans une interface de 427 × 240.

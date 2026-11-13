@@ -90,9 +90,14 @@ public final class Workshop {
 	// ------------------------------------------------------------------
 	// Cartes
 	// ------------------------------------------------------------------
+	/** « 13/11 à 14h05 » : la date d'une modification, telle que l'Atelier en jeu la montre. */
+	private static final java.time.format.DateTimeFormatter WHEN = java.time.format.DateTimeFormatter
+		.ofPattern("dd/MM/yyyy 'à' HH'h'mm", java.util.Locale.FRENCH).withZone(java.time.ZoneId.systemDefault());
+
 	/** Les cartes de la bibliothèque ; plan : avec leurs repères et leur liste de contrôle (plan de la page web). */
 	public List<Map<String, Object>> library(boolean plan) {
 		List<Map<String, Object>> out = new ArrayList<>();
+		MapWorkshop ateliers = ValcombeMod.mapWorkshop();
 		for (MapStore.MapDef d : maps.list()) {
 			Map<String, Object> m = new LinkedHashMap<>();
 			m.put("id", d.id);
@@ -102,10 +107,29 @@ public final class Workshop {
 			m.put("sieges", d.sieges.size());
 			m.put("maisons", d.logis.size());
 			// L'atelier carte où l'on travaille sur elle, s'il est ouvert (un seul par carte) : « Ouvrir » y mène.
-			MapWorkshop ateliers = ValcombeMod.mapWorkshop();
-			m.put("atelier", ateliers == null ? null : ateliers.atelierIdOf(d.id));
+			fr.valcombe.mc.worlds.WorldEntry open = ateliers == null ? null : ateliers.atelierOf(d.id);
+			m.put("atelier", open == null ? null : open.id());
+			m.put("atelierNom", open == null ? null : open.nom());
+			// Pour la fiche de l'Atelier en jeu : taille, ce qui manque pour jouer, date, empreinte de la vignette.
+			m.put("cote", 2 * d.rayon + 1);
+			m.put("hauteur", d.height());
+			m.put("places", d.places);
+			m.put("salle", d.convocation != null);
+			MapTally t = new MapTally(d.sieges.size(), Math.max(d.sieges.size(), d.genere ? d.places : 0), d.logis.size(), d.convocation != null);
+			m.put("jouable", t.playable());
+			m.put("verdict", t.verdict());
+			List<Map<String, Object>> missing = new ArrayList<>();
+			for (MapTally.Line l : t.missing()) {
+				missing.add(Map.of("bloquant", l.blocking(), "texte", l.text()));
+			}
+			m.put("manques", missing);
+			long at = maps.modifiedAt(d.id);
+			m.put("modifieeLe", at);
+			m.put("modifieeTexte", at <= 0 ? "" : WHEN.format(java.time.Instant.ofEpochMilli(at)));
+			m.put("vignette", maps.stamp(d.id));
+			m.put("versions", maps.versions().list(d.id).size());
+			m.put("octets", maps.bytes(d.id));
 			if (plan) {
-				m.put("octets", maps.bytes(d.id));
 				// Repères pour le plan vu de dessus : [est, hauteur, sud] depuis le centre de la place.
 				m.put("rayon", d.rayon);
 				Map<String, Object> p = new LinkedHashMap<>();
@@ -221,11 +245,112 @@ public final class Workshop {
 		out.put("themes", Village.THEMES);
 		out.put("tronesMin", Village.MIN_SEATS);
 		out.put("tronesMax", Village.MAX_SEATS);
+		out.put("parties", gameWorlds());
+		// « Nouvelle carte » › importer : les fichiers déposés dans le dossier d'import du serveur.
+		out.put("fichiers", structures.importable());
+		out.put("dossierImport", inbox());
+		List<Map<String, Object>> bin = new ArrayList<>();
+		for (MapTrash.Entry e : maps.trashed()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("id", e.id());
+			m.put("carte", e.mapId());
+			m.put("nom", e.nom());
+			m.put("date", WHEN.format(e.date()));
+			m.put("trones", e.seats());
+			m.put("maisons", e.houses());
+			bin.add(m);
+		}
+		out.put("corbeille", bin);
+		out.put("chantiers", works());
 		Reply reply = replies.get(p.getScoreboardName());
 		if (reply != null) {
 			out.put("reponse", Map.of("n", reply.n(), "texte", reply.text(), "erreur", reply.error()));
 		}
 		return out;
+	}
+
+	/**
+	 * Les mondes de partie où l'on peut envoyer une carte (la partie principale d'abord), pour l'Atelier en jeu : ce
+	 * qu'ils portent, s'ils reçoivent déjà une carte, si une partie s'y joue.
+	 */
+	List<Map<String, Object>> gameWorlds() {
+		MapWorkshop w = ValcombeMod.mapWorkshop();
+		if (w == null) {
+			return List.of();
+		}
+		MapSender sender = ValcombeMod.sender();
+		fr.valcombe.mc.games.GameRoom main = fr.valcombe.mc.games.Games.main();
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (fr.valcombe.mc.worlds.WorldEntry e : w.parties()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("id", e.id());
+			m.put("nom", e.nom());
+			m.put("sorte", e.sorte().label());
+			m.put("principale", main != null && main.id().equals(e.id()));
+			m.put("carte", e.carte());
+			String mapName = null;
+			if (e.carte() != null) {
+				mapName = maps.list().stream().filter(d -> d.id.equals(e.carte())).map(d -> d.nom).findFirst().orElse(null);
+			}
+			m.put("carteNom", mapName);
+			m.put("envoi", sender == null ? null : sender.sendingTo(e.id()));
+			fr.valcombe.mc.games.GameRoom room = fr.valcombe.mc.games.Games.byWorld(e.id());
+			m.put("enCours", room != null && room.session().game() != null);
+			var level = server.getLevel(fr.valcombe.mc.worlds.WorldManager.key(e.id()));
+			m.put("joueurs", level == null ? 0 : level.players().size());
+			m.put("vignette", Vignettes.stampOf("partie:" + e.id()));
+			out.add(m);
+		}
+		return out;
+	}
+
+	private String inboxPath;
+
+	/** Le dossier d'import du serveur (créé au premier appel). */
+	private String inbox() {
+		if (inboxPath == null) {
+			inboxPath = structures.inboxPath();
+		}
+		return inboxPath;
+	}
+
+	/** Les poses de cartes en cours ou en attente (monde, libellé, avancement de 0 à 1), pour la barre de l'Atelier en jeu. */
+	private static List<Map<String, Object>> works() {
+		MapPlacer placer = ValcombeMod.placer();
+		if (placer == null) {
+			return List.of();
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (BuildQueue.Progress pr : placer.progress()) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("texte", pr.label());
+			m.put("monde", pr.level().identifier().getPath());
+			m.put("avance", Math.round(pr.done() * 1000) / 1000.0);
+			out.add(m);
+		}
+		return out;
+	}
+
+	/**
+	 * « Exporter » : la carte dans un fichier .valcombe du dossier des partages du serveur ({@code creations/partages}),
+	 * celui qu'importe l'Atelier web d'un autre serveur.
+	 */
+	public String exportMap(String id) {
+		MapStore.MapDef d = maps.list().stream().filter(x -> x.id.equals(id)).findFirst()
+			.orElseThrow(() -> new GameException("Carte introuvable : " + id + "."));
+		String json = creations.exportPack(List.of(), List.of(), List.of(id));
+		java.nio.file.Path dir = creations.dir().resolve("partages");
+		String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(java.time.ZoneId.systemDefault())
+			.format(java.time.Instant.now());
+		java.nio.file.Path file = dir.resolve("carte-" + d.id + "-" + stamp + ".valcombe");
+		try {
+			java.nio.file.Files.createDirectories(dir);
+			java.nio.file.Files.writeString(file, json, java.nio.charset.StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new GameException("Export impossible : " + e.getMessage());
+		}
+		return "Carte « " + d.nom + " » exportée : " + file.toAbsolutePath() + " (" + Math.max(1, file.toFile().length() / 1024)
+			+ " Ko). Ce fichier s'importe sur un autre serveur par la page web de l'Atelier (Partage).";
 	}
 
 	// ------------------------------------------------------------------

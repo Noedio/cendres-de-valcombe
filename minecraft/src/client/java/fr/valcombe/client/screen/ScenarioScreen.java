@@ -89,7 +89,8 @@ public class ScenarioScreen extends HdScreen {
 		button(px + pw - 154, py + ph - 50, 140, operator ? "Atelier" : "Lien de l'Atelier web", () -> {
 			armed = null;
 			if (operator) {
-				minecraft.gui.setScreen(new AtelierScreen());
+				fr.valcombe.client.screen.atelier.AtelierPage.opening();
+				minecraft.gui.setScreen(fr.valcombe.client.screen.atelier.AtelierHome.roles());
 			} else {
 				send("vc atelier");
 				onClose();
