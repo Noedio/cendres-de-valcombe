@@ -9,6 +9,7 @@ import fr.valcombe.client.ClientState;
 import fr.valcombe.client.hd.HdButton;
 import fr.valcombe.client.hd.HdScreen;
 import fr.valcombe.client.hd.HdTextField;
+import fr.valcombe.client.hd.HdToken;
 import fr.valcombe.client.screen.ChronicleScreen;
 import fr.valcombe.client.screen.ClaimScreen;
 import fr.valcombe.client.screen.FiguresScreen;
@@ -195,9 +196,13 @@ public class PlayerScreensHdGameTest implements FabricClientGameTest {
 			"alerts", arr("Faustine est empoisonnée : son information est fausse cette nuit.", "L'Écuyer protège Isidore."),
 			"todo", "Réveille la Goule. Elle désigne un joueur, qui mourra. Si elle se désigne elle-même, un Sbire vivant "
 				+ "devient la Goule : réveille-le pour le lui dire. Montre-lui ensuite le jeton « Tu es la Goule ».");
+		// Une ligne de grimoire par siège (moi compris) : sinon le grimoire du Mouchard n'est pas posé.
 		JsonArray grimoire = new JsonArray();
+		grimoire.add(obj("name", me, "reminders", new JsonArray(), "line", me + " : La Commère",
+			"role", obj("id", "COMMERE", "name", "La Commère", "team", "GOOD")));
 		for (String n : NAMES) {
 			grimoire.add(obj("name", n, "reminders", n.equals("Bastien") ? arr("Ivre", "Empoisonné") : new JsonArray(),
+				"line", n + " : La Goule", "poisoned", n.equals("Bastien"), "protected", n.equals("Isidore"),
 				"role", obj("id", "GOULE", "name", "La Goule", "team", "EVIL")));
 		}
 		JsonArray tokens = arr(
@@ -383,6 +388,10 @@ public class PlayerScreensHdGameTest implements FabricClientGameTest {
 			screen(ctx, nightView(me, obj("type", "guess", "title", "Le Jongleur", "count", 5, "text",
 				"Prête un rôle à cinq joueurs au plus. La nuit prochaine, tu apprendras combien de tes hypothèses sont justes.",
 				"players", arr(List.of(NAMES)), "roles", scriptRoles())), GuessScreen::new, "19-jongleur");
+			// Le grimoire montré au Mouchard : un jeton haute résolution par siège.
+			screen(ctx, nightView(me, obj("type", "grimoire")), PromptScreen::new, "18b-invite-grimoire");
+			check(ctx.computeOnClient(mc -> mc.gui.screen().children().stream().filter(w -> w instanceof HdToken).count())
+				== NAMES.length + 1, "grimoire du Mouchard : un jeton par siège");
 			JsonObject night = nightView(me, null);
 			screen(ctx, night, NightScreen::new, "20-nuit-pas-a-pas");
 			screen(ctx, night, () -> new TokenScreen("Bastien", true), "21-rappels");

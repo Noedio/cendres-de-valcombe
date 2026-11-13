@@ -54,6 +54,46 @@ public class PromptScreen extends HdScreen {
 		return py + 8 + size / 2 + radius;
 	}
 
+	/**
+	 * Le grimoire montré au Mouchard, en jetons haute résolution : rôle, linceul, marqueurs et infobulle détaillée
+	 * (ligne du grimoire et note), comme Grimoire.place, qui pose encore les jetons d'avant pour les écrans du
+	 * Conteur. Rien n'est posé si la vue n'a pas un grimoire complet (une ligne par siège).
+	 */
+	private void grimoire(int cx, int cy, int radius, int size) {
+		List<JsonObject> seats = objects(view(), "seats");
+		List<JsonObject> grim = objects(view(), "grimoire");
+		if (grim.size() != seats.size()) {
+			return;
+		}
+		circle(seats.size(), cx, cy, radius, (i, x, y) -> {
+			JsonObject s = seats.get(i);
+			JsonObject row = grim.get(i);
+			JsonObject role = ClientState.obj(row, "role");
+			HdToken t = new HdToken(x, y, size, ClientState.str(s, "name"), ClientState.str(role, "id"),
+				ClientState.str(role, "team"), ClientState.bool(s, "alive"), false, null);
+			if (ClientState.bool(row, "poisoned")) {
+				t.marker("poison");
+			}
+			if (ClientState.bool(row, "protected")) {
+				t.marker("protect");
+			}
+			if (ClientState.obj(row, "believed") != null) {
+				t.marker("drunk");
+			}
+			if (ClientState.bool(row, "redHerring")) {
+				t.marker("herring");
+			}
+			if (ClientState.bool(row, "master")) {
+				t.marker("master");
+			}
+			if (!ClientState.bool(s, "alive") && ClientState.bool(s, "ghostVote")) {
+				t.marker("ghost");
+			}
+			String note = ClientState.str(row, "note");
+			token(t.tooltip(ClientState.str(row, "line") + (note != null ? "\nNote : " + note : "")));
+		});
+	}
+
 	/** Appelé par le routeur quand l'invite change sans changer d'écran. */
 	public void rebuild() {
 		rebuildWidgets();
@@ -130,7 +170,7 @@ public class PromptScreen extends HdScreen {
 			}
 			case "grimoire" -> {
 				int r = fitRadius(24, 84);
-				Grimoire.place(this, cx, fitCenter(24, r), r, 24, null);
+				grimoire(cx, fitCenter(24, r), r, 24);
 				button(cx - 60, py + ph - 26, 120, "Je me rendors", () -> send("vc dormir"));
 			}
 			case "vote" -> {
