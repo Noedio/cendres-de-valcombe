@@ -11,12 +11,16 @@ Un monde de Valcombe par carte en cours de travail (sorte `atelier-carte`) : pla
 
 ## Ouvrir
 
-| Depuis | Bibliothèque | Carte vierge | Village généré |
-| --- | --- | --- | --- |
-| Menu J › Mondes › « Ouvrir une carte… » | onglet Bibliothèque | onglet Carte vierge | onglet Village généré |
-| Commande (opérateurs) | `/vc atelier carte ouvrir <carte>` | `/vc atelier carte nouvelle <nom>` | `/vc atelier carte village <trônes> [<taille> <thème> <oui\|non> <nom>]` |
-| Atelier en jeu | onglet Cartes, « Ouvrir dans un atelier » | | onglet Village, « Générer dans un atelier » |
-| Atelier web | « Ouvrir dans un atelier » sur chaque carte (route `carte/atelier`) | | |
+| Depuis | Bibliothèque | Carte vierge | Village généré | Fichier importé |
+| --- | --- | --- | --- | --- |
+| Menu J › Mondes › « Ouvrir une carte… » | onglet Bibliothèque | onglet Carte vierge | onglet Village généré | |
+| Commande (opérateurs) | `/vc atelier carte ouvrir <carte>` | `/vc atelier carte nouvelle <nom>` | `/vc atelier carte village <trônes> [<taille> <thème> <oui\|non> <nom>]` | `/vc atelier carte importer <fichier> [nom]` |
+| Atelier en jeu | Cartes › fiche de la carte › « Ouvrir dans un atelier » | Cartes › Nouvelle carte › Carte vierge | Cartes › Nouvelle carte › Village généré | Cartes › Nouvelle carte › Importer un fichier |
+| Atelier web | « Ouvrir dans un atelier » sur chaque carte (route `carte/atelier`) | | | |
+
+Un fichier importé est un `.schem`, `.litematic` ou `.nbt` déjà déposé dans le dossier d'import du serveur (`config/valcombe/creations/import`, entre guillemets dans la commande s'il contient des espaces) : il est lu et contrôlé avant que le monde ne soit créé, puis posé au centre par petits lots, sans repères ; la carte est à enregistrer. Une pose coupée par un arrêt reprend au démarrage (le nom du fichier est gardé dans l'état de l'atelier).
+
+D'où que l'on soit, un opérateur enregistre ou ferme un atelier désigné : `/vc atelier carte enregistrer <atelier>` et `/vc atelier carte fermer <atelier> [confirmer]` (identifiant de l'atelier ou de sa carte) ; c'est ce que font « Enregistrer » et « Fermer l'atelier » dans Atelier › Cartes › Ateliers ouverts.
 
 La carte de la bibliothèque est posée au centre d'un monde neuf (`MapPlacer.place`) ; le village est bâti par petits lots (`MapPlacer.build`), puis sa salle de convocation et sa salle d'attente. Une barre suit l'avancement ; celui qui a ouvert l'atelier y est conduit à la fin (depuis l'Atelier web : un lien « [Y aller] » dans le chat).
 

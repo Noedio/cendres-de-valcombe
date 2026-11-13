@@ -101,6 +101,36 @@ public final class ValcombeNet {
 		}
 	}
 
+	/** Client → serveur : demande la vignette de cette clé (« carte:port », « village:gothique:16:1:oui », « partie:… »). */
+	public record VignetteRequestPayload(String key) implements CustomPacketPayload {
+		public static final Type<VignetteRequestPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("valcombe", "vignette_demande"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, VignetteRequestPayload> CODEC =
+			StreamCodec.composite(ByteBufCodecs.stringUtf8(160), VignetteRequestPayload::key, VignetteRequestPayload::new);
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
+	/**
+	 * Serveur → client : une vignette de l'Atelier en jeu (image PNG vue de dessus) et son empreinte. Image vide et
+	 * empreinte vide : il n'y en a pas (carte disparue, vignette impossible).
+	 */
+	public record VignettePayload(String key, String stamp, byte[] png) implements CustomPacketPayload {
+		/** Taille d'une vignette, au plus (une image de 512 × 512 pixels pèse bien moins). */
+		public static final int MAX_BYTES = 3 * 1024 * 1024;
+		public static final Type<VignettePayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("valcombe", "vignette"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, VignettePayload> CODEC = StreamCodec.composite(
+			ByteBufCodecs.stringUtf8(160), VignettePayload::key, ByteBufCodecs.stringUtf8(64), VignettePayload::stamp,
+			ByteBufCodecs.byteArray(MAX_BYTES), VignettePayload::png, VignettePayload::new);
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
 	private ValcombeNet() {
 	}
 
@@ -110,5 +140,7 @@ public final class ValcombeNet {
 		PayloadTypeRegistry.clientboundPlay().register(PreviewPayload.TYPE, PreviewPayload.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(SelectionPayload.TYPE, SelectionPayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(ActionPayload.TYPE, ActionPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().registerLarge(VignettePayload.TYPE, VignettePayload.CODEC, VignettePayload.MAX_BYTES + 1024);
+		PayloadTypeRegistry.serverboundPlay().register(VignetteRequestPayload.TYPE, VignetteRequestPayload.CODEC);
 	}
 }

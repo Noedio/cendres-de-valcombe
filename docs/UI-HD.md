@@ -166,6 +166,55 @@ Les textes affichés restent en français, sans tiret cadratin ni demi-cadratin.
 - **Données** : le champ `parties` de la vue (`liste`, `operateur`, `regarde`), envoyé seulement hors des mondes de partie : dans une partie, on ne voit qu'elle. Chaque bouton est une commande `/vc partie rejoindre|regarder|suspendre|reprendre|supprimer|creer`.
 - **Test en jeu** : `PartiesGameTest` (mise en page à 427 × 240 et à l'échelle 3, captures `valcombe-parties-*.png`, vignettes de tous les états sur une vue fabriquée).
 
+## Atelier en jeu
+
+Paquet `fr.valcombe.client.screen.atelier` (Sprint 16). Menu J › « Atelier », `/vc atelier jeu` (le serveur envoie `atelier`) : `AtelierPage.open()` repart de l'accueil.
+
+| Classe | Rôle |
+| --- | --- |
+| `AtelierPage` | Cadre commun : panneau de 720 × 420 (réduit à la fenêtre), fil d'Ariane en haut (`trail()` : une `Crumb(libellé, page)` par étape, la dernière est la page en cours), avancement de la pose de carte en cours en haut à droite (`atelier.chantiers`), « Retour » et retour du serveur en bas. Une page donne `trail()`, `buildPage()`, `drawPage(hd)`, au besoin `footerReserve()` (unités prises à droite du pied par ses boutons). Zone libre : `left()`, `right()`, `top()`, `bottom()`. Sans la vue `atelier` (pas opérateur), la page dit pourquoi et mène aux « Mondes ». |
+| `AtelierHome` | Accueil : quatre `Tile` (illustration peinte, nom, contenu en une ligne, infobulle). `AtelierHome.structures()`, `parties()`, `roles()` disent où mène chaque entrée. |
+| `MapsPage` | Cartes : volets Bibliothèque (galerie `HdGrid`, recherche, tri), Ateliers ouverts, Corbeille ; « Nouvelle carte ». |
+| `MapSheetPage` | Fiche d'une carte : grande vignette, détails, actions ; confirmations sur place (renommer, envoyer, supprimer). |
+| `NewMapPage` | Parcours « Nouvelle carte » en trois étapes. |
+| `StructuresPage` | Structures : volet Catalogue (galerie de vignettes vues de trois quarts, rayons Tout, Maisons, Place, Décor, À vous, recherche ; barre de la structure en main : Tourner, Retourner, À mes pieds, Ranger), volet Construire (les gestes de WorldEdit dans les ateliers, le chemin vers eux ailleurs) ; « Nouvelle structure ». `StructuresPage.take(id)` prend une structure en main (mode construction ouvert d'abord dans une partie). |
+| `StructureSheetPage` | Fiche d'une structure : Prendre en main, Voir en 3D (`StructureViewerScreen`, dont « Retour » ramène à la fiche), Aller sur sa parcelle, Revenir à l'originale (fournie modifiée), Renommer…, Supprimer (à vous) ; confirmations sur place. |
+| `NewStructurePage` | Parcours « Nouvelle structure » : depuis la sélection WorldEdit (ce qui manque est dit sur la case) ou une parcelle vide ; nom ; rayon ou taille ; vérification. |
+| `PartiesPage` | Parties : galerie (carte en place vue de dessus et ciel de la phase, `PartiesPage.picture`), « Créer une partie d'essai » (nom écrit sur place, la nouvelle mise en avant), « Rejoindre ou regarder… » vers `PartiesScreen`. |
+| `PartySheetPage` | Fiche d'une partie : Y aller, Envoyer une carte…, Suspendre / Reprendre, Supprimer ; « Carte en place… » (Enregistrer, Enregistrer sous…, Carte vide…, Vider le monde…) ; « Retoucher sur place… » (mode construction, repères, main, liste de contrôle), dans son monde. |
+| `RolesPage` | Rôles et scénarios : volets Scénarios (jetons en éventail), Rôles créés (un jeton chacun), Packs (fichiers `.valcombe` déposés, « Importer ») ; « Page web ». |
+| `ScenarioSheetPage` | Fiche d'un scénario : tous ses jetons, description, carte ; Choisir pour une partie… (prévient si sa carte sera posée), Partie d'essai… (nombre de joueurs), Page web, Supprimer. |
+| `RoleSheetPage` | Fiche d'un rôle créé : grand jeton, camp, pouvoir, réveils, scénarios qui le citent ; Modifier sur la page web, Supprimer. |
+| `AtelierArt` | Pastilles (`chip`, `ribbon`), étapes d'un parcours (`steps`), illustrations peintes (`mapScroll`, `structures`, `roles`, `compass`, `frameArt`). |
+| `AtelierKit` | Fond d'une ligne ou d'une case, détails « libellé valeur », avertissements et conseils, velours et jetons en éventail (`fan`), identifiant tiré d'un nom (`slug`). |
+| `ChoiceTile` | Case d'un point de départ de parcours : illustration, nom, texte, état en vert ou en rouge, cochée quand elle est choisie. |
+
+Conventions :
+
+- **Chaque action** passe par `run(commande, "ce qu'on fait")` : la commande `/vc` part au serveur, « ce qu'on fait… » s'affiche (trois points) jusqu'à sa réponse, qui la remplace au pied de la page (coche verte, ou croix rouge et le refus ; le texte entier au survol). Le serveur capte la réponse des commandes `vc carte`, `vc structure(s)`, `vc atelier`, `vc scenario`, `vc partie`, `vc annuler`, `vc retablir`, `vc baguette` (voir `Workshop.shows`) et l'envoie dans `atelier.reponse` ; `AtelierPage.reply()` ne montre que celles reçues depuis l'ouverture de l'Atelier.
+- **L'action suivante** est mise en avant : `HdButton.primary()` (halo doré qui respire, une seule par écran). Ce qui manque pour la faire est dit en rouge à côté, et le bouton reste grisé avec la raison en infobulle.
+- **Ce qui détruit** se confirme sur place : le bouton laisse la place à « Confirmer… » et « Annuler », avec la conséquence écrite en rouge.
+- **Échap** défait d'abord ce que la page a en cours (`cancelPending()` : une confirmation, une saisie, une étape de parcours), puis ferme l'Atelier.
+- **États vides** : une galerie vide dit quoi faire (« Aucune structure à vous : « Nouvelle structure » pour en créer une… »), et le bouton qui y mène est mis en avant.
+- L'état d'une page (volet, choix, étape) est gardé en champs statiques : il survit aux reconstructions (une par nouvelle vue du serveur) et à un aller-retour.
+
+Composants ajoutés à la boîte à outils :
+
+| Outil | Rôle |
+| --- | --- |
+| `HdGrid<T>` | Galerie de cases égales (autant de colonnes qu'il en tient, élargies pour remplir), défilement comme `HdList`, flèches dans les quatre sens. `.cell(dessin)`, `.openOnClick()`, `.onActivate()`, `.key()`, `.empty()`, `.open(nom)` (tests), `.labels()`. |
+| `HdButton.primary()` | L'action principale de l'écran. `isPrimary()` pour les tests. |
+| `HdList.choose(i)` | Choisit une ligne comme un clic (prévient `onSelect`), pour les tests. |
+| `fr.valcombe.client.Vignettes` | Images vues de dessus faites par le serveur, gardées en textures nettes avec leurs réductions : `Vignettes.draw(hd, clé, empreinte, x, y, w, h)` dessine l'image (ou un fond qui miroite en attendant, « Pas d'aperçu » si le serveur n'a pas pu). La demande part toute seule, une fois par empreinte. |
+
+Vignettes, côté serveur (`fr.valcombe.mc.Vignettes`) : paquets `valcombe:vignette_demande` (client → serveur, la clé) et `valcombe:vignette` (serveur → client : clé, empreinte, PNG de 512 × 512). Clés : `carte:<id>` (vue de dessus enregistrée avec la carte, couleurs de carte des blocs, ou tirée de ses blocs ; repères par-dessus), `village:<thème>:<trônes>:<taille>:<oui|non>` (plan d'un village généré avant de le bâtir), `partie:<monde>` (la carte en place dans un monde de partie, refaite au plus une fois par minute), `structure:<id>` (une structure du catalogue vue de trois quarts : un petit cube par bloc aux couleurs de carte, dessus, face sud et face est éclairés différemment, seules les faces qui donnent sur le vide peintes, ombre au sol sur une scène sombre ; `Vignettes.isometric`, empreinte tirée des fichiers de la structure). L'empreinte est dans la vue (`cartes[].vignette`, `parties[].vignette`, `structures[].vignette`) : quand ce qu'elle montre change, elle change, et le client redemande l'image. Réservé aux opérateurs. Pour une autre sorte de vignette, ajouter un cas à `Vignettes.stamp` et à `handle`.
+
+Vue `atelier` (opérateurs, `Workshop.gameView`) : `cartes` (par carte : `id`, `nom`, `sieges`, `maisons`, `salle`, `cote`, `hauteur`, `jouable`, `verdict`, `manques`, `modifieeLe`, `modifieeTexte`, `vignette`, `versions`, `octets`, `atelier`, `atelierNom`, `genere`, `theme`), `parties` (mondes de partie : `id`, `nom`, `principale`, `carte`, `carteNom`, `envoi`, `enCours`, `joueurs`, `vignette`, `fiche` (l'état du tableau des parties), `actuelle` (la carte en place : `id`, `nom`, `modifiee`, `sieges`, `maisons`, `controle`...), `chantier`, `scenario`, `scenarioId`, `visee` (la partie que visent les commandes de carte de l'opérateur), `ici`), `partie` et `partieId` (celle que vise l'opérateur), `fichiers` et `dossierImport` (import), `corbeille`, `chantiers` (`texte`, `monde`, `avance` de 0 à 1), `structures` (`id`, `nom`, `categorie`, `taille`, `blocs`, `repere`, `fournie`, `modifiee`, `modifieeLe`, `parcelle`, `vignette`), `atelierStructures`, `dansAtelierStructures`, `tailles`, `roles` (`id`, `nom`, `camp`, `campTexte`, `mal`, `embleme`, `texte`, `premiereNuit`, `autresNuits`, `scenarios`), `scenarios` (`id`, `nom`, `description`, `roles` en jetons : `id`, `nom`, `embleme`, `mal`, `cree`, `inconnu` ; `carte`, `carteNom`, `carteManque`, `joueurs`, `manquants`, `choisiDans`), `packs` (`fichier`, `dossier`, `octets`, `date`, `dateTexte`), `editeur`, `themes`, `tronesMin`, `tronesMax`, `reponse`. Les ateliers carte ouverts sont dans `ateliersCarte.ateliers` (avec `pose`).
+
+Commandes ajoutées pour l'Atelier en jeu (aussi utilisables à la main, opérateurs) : `/vc structure originale <id>` (une structure fournie revient à l'originale, d'où que l'on soit), `/vc structure nouvelle-selection <rayon> <nom>` (la sélection WorldEdit au catalogue, l'identifiant tiré du nom), `/vc carte enregistrer-partie <monde> <id> [nom]` (la carte en place dans le monde d'une partie nommée), `/vc scenario <id|aucun> <monde>` (le scénario d'une autre partie que la sienne), `/vc atelier pack importer <fichier>` (un pack `.valcombe` du dossier d'import ou des partages). `/vc structures aller <id>` et `/vc structures nouvelle <taille> <nom>` conduisent d'abord dans l'atelier structures quand on est ailleurs. L'ancien aperçu `/vc carte apercu` (aperçu en cases de l'ancien écran) est retiré : les vignettes le remplacent.
+
+Test en jeu : `AtelierHdGameTest` (captures `valcombe-atelier-hd-*.png`, mise en page vérifiée à 427 × 240, à l'échelle 3, à l'échelle 1 et en 2560 × 1440).
+
 ## Écrans du Conteur
 
 Pupitre (`StorytellerScreen`), grimoire, fiche d'un siège (`SeatScreen`), éditeur de script, scénarios, durées et minuteurs, ordre de réveil et distribution des rôles sont passés à `HdScreen`, avec les mêmes boutons et les mêmes commandes. Ils tiennent tous dans une interface de 427 × 240.

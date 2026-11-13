@@ -83,7 +83,7 @@ public class PartiesScreen extends HdScreen {
 	// ------------------------------------------------------------------
 
 	/** La couleur de l'état, sur le parchemin. */
-	static int statusColor(String statut) {
+	public static int statusColor(String statut) {
 		return switch (statut == null ? "" : statut) {
 			case "ouverte" -> 0xFF2F6B2A;
 			case "en-cours" -> Hd.WINE;
@@ -131,7 +131,7 @@ public class PartiesScreen extends HdScreen {
 	 * voilée et marquée du signe pause quand elle est en pause ou en suspens ; « ESSAI » dans un coin pour une partie
 	 * d'essai, un liseré d'or pour la partie principale.
 	 */
-	static void vignette(Hd hd, JsonObject g, int x, int y, int w, int h) {
+	public static void vignette(Hd hd, JsonObject g, int x, int y, int w, int h) {
 		String statut = ClientState.str(g, "statut");
 		String phase = ClientState.str(g, "phase");
 		String id = ClientState.str(g, "id");

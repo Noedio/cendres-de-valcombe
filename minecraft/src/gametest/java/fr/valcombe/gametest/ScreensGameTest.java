@@ -149,6 +149,38 @@ public class ScreensGameTest implements FabricClientGameTest {
 		check(click(ctx, label), "bouton « " + label + " » parmi : " + buttons(ctx));
 	}
 
+	/** Ouvre la fiche de cette carte par sa case dans la bibliothèque de l'Atelier (Atelier › Cartes). */
+	private static void openCard(ClientGameTestContext ctx, String name) {
+		if (!ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.MapsPage)) {
+			ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.MapsPage(0));
+			ctx.waitTicks(5);
+		}
+		boolean ok = ctx.computeOnClient(mc -> {
+			fr.valcombe.client.screen.atelier.MapsPage.resetFilters();
+			var p = (fr.valcombe.client.screen.atelier.MapsPage) mc.gui.screen();
+			p.rebuildNow();
+			return p.grid() != null && p.grid().open(name);
+		});
+		check(ok, "case « " + name + " » dans la bibliothèque");
+		ctx.waitTicks(10);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.MapSheetPage), "fiche de « " + name + " »");
+	}
+
+	/** Choisit l'onglet qui porte ce libellé dans l'écran ouvert. */
+	private static void chooseTab(ClientGameTestContext ctx, String label) {
+		boolean ok = ctx.computeOnClient(mc -> {
+			for (var w : mc.gui.screen().children()) {
+				if (w instanceof fr.valcombe.client.hd.HdTabs t && t.labels().contains(label)) {
+					t.choose(t.labels().indexOf(label));
+					return true;
+				}
+			}
+			return false;
+		});
+		check(ok, "onglet « " + label + " »");
+		ctx.waitTicks(12);
+	}
+
 	/** La réponse du serveur que l'écran de l'Atelier affiche sous ses boutons. */
 	private static String reply(ClientGameTestContext ctx) {
 		return ctx.computeOnClient(mc -> {
@@ -158,59 +190,64 @@ public class ScreensGameTest implements FabricClientGameTest {
 	}
 
 	/**
-	 * L'Atelier en jeu, par ses vrais boutons : bibliothèque de cartes (aperçu, copie, suppression confirmée), village
-	 * généré puis carte rechargée, repères, catalogue de structures, sélection, scénario lié à une carte et partie d'essai.
+	 * L'Atelier en jeu, par ses vrais boutons : accueil, bibliothèque en vignettes, fiche d'une carte (copie, mise à la
+	 * corbeille confirmée), village généré envoyé à la partie par « Nouvelle carte », carte renvoyée depuis sa fiche ; les
+	 * repères depuis la fiche de la partie (« Retoucher sur place »), le catalogue de structures en vignettes (fiche, 3D,
+	 * prise en main, barre de la structure en main), le volet Construire hors des ateliers, un scénario lié à une carte :
+	 * partie d'essai, puis choisi pour la partie principale et supprimé.
 	 * Au départ et à la fin, la carte « village-test » est en place.
 	 */
 	private void checkAtelierScreen(ClientGameTestContext ctx, TestSingleplayerContext world, String me) {
 		var server = world.getServer();
 		java.util.function.Supplier<fr.valcombe.mc.Village> village = () -> server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().village());
-		// La commande ouvre l'écran ; le menu principal d'un opérateur a son bouton « Atelier ».
+		// La commande ouvre l'accueil de l'Atelier ; le menu principal d'un opérateur a son bouton « Atelier ».
 		send(ctx, "vc atelier jeu");
 		ctx.waitTicks(10);
-		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.AtelierScreen), "/vc atelier jeu ouvre l'écran");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.AtelierHome),
+			"/vc atelier jeu ouvre l'accueil de l'Atelier");
 		ctx.setScreen(MainScreen::new);
 		shot(ctx, "28-menu-avec-atelier");
 		press(ctx, "Atelier");
-		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.AtelierScreen), "bouton Atelier du menu");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.AtelierHome), "bouton Atelier du menu");
 
-		// Cartes : la carte actuelle vient de la bibliothèque, et son aperçu vu de dessus arrive tout seul.
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(0));
-		ctx.waitTicks(30);
-		String here = ctx.computeOnClient(mc -> {
-			var a = ClientState.obj(ClientState.view(), "atelier");
-			var pv = ClientState.preview();
-			return ClientState.str(ClientState.obj(a, "carte"), "id") + " | " + ClientState.str(a, "resume") + " | aperçu "
-				+ (pv == null ? "absent" : ClientState.num(pv, "cote", 0) + " " + ClientState.previewColors().length + " "
-					+ pv.getAsJsonArray("sieges").size());
-		});
-		System.out.println("[valcombe-test] atelier en jeu, carte actuelle : " + here);
-		check(here.equals("village-test | Carte actuelle : « Village de test ». 16 trônes, 16 maisons. | aperçu 48 2304 16"),
-			"carte actuelle et aperçu : " + here);
+		// Cartes : la bibliothèque en vignettes ; celle de « village-test » arrive du serveur.
+		press(ctx, "Cartes");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.MapsPage), "entrée Cartes");
+		check(waitClient(ctx, 200, mc -> {
+			var m = fr.valcombe.client.screen.atelier.MapsPage.library().stream()
+				.filter(o -> "village-test".equals(ClientState.str(o, "id"))).findFirst().orElse(null);
+			return m != null && fr.valcombe.client.Vignettes.get("carte:village-test", ClientState.str(m, "vignette")) != null
+				&& fr.valcombe.client.Vignettes.ready("carte:village-test", ClientState.str(m, "vignette"));
+		}), "vignette de « village-test » reçue");
 		shot(ctx, "28a-atelier-cartes");
-		// Une carte de la bibliothèque : aperçu, copie sous un identifiant libre, suppression en deux clics.
-		press(ctx, "Village de test");
-		ctx.waitTicks(20);
-		check("village-test".equals(ctx.computeOnClient(mc -> ClientState.str(ClientState.preview(), "id"))), "aperçu de la carte choisie");
+		// Sa fiche : copie sous un identifiant libre, puis la copie mise à la corbeille après confirmation.
+		openCard(ctx, "Village de test");
 		shot(ctx, "28b-atelier-carte-de-la-bibliotheque");
 		press(ctx, "Dupliquer");
 		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie")), "carte dupliquée : " + reply(ctx));
 		check(reply(ctx).contains("Village de test (copie)"), "réponse du serveur montrée : " + reply(ctx));
-		ctx.waitTicks(70); // la liste des cartes est relue toutes les trois secondes au plus
-		press(ctx, "Village de test (copie)");
+		check(waitClient(ctx, 100, mc -> fr.valcombe.client.screen.atelier.MapsPage.library().stream()
+			.anyMatch(o -> "village-test-copie".equals(ClientState.str(o, "id")))), "la copie paraît dans la bibliothèque");
+		openCard(ctx, "Village de test (copie)");
 		press(ctx, "Supprimer");
 		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie")), "un seul clic ne supprime rien");
 		shot(ctx, "28c-atelier-suppression-a-confirmer");
-		press(ctx, "Confirmer : supprimer");
-		check(!server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie")), "carte supprimée au second clic");
+		press(ctx, "Mettre à la corbeille");
+		check(!server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie")), "carte mise à la corbeille");
+		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.maps().trashed().stream().anyMatch(e -> e.mapId().equals("village-test-copie"))),
+			"la copie est à la corbeille");
 
-		// Village : quinze trônes, à confirmer ; puis la carte de la bibliothèque est envoyée à la partie depuis l'écran.
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(1));
+		// Village : quinze trônes, envoyé à la partie par le parcours « Nouvelle carte » ; puis la carte de la bibliothèque
+		// est renvoyée à la partie depuis sa fiche.
+		ctx.setScreen(fr.valcombe.client.screen.atelier.NewMapPage::start);
+		press(ctx, "Village généré");
+		press(ctx, "Suivant");
 		press(ctx, "−");
 		shot(ctx, "28d-atelier-village");
-		press(ctx, "Générer le village");
-		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "générer demande une confirmation");
-		press(ctx, "Confirmer : générer le village");
+		press(ctx, "Suivant");
+		chooseTab(ctx, "Dans une partie");
+		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "rien n'est lancé avant le dernier bouton");
+		press(ctx, "Générer dans la partie");
 		// Le monde remis à neuf et un village de quinze trônes posé peuvent aller plus vite que la réponse affichée :
 		// l'envoi est en cours, ou déjà fini, mais il a bien été lancé.
 		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()) || reply(ctx).contains("lancé"),
@@ -219,44 +256,60 @@ public class ScreensGameTest implements FabricClientGameTest {
 		shot(ctx, "28e-atelier-chantier-en-cours");
 		waitBuild(ctx, world);
 		check(village.get().seatCount() == 15 && village.get().libraryId().isEmpty(), "village de quinze trônes généré");
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(0));
-		ctx.waitTicks(70);
-		press(ctx, "Village de test");
-		press(ctx, "Envoyer à la partie");
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.MapSheetPage("village-test"));
+		ctx.waitTicks(10);
+		press(ctx, "Envoyer à la partie…");
 		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "envoyer demande une confirmation");
-		press(ctx, "Confirmer : envoyer à la partie");
+		press(ctx, "Confirmer l'envoi");
 		waitBuild(ctx, world);
 		check(village.get().seatCount() == 16 && village.get().libraryId().equals("village-test") && !village.get().modified(),
 			"carte envoyée à la partie depuis l'écran");
 		backToVillage(ctx, world, me);
 
-		// Repères : liste de contrôle, mode construction, un trône posé puis le geste annulé.
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(2));
+		// Repères, depuis la fiche de la partie principale (Atelier › Parties › Retoucher sur place) : liste de contrôle,
+		// mode construction, un trône posé puis le geste annulé.
+		String mainId = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().id());
+		ctx.setScreen(() -> fr.valcombe.client.screen.atelier.PartySheetPage.visit(mainId));
+		ctx.waitTicks(20);
+		shot(ctx, "28f0-atelier-fiche-partie");
+		press(ctx, fr.valcombe.client.screen.atelier.PartySheetPage.TOUCH);
 		shot(ctx, "28f-atelier-reperes");
-		press(ctx, "Entrer en mode construction");
+		press(ctx, fr.valcombe.client.screen.atelier.PartySheetPage.BUILD_ON);
 		check(ctx.computeOnClient(mc -> mc.gui.screen() == null), "l'écran se ferme en entrant en mode construction");
 		check(server.computeOnServer(s -> (Boolean) fr.valcombe.mc.ValcombeMod.editor().state(me).get("construction")), "mode construction");
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(2));
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.PartySheetPage(mainId));
+		ctx.waitTicks(5);
 		press(ctx, "Trône ici");
 		check(village.get().seatCount() == 17, "trône posé depuis l'écran : " + reply(ctx));
-		press(ctx, "Renuméroter (sens horaire)");
-		press(ctx, "Annuler");
-		press(ctx, "Annuler");
+		press(ctx, "Renuméroter");
+		press(ctx, "Annuler le geste");
+		press(ctx, "Annuler le geste");
 		check(village.get().seatCount() == 16, "les deux derniers gestes annulés : " + reply(ctx));
 		shot(ctx, "28g-atelier-reperes-en-construction");
 
-		// Structures : une maison du catalogue prise en main depuis l'écran, puis rangée.
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
-		press(ctx, "Maison gothique");
-		ctx.waitTicks(20); // la maquette arrive du serveur
-		check(ctx.computeOnClient(mc -> fr.valcombe.client.Maquette.get("maison-gothique") != null
-			&& !fr.valcombe.client.Maquette.get("maison-gothique").cells.isEmpty()), "maquette 3D de la structure reçue");
+		// Structures : Atelier › Structures, la maison gothique en vignette vue de trois quarts ; sa fiche, « Voir en 3D »,
+		// puis prise en main.
+		ctx.runOnClient(mc -> fr.valcombe.client.screen.atelier.StructuresPage.resetFilters());
+		ctx.setScreen(fr.valcombe.client.screen.atelier.StructuresPage::new);
+		check(waitClient(ctx, 300, mc -> fr.valcombe.client.screen.atelier.StructuresPage.catalog().stream()
+			.filter(o -> "maison-gothique".equals(ClientState.str(o, "id")))
+			.anyMatch(o -> fr.valcombe.client.Vignettes.get("structure:maison-gothique", ClientState.str(o, "vignette")) != null
+				&& fr.valcombe.client.Vignettes.ready("structure:maison-gothique", ClientState.str(o, "vignette")))),
+			"vignette de trois quarts de la maison gothique reçue");
 		shot(ctx, "28h-atelier-structures");
-		press(ctx, "Voir en grand");
-		ctx.waitTicks(5);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.StructuresPage p && p.grid() != null
+			&& p.grid().open("Maison gothique")), "case « Maison gothique » du catalogue");
+		ctx.waitTicks(10);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.StructureSheetPage), "fiche de la structure");
+		shot(ctx, "28h1-atelier-fiche-structure");
+		press(ctx, fr.valcombe.client.screen.atelier.StructureSheetPage.VIEW_3D);
+		check(waitClient(ctx, 100, mc -> fr.valcombe.client.Maquette.get("maison-gothique") != null
+			&& !fr.valcombe.client.Maquette.get("maison-gothique").cells.isEmpty()), "maquette 3D de la structure reçue");
 		shot(ctx, "28h2-structure-en-3d");
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
-		press(ctx, "Prendre en main");
+		press(ctx, "Retour");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.StructureSheetPage),
+			"« Retour » ramène à la fiche de la structure");
+		press(ctx, fr.valcombe.client.screen.atelier.StructureSheetPage.TAKE);
 		check("maison-gothique".equals(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.editor().state(me).get("structure"))),
 			"structure prise en main");
 		// Le fantôme de la structure, là où l'on vise (le sol, devant soi)
@@ -264,7 +317,9 @@ public class ScreensGameTest implements FabricClientGameTest {
 		ctx.waitTicks(30);
 		check(ctx.computeOnClient(mc -> fr.valcombe.client.Ghost.active()), "fantôme de la structure en main, là où l'on vise");
 		shot(ctx, "28h3-fantome-de-la-structure");
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
+		// La barre de la structure en main, en bas du catalogue.
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.StructuresPage(0));
+		ctx.waitTicks(5);
 		press(ctx, "Tourner");
 		shot(ctx, "28i-atelier-structure-en-main");
 		// Posée à ses pieds, puis reprise avec la main : tournée, puis retirée (le terrain et le repère reviennent).
@@ -289,14 +344,18 @@ public class ScreensGameTest implements FabricClientGameTest {
 		server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().objectAction(s.getPlayerList().getPlayerByName(me),
 			"trone", 0, "centre"));
 		check(!village.get().seatTurned(0), "trône de nouveau tourné vers le centre");
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(3));
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.StructuresPage(0));
+		ctx.waitTicks(5);
 		press(ctx, "Ranger");
 		check(server.computeOnServer(s -> fr.valcombe.mc.ValcombeMod.editor().state(me).get("structure")) == null, "structure rangée");
-		press(ctx, "Les vôtres");
+		chooseTab(ctx, "À vous");
 		shot(ctx, "28j-atelier-structures-de-l-utilisateur");
 
-		// WorldEdit : hors des ateliers, l'onglet montre le chemin vers eux (la sélection, c'est WorldEdit, dans les ateliers).
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(4));
+		// Construire : hors des ateliers, le volet montre le chemin vers eux (la sélection, c'est WorldEdit, dans les ateliers).
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.StructuresPage(1));
+		ctx.waitTicks(5);
+		check(ctx.computeOnClient(mc -> mc.gui.screen().children().stream().anyMatch(w -> w instanceof fr.valcombe.client.hd.HdButton b
+			&& b.getMessage().getString().equals("Aller à l'atelier structures"))), "hors des ateliers : le chemin vers eux");
 		shot(ctx, "28k-atelier-worldedit-hors-atelier");
 		ctx.setScreen(() -> null);
 		send(ctx, "vc carte construction"); // sortie du mode construction
@@ -320,13 +379,20 @@ public class ScreensGameTest implements FabricClientGameTest {
 		});
 		boolean inLobby = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().lobby().contains(me));
 		long botsBefore = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().lobby().stream().filter(n -> n.startsWith("Bot")).count());
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(5));
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.RolesPage(0));
+		check(waitClient(ctx, 100, mc -> fr.valcombe.client.screen.atelier.RolesPage.scenarios().stream()
+			.anyMatch(o -> "essai-carte".equals(ClientState.str(o, "id")))), "le scénario paraît dans l'Atelier");
+		ctx.setScreen(() -> new fr.valcombe.client.screen.atelier.RolesPage(0));
+		ctx.waitTicks(5);
+		shot(ctx, "28l0-atelier-scenarios");
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.screen.atelier.RolesPage p && p.grid() != null
+			&& p.grid().open("Essai sur le village")), "case du scénario");
 		ctx.waitTicks(10);
-		press(ctx, "Essai sur le village  (5 à 16)");
 		shot(ctx, "28l-atelier-creations");
-		press(ctx, "Partie d'essai (charge sa carte)");
-		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario()) == null, "l'essai qui charge une carte se confirme");
-		press(ctx, "Confirmer : partie d'essai (charge sa carte)");
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.TRIAL);
+		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario()) == null, "l'essai se confirme");
+		shot(ctx, "28l2-atelier-essai-a-confirmer");
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.TRIAL_CONFIRM);
 		String waiting = server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().trialPending() + " " + fr.valcombe.mc.games.Games.main().host().busy()
 			+ " " + (fr.valcombe.mc.games.Games.main().session().game() == null));
 		// Le chantier (monde remis à neuf, carte posée) peut déjà être fini quand on regarde : la partie d'essai attend
@@ -351,12 +417,28 @@ public class ScreensGameTest implements FabricClientGameTest {
 		server.runCommand("vc arreter");
 		waitBuild(ctx, world);
 		// Même scénario, la carte intacte en place : plus rien à confirmer ni à recharger.
-		ctx.setScreen(() -> new fr.valcombe.client.screen.AtelierScreen(5));
-		ctx.waitTicks(10);
-		press(ctx, "Choisir pour la prochaine partie");
+		ctx.setScreen(() -> fr.valcombe.client.screen.atelier.ScenarioSheetPage.visit("essai-carte"));
+		ctx.waitTicks(30);
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE);
+		ctx.runOnClient(mc -> {
+			for (var w : mc.gui.screen().children()) {
+				if (w instanceof fr.valcombe.client.hd.HdList<?> l) {
+					for (int i = 0; i < l.items().size(); i++) {
+						if (l.items().get(i) instanceof com.google.gson.JsonObject o && mainId.equals(ClientState.str(o, "id"))) {
+							l.choose(i);
+						}
+					}
+				}
+			}
+		});
+		ctx.waitTicks(5);
+		shot(ctx, "28n-atelier-scenario-pour-une-partie");
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.CHOOSE_CONFIRM);
 		check(!server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().busy()), "carte déjà en place : pas de rechargement");
-		press(ctx, "Supprimer ce scénario");
-		press(ctx, "Confirmer : supprimer ce scénario");
+		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario() != null
+			&& fr.valcombe.mc.games.Games.main().session().scenario().id.equals("essai-carte")), "scénario choisi pour la partie : " + reply(ctx));
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.DELETE);
+		press(ctx, fr.valcombe.client.screen.atelier.ScenarioSheetPage.DELETE_CONFIRM);
 		check(server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().session().scenario() == null
 			&& fr.valcombe.mc.games.Games.main().session().scenarios().stream().noneMatch(d -> d.id.equals("essai-carte"))),
 			"scénario supprimé, et plus choisi : " + reply(ctx));

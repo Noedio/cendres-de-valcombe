@@ -6,6 +6,7 @@ Un monde de Valcombe (sorte `atelier-structures`, un seul) où **toutes les stru
 
 - Menu J, « Mondes », « Atelier structures », « Y aller » : l'atelier est créé à la première visite (il est proposé même avant d'exister).
 - Ou `/vc structures atelier`.
+- Ou l'Atelier en jeu (menu J › Atelier › Structures) : la fiche d'une structure a « Aller sur sa parcelle », qui conduit devant son pupitre d'où que l'on soit (`/vc structures aller <id>`), et « Nouvelle structure » › « Parcelle vide » ouvre une parcelle neuve et vous y conduit (`/vc structures nouvelle <taille> <nom>`, lui aussi utilisable hors de l'atelier).
 - Réservé aux opérateurs et, quand les invitations seront branchées, à leurs invités (voir « Droits »).
 
 ## Ce qu'on y trouve
@@ -27,7 +28,7 @@ Une structure ajoutée au catalogue ailleurs (éditeur, import, pack, sélection
    - ce qui dépasse la bordure n'est pas enregistré ;
    - l'origine reste l'ancre de la structure (là où se tiennent les pieds à la pose).
 3. Une **structure fournie** modifiée devient une **surcharge** : elle remplace l'originale **partout**, dans le village généré (maisons, salle de convocation, pavillon, monument du centre, étals, arbres, carrés de simples, tonneaux, lampadaires), l'éditeur de carte, l'Atelier web et en jeu, et les cartes qui la posent ensuite.
-4. **« Revenir à l'originale »** retire la surcharge (elle va à la corbeille) et repose l'originale sur la parcelle. Aussi dans l'Atelier web (bouton sur la structure).
+4. **« Revenir à l'originale »** retire la surcharge (elle va à la corbeille) et repose l'originale sur la parcelle. Aussi dans l'Atelier web (bouton sur la structure) et dans la fiche de la structure de l'Atelier en jeu (confirmé ; `/vc structure originale <id>`, d'où que l'on soit : la parcelle suit au prochain passage, sauf si elle a des changements en cours, marqués alors « changée ailleurs »).
 
 Autres actions du pupitre :
 

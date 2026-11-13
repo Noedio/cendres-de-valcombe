@@ -206,8 +206,8 @@ public class MainScreen extends HdScreen {
 			actions.add(new Action("Panneau du Conteur", () -> minecraft.gui.setScreen(new StorytellerScreen())));
 		}
 		if (ClientState.obj(v, "atelier") != null) {
-			// Opérateur : cartes, village, structures et créations, sans passer par le navigateur.
-			actions.add(new Action("Atelier", () -> minecraft.gui.setScreen(new AtelierScreen())));
+			// Opérateur : cartes, structures, parties, rôles et scénarios, sans passer par le navigateur.
+			actions.add(new Action("Atelier", () -> minecraft.gui.setScreen(fr.valcombe.client.screen.atelier.AtelierPage.open())));
 		}
 		return actions;
 	}

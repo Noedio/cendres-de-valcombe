@@ -33,6 +33,10 @@ public final class ValcombeClient implements ClientModInitializer {
 			(payload, context) -> context.client().execute(() -> ClientState.applyPreview(payload.json())));
 		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.SelectionPayload.TYPE,
 			(payload, context) -> context.client().execute(() -> BuildSelection.received(payload)));
+		// Vignettes de l'Atelier en jeu : textures faites à l'arrivée, oubliées à la déconnexion (un autre serveur a d'autres cartes).
+		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.VignettePayload.TYPE,
+			(payload, context) -> context.client().execute(() -> Vignettes.received(payload)));
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(Vignettes::forget));
 
 		Hud.register();
 		Ghost.register();

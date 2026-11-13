@@ -128,6 +128,11 @@ public class HdList<T> extends AbstractWidget implements HdKeyed {
 		return selected;
 	}
 
+	/** Choisit une ligne comme le ferait un clic (prévient onSelect) : pour les tests en jeu. */
+	public void choose(int index) {
+		choose(index, false);
+	}
+
 	public T selected() {
 		return selected >= 0 ? items.get(selected) : null;
 	}

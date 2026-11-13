@@ -43,7 +43,7 @@ public final class ScreenRouter {
 		}
 		Screen s = switch (which) {
 			case "storyteller" -> new StorytellerScreen();
-			case "atelier" -> new fr.valcombe.client.screen.AtelierScreen();
+			case "atelier" -> fr.valcombe.client.screen.atelier.AtelierPage.open();
 			case "sheets" -> new SheetsScreen();
 			case "mondes" -> new fr.valcombe.client.screen.WorldsScreen();
 			case "parties" -> new fr.valcombe.client.screen.PartiesScreen();

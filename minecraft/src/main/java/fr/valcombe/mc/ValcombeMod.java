@@ -414,6 +414,7 @@ public final class ValcombeMod implements ModInitializer {
 			creations.load();
 			baseMotd = server.getMotd();
 			workshop = new Workshop(server, creations, maps, structures, editor);
+			Vignettes.install(server, maps);
 			Atelier atelier = new Atelier(creations, maps, structures, editor, workshop);
 			atelier.setServer(server);
 			tablet.setAtelier(atelier);
@@ -476,6 +477,7 @@ public final class ValcombeMod implements ModInitializer {
 				admin.setServer(null); // les requêtes qui arrivent pendant l'arrêt reçoivent « pas prêt »
 			}
 			workshop = null;
+			Vignettes.stop();
 			if (mapWorkshop != null) {
 				// Les ateliers carte modifiés sont enregistrés dans la bibliothèque tant que leurs mondes sont ouverts.
 				try {
@@ -678,6 +680,9 @@ public final class ValcombeMod implements ModInitializer {
 				w.reply(p.getScoreboardName(), out.toString(), failed[0]);
 			}
 		});
+		// Vignettes de l'Atelier en jeu (vues de dessus des cartes) : demandées par le client, faites par le serveur.
+		ServerPlayNetworking.registerGlobalReceiver(ValcombeNet.VignetteRequestPayload.TYPE,
+			(payload, context) -> guarded("les vignettes", () -> Vignettes.request(context.player(), payload.key())));
 		// Les objets et outils de Valcombe passent avant les autres mods (WorldEdit réagit aussi à la hache en bois
 		// et à la boussole) : les trois écouteurs de clic ci-dessous sont inscrits dans la phase ToolPriority.PHASE.
 		ToolPriority.install();
