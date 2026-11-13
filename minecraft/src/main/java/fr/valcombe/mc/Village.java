@@ -730,6 +730,9 @@ public final class Village {
 
 	/** Le pavillon de la salle d'attente, centré en (hx, hz) : murs, toit, lanternes et dalles. */
 	private void pavilion(ServerLevel level, int hx, int hz) {
+		if (modified(level, "pavillon", 0, hx, hz, null)) {
+			return;
+		}
 		BlockState air = Blocks.AIR.defaultBlockState();
 		for (int x = -11; x <= 11; x++) {
 			for (int z = -9; z <= 9; z++) {
@@ -872,6 +875,85 @@ public final class Village {
 				}
 			}
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Morceaux modifiés dans l'atelier structures (voir StructureStore)
+	// ------------------------------------------------------------------
+	/**
+	 * La version modifiée d'un morceau du village : ses blocs, et la case de ses pieds (ax, ay, az), celle où se
+	 * tiendrait un joueur debout au milieu du morceau d'origine.
+	 */
+	record Piece(Clip clip, int ax, int ay, int az) {
+	}
+
+	/** Qui sait si un morceau (sorte, thème, variante) a été modifié : le catalogue de structures. */
+	@FunctionalInterface
+	interface Pieces {
+		/** La version modifiée de ce morceau, ou null s'il garde le sien. */
+		Piece find(String kind, String theme, int variant);
+	}
+
+	private static volatile Pieces pieces;
+
+	/** Branche (ou débranche, null) le catalogue : une structure fournie modifiée remplace alors son morceau partout. */
+	static void setPieces(Pieces p) {
+		pieces = p;
+	}
+
+	/**
+	 * Bâtit la version modifiée de ce morceau, s'il y en a une, les pieds en (cx, 1, cz) et tourné pour que son nord
+	 * regarde facing (null : sans le tourner) ; renvoie vrai si c'est fait, faux si le code bâtit l'original. Jamais pour
+	 * les plans du catalogue (level null) : ils décrivent justement les originaux.
+	 */
+	private boolean modified(ServerLevel level, String kind, int variant, int cx, int cz, Direction facing) {
+		Pieces source = pieces;
+		if (level == null || source == null) {
+			return false;
+		}
+		Piece piece = source.find(kind, theme, variant);
+		if (piece == null) {
+			return false;
+		}
+		int quarters = facing == null ? 0 : switch (facing) {
+			case EAST -> 1;
+			case SOUTH -> 2;
+			case WEST -> 3;
+			default -> 0;
+		};
+		Turn turn = new Turn(quarters, false);
+		Clip src = piece.clip();
+		Clip c = src.turned(turn);
+		int fx = turn.x(piece.ax(), piece.az(), src.width, src.length);
+		int fz = turn.z(piece.ax(), piece.az(), src.width, src.length);
+		int x0 = cx - fx;
+		int y0 = 1 - piece.ay();
+		int z0 = cz - fz;
+		for (int i = 0; i < c.cells.length; i++) {
+			int cell = c.cells[i];
+			if (cell != Clip.EMPTY) {
+				set(level, x0 + i % c.width, y0 + i / (c.width * c.length), z0 + i / c.width % c.length, c.palette.get(cell));
+			}
+		}
+		if (!c.data.isEmpty()) {
+			// Le contenu des blocs (coffres, pancartes) une fois les blocs posés.
+			BlockPos corner = new BlockPos(center.getX() + x0, center.getY() + y0 + lift, center.getZ() + z0);
+			Runnable fill = () -> c.data.forEach((i, tag) -> {
+				BlockPos pos = corner.offset(i % c.width, i / (c.width * c.length), i / c.width % c.length);
+				var be = level.getBlockEntity(pos);
+				if (be != null && level.getBlockState(pos) == c.palette.get(c.cells[i])) {
+					be.loadWithComponents(net.minecraft.world.level.storage.TagValueInput.create(
+						net.minecraft.util.ProblemReporter.DISCARDING, level.registryAccess(), tag));
+					be.setChanged();
+				}
+			});
+			if (plan != null) {
+				plan.after.add(fill);
+			} else {
+				fill.run();
+			}
+		}
+		return true;
 	}
 
 	// ------------------------------------------------------------------
@@ -1018,6 +1100,9 @@ public final class Village {
 	 * par le Conteur). Le joueur se tient au milieu, le Conteur devant la bibliothèque du fond.
 	 */
 	private void room(ServerLevel level, int rx, int rz, Palette p) {
+		if (modified(level, "salle", 0, rx, rz, null)) {
+			return;
+		}
 		BlockState air = Blocks.AIR.defaultBlockState();
 		for (int x = -4; x <= 4; x++) {
 			for (int z = -4; z <= 4; z++) {
@@ -1167,9 +1252,11 @@ public final class Village {
 			if (i % 2 == 0) {
 				int lx = (int) Math.round((seatRadius + 3) * Math.cos(a + Math.PI / seatTotal));
 				int lz = (int) Math.round((seatRadius + 3) * Math.sin(a + Math.PI / seatTotal));
-				set(level, lx, 1, lz, p.post().defaultBlockState());
-				set(level, lx, 2, lz, p.post().defaultBlockState());
-				set(level, lx, 3, lz, p.light().defaultBlockState());
+				if (!modified(level, "lampadaire", 0, lx, lz, null)) {
+					set(level, lx, 1, lz, p.post().defaultBlockState());
+					set(level, lx, 2, lz, p.post().defaultBlockState());
+					set(level, lx, 3, lz, p.light().defaultBlockState());
+				}
 			}
 		}
 		centerpiece(level, p);
@@ -1225,6 +1312,9 @@ public final class Village {
 	 * un puits couvert (gothique), le jardin d'un cloître sous ses arcades (monastère), un fanal de port.
 	 */
 	private void centerpiece(ServerLevel level, Palette p) {
+		if (modified(level, "monument", 0, 0, 0, null)) {
+			return;
+		}
 		BlockState pillar = p.pillar().defaultBlockState();
 		switch (theme) {
 			case "monastere" -> {
@@ -1326,6 +1416,9 @@ public final class Village {
 
 	/** Monastère : un carré de simples, bordé de pierre, avec son composteur. */
 	private void herbBed(ServerLevel level, int cx, int cz) {
+		if (modified(level, "simples", 0, cx, cz, null)) {
+			return;
+		}
 		for (int x = -2; x <= 2; x++) {
 			for (int z = -2; z <= 2; z++) {
 				boolean rim = Math.abs(x) == 2 || Math.abs(z) == 2;
@@ -1340,6 +1433,9 @@ public final class Village {
 
 	/** Port : une pile de tonneaux et un poteau d'amarrage coiffé d'une lanterne. */
 	private void cargo(ServerLevel level, int cx, int cz, Palette p) {
+		if (modified(level, "tonneaux", 0, cx, cz, null)) {
+			return;
+		}
 		for (int x = -1; x <= 1; x++) {
 			set(level, cx + x, 1, cz, Blocks.BARREL.defaultBlockState());
 		}
@@ -1485,6 +1581,9 @@ public final class Village {
 
 	/** Étal de marché : quatre poteaux, un auvent rayé, un comptoir. */
 	private void stall(ServerLevel level, int cx, int cz, int index) {
+		if (modified(level, "etal", index % 6, cx, cz, null)) {
+			return;
+		}
 		Block stripe = switch (index % 6) {
 			case 0 -> Blocks.WOOL.red();
 			case 2 -> Blocks.WOOL.blue();
@@ -1509,6 +1608,9 @@ public final class Village {
 
 	/** Arbre simple : un tronc et une couronne de feuilles. */
 	private void tree(ServerLevel level, int cx, int cz, Palette p, BlockState leaves) {
+		if (modified(level, "arbre", 0, cx, cz, null)) {
+			return;
+		}
 		for (int y = 1; y <= 5; y++) {
 			set(level, cx, y, cz, p.log().defaultBlockState());
 		}
@@ -1527,6 +1629,10 @@ public final class Village {
 
 	/** Maison de 9 × 9 : toit en pyramide, fenêtres, lit de paille, tonneaux et lanterne. */
 	private void house(ServerLevel level, int hx, int hz, int index, Palette p) {
+		// La maison modifiée est tournée comme l'originale : sa porte, au nord dans le catalogue, regarde la place.
+		if (modified(level, "maison", index % 2, hx, hz, away(-hx, -hz))) {
+			return;
+		}
 		BlockState wall = (index % 2 == 0 ? p.wallA() : p.wallB()).defaultBlockState();
 		BlockState log = p.pillar().defaultBlockState();
 		BlockState roof = p.roof().defaultBlockState();

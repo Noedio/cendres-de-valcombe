@@ -1870,6 +1870,7 @@ function renderStructures() {
 			sub.className = "sub hint";
 			sub.textContent = s.taille.join(" × ") + " · " + s.blocs + " blocs"
 				+ (s.repere === "maison" ? " · pose un repère de maison" : s.repere === "salle" ? " · pose la salle de convocation" : "")
+				+ (s.modifiee ? " · modifiée dans l'atelier structures" + (s.modifieeLe ? " le " + s.modifieeLe : "") : "")
 				+ (s.fournie ? "" : " · " + s.id);
 			const bar = document.createElement("div");
 			bar.className = "bar";
@@ -1884,6 +1885,14 @@ function renderStructures() {
 				load();
 			};
 			bar.appendChild(take);
+			if (s.modifiee) {
+				const back = document.createElement("button");
+				back.textContent = "Revenir à l'originale";
+				back.title = "La version modifiée dans l'atelier structures va à la corbeille ; l'originale sert de nouveau partout.";
+				back.onclick = () => structAction("structure/originale", s.id, "Revenir à l'originale de « " + s.nom + " » ? "
+					+ "Elle remplacera la version modifiée partout (village généré, éditeur).");
+				bar.appendChild(back);
+			}
 			if (!s.fournie) {
 				const ren = document.createElement("button");
 				ren.textContent = "Renommer";

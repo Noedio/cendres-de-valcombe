@@ -26,6 +26,11 @@ public final class ScreenRouter {
 			}
 			return;
 		}
+		if (which.startsWith("structures:")) {
+			// Pupitre de l'atelier structures : l'écran de l'atelier sur cette parcelle (vide : celui de l'accueil)
+			mc.gui.setScreen(new fr.valcombe.client.screen.StructuresWorkshopScreen(which.substring("structures:".length())));
+			return;
+		}
 		if (which.startsWith("seat:")) {
 			// Bâton du Conteur : la ligne du grimoire du joueur visé
 			mc.gui.setScreen(new fr.valcombe.client.screen.SeatScreen(which.substring(5)));

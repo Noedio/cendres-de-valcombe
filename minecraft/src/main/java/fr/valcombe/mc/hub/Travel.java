@@ -164,6 +164,11 @@ public final class Travel implements WorldManager.Fallback, WorldManager.Listene
 				out.add(destination(e, present, here));
 			}
 		}
+		if (operator(p) && worlds.registry().list(WorldKind.ATELIER_STRUCTURES).isEmpty()) {
+			// L'atelier structures n'existe pas encore : le menu le propose quand même (« Y aller » le crée et le dispose).
+			WorldKind k = WorldKind.ATELIER_STRUCTURES;
+			out.add(new Destination(k.code(), fr.valcombe.mc.StructureWorkshop.NAME, k.code(), k.label(), 0, false));
+		}
 		return out;
 	}
 

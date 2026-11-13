@@ -79,7 +79,9 @@ public class WorldsScreen extends HdScreen {
 			case "partie" -> "Un monde de partie, avec sa propre carte.";
 			case "essai" -> "Une partie d'essai, pour répéter une carte ou un scénario sans toucher à la vraie.";
 			case "atelier-carte" -> "Un atelier de carte, réservé aux opérateurs : on y construit une carte de la bibliothèque.";
-			case "atelier-structures" -> "L'atelier des structures, réservé aux opérateurs.";
+			case "atelier-structures" -> "L'atelier des structures, réservé aux opérateurs : toutes les structures de Valcombe, chacune "
+				+ "sur sa parcelle. On les modifie sur place, puis « Enregistrer » à leur pupitre ; une structure fournie modifiée "
+				+ "remplace l'originale partout.";
 			default -> "";
 		};
 	}
@@ -98,7 +100,8 @@ public class WorldsScreen extends HdScreen {
 		if (d == null || ClientState.bool(d, "ici") || blocked() != null) {
 			return;
 		}
-		send("vc monde aller " + ClientState.str(d, "id"));
+		// L'atelier structures passe par sa commande : elle le crée à la première visite et pose les parcelles nouvelles.
+		send("atelier-structures".equals(ClientState.str(d, "sorte")) ? "vc structures atelier" : "vc monde aller " + ClientState.str(d, "id"));
 		onClose();
 	}
 

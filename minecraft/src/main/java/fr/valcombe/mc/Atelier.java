@@ -358,6 +358,8 @@ final class Atelier {
 						o.get("repere").getAsString()), 5)));
 				}
 				case "structure/supprimer" -> text(ex, 200, logged(owner, onServer(() -> structures.delete(body.trim()), 5)));
+				// Structure fournie modifiée dans l'atelier structures : l'originale revient partout (sa parcelle suit).
+				case "structure/originale" -> text(ex, 200, logged(owner, onServer(() -> structures.revert(body.trim()), 5)));
 				case "edition/annuler" -> text(ex, 200, logged(owner, onServer(() -> editor.undo(online(owner), 1), 10)));
 				case "edition/retablir" -> text(ex, 200, logged(owner, onServer(() -> editor.redo(online(owner), 1), 10)));
 				case "exporter" -> exportPack(ex);
