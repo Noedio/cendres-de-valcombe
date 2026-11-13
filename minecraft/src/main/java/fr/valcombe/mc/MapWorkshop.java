@@ -1095,6 +1095,7 @@ public final class MapWorkshop implements WorldManager.Listener, WorldManager.Gu
 	private void markersChanged(WorldEntry e, Draft d, Village.Marks before) {
 		if (before != null) {
 			d.undo.push(before);
+			SharedUndo.recorded(SharedUndo.Stack.MARKERS); // à l'invité ou à l'opérateur dont l'action est en cours
 			while (d.undo.size() > 40) {
 				d.undo.removeLast();
 			}

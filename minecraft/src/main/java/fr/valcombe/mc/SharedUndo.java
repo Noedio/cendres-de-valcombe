@@ -31,8 +31,10 @@ import net.minecraft.server.level.ServerPlayer;
  * et le bouton « Annuler » de l'Atelier continuent de marcher : le journal se recale sur les piles à chaque tick
  * (un geste défait directement en disparaît, un geste fait ailleurs y entre à son rang).
  * <ul>
- * <li>Les gestes WorldEdit sont ceux <b>du joueur</b> (chacun a sa session) ; les gestes Valcombe sont communs à tous
- * les opérateurs (une seule carte en construction, un seul historique), et seuls les opérateurs les annulent.</li>
+ * <li>Les gestes WorldEdit sont ceux <b>du joueur</b> (chacun a sa session). Les gestes Valcombe sont dans des piles
+ * communes (une seule carte en construction, un seul historique) : chacun porte son auteur, le joueur dont la commande
+ * ou le clic l'a fait ({@link #acting}). Un invité d'un atelier n'annule que les siens, et seulement tant qu'aucun geste
+ * d'un autre ne les recouvre dans la même pile ; un opérateur annule tout.</li>
  * <li>Les repères n'ont pas de « rétablir » : un repère annulé se repose avec son outil.</li>
  * <li>Un nouveau geste vide la liste de ce qu'on peut rétablir, comme partout.</li>
  * </ul>
@@ -58,8 +60,9 @@ public final class SharedUndo {
 	 */
 	public static final class Journal {
 		/**
-		 * Un geste : sa pile, son auteur (gestes WorldEdit), et l'objet de WorldEdit qui le représente. Deux gestes ne
-		 * sont jamais « égaux » : chacun est lui-même (deux poses de structure se ressemblent, mais n'ont pas le même rang).
+		 * Un geste : sa pile, son auteur (null s'il n'est pas connu : seul un opérateur le défait), et l'objet de
+		 * WorldEdit qui le représente. Deux gestes ne sont jamais « égaux » : chacun est lui-même (deux poses de structure
+		 * se ressemblent, mais n'ont pas le même rang).
 		 */
 		public static final class Entry {
 			private final Stack stack;
@@ -99,6 +102,8 @@ public final class SharedUndo {
 		 * viderait la liste à rétablir.
 		 */
 		private final Map<Stack, Integer> undoing = new java.util.EnumMap<>(Stack.class);
+		/** Les auteurs des « rétablir » attendus d'une pile Valcombe, dans l'ordre : le geste rétabli garde son auteur. */
+		private final Map<Stack, List<UUID>> expectedAuthors = new java.util.EnumMap<>(Stack.class);
 
 		private int count(Stack s) {
 			int n = 0;
@@ -125,6 +130,16 @@ public final class SharedUndo {
 		 * défaits directement (on retire les plus récents), ceux qui s'ajoutent viennent d'être faits (à la fin).
 		 */
 		public void syncCount(Stack stack, int depth) {
+			syncCount(stack, depth, List.of());
+		}
+
+		/**
+		 * Recale le journal sur une pile de Valcombe (voir {@link #syncCount(Stack, int)}) ; authors : les auteurs des
+		 * gestes faits sur cette pile depuis le recalage d'avant, du plus ancien au plus récent. Les gestes nouveaux
+		 * reçoivent les derniers d'entre eux (une pile pleine oublie ses plus anciens gestes : il peut y avoir plus
+		 * d'auteurs que de gestes nouveaux).
+		 */
+		public void syncCount(Stack stack, int depth, List<UUID> authors) {
 			int pending = undoing.getOrDefault(stack, 0);
 			int have = count(stack) + pending;
 			// La pile rattrape d'abord les gestes que le journal a déjà défaits.
@@ -144,12 +159,20 @@ public final class SharedUndo {
 					have--;
 				}
 			}
+			int fresh = Math.max(0, depth - have - expected.getOrDefault(stack, 0));
+			int next = authors.size() - fresh;
 			while (have < depth) {
 				int wait = expected.getOrDefault(stack, 0);
+				UUID author;
 				if (wait > 0) {
 					expected.put(stack, wait - 1);
+					List<UUID> waiting = expectedAuthors.get(stack);
+					author = waiting == null || waiting.isEmpty() ? null : waiting.remove(0);
+				} else {
+					author = next >= 0 && next < authors.size() ? authors.get(next) : null;
+					next++;
 				}
-				add(new Entry(stack, null, null), wait > 0);
+				add(new Entry(stack, author, null), wait > 0);
 				have++;
 			}
 		}
@@ -179,29 +202,56 @@ public final class SharedUndo {
 			}
 		}
 
-		/** Ce geste peut-il être défait (ou refait) par ce joueur ? Les siens dans WorldEdit, et ceux de Valcombe s'il est opérateur. */
-		private static boolean mine(Entry e, UUID player, boolean valcombe) {
-			return e.stack() == Stack.WORLDEDIT ? player.equals(e.player()) : valcombe;
+		/**
+		 * Ce geste est-il à ce joueur ? Les siens dans WorldEdit ; dans les piles de Valcombe (valcombe : il peut y toucher
+		 * là où il est), tous s'il est opérateur (all), sinon ceux dont il est l'auteur.
+		 */
+		private static boolean mine(Entry e, UUID player, boolean valcombe, boolean all) {
+			if (e.stack() == Stack.WORLDEDIT) {
+				return player.equals(e.player());
+			}
+			return valcombe && (all || player.equals(e.player()));
+		}
+
+		/**
+		 * Les gestes que ce joueur peut défaire (ou refaire), du plus récent au plus ancien. Une pile de Valcombe défait
+		 * toujours son dernier geste : un geste d'un autre au sommet d'une pile bloque, pour un invité, les siens dessous.
+		 */
+		private List<Entry> reachable(List<Entry> from, UUID player, boolean valcombe, boolean all) {
+			List<Entry> out = new ArrayList<>();
+			java.util.EnumSet<Stack> blocked = java.util.EnumSet.noneOf(Stack.class);
+			for (int i = from.size() - 1; i >= 0; i--) {
+				Entry e = from.get(i);
+				if (blocked.contains(e.stack())) {
+					continue;
+				}
+				if (mine(e, player, valcombe, all)) {
+					out.add(e);
+				} else if (e.stack() != Stack.WORLDEDIT) {
+					blocked.add(e.stack());
+				}
+			}
+			return out;
 		}
 
 		/** Le dernier geste que ce joueur peut annuler, ou null. */
 		public Entry nextUndo(UUID player, boolean valcombe) {
-			for (int i = done.size() - 1; i >= 0; i--) {
-				if (mine(done.get(i), player, valcombe)) {
-					return done.get(i);
-				}
-			}
-			return null;
+			return nextUndo(player, valcombe, true);
+		}
+
+		public Entry nextUndo(UUID player, boolean valcombe, boolean all) {
+			List<Entry> r = reachable(done, player, valcombe, all);
+			return r.isEmpty() ? null : r.get(0);
 		}
 
 		/** Le dernier geste annulé que ce joueur peut rétablir, ou null. */
 		public Entry nextRedo(UUID player, boolean valcombe) {
-			for (int i = undone.size() - 1; i >= 0; i--) {
-				if (mine(undone.get(i), player, valcombe)) {
-					return undone.get(i);
-				}
-			}
-			return null;
+			return nextRedo(player, valcombe, true);
+		}
+
+		public Entry nextRedo(UUID player, boolean valcombe, boolean all) {
+			List<Entry> r = reachable(undone, player, valcombe, all);
+			return r.isEmpty() ? null : r.get(0);
 		}
 
 		/**
@@ -209,11 +259,21 @@ public final class SharedUndo {
 		 * récent au plus ancien : une pile qui pose ses blocs par petits lots (les structures) les défait d'un coup.
 		 */
 		public List<Entry> lastRun(UUID player, boolean valcombe, int max, boolean redo) {
+			return lastRun(player, valcombe, true, max, redo);
+		}
+
+		/** Comme {@link #lastRun(UUID, boolean, int, boolean)} ; all : il peut défaire les gestes Valcombe de tous. */
+		public List<Entry> lastRun(UUID player, boolean valcombe, boolean all, int max, boolean redo) {
 			List<Entry> from = redo ? undone : done;
 			List<Entry> out = new ArrayList<>();
+			java.util.EnumSet<Stack> blocked = java.util.EnumSet.noneOf(Stack.class);
 			for (int i = from.size() - 1; i >= 0 && out.size() < max; i--) {
 				Entry e = from.get(i);
-				if (!mine(e, player, valcombe)) {
+				boolean m = mine(e, player, valcombe, all) && !blocked.contains(e.stack());
+				if (!m) {
+					if (e.stack() != Stack.WORLDEDIT) {
+						blocked.add(e.stack()); // le geste d'un autre au sommet de sa pile : rien dessous pour ce joueur
+					}
 					continue;
 				}
 				if (!out.isEmpty() && e.stack() != out.get(0).stack()) {
@@ -240,6 +300,7 @@ public final class SharedUndo {
 			if (e.stack() != Stack.WORLDEDIT) {
 				undone.remove(e);
 				expected.merge(e.stack(), 1, Integer::sum);
+				expectedAuthors.computeIfAbsent(e.stack(), k -> new ArrayList<>()).add(e.player());
 			}
 			// Un geste WorldEdit reste dans la liste à rétablir : syncWorldEdit l'en retire quand la session le rend.
 		}
@@ -248,26 +309,26 @@ public final class SharedUndo {
 		public void redoFailed(Entry e) {
 			undone.remove(e);
 			expected.computeIfPresent(e.stack(), (s, n) -> n > 1 ? n - 1 : null);
+			List<UUID> waiting = expectedAuthors.get(e.stack());
+			if (waiting != null && !waiting.isEmpty()) {
+				waiting.remove(waiting.size() - 1);
+			}
 		}
 
 		public int undoable(UUID player, boolean valcombe) {
-			int n = 0;
-			for (Entry e : done) {
-				if (mine(e, player, valcombe)) {
-					n++;
-				}
-			}
-			return n;
+			return undoable(player, valcombe, true);
+		}
+
+		public int undoable(UUID player, boolean valcombe, boolean all) {
+			return reachable(done, player, valcombe, all).size();
 		}
 
 		public int redoable(UUID player, boolean valcombe) {
-			int n = 0;
-			for (Entry e : undone) {
-				if (mine(e, player, valcombe)) {
-					n++;
-				}
-			}
-			return n;
+			return redoable(player, valcombe, true);
+		}
+
+		public int redoable(UUID player, boolean valcombe, boolean all) {
+			return reachable(undone, player, valcombe, all).size();
 		}
 
 		/** Les piles des gestes, du plus ancien au plus récent (pour les tests). */
@@ -280,7 +341,40 @@ public final class SharedUndo {
 			undone.clear();
 			expected.clear();
 			undoing.clear();
+			expectedAuthors.clear();
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Les auteurs des gestes de Valcombe
+	// ------------------------------------------------------------------
+
+	/** Le joueur dont la commande ou le clic est en cours de traitement (null : la console, un bloc de commande...). */
+	private static UUID actor;
+	/** Les auteurs des gestes faits sur chaque pile de Valcombe depuis le dernier recalage, du plus ancien au plus récent. */
+	private static final Map<Stack, List<UUID>> RECORDED = new java.util.EnumMap<>(Stack.class);
+
+	/**
+	 * Une commande ou un clic de ce joueur commence (null : pas un joueur) : les gestes de Valcombe qu'il fait sont à
+	 * lui. Appelé par Minecraft avant chaque commande (CommandsMixin) et avant les écouteurs de clic (ToolPriority).
+	 */
+	public static void acting(ServerPlayer p) {
+		actor = p == null ? null : p.getUUID();
+	}
+
+	/** Une pile de Valcombe vient de recevoir un geste : il est au joueur dont l'action est en cours. */
+	static void recorded(Stack stack) {
+		List<UUID> l = RECORDED.computeIfAbsent(stack, k -> new ArrayList<>());
+		l.add(actor);
+		while (l.size() > 64) {
+			l.remove(0);
+		}
+	}
+
+	/** Les auteurs notés pour cette pile depuis le dernier recalage (et on les oublie). */
+	private static List<UUID> takeRecorded(Stack stack) {
+		List<UUID> l = RECORDED.remove(stack);
+		return l == null ? List.of() : l;
 	}
 
 	private final Journal journal = new Journal();
@@ -309,6 +403,8 @@ public final class SharedUndo {
 	void setServer(MinecraftServer server) {
 		this.server = server;
 		journal.clear();
+		RECORDED.clear();
+		actor = null;
 	}
 
 	/** Recale le journal sur les trois piles (à chaque tick, et avant chaque « annuler »). */
@@ -319,7 +415,7 @@ public final class SharedUndo {
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 			journal.syncWorldEdit(p.getUUID(), worldEdit.history(p));
 		}
-		journal.syncCount(Stack.STRUCTURES, editor.undoable());
+		journal.syncCount(Stack.STRUCTURES, editor.undoable(), takeRecorded(Stack.STRUCTURES));
 		// Chaque partie a ses repères, chaque atelier carte aussi : le journal les compte ensemble, et chaque « annuler » ne
 		// défait que ceux du monde où se tient le joueur (checkPlace, puis undoMarker de son hôte ou de l'atelier).
 		int markers = 0;
@@ -330,7 +426,7 @@ public final class SharedUndo {
 		if (atelier != null) {
 			markers += atelier.markerUndoDepth();
 		}
-		journal.syncCount(Stack.MARKERS, markers);
+		journal.syncCount(Stack.MARKERS, markers, takeRecorded(Stack.MARKERS));
 	}
 
 	/** Ce joueur est-il dans un atelier carte où il construit ? Les repères de sa carte s'y défont. */
@@ -376,11 +472,11 @@ public final class SharedUndo {
 	}
 
 	public int undoable(ServerPlayer p) {
-		return journal.undoable(p.getUUID(), valcombeHere(p));
+		return journal.undoable(p.getUUID(), valcombeHere(p), operator(p));
 	}
 
 	public int redoable(ServerPlayer p) {
-		return journal.redoable(p.getUUID(), valcombeHere(p));
+		return journal.redoable(p.getUUID(), valcombeHere(p), operator(p));
 	}
 
 	/**
@@ -421,8 +517,13 @@ public final class SharedUndo {
 		int left = Math.max(1, times);
 		while (left > 0) {
 			sync();
-			List<Journal.Entry> run = journal.lastRun(p.getUUID(), valcombeHere(p), left, false);
+			List<Journal.Entry> run = journal.lastRun(p.getUUID(), valcombeHere(p), operator(p), left, false);
 			if (run.isEmpty()) {
+				if (said.isEmpty() && !operator(p) && journal.undoable(p.getUUID(), valcombeHere(p), true) > 0) {
+					// Il reste des gestes, mais pas à lui : un invité ne défait que les siens.
+					throw new GameException("Rien à annuler de votre part : les derniers gestes de cet atelier sont ceux d'un autre "
+						+ "(chacun annule les siens ; un opérateur peut tout annuler).");
+				}
 				break;
 			}
 			Journal.Entry e = run.get(0);
@@ -466,7 +567,7 @@ public final class SharedUndo {
 		int left = Math.max(1, times);
 		while (left > 0) {
 			sync();
-			List<Journal.Entry> run = journal.lastRun(p.getUUID(), valcombeHere(p), left, true);
+			List<Journal.Entry> run = journal.lastRun(p.getUUID(), valcombeHere(p), operator(p), left, true);
 			if (run.isEmpty()) {
 				break;
 			}

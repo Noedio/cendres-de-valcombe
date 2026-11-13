@@ -23,6 +23,8 @@ public abstract class CommandsMixin {
 	@Inject(method = "performCommand", at = @At("HEAD"), cancellable = true)
 	private void valcombe$worldEditOutsideWorkshops(ParseResults<CommandSourceStack> parse, String command, CallbackInfo ci) {
 		CommandSourceStack source = parse.getContext().getSource();
+		// L'auteur des gestes de construction que la commande va faire (l'« annuler » commun ne rend à chacun que les siens).
+		fr.valcombe.mc.SharedUndo.acting(source.getPlayer());
 		Component refusal = WorldEditGate.refuseCommand(source, command);
 		if (refusal != null) {
 			source.sendFailure(refusal);

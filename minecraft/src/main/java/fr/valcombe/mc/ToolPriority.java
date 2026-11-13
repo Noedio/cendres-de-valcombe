@@ -2,6 +2,8 @@ package fr.valcombe.mc;
 
 import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.permission.v1.PermissionContext;
@@ -49,7 +51,29 @@ final class ToolPriority {
 		UseItemCallback.EVENT.addPhaseOrdering(PHASE, Event.DEFAULT_PHASE);
 		UseBlockCallback.EVENT.addPhaseOrdering(PHASE, Event.DEFAULT_PHASE);
 		AttackBlockCallback.EVENT.addPhaseOrdering(PHASE, Event.DEFAULT_PHASE);
+		// Avant tout écouteur : le joueur qui clique est l'auteur des gestes de construction que le clic va faire (voir
+		// SharedUndo.acting). Rien n'est consommé ici.
+		UseItemCallback.EVENT.addPhaseOrdering(ACTOR, PHASE);
+		UseBlockCallback.EVENT.addPhaseOrdering(ACTOR, PHASE);
+		AttackBlockCallback.EVENT.addPhaseOrdering(ACTOR, PHASE);
+		UseEntityCallback.EVENT.addPhaseOrdering(ACTOR, Event.DEFAULT_PHASE);
+		AttackEntityCallback.EVENT.addPhaseOrdering(ACTOR, Event.DEFAULT_PHASE);
+		UseItemCallback.EVENT.register(ACTOR, (player, level, hand) -> acting(player));
+		UseBlockCallback.EVENT.register(ACTOR, (player, level, hand, hit) -> acting(player));
+		AttackBlockCallback.EVENT.register(ACTOR, (player, level, hand, pos, direction) -> acting(player));
+		UseEntityCallback.EVENT.register(ACTOR, (player, level, hand, entity, hit) -> acting(player));
+		AttackEntityCallback.EVENT.register(ACTOR, (player, level, hand, entity, hit) -> acting(player));
 		PermissionEvents.ON_REQUEST.register(ToolPriority::onPermissionRequest);
+	}
+
+	/** Phase où l'auteur d'un clic est noté, avant toutes les autres. */
+	static final Identifier ACTOR = Identifier.fromNamespaceAndPath("valcombe", "auteur");
+
+	private static net.minecraft.world.InteractionResult acting(net.minecraft.world.entity.player.Player player) {
+		if (player instanceof ServerPlayer sp) {
+			SharedUndo.acting(sp);
+		}
+		return net.minecraft.world.InteractionResult.PASS;
 	}
 
 	/** Refuse les actions par objet de WorldEdit à qui tient un outil de carte ; sinon ne se prononce pas (null). */

@@ -219,4 +219,60 @@ class SharedUndoTest {
 		assertEquals("modification WorldEdit (27 blocs)", SharedUndo.clean("modification WorldEdit (27 blocs)"));
 		assertTrue(SharedUndo.clean("Rétabli : rotation.").equals("rotation"));
 	}
+
+	/**
+	 * Dans un atelier carte, les piles de Valcombe sont communes : un invité n'annule que ses propres gestes, et pas
+	 * ceux qu'un geste d'un autre recouvre ; un opérateur annule tout.
+	 */
+	@Test
+	void unInviteNAnnuleQueSesPropresGestes() {
+		UUID op = OTHER;
+		UUID guest = ME;
+		Journal j = new Journal();
+		j.syncCount(Stack.STRUCTURES, 1, List.of(guest)); // l'invité pose une structure
+		assertEquals(Stack.STRUCTURES, j.nextUndo(guest, true, false).stack(), "sa pose est à lui");
+		assertEquals(guest, j.nextUndo(guest, true, false).player());
+		j.syncCount(Stack.STRUCTURES, 2, List.of(op)); // puis l'opérateur en pose une autre par-dessus
+		assertNull(j.nextUndo(guest, true, false), "la pose de l'opérateur est au sommet : l'invité ne défait rien");
+		assertEquals(0, j.undoable(guest, true, false));
+		assertTrue(j.lastRun(guest, true, false, 5, false).isEmpty());
+		assertEquals(2, j.undoable(op, true, true), "l'opérateur annule tout");
+		assertEquals(op, j.nextUndo(op, true, true).player());
+		// L'opérateur défait la sienne : celle de l'invité redevient à sa portée, pas la rétablir de l'opérateur.
+		j.undid(j.nextUndo(op, true, true));
+		j.syncCount(Stack.STRUCTURES, 1, List.of());
+		assertEquals(guest, j.nextUndo(guest, true, false).player());
+		assertNull(j.nextRedo(guest, true, false), "rétablir la pose de l'opérateur n'est pas à l'invité");
+		assertEquals(op, j.nextRedo(op, true, true).player());
+		// Rétablie, la pose garde son auteur.
+		Journal.Entry redo = j.nextRedo(op, true, true);
+		j.redoing(redo);
+		j.syncCount(Stack.STRUCTURES, 2, List.of(guest)); // un auteur noté entre-temps ne la lui donne pas
+		assertEquals(op, j.nextUndo(op, true, true).player(), "rétablie, la pose reste à l'opérateur");
+		assertNull(j.nextUndo(guest, true, false));
+		// Un repère sans auteur connu (fait par la console) : seul un opérateur le défait.
+		Journal k = new Journal();
+		k.syncCount(Stack.MARKERS, 1, java.util.Collections.singletonList(null));
+		assertNull(k.nextUndo(guest, true, false));
+		assertEquals(Stack.MARKERS, k.nextUndo(op, true, true).stack());
+		// Plus d'auteurs notés que de gestes nouveaux (la pile a oublié ses plus anciens) : les derniers comptent.
+		Journal l = new Journal();
+		l.syncCount(Stack.MARKERS, 1, List.of(op, guest));
+		assertEquals(guest, l.nextUndo(guest, true, false).player());
+	}
+
+	@Test
+	void lesGestesWorldEditDUnAutreNeBloquentPas() {
+		Journal j = new Journal();
+		Session mine = new Session();
+		Session theirs = new Session();
+		j.syncCount(Stack.STRUCTURES, 1, List.of(ME));
+		mine.edit();
+		j.syncWorldEdit(ME, mine.done());
+		theirs.edit();
+		j.syncWorldEdit(OTHER, theirs.done());
+		// Les sessions WorldEdit sont à chacun : celle de l'autre ne recouvre rien ; ma structure reste à ma portée.
+		assertEquals(2, j.undoable(ME, true, false));
+		assertEquals(List.of(Stack.WORLDEDIT), j.lastRun(ME, true, false, 5, false).stream().map(Journal.Entry::stack).toList());
+	}
 }
