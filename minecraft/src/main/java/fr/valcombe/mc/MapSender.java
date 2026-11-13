@@ -152,6 +152,11 @@ public final class MapSender {
 		return sending.containsKey(worldId);
 	}
 
+	/** Une carte est-elle en route vers un monde, quel qu'il soit ? */
+	public boolean working() {
+		return !sending.isEmpty();
+	}
+
 	/** Ce qui est en route vers ce monde (« la carte « Port » »), ou null. */
 	public String sendingTo(String worldId) {
 		Sending s = sending.get(worldId);

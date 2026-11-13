@@ -232,8 +232,17 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			}), "ancienne sauvegarde sans monde écartée");
 
 			// 10. Remis à neuf après la partie : le monde est plat et vide, et la partie n'a plus de carte.
+			// La carte a été retouchée à la main : remise à neuf directe ou pas, elle part d'abord dans la bibliothèque.
+			java.util.Set<String> before = server.computeOnServer(s -> {
+				ValcombeMod.host().village().setModified(true);
+				return ValcombeMod.maps().list().stream().map(d -> d.id).collect(java.util.stream.Collectors.toSet());
+			});
 			AtomicReference<CompletableFuture<ServerLevel>> fresh = new AtomicReference<>();
 			server.runOnServer(s -> fresh.set(ValcombeMod.worlds().recreate(gameId)));
+			String backup = server.computeOnServer(s -> ValcombeMod.maps().list().stream().map(d -> d.id)
+				.filter(id -> !before.contains(id) && id.startsWith("sauvegarde-")).findFirst().orElse(null));
+			check(backup != null, "carte retouchée à la main sauvegardée avant la remise à neuf directe : " + backup);
+			server.runOnServer(s -> ValcombeMod.maps().delete(backup));
 			check(waitFor(ctx, world, 1200, s -> fresh.get().isDone()), "monde de la partie remis à neuf");
 			check(!fresh.get().isCompletedExceptionally(), "remise à neuf sans erreur");
 			check(server.computeOnServer(s -> ValcombeMod.host().village() == null

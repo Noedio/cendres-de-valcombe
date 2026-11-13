@@ -271,7 +271,39 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 		if (gameRunning()) {
 			return "Une partie se joue dans « " + e.nom() + " » : arrêtez-la d'abord (/vc arreter), puis remettez ce monde à neuf.";
 		}
+		Village v = village;
+		if (sending == null && v != null && v.modified()) {
+			// Une remise à neuf directe (/vc monde recreer, API d'administration) ne passe pas par MapSender : la carte
+			// retouchée à la main est rangée dans la bibliothèque d'abord, comme pour un envoi. Si c'est impossible,
+			// rien ne bouge (elle partirait avec le monde).
+			try {
+				if (maps == null) {
+					throw new fr.valcombe.rules.GameException("bibliothèque de cartes indisponible");
+				}
+				String saved = maps.backup(v);
+				mapSaved(v);
+				ValcombeMod.LOG.info("Monde de la partie « {} » remis à neuf : sa carte retouchée à la main est sauvegardée dans la "
+					+ "bibliothèque (« {} »).", e.nom(), saved);
+				tellOperators("La carte de « " + e.nom() + " », retouchée à la main, est sauvegardée dans la bibliothèque : « "
+					+ saved + " ».");
+			} catch (fr.valcombe.rules.GameException ex) {
+				return "Rien n'est remis à neuf : la carte de « " + e.nom() + " » a été retouchée à la main et sa sauvegarde "
+					+ "automatique a échoué (" + ex.getMessage() + "). Enregistrez-la d'abord : /vc carte enregistrer <id> <nom>.";
+			}
+		}
 		return null;
+	}
+
+	/** Un message aux opérateurs connectés. */
+	private void tellOperators(String text) {
+		if (server == null) {
+			return;
+		}
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			if (Atelier.isOperator(p)) {
+				p.sendSystemMessage(Component.literal(text).withStyle(ChatFormatting.GOLD));
+			}
+		}
 	}
 
 	/** Une partie se joue-t-elle dans ce monde ? On n'y change pas de carte, on ne le remet pas à neuf. */
@@ -1758,7 +1790,16 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 	 */
 	@Override
 	public boolean busy() {
-		return builds.busy() || restoreAt >= 0 || sending != null || (server != null && levelIfReady() == null);
+		return building() || restoreAt >= 0 || sending != null || (server != null && levelIfReady() == null);
+	}
+
+	/**
+	 * Un chantier est-il en cours dans le monde de la partie ? L'éditeur du mode construction travaille aussi ailleurs
+	 * (un atelier) : ce qu'il y bâtit n'empêche ni de lancer la partie ni de lui envoyer une carte.
+	 */
+	private boolean building() {
+		ServerLevel level = levelIfReady();
+		return level != null ? builds.busy(level) : builds.busy();
 	}
 
 	/**
@@ -1773,7 +1814,7 @@ public final class McHost implements Host, WorldManager.Listener, WorldManager.G
 			throw new fr.valcombe.rules.GameException("Le monde « " + worldName() + " » est en cours de remise à neuf : "
 				+ "réessayez dans un instant.");
 		}
-		if (builds.busy()) {
+		if (building()) {
 			throw new fr.valcombe.rules.GameException("Une construction est déjà en cours : attendez la fin de la barre de progression.");
 		}
 		if (restoreAt >= 0) {

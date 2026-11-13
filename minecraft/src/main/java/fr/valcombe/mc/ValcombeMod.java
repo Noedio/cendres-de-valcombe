@@ -48,9 +48,21 @@ public final class ValcombeMod implements ModInitializer {
 			if (idleWork || beat[0]++ % 20 == 0) {
 				server.execute(() -> {
 					// Seulement sans joueur : en solo, un jeu mis en pause doit le rester.
-					idleWork = server.getPlayerCount() == 0 && HOST.hasWork();
+					// « Envoyer à la partie » depuis l'Atelier web compte aussi : remise à neuf du monde, puis pose de la
+					// carte, chacune avancée par son propre tick.
+					var w = worlds;
+					var pl = placer;
+					var ms = mapSender;
+					idleWork = server.getPlayerCount() == 0
+						&& (HOST.hasWork() || (ms != null && ms.working()) || (w != null && w.working()));
 					if (idleWork && System.nanoTime() - lastTick >= 500_000_000L) {
 						guarded("le chantier", HOST::onTick);
+						if (w != null) {
+							guarded("les mondes", w::tick);
+						}
+						if (pl != null) {
+							guarded("les cartes des mondes", pl::tick);
+						}
 					}
 				});
 			}

@@ -308,6 +308,11 @@ public final class WorldManager {
 		return server.getLevel(key(id)) != null && !pending.containsKey(id);
 	}
 
+	/** Une recréation ou une suppression est-elle en cours, dans un monde quel qu'il soit ? */
+	public boolean working() {
+		return !pending.isEmpty();
+	}
+
 	/** Une recréation ou une suppression de ce monde est-elle en cours ? */
 	public boolean busy(String id) {
 		return pending.containsKey(id);
