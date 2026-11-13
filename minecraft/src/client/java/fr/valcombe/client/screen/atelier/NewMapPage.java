@@ -23,8 +23,9 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
  * <ol>
  * <li><b>Départ</b> : un village généré, une carte vierge, ou un fichier importé (.schem, .litematic, .nbt déjà déposé
  * dans le dossier d'import du serveur).</li>
- * <li><b>Réglages</b> : le nom ; pour un village, le thème, les trônes, la taille et les maisons, avec l'aperçu du plan
- * fait par le serveur ; pour un import, le fichier.</li>
+ * <li><b>Réglages</b> : le nom (toujours facultatif : une carte vierge sans nom prend « Carte vierge » dans un atelier, et
+ * n'en a pas besoin quand elle part directement dans une partie) ; pour un village, le thème, les trônes, la taille et les
+ * maisons, avec l'aperçu du plan fait par le serveur ; pour un import, le fichier.</li>
  * <li><b>Vérifier</b> : le récapitulatif et où la carte naît, dans un nouvel atelier (on la retouche, puis on l'enregistre
  * dans la bibliothèque) ou directement dans une partie (son monde est remis à neuf).</li>
  * </ol>
@@ -129,13 +130,35 @@ public class NewMapPage extends AtelierPage {
 		return name.strip();
 	}
 
+	/** Nom d'une carte vierge sans nom tapé : « Carte vierge », numéroté s'il est déjà pris (bibliothèque, ateliers). */
+	static String blankName() {
+		java.util.Set<String> taken = new java.util.HashSet<>();
+		for (JsonObject o : MapsPage.library()) {
+			taken.add(str(o, "nom").toLowerCase(Locale.ROOT));
+		}
+		for (JsonObject o : list(workshops(), "ateliers")) {
+			taken.add(str(o, "nom").toLowerCase(Locale.ROOT));
+		}
+		String base = "Carte vierge";
+		if (!taken.contains(base.toLowerCase(Locale.ROOT))) {
+			return base;
+		}
+		for (int i = 2;; i++) {
+			if (!taken.contains((base + " " + i).toLowerCase(Locale.ROOT))) {
+				return base + " " + i;
+			}
+		}
+	}
+
+	/** Le nom que prendra la carte vierge dans un atelier. */
+	private String blankFinalName() {
+		return typedName().isEmpty() ? blankName() : typedName();
+	}
+
 	/** Ce qui manque pour passer l'étape en cours, ou null. */
 	private String missing() {
 		if (step == 0 && kind == null) {
 			return "Choisissez un point de départ.";
-		}
-		if (step == 1 && kind == Kind.BLANK && typedName().isEmpty()) {
-			return "Il manque un nom pour la carte.";
 		}
 		if (step == 1 && kind == Kind.IMPORT && (file == null || !words(data(), "fichiers").contains(file))) {
 			return words(data(), "fichiers").isEmpty() ? "Il manque un fichier : déposez-le dans le dossier d'import." : "Choisissez le fichier.";
@@ -158,7 +181,7 @@ public class NewMapPage extends AtelierPage {
 				: "vc carte generer " + seats + " " + SIZES.get(size) + " " + themeName() + " " + (houses ? "oui" : "non") + " " + game;
 		}
 		return switch (kind) {
-			case BLANK -> "vc atelier carte nouvelle " + nom;
+			case BLANK -> "vc atelier carte nouvelle " + blankFinalName();
 			case IMPORT -> "vc atelier carte importer " + quoted(file) + (nom.isEmpty() ? "" : " " + nom);
 			default -> "vc atelier carte village " + seats + " " + SIZES.get(size) + " " + themeName() + " " + (houses ? "oui" : "non")
 				+ (nom.isEmpty() ? "" : " " + nom);
@@ -332,7 +355,7 @@ public class NewMapPage extends AtelierPage {
 			}
 			case BLANK -> {
 				nameField = addRenderableWidget(new HdTextField(x, y + 14, w, 18, "Nom de la carte")
-					.maxLength(50).value(name).hint("Nom de la carte…").key(NAME_KEY));
+					.maxLength(50).value(name).hint(blankName() + " (facultatif)").key(NAME_KEY));
 				nameField.onEnter(() -> {
 					if (missing() == null) {
 						step++;
@@ -495,10 +518,11 @@ public class NewMapPage extends AtelierPage {
 				}
 			}
 			case BLANK -> {
-				hd.text(ls, "Nom de la carte", x, y, Hd.INK);
+				hd.text(ls, "Nom de la carte (facultatif)", x, y, Hd.INK);
 				int py = y + hd.u(14 + 18 + 8);
-				hd.paragraph(HdStyle.TEXTE, "Un monde plat et vide, à son nom. Bâtissez avec WorldEdit, posez les trônes, les maisons, le centre "
-					+ "et la salle de convocation avec les outils de repères, puis « Enregistrer » : elle rejoindra la bibliothèque.",
+				hd.paragraph(HdStyle.TEXTE, "Un monde plat et vide. Bâtissez avec WorldEdit, posez les trônes, les maisons, le centre "
+					+ "et la salle de convocation avec les outils de repères, puis « Enregistrer » : elle rejoindra la bibliothèque. "
+					+ "Envoyée directement à une partie, elle n'a pas besoin de nom.",
 					x, py, w, Hd.INK_SOFT, hd.px(stageBottom()) - py);
 			}
 			default -> {
@@ -530,7 +554,7 @@ public class NewMapPage extends AtelierPage {
 		String what = switch (kind) {
 			case VILLAGE -> "Un village " + themeName() + " de " + seats + " trônes, taille " + SIZES.get(size) + ", "
 				+ (houses ? "avec ses maisons" : "sans maisons") + (nom.isEmpty() ? "." : ", nommé « " + nom + " ».");
-			case BLANK -> "Une carte vierge, « " + nom + " ».";
+			case BLANK -> "Une carte vierge, « " + blankFinalName() + " ».";
 			default -> "La construction « " + file + " »" + (nom.isEmpty() ? "." : ", nommée « " + nom + " ».");
 		};
 		ty += hd.paragraph(HdStyle.TEXTE, what, x, ty, w, Hd.INK, hd.u(40)) + hd.u(4);

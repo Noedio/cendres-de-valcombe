@@ -133,7 +133,7 @@ public class PartiesPage extends AtelierPage {
 		int w = right() - left();
 		int y = top() + 2;
 		int jw = Math.min(150, w / 3);
-		HdButton join = button(right() - jw, top(), jw, JOIN, () -> go(new PartiesScreen()));
+		HdButton join = button(right() - jw, top(), jw, JOIN, () -> go(new PartiesScreen(PartiesPage::new)));
 		if (ClientState.obj(view(), "parties") == null) {
 			join.disabled().tooltip("Depuis le monde d'une partie, on ne voit qu'elle : au hub ou dans un atelier, cet écran montre toutes les parties.");
 		} else {

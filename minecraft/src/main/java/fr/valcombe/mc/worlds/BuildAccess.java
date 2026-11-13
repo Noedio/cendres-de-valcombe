@@ -229,14 +229,14 @@ public final class BuildAccess {
 		if (r.worldEdit()) {
 			return null;
 		}
-		String go = " Menu J › Mondes pour aller dans un atelier.";
+		String go = " Menu J › Mondes pour y aller.";
 		if (e == null) {
 			return "WorldEdit ne sert que dans les ateliers (carte ou structures) : pas ici, hors des mondes de Valcombe." + go;
 		}
 		return switch (e.sorte()) {
 			case HUB -> "WorldEdit ne sert que dans les ateliers (carte ou structures) : au hub, on ne construit pas." + go;
-			case PARTIE -> "WorldEdit ne sert que dans les ateliers : pas dans un monde de partie. Une carte se prépare dans "
-				+ "un atelier carte, puis part vers la partie." + go;
+			case PARTIE -> "WorldEdit ne sert que dans les ateliers, pas dans un monde de partie : une carte se prépare dans "
+				+ "un atelier carte." + go;
 			case ESSAI -> operator(p)
 				? "WorldEdit n'est pas ouvert dans les parties d'essai. Pour l'ouvrir aux opérateurs : /vc atelier worldedit-essais oui."
 				: "WorldEdit ne sert que dans les ateliers : pas dans une partie d'essai." + go;

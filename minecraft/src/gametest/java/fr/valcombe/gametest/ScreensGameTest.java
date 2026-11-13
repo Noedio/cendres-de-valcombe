@@ -331,7 +331,14 @@ public class ScreensGameTest implements FabricClientGameTest {
 			"structure", 0, "tourner")).contains("Maison gothique"), "structure posée tournée avec la main");
 		ctx.waitTicks(80);
 		ctx.setScreen(() -> new fr.valcombe.client.screen.ObjectScreen("structure", 0, "Maison gothique"));
+		// Le menu de la main est dessiné avec la boîte à outils haute résolution : écran HD, boutons HD, tous dans le panneau.
+		ctx.waitTicks(3);
+		check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof fr.valcombe.client.hd.HdScreen s
+			&& s.children().stream().filter(w -> w instanceof net.minecraft.client.gui.components.AbstractWidget).count() == 5
+			&& s.children().stream().allMatch(w -> w instanceof fr.valcombe.client.hd.HdButton)), "menu de la main en haute résolution");
 		shot(ctx, "28i2-menu-de-la-main");
+		ctx.setScreen(() -> new fr.valcombe.client.screen.ObjectScreen("trone", 3, "Trône 4"));
+		shot(ctx, "28i3-menu-de-la-main-trone");
 		ctx.setScreen(() -> null);
 		server.computeOnServer(s -> fr.valcombe.mc.games.Games.main().host().objectAction(s.getPlayerList().getPlayerByName(me),
 			"structure", 0, "retirer"));

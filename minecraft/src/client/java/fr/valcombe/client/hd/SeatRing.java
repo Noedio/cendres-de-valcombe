@@ -22,7 +22,7 @@ public final class SeatRing {
 	public static final HdStyle LABEL = HdStyle.PETIT;
 	private static final int KEEP = 12;
 
-	private record Key(List<String> names, RingLayout.Box zone, int max, int min, boolean inside, double wide, double tall,
+	private record Key(List<String> names, RingLayout.Box zone, int max, int min, double wide, double tall,
 			int scale) {
 	}
 
@@ -45,7 +45,7 @@ public final class SeatRing {
 
 	/** La mise en page de ces noms (dans l'ordre des sièges), reprise telle quelle si rien n'a changé. */
 	public static RingLayout.Result layout(List<String> names, RingLayout.Spec spec) {
-		Key key = new Key(List.copyOf(names), spec.zone, spec.sizeMax, spec.sizeMin, spec.inside, spec.maxWide, spec.maxTall,
+		Key key = new Key(List.copyOf(names), spec.zone, spec.sizeMax, spec.sizeMin, spec.maxWide, spec.maxTall,
 			Hd.guiScale());
 		return CACHE.computeIfAbsent(key, k -> RingLayout.layout(k.names(), spec));
 	}
