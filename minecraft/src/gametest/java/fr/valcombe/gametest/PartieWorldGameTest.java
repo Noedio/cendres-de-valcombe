@@ -143,9 +143,19 @@ public class PartieWorldGameTest implements FabricClientGameTest {
 			}), "le monde de la partie ne se supprime pas");
 
 			// 3. Inscription depuis le hub : on est emmené au village de la partie ; on peut encore repartir.
+			Object treeBefore = ctx.computeOnClient(mc -> mc.getConnection().getCommands());
 			send(ctx, "vc rejoindre");
 			check(waitFor(ctx, world, 100, s -> fr.valcombe.mc.games.Games.main().session().lobby().contains(me) && dimensionOf(s, me).equals(gameDim)),
 				"inscrit depuis le hub, emmené dans le monde de la partie");
+			// Le changement de monde renvoie l'arbre des commandes : suggestions et droits du Conteur suivent tout de suite.
+			boolean treeSent = false;
+			for (int i = 0; i < 40 && !treeSent; i++) {
+				treeSent = ctx.computeOnClient(mc -> mc.getConnection().getCommands() != treeBefore);
+				if (!treeSent) {
+					ctx.waitTick();
+				}
+			}
+			check(treeSent, "arbre des commandes renvoyé au changement de monde (hub vers partie)");
 			check(server.computeOnServer(s -> {
 				BlockPos spawn = fr.valcombe.mc.games.Games.main().host().villageSpawn();
 				ServerPlayer p = player(s, me);

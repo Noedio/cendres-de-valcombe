@@ -172,6 +172,15 @@ public final class ValcombeMod implements ModInitializer {
 		guarded("le tableau des parties", () -> Games.showCard(sp, room));
 	}
 
+	/** Une flèche du tableau des parties du hub, cliquée : la page d'avant ou d'après. */
+	private static void turnBoard(ServerPlayer sp, net.minecraft.world.entity.Entity arrow) {
+		var h = hub;
+		if (h != null) {
+			guarded("le tableau des parties", () -> sp.sendSystemMessage(Gui.plain(h.turnPage(fr.valcombe.mc.hub.Hub.boardArrow(arrow)),
+				net.minecraft.ChatFormatting.GRAY), true));
+		}
+	}
+
 	/** Bâton du Conteur : grimoire du joueur visé, aparté (accroupi), ou panneau du Conteur, dans la partie de son monde. */
 	private static void useStaff(ServerPlayer sp, String target) {
 		GameRoom room = roomOf(sp);
@@ -698,10 +707,20 @@ public final class ValcombeMod implements ModInitializer {
 			if (games != null) {
 				guarded("les spectateurs du hub", () -> games.onLevelChange(player, from));
 			}
+			// En dernier, quand tout est à jour : l'arbre des commandes suit le monde où il arrive (droits du Conteur de
+			// cette partie-là, commandes des ateliers, suggestions), sans attendre une reconnexion.
+			guarded("l'arbre des commandes", () -> player.level().getServer().getCommands().sendCommands(player));
 		});
 		// Tableau des parties du hub : un clic gauche sur une fiche l'ouvre aussi (sans rien frapper).
 		net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-			if (fr.valcombe.mc.hub.Hub.boardCard(entity) == null || !(player instanceof ServerPlayer sp)) {
+			if (!(player instanceof ServerPlayer sp)) {
+				return InteractionResult.PASS;
+			}
+			if (fr.valcombe.mc.hub.Hub.boardArrow(entity) != 0) {
+				turnBoard(sp, entity);
+				return InteractionResult.SUCCESS;
+			}
+			if (fr.valcombe.mc.hub.Hub.boardCard(entity) == null) {
 				return InteractionResult.PASS;
 			}
 			openBoardCard(sp, entity);
@@ -770,7 +789,13 @@ public final class ValcombeMod implements ModInitializer {
 				}
 				return InteractionResult.SUCCESS;
 			}
-			// Tableau des parties du hub : un clic sur la fiche d'une partie l'ouvre.
+			// Tableau des parties du hub : un clic sur une flèche tourne la page, sur la fiche d'une partie l'ouvre.
+			if (fr.valcombe.mc.hub.Hub.boardArrow(entity) != 0) {
+				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+					turnBoard(sp, entity);
+				}
+				return InteractionResult.SUCCESS;
+			}
 			if (fr.valcombe.mc.hub.Hub.boardCard(entity) != null) {
 				if (hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
 					openBoardCard(sp, entity);

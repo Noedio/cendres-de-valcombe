@@ -549,6 +549,70 @@ public class PartiesGameTest implements FabricClientGameTest {
 				mc.resizeGui();
 			});
 
+			// 9 bis. Huit parties : le tableau du hub en montre six par page ; les flèches aux bouts tournent les pages.
+			send(ctx, "vc hub");
+			check(waitFor(ctx, world, 100, s -> dimensionOf(s, me).equals(hubDim)), "au hub pour le tableau à pages");
+			List<String> extra = new ArrayList<>();
+			int target = 8;
+			int have = server.computeOnServer(s -> Games.all().size());
+			for (int i = have; i < target; i++) {
+				int n = i;
+				extra.add(server.computeOnServer(s -> ValcombeMod.worlds().create(fr.valcombe.mc.worlds.WorldKind.ESSAI,
+					"Page " + stamp + " " + n).id()));
+			}
+			int total = server.computeOnServer(s -> Games.all().size());
+			check(total >= 8, "au moins huit parties : " + total);
+			check(waitFor(ctx, world, 200, s -> {
+				String shown = ValcombeMod.hub().boardShown();
+				return shown != null && shown.startsWith("page 1/" + Hub.pages(total) + " ");
+			}), "le tableau est en pages : " + server.computeOnServer(s -> ValcombeMod.hub().boardShown()));
+			List<String> firstPage = server.computeOnServer(s -> Games.all().stream().limit(HubHall.SLOTS).map(r -> r.id()).toList());
+			List<String> secondPage = server.computeOnServer(s -> Games.all().stream().skip(HubHall.SLOTS).limit(HubHall.SLOTS)
+				.map(r -> r.id()).toList());
+			check(server.computeOnServer(s -> firstPage.stream().allMatch(id -> cardOf(s, hubId, id) != null)
+				&& secondPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 1 : les six premières fiches seulement");
+			place(world, me, hubId, 0.5, HubHall.FEET, HubHall.BOARD_FRONT + 9.5, 180f, 8f);
+			ctx.waitTicks(40);
+			shot(ctx, "tableau-des-parties-page-1");
+			// Un clic sur la flèche de droite (vue de l'entrée) : la page suivante, aussitôt.
+			boolean turned = server.computeOnServer(s -> {
+				ServerLevel hub = ValcombeMod.worlds().level(hubId);
+				ServerPlayer p = player(s, me);
+				for (Entity e : hub.getEntities(net.minecraft.world.entity.EntityTypes.INTERACTION,
+					e -> Hub.boardArrow(e) == 1 && e.getZ() > HubHall.BOARD_FRONT)) {
+					var r = net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.invoker()
+						.interact(p, p.level(), net.minecraft.world.InteractionHand.MAIN_HAND, e, null);
+					return r.consumesAction() && ValcombeMod.hub().page() == 1;
+				}
+				return false;
+			});
+			check(turned, "la flèche de droite tourne la page");
+			check(waitFor(ctx, world, 60, s -> secondPage.stream().allMatch(id -> cardOf(s, hubId, id) != null)
+				&& firstPage.stream().noneMatch(id -> cardOf(s, hubId, id) != null)), "page 2 : les fiches suivantes");
+			check(server.computeOnServer(s -> ValcombeMod.hub().boardShown().startsWith("page 2/")), "le tableau dit sa page");
+			ctx.waitTicks(30);
+			shot(ctx, "tableau-des-parties-page-2");
+			// La flèche de gauche, frappée (clic gauche) : retour à la première page.
+			boolean back = server.computeOnServer(s -> {
+				ServerLevel hub = ValcombeMod.worlds().level(hubId);
+				ServerPlayer p = player(s, me);
+				for (Entity e : hub.getEntities(net.minecraft.world.entity.EntityTypes.INTERACTION,
+					e -> Hub.boardArrow(e) == -1 && e.getZ() > HubHall.BOARD_FRONT)) {
+					var r = net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.invoker()
+						.interact(p, p.level(), net.minecraft.world.InteractionHand.MAIN_HAND, e, null);
+					return r.consumesAction() && ValcombeMod.hub().page() == 0;
+				}
+				return false;
+			});
+			check(back, "la flèche de gauche revient à la page d'avant");
+			server.runOnServer(s -> extra.forEach(id -> ValcombeMod.worlds().delete(id)));
+			check(waitFor(ctx, world, 600, s -> extra.stream().allMatch(id -> ValcombeMod.worlds().find(id) == null)),
+				"parties du tableau à pages supprimées");
+			check(waitFor(ctx, world, 200, s -> {
+				String shown = ValcombeMod.hub().boardShown();
+				return shown != null && !shown.startsWith("page ");
+			}), "une seule page de nouveau, sans flèches");
+
 			// 10. Ménage : la principale arrêtée, la partie d'essai supprimée.
 			server.runCommand("execute in " + mainDim + " run vc arreter");
 			check(waitFor(ctx, world, 1200, s -> Games.main().session().game() == null && !Games.main().host().busy()),
