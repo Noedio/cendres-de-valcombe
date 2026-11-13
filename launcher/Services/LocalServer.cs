@@ -417,6 +417,7 @@ public sealed class LocalServer
                 Set(State.Stopped);
                 if (restart && !wanted)
                 {
+                    _relaunchPending = true;
                     _ = RelaunchAsync();
                 }
             };
@@ -468,18 +469,38 @@ public sealed class LocalServer
         try
         {
             // Le système peut garder le port quelques instants après la fin du processus.
-            for (int i = 0; i < 15 && PortBusy(last.Config.HostPort); i++)
+            for (int i = 0; i < 15 && _relaunchPending && PortBusy(last.Config.HostPort); i++)
             {
                 await Task.Delay(1000);
             }
+            if (!_relaunchPending)
+            {
+                // Arrêt demandé, ou launcher fermé, pendant l'attente : surtout ne pas relancer un serveur orphelin.
+                AddLog("[launcher] Relance annulée.");
+                Changed?.Invoke();
+                return;
+            }
+            _relaunchPending = false;
             await StartAsync(last.Release, last.Config, last.HostName, last.Progress, relaunch: true, CancellationToken.None);
         }
         catch (Exception ex)
         {
+            _relaunchPending = false;
             LastError = "Relance du serveur impossible : " + ex.Message;
             Changed?.Invoke();
         }
     }
+
+    /// <summary>Une relance demandée par le serveur (drapeau de redémarrage) attend que son port se libère.</summary>
+    public bool Relaunching => _relaunchPending;
+
+    /// <summary>
+    /// Renonce à une relance en attente : arrêt demandé par l'hôte, ou fermeture du launcher (un serveur relancé
+    /// juste après la fermeture tournerait sans personne pour l'arrêter).
+    /// </summary>
+    public void CancelRelaunch() => _relaunchPending = false;
+
+    private volatile bool _relaunchPending;
 
     private static bool PortBusy(int port)
     {
@@ -594,6 +615,7 @@ public sealed class LocalServer
     /// <summary>Arrête proprement le serveur (le monde est enregistré) ; s'il ne répond pas, il est fermé de force.</summary>
     public async Task StopAsync()
     {
+        CancelRelaunch();
         var p = _process;
         if (p == null || p.HasExited)
         {
@@ -622,6 +644,7 @@ public sealed class LocalServer
     /// <summary>Arrêt immédiat à la fermeture du launcher : on laisse au serveur le temps d'enregistrer le monde.</summary>
     public void StopNow()
     {
+        CancelRelaunch();
         var p = _process;
         if (p == null || p.HasExited)
         {

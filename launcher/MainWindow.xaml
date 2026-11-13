@@ -560,7 +560,7 @@
                         <TextBlock DockPanel.Dock="Left" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{StaticResource Gold}"
                                    Margin="0,2,12,0" VerticalAlignment="Top"/>
                         <TextBlock Style="{StaticResource Hint}" Margin="0" Foreground="{StaticResource Parch}"
-                                   Text="Accès direct. Par défaut, un serveur n'accepte l'API que depuis sa propre machine : l'accès direct n'aboutit que si ce PC le rejoint par un réseau privé ou un VPN, et que adminLocalOnly vaut false dans config/valcombe/admin.json. Le tunnel SSH, qui chiffre tout et passe partout, arrive bientôt dans le launcher."/>
+                                   Text="Accès direct. Par défaut, un serveur n'accepte l'API que depuis sa propre machine : l'accès direct n'aboutit que si ce PC le rejoint par un réseau privé ou un VPN, et que adminLocalOnly vaut false dans config/valcombe/admin.json. L'API parle HTTP sans chiffrement : la clé circule en clair, n'enregistrez donc jamais ainsi une adresse joignable par Internet. En attendant le tunnel SSH du launcher, ouvrez-en un vous-même vers le port de l'API du serveur, puis enregistrez ici l'adresse localhost avec le port choisi sur ce PC (25571 par exemple)."/>
                       </DockPanel>
                     </Border>
                     <WrapPanel Margin="0,16,0,0">

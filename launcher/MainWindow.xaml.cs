@@ -1483,6 +1483,7 @@ public partial class MainWindow : Window
     {
         if (_server.Current == LocalServer.State.Stopped)
         {
+            _server.CancelRelaunch(); // une relance en attente ne doit pas survivre au launcher
             return;
         }
         if (MessageBox.Show(this, "Le serveur de Valcombe tourne sur ce PC. Fermer le launcher l'arrête : la soirée s'interrompt pour tous "

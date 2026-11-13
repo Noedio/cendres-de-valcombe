@@ -532,6 +532,11 @@ public partial class MainWindow
         {
             switch (LocalState)
             {
+                case LocalServer.State.Stopped when _captureDir == null && _server.Relaunching:
+                    // Redémarrage demandé par l'API : le launcher attend que le port se libère, puis relance.
+                    (title, dot, detail, starting, startText) = ("Redémarrage du serveur…", Res("Gold"),
+                        "Le serveur s'est arrêté proprement ; le launcher le relance dès que son port est libre.", true, "Démarrage…");
+                    break;
                 case LocalServer.State.Stopped:
                     title = "Serveur arrêté";
                     dot = Grey;
