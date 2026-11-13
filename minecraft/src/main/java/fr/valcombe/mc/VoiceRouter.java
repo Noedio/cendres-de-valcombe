@@ -32,6 +32,8 @@ public final class VoiceRouter {
 	private VoiceRouter() {
 	}
 
+	private static final boolean VOICE = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("voicechat");
+
 	public static Route route(UUID speaker) {
 		return routes.get(speaker);
 	}
@@ -57,6 +59,9 @@ public final class VoiceRouter {
 			}
 		}
 		hideNames(server, inNooks);
+		if (!VOICE) {
+			return; // pas de Simple Voice Chat sur ce serveur : aucune route à calculer
+		}
 		for (ServerPlayer p : players) {
 			Session.VoiceRule rule = session.voiceRule(p.getScoreboardName());
 			if (rule != null && rule.targets() != null) {

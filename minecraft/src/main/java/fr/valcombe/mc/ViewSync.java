@@ -22,6 +22,12 @@ public final class ViewSync {
 	private final Map<String, String> lastSent = new HashMap<>();
 	private int tick;
 
+	/** Vue de l'Atelier d'un opérateur, gardée jusqu'à une seconde (elle liste cartes, structures et créations). */
+	private record Cached(int tick, int key, Map<String, Object> view) {
+	}
+
+	private final Map<String, Cached> atelierCache = new HashMap<>();
+
 	public ViewSync(Session session) {
 		this.session = session;
 	}
@@ -50,7 +56,14 @@ public final class ViewSync {
 			Workshop workshop = ValcombeMod.workshop();
 			if (workshop != null && Atelier.isOperator(p)) {
 				// Un opérateur reçoit en plus de quoi afficher l'Atelier en jeu : cartes, structures, éditeur.
-				view.put("atelier", workshop.gameView(p));
+				// Refaite au plus une fois par seconde, sauf si l'opérateur vient d'agir (réponse, chantier, outil en main).
+				int key = workshop.changeKey(p);
+				Cached c = atelierCache.get(name);
+				if (c == null || c.key() != key || tick - c.tick() >= 20) {
+					c = new Cached(tick, key, workshop.gameView(p));
+					atelierCache.put(name, c);
+				}
+				view.put("atelier", c.view());
 			}
 			String json = GSON.toJson(view);
 			if (!json.equals(lastSent.get(name))) {
@@ -62,5 +75,6 @@ public final class ViewSync {
 
 	public void forget(String name) {
 		lastSent.remove(name);
+		atelierCache.remove(name);
 	}
 }

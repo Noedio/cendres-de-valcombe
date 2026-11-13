@@ -146,6 +146,23 @@ public final class Maquette {
 		return false;
 	}
 
+	/** Ordre de dessin (du fond vers l'avant) pour chaque quart de tour : calculé une fois, pas à chaque image. */
+	private final int[][][] orders = new int[4][][];
+
+	private int[][] order(int q) {
+		if (orders[q] == null) {
+			List<int[]> order = new ArrayList<>(cells.size());
+			for (int i = 0; i < cells.size(); i++) {
+				Cell c = cells.get(i);
+				int[] p = turn(c.x(), c.z(), q);
+				order.add(new int[] {p[0], c.y(), p[1], i});
+			}
+			order.sort((a, b) -> a[0] + a[2] != b[0] + b[2] ? Integer.compare(a[0] + a[2], b[0] + b[2]) : Integer.compare(a[1], b[1]));
+			orders[q] = order.toArray(new int[0][]);
+		}
+		return orders[q];
+	}
+
 	/**
 	 * Dessine la maquette en perspective isométrique dans le cadre (x, y, w, h), tournée de `quarters`
 	 * quarts de tour : chaque bloc est l'icône de son objet, du fond vers l'avant.
@@ -162,14 +179,8 @@ public final class Maquette {
 		double unitsH = (rw + rl) * 0.25 + height * 0.6 + 1;
 		float k = (float) Math.max(0.05, Math.min(1.5, Math.min(w / (unitsW * 16), h / (unitsH * 16))));
 		float cell = 16 * k;
-		List<int[]> order = new ArrayList<>(cells.size());
-		for (int i = 0; i < cells.size(); i++) {
-			Cell c = cells.get(i);
-			int[] p = turn(c.x(), c.z(), q);
-			order.add(new int[] {p[0], c.y(), p[1], i});
-		}
 		// Du fond vers l'avant, puis de bas en haut : les blocs proches recouvrent les lointains.
-		order.sort((a, b) -> a[0] + a[2] != b[0] + b[2] ? Integer.compare(a[0] + a[2], b[0] + b[2]) : Integer.compare(a[1], b[1]));
+		int[][] order = order(q);
 		float ox = x + w / 2f - cell / 2f + (rl - rw) * cell * 0.25f;
 		float oy = y + h - (rw + rl) * cell * 0.25f - cell;
 		g.enableScissor(x, y, x + w, y + h);

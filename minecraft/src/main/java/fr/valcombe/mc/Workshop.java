@@ -236,6 +236,14 @@ public final class Workshop {
 		replies.remove(player);
 	}
 
+	/**
+	 * Ce qui, s'il change, demande de refaire tout de suite la vue de l'Atelier de ce joueur : une réponse à une
+	 * commande, un chantier qui commence ou finit, ce qu'il a en main dans l'éditeur. Le reste se rafraîchit chaque seconde.
+	 */
+	int changeKey(ServerPlayer p) {
+		return java.util.Objects.hash(replyCount, host.busy(), editor.state(p.getScoreboardName()));
+	}
+
 	/** Les commandes dont l'écran de l'Atelier affiche la réponse. */
 	static boolean shows(String command) {
 		return command.startsWith("vc carte ") || command.startsWith("vc edit ") || command.startsWith("vc structure ")

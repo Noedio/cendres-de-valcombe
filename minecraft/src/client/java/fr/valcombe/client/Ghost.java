@@ -18,6 +18,9 @@ public final class Ghost {
 	private static final int MAX_CUBES = 900;
 	private static Maquette shape;
 	private static int[] corner;
+	/** Cubes du fantôme (relatifs au coin) et leur style : préparés à la réception, pas à chaque image. */
+	private static AABB[] boxes = new AABB[0];
+	private static GizmoStyle[] styles = new GizmoStyle[0];
 
 	private Ghost() {
 	}
@@ -41,6 +44,23 @@ public final class Ghost {
 			shape = ClientState.bool(o, "off") ? null : Maquette.parse(o);
 			if (shape == null) {
 				corner = null;
+				boxes = new AABB[0];
+				styles = new GizmoStyle[0];
+			} else if (shape.cells.size() <= MAX_CUBES) {
+				int n = shape.cells.size();
+				AABB[] b = new AABB[n];
+				GizmoStyle[] s = new GizmoStyle[n];
+				for (int i = 0; i < n; i++) {
+					Maquette.Cell c = shape.cells.get(i);
+					// Un rien plus petit que le bloc, pour ne pas se confondre avec le décor ; couleur du bloc, à demi transparente.
+					b[i] = new AABB(c.x() + 0.04, c.y() + 0.04, c.z() + 0.04, c.x() + 0.96, c.y() + 0.96, c.z() + 0.96);
+					s[i] = GizmoStyle.fill(0x70000000 | c.color() & 0xFFFFFF);
+				}
+				boxes = b;
+				styles = s;
+			} else {
+				boxes = new AABB[0];
+				styles = new GizmoStyle[0];
 			}
 		} else if ("fantomeA".equals(kind)) {
 			corner = ClientState.bool(o, "hors") ? null
@@ -71,16 +91,10 @@ public final class Ghost {
 		}
 		AABB box = new AABB(c[0], c[1], c[2], c[0] + m.width, c[1] + m.height, c[2] + m.length);
 		Gizmos.cuboid(box, GizmoStyle.stroke(0xFFFFD27A, 2f));
-		if (m.cells.size() > MAX_CUBES) {
-			return;
-		}
-		for (Maquette.Cell cell : m.cells) {
-			double x = c[0] + cell.x();
-			double y = c[1] + cell.y();
-			double z = c[2] + cell.z();
-			// Couleur du bloc, à demi transparente, et un rien plus petite que le bloc pour ne pas se confondre avec le décor.
-			int argb = 0x70000000 | cell.color() & 0xFFFFFF;
-			Gizmos.cuboid(new AABB(x + 0.04, y + 0.04, z + 0.04, x + 0.96, y + 0.96, z + 0.96), GizmoStyle.fill(argb));
+		AABB[] b = boxes;
+		GizmoStyle[] s = styles;
+		for (int i = 0; i < b.length && i < s.length; i++) {
+			Gizmos.cuboid(b[i].move(c[0], c[1], c[2]), s[i]);
 		}
 	}
 }

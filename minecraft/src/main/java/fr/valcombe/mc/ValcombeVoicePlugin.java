@@ -48,7 +48,7 @@ public final class ValcombeVoicePlugin implements VoicechatPlugin {
 				}
 				return;
 			}
-			var packet = event.getPacket().toStaticSoundPacket();
+			var packet = event.getPacket().staticSoundPacketBuilder().build();
 			for (UUID id : route.targets()) {
 				VoicechatConnection c = api.getConnectionOf(id);
 				if (c != null) {

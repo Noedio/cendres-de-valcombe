@@ -384,6 +384,15 @@ Retours de la table et documents de règles des joueurs, en cinq sprints (suivis
 - Textes : plus de tiret long dans les textes affichés.
 - Limites : les villages déjà bâtis n'ont leurs recoins qu'une fois reconstruits ; les groupes de rôles ne voyagent pas encore dans les fichiers `.valcombe` ; le vocal et le Conseil restent à éprouver lors d'une vraie soirée.
 
+## Phase 16 : un éditeur de carte plus simple (novembre 2026)
+
+Sprints 6 à 8, suivis dans Cap.
+
+- **Correctifs et rôles du MJ** : le réglage « Noms au-dessus des têtes » s'active enfin hors partie ; le Conteur impose des rôles au salon (« Imposer des rôles… », les autres sont tirés au hasard) et corrige la distribution avant la première nuit (« Distribution des rôles… ») ; régénérer un village rase d'abord toute l'ancienne carte, au choix tout ce qu'elle a bâti ou un carré de 200 blocs.
+- **Éditeur de carte** : maquettes 3D des structures dans le catalogue, fantôme 3D de la structure en main, outil « Carte : main » (déplacer, tourner, retourner, retirer trônes, maisons, salle, centre et structures posées), trônes orientés librement, outils dessinés pour Valcombe.
+- **Passe globale** : la vue de l'Atelier des opérateurs n'est plus refaite cinq fois par seconde ; pas de routage du vocal sans Simple Voice Chat ; fantôme et maquettes préparés une fois ; plus d'appel déprécié au vocal.
+- Limites : une structure posée avant un redémarrage du serveur ne se reprend plus avec la main (l'annulation reste) ; l'estrade en blocs d'un trône de village généré reste tournée vers le centre.
+
 ## Ordre conseillé
 
 1. **Soirée de test réelle** à 8–12 joueurs : c'est désormais la seule étape du plan qui reste, et elle dira quoi corriger.
