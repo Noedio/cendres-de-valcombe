@@ -3,12 +3,16 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.ui.Theme;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdToggle;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-
-/** Réglages de la nuit et du vote, pour le Conteur. */
-public class SettingsScreen extends BaseScreen {
+/**
+ * Réglages de la nuit et du vote, pour le Conteur. Premier écran passé à la boîte à outils haute résolution
+ * (voir docs/UI-HD.md) : mêmes boutons, mêmes commandes, dessin net à la résolution de l'écran.
+ */
+public class SettingsScreen extends HdScreen {
 	public SettingsScreen() {
 		super("Réglages de la partie");
 	}
@@ -18,15 +22,11 @@ public class SettingsScreen extends BaseScreen {
 		return new int[] {380, 216};
 	}
 
-	/** Interrupteur dans la colonne de gauche (col 0) ou de droite (col 1). */
-	private fr.valcombe.client.ui.WaxButton toggle(int col, int y, String label, String key, boolean on) {
+	/** Interrupteur dans la colonne de gauche (col 0) ou de droite (col 1) ; son libellé reste « X : oui/non ». */
+	private HdToggle toggle(int col, int y, String label, String key, boolean on) {
 		int w = pw / 2 - 15;
-		return button(px + 10 + col * (w + 10), y, w, label + " : " + (on ? "oui" : "non"),
+		return toggle(px + 10 + col * (w + 10), y, w, label, on,
 			() -> send("vc reglage " + key + " " + (on ? "non" : "oui")));
-	}
-
-	private static net.minecraft.client.gui.components.Tooltip tip(String text) {
-		return net.minecraft.client.gui.components.Tooltip.create(net.minecraft.network.chat.Component.literal(text));
 	}
 
 	@Override
@@ -59,20 +59,24 @@ public class SettingsScreen extends BaseScreen {
 		button(rx, y, w, "Durées et minuteurs…", () -> minecraft.gui.setScreen(new DurationsScreen()));
 		// Règles de notre feuille, là où elle s'écarte de la règle officielle.
 		toggle(0, y += 21, "Héritière sans seuil", "heritiere_sans_seuil", ClientState.bool(st, "heirAlways"))
-			.setTooltip(tip("Oui : l'Héritière (Femme écarlate) devient le Démon même s'il reste moins de 5 vivants. "
-				+ "Non : règle officielle, 5 vivants au moins."));
+			.tooltip("Oui : l'Héritière (Femme écarlate) devient le Démon même s'il reste moins de 5 vivants. "
+				+ "Non : règle officielle, 5 vivants au moins.");
 		toggle(1, y, "Infos du mal dès 5", "infos_mal_des_5", ClientState.bool(st, "evilInfoAlways"))
-			.setTooltip(tip("Oui : dès 5 joueurs, les Sbires apprennent le Démon et le Démon ses Sbires et ses bluffs. "
-				+ "Non : règle officielle, à partir de 7 joueurs."));
+			.tooltip("Oui : dès 5 joueurs, les Sbires apprennent le Démon et le Démon ses Sbires et ses bluffs. "
+				+ "Non : règle officielle, à partir de 7 joueurs.");
 		button(px + pw / 2 - 60, py + ph - 26, 120, "Retour", () -> minecraft.gui.setScreen(new StorytellerScreen()));
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		JsonObject st = ClientState.obj(view(), "settings");
 		int council = ClientState.num(st, "councilSeconds", 0);
 		int w = pw / 2 - 15;
-		Theme.centered(g, font, council > 0 ? "Conseil : " + council / 60 + " min " + (council % 60 > 0 ? council % 60 + " s" : "")
-			: "Conseil : à la main", px + 20 + w + w / 2, py + 12 + 21 * 3 + 6, Theme.INK);
+		// Durée du Conseil, entre les boutons « − » et « + » de la quatrième rangée.
+		String text = council > 0 ? "Conseil : " + council / 60 + " min " + (council % 60 > 0 ? council % 60 + " s" : "")
+			: "Conseil : à la main";
+		int rowTop = hd.px(py + 12 + 21 * 3);
+		hd.textCentered(HdStyle.FORT, text.strip(), hd.px(px + 20 + w + w / 2),
+			rowTop + (hd.px(18) - hd.lineHeight(HdStyle.FORT)) / 2, Hd.INK);
 	}
 }

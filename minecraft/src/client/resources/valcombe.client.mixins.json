@@ -2,7 +2,7 @@
 	"required": true,
 	"package": "fr.valcombe.client.mixin",
 	"compatibilityLevel": "JAVA_21",
-	"client": ["EntityMixin", "RecipeToastMixin"],
+	"client": ["EntityMixin", "GlyphRenderStateMixin", "RecipeToastMixin", "AdvancementToastMixin"],
 	"injectors": {
 		"defaultRequire": 1
 	}

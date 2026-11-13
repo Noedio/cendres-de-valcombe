@@ -85,25 +85,17 @@ class WorkshopTest {
 	}
 
 	// ------------------------------------------------------------------
-	// Aperçu réduit
+	// Réveil d'un rôle créé, en clair (fiche d'un rôle de l'Atelier en jeu)
 	// ------------------------------------------------------------------
 	@Test
-	void apercuReduitMoyenneDeChaqueCase() {
-		// Image de 4 × 4 : moitié gauche rouge, moitié droite bleue ; réduite à 2 × 2.
-		int[] rgb = new int[16];
-		for (int i = 0; i < 16; i++) {
-			rgb[i] = i % 4 < 2 ? 0xFF0000 : 0x0000FF;
-		}
-		byte[] out = Workshop.shrink(4, 4, rgb, 2);
-		assertEquals(12, out.length);
-		assertEquals(255, out[0] & 255);
-		assertEquals(0, out[2] & 255);
-		assertEquals(0, out[3] & 255);
-		assertEquals(255, out[5] & 255);
-		// Image plus petite que l'aperçu : chaque case prend le pixel le plus proche, sans déborder.
-		byte[] grown = Workshop.shrink(1, 1, new int[] {0x102030}, 3);
-		assertEquals(27, grown.length);
-		assertEquals(0x30, grown[26] & 255);
+	void reveilDUnRoleEnClair() {
+		assertEquals("ne se réveille pas", Workshop.wake("jamais"));
+		assertEquals("ne se réveille pas", Workshop.wake(null));
+		assertEquals("au début de la nuit", Workshop.wake("debut"));
+		assertEquals("à la fin de la nuit", Workshop.wake("fin"));
+		String after = Workshop.wake("apres:goule");
+		assertTrue(after.startsWith("juste après ") && !after.contains(":") && !after.endsWith(" "), after);
+		assertEquals("juste avant inconnu-x", Workshop.wake("avant:inconnu-x"), "un rôle inconnu garde son identifiant");
 	}
 
 	// ------------------------------------------------------------------
@@ -132,14 +124,14 @@ class WorkshopTest {
 		Village v = Village.custom(new BlockPos(10, 70, -4));
 		v.setLibrary("port-aux-brumes", "Le Port aux Brumes");
 		v.setModified(false);
-		v.save(f, false);
+		v.save(f);
 		Village back = Village.load(f).village();
 		assertEquals("port-aux-brumes", back.libraryId());
 		assertEquals("Le Port aux Brumes", back.libraryName());
 		assertFalse(back.modified());
 		// Une fiche d'avant cette version n'a pas ces champs : la carte ne vient d'aucune carte de la bibliothèque.
 		Village plain = Village.custom(new BlockPos(0, 64, 0));
-		plain.save(f, false);
+		plain.save(f);
 		assertEquals("", Village.load(f).village().libraryId());
 	}
 

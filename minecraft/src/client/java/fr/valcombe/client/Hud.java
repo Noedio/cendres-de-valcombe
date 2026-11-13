@@ -2,7 +2,14 @@ package fr.valcombe.client;
 
 import com.google.gson.JsonObject;
 
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdGlyphs;
+import fr.valcombe.client.hd.HdSprites;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdTokenArt;
 import fr.valcombe.client.ui.Theme;
+
+import java.util.List;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
@@ -11,8 +18,25 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvents;
 
-/** Affichage en jeu : voile de nuit, bandeau de phase, vote en cours ; sons d'ambiance. */
+/**
+ * Affichage en jeu : voile de nuit, bandeau de phase, vote en cours ; sons d'ambiance.
+ *
+ * <p>Tout ce qui porte du texte est dessiné en haute résolution (boîte à outils fr.valcombe.client.hd) : les positions
+ * restent pensées en unités d'interface, comme avant, et sont converties en pixels réels au moment de dessiner
+ * (hd.px pour une coordonnée, hd.u pour une longueur). Les voiles plein écran, sans texte, restent en unités.
+ */
 public final class Hud {
+	/** Texte des bandeaux (phase, vote, réveil). */
+	private static final HdStyle STRIP = HdStyle.FORT.size(10);
+	/** Messages au milieu de l'écran (consignes, apartés, pause). */
+	private static final HdStyle MESSAGE = HdStyle.FORT.size(10);
+	/** Lignes serrées du tableau du jour et des étiquettes du Conteur. */
+	private static final HdStyle SMALL = HdStyle.TEXTE.size(9.5f);
+	/** Interligne des messages et du tableau du jour, en unités. */
+	private static final double PITCH = 10.5;
+	/** Ombre portée des messages posés sur le monde. */
+	private static final int SHADOW = 0xC0000000;
+
 	private static String lastPhase = "LOBBY";
 	private static String lastVote = "";
 	private static long voteStart;
@@ -85,65 +109,88 @@ public final class Hud {
 		cardFlipped = true;
 	}
 
+	/** Couleur RGB avec une opacité (0 à 255). */
+	private static int alpha(int alpha, int rgb) {
+		return Math.max(0, Math.min(255, alpha)) << 24 | rgb & 0xFFFFFF;
+	}
+
+	/** Interligne des messages, en pixels réels. */
+	private static int pitch(Hd hd) {
+		return hd.u(PITCH);
+	}
+
 	/** La carte tombe face cachée, se retourne, reste lisible quelques secondes puis s'efface. */
-	private static void drawCard(GuiGraphicsExtractor g, Minecraft mc, int w, int h) {
+	private static void drawCard(Hd hd, int w, int h) {
 		long t = System.currentTimeMillis() - cardAt;
 		if (card == null || t > 7000) {
 			return;
 		}
-		int cw = Math.min(150, w / 3);
-		int ch = cw * 3 / 2;
-		int cx = w / 2;
+		// Géométrie en unités d'interface (comme avant), dessin en pixels réels.
+		int cwU = Math.min(150, w / 3);
+		int chU = cwU * 3 / 2;
 		float drop = Math.min(1f, t / 500f);
-		int cy = (int) (h / 2 - (1 - drop) * (1 - drop) * h / 2);
+		int cyU = (int) (h / 2 - (1 - drop) * (1 - drop) * h / 2);
 		float flip = t < 900 ? 1f : t < 1500 ? (float) Math.cos(Math.PI * (t - 900) / 600.0) : -1f;
 		if (flip < 0 && !cardFlipped) {
 			cardFlipped = true;
 			Ambience.play("parchemin", 1f, 1f);
 		}
 		float fadeOut = t > 6200 ? 1 - (t - 6200) / 800f : 1f;
-		int alpha = (int) (fadeOut * 255);
-		if (alpha < 8) {
+		int a = (int) (fadeOut * 255);
+		if (a < 8) {
 			return;
 		}
-		g.pose().pushMatrix();
-		g.pose().translate(cx, cy);
-		g.pose().scale(Math.max(0.02f, Math.abs(flip)), 1f);
-		g.pose().translate(-cx, -cy);
+		int cw = hd.u(cwU);
+		int ch = hd.u(chU);
+		int cx = hd.px(w / 2);
+		int cy = hd.px(cyU);
+		var pose = hd.graphics().pose();
+		pose.pushMatrix();
+		pose.translate(cx, cy);
+		pose.scale(Math.max(0.02f, Math.abs(flip)), 1f);
+		pose.translate(-cx, -cy);
 		int x = cx - cw / 2;
 		int y = cy - ch / 2;
+		int frameTint = alpha(a, 0xFFFFFF);
 		boolean evil = "EVIL".equals(ClientState.str(card, "team"));
 		if (flip > 0) {
-			g.fill(x, y, x + cw, y + ch, (alpha << 24) | 0x5A1E2A);
-			g.outline(x + 3, y + 3, cw - 6, ch - 6, (alpha << 24) | 0xD9B45A);
-			Theme.image(g, Theme.tex("token_neutral"), cx - cw / 4, cy - cw / 4, cw / 2, cw / 2, 32, 32);
+			// Dos de la carte : lie-de-vin, cadre, jeton neutre.
+			hd.fill(x + hd.u(2), y + hd.u(2), x + cw - hd.u(2), y + ch - hd.u(2), alpha(a, 0x5A1E2A));
+			hd.sprite(HdSprites.CADRE, x, y, cw, ch, frameTint);
+			hd.image(Theme.tex("token_neutral"), cx - cw / 4, cy - cw / 4, cw / 2, cw / 2, frameTint);
 		} else {
-			g.fill(x, y, x + cw, y + ch, (alpha << 24) | 0xE8D9B5);
-			g.outline(x + 3, y + 3, cw - 6, ch - 6, (alpha << 24) | (evil ? 0xA83232 : 0x3F6FA8));
+			// Face : parchemin, jeton du rôle, nom, camp, texte du rôle.
+			hd.fill(x + hd.u(2), y + hd.u(2), x + cw - hd.u(2), y + ch - hd.u(2), alpha(a, 0xE8D9B5));
+			hd.sprite(HdSprites.CADRE, x, y, cw, ch, frameTint);
+			int side = evil ? 0xA83232 : 0x3F6FA8;
+			hd.frame(x + hd.u(4), y + hd.u(4), cw - hd.u(8), ch - hd.u(8), Math.max(1, hd.u(0.75)), alpha(a * 3 / 4, side));
 			int size = cw / 2;
-			Theme.token(g, cx, y + 12 + size / 2, size, ClientState.str(card, "id"), evil ? "EVIL" : "GOOD", true, false, false);
-			String name = ClientState.str(card, "name");
-			g.text(mc.font, name, cx - mc.font.width(name) / 2, y + 18 + size, (alpha << 24) | 0x1B1214, false);
-			String side = evil ? "Camp du mal" : "Camp du bien";
-			g.text(mc.font, side, cx - mc.font.width(side) / 2, y + 30 + size, (alpha << 24) | (evil ? 0xA83232 : 0x3F6FA8), false);
-			int ty = y + 44 + size;
-			for (var line : mc.font.split(net.minecraft.network.chat.Component.literal(ClientState.str(card, "text")), cw - 16)) {
-				if (ty > y + ch - 12) {
+			HdTokenArt.drawWithAlpha(hd, cx - size / 2, y + hd.u(12), size, ClientState.str(card, "id"), evil ? "EVIL" : "GOOD", true,
+				false, false, a);
+			int ty = y + hd.u(14) + size;
+			String name = hd.ellipsize(HdStyle.FORT, ClientState.str(card, "name"), cw - hd.u(12));
+			hd.textCentered(HdStyle.FORT, name, cx, ty, alpha(a, 0x1B1214));
+			ty += hd.lineHeight(HdStyle.FORT);
+			hd.textCentered(SMALL, evil ? "Camp du mal" : "Camp du bien", cx, ty, alpha(a, side));
+			ty += hd.lineHeight(SMALL) + hd.u(2);
+			int lineH = hd.u(PITCH);
+			for (String line : hd.wrap(SMALL, ClientState.str(card, "text"), cw - hd.u(16))) {
+				if (ty + hd.lineHeight(SMALL) > y + ch - hd.u(8)) {
 					break;
 				}
-				g.text(mc.font, line, x + 8, ty, (alpha << 24) | 0x3A2E2A, false);
-				ty += mc.font.lineHeight;
+				hd.text(SMALL, line, x + hd.u(8), ty, alpha(a, 0x3A2E2A));
+				ty += lineH;
 			}
 		}
-		g.pose().popMatrix();
+		pose.popMatrix();
 	}
 
 	/**
 	 * L'horloge du vote, en bandeau : un carré par votant, dans l'ordre où l'aiguille passe.
 	 * Rouge : main comptée ; gris : passé sans voter ; bleu : main levée, pas encore passé ;
-	 * cadre doré : l'aiguille est là ; cadre blanc : toi.
+	 * cadre doré : l'aiguille est là ; cadre blanc : toi. y et le retour sont en pixels réels.
 	 */
-	private static int drawClock(GuiGraphicsExtractor g, Minecraft mc, JsonObject vote, int w, int y) {
+	private static int drawClock(Hd hd, Minecraft mc, JsonObject vote, int w, int y) {
 		var order = vote.getAsJsonArray("order");
 		if (order == null || order.isEmpty()) {
 			return y;
@@ -159,11 +206,12 @@ public final class Hud {
 		String me = mc.player == null ? "" : mc.player.getScoreboardName();
 		int pos = ClientState.num(vote, "clockPos", -1);
 		int n = order.size();
-		int box = 12;
-		int gap = 3;
+		int box = hd.u(12);
+		int gap = hd.u(3);
 		int total = n * box + (n - 1) * gap;
-		int x0 = w / 2 - total / 2;
-		g.fill(x0 - 4, y - 3, x0 + total + 4, y + box + 3, 0xB01B1214);
+		int x0 = hd.px(w / 2) - total / 2;
+		hd.sprite(HdSprites.INFOBULLE, x0 - hd.u(5), y - hd.u(4), total + hd.u(10), box + hd.u(8));
+		int line = Math.max(1, hd.u(0.75));
 		int mine = -1;
 		for (int i = 0; i < n; i++) {
 			String name = order.get(i).getAsString();
@@ -171,26 +219,28 @@ public final class Hud {
 			int fill = locked.contains(name) ? Theme.EVIL
 				: i < pos ? 0xFF4A4448
 				: hands.contains(name) ? 0xFF3F6FA8 : 0xFF2A2024;
-			g.fill(x, y, x + box, y + box, fill);
+			hd.fill(x, y, x + box, y + box, fill);
 			if (locked.contains(name)) {
-				g.text(mc.font, "✋", x + 2, y + 2, 0xFFFFFFFF, false);
+				HdGlyphs.hand(hd, x + hd.u(2), y + hd.u(2), box - hd.u(4), 0xFFFFFFFF);
 			} else if (i >= pos && hands.contains(name)) {
-				g.text(mc.font, "↑", x + 3, y + 2, 0xFFFFFFFF, false); // main levée, pas encore comptée
+				// main levée, pas encore comptée : une flèche vers le haut
+				int cx = x + box / 2;
+				hd.triangle(cx, y + hd.u(2), hd.u(6), hd.u(4), 0xFFFFFFFF);
+				hd.fill(cx - hd.u(1), y + hd.u(6), cx + hd.u(1), y + box - hd.u(2), 0xFFFFFFFF);
 			}
 			if (i == pos) {
-				g.outline(x - 2, y - 2, box + 4, box + 4, Theme.GOLD);
+				hd.frame(x - hd.u(2), y - hd.u(2), box + hd.u(4), box + hd.u(4), line, Theme.GOLD);
 			}
 			if (name.equals(me)) {
-				g.outline(x, y, box, box, 0xFFFFFFFF);
+				hd.frame(x, y, box, box, line, 0xFFFFFFFF);
 				mine = i;
 			}
 		}
-		y += box + 6;
+		y += box + hd.u(7);
 		if (mine >= 0 && mine >= pos) {
 			int left = mine - Math.max(0, pos);
 			String t = left == 0 ? "L'aiguille est devant toi !" : "L'aiguille arrive à toi dans " + left + " trône" + (left > 1 ? "s" : "");
-			centered(g, mc, t, w, y, Theme.GOLD, false);
-			y += 12;
+			y += centered(hd, t, w, y, Theme.GOLD, false) + hd.u(2);
 		}
 		return y;
 	}
@@ -199,12 +249,15 @@ public final class Hud {
 	 * Conteur : au-dessus de chaque joueur, son nom et son rôle aux couleurs de son camp, dessinés
 	 * par-dessus le monde (donc visibles à travers les murs). Joueurs fictifs : à leur trône.
 	 */
-	private static void drawStorytellerRoles(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int w, int h) {
+	private static void drawStorytellerRoles(Hd hd, Minecraft mc, JsonObject v) {
 		var grim = v.getAsJsonArray("grimoire");
 		if (grim == null || !fr.valcombe.client.ClientConfig.get().rolesAuDessus || mc.level == null
 				|| !ClientState.bool(v, "isStoryteller") || mc.gui.screen() != null) {
 			return;
 		}
+		// Projection en pixels réels : l'étiquette tombe au pixel près au-dessus de la tête.
+		int w = hd.screenWidth();
+		int h = hd.screenHeight();
 		var camera = mc.gameRenderer.mainCamera();
 		net.minecraft.world.phys.Vec3 cam = camera.position();
 		double yr = Math.toRadians(camera.yRot());
@@ -244,7 +297,7 @@ public final class Hud {
 			double cy = dx * u[0] + dy * u[1] + dz * u[2];
 			int sx = (int) (w / 2.0 + cx / cz * focal);
 			int sy = (int) (h / 2.0 - cy / cz * focal);
-			if (sx < -50 || sx > w + 50 || sy < -20 || sy > h + 20) {
+			if (sx < -hd.u(50) || sx > w + hd.u(50) || sy < -hd.u(20) || sy > h + hd.u(20)) {
 				continue;
 			}
 			JsonObject role = ClientState.obj(row, "role");
@@ -255,37 +308,40 @@ public final class Hud {
 		// Les plus proches d'abord ; une étiquette qui en chevauche une autre monte d'un cran.
 		labels.sort(java.util.Comparator.comparingDouble(l -> (double) l[4]));
 		java.util.List<int[]> placed = new java.util.ArrayList<>();
+		int lh = hd.lineHeight(SMALL);
+		int pad = hd.u(3);
+		int step = lh + hd.u(1);
 		for (Object[] l : labels) {
 			String label = (String) l[2];
-			int tw = mc.font.width(label);
+			int tw = hd.width(SMALL, label);
 			// Jamais sous les barres du bas (chat, aides, inventaire) ni hors de l'écran sur les côtés.
-			int sx = Math.max(tw / 2 + 4, Math.min(w - tw / 2 - 4, (int) l[0]));
+			int sx = Math.max(tw / 2 + hd.u(4), Math.min(w - tw / 2 - hd.u(4), (int) l[0]));
 			int sy = (int) l[1];
-			if (sy > h - 90 || sy < 46) {
+			if (sy > h - hd.u(90) || sy < hd.u(46)) {
 				continue;
 			}
 			for (int tries = 0; tries < 8; tries++) {
 				boolean hit = false;
 				for (int[] box : placed) {
-					if (sx - tw / 2 - 4 < box[2] && sx + tw / 2 + 4 > box[0] && sy - 3 < box[3] && sy + 11 > box[1]) {
+					if (sx - tw / 2 - pad < box[2] && sx + tw / 2 + pad > box[0] && sy < box[3] && sy + step > box[1]) {
 						hit = true;
-						sy = box[1] - 12;
+						sy = box[1] - step;
 					}
 				}
 				if (!hit) {
 					break;
 				}
 			}
-			placed.add(new int[] {sx - tw / 2 - 4, sy - 3, sx + tw / 2 + 4, sy + 11});
+			placed.add(new int[] {sx - tw / 2 - pad, sy, sx + tw / 2 + pad, sy + step});
 			int color = (int) l[3];
-			g.fill(sx - tw / 2 - 3, sy - 2, sx + tw / 2 + 3, sy + 9, 0xC8101018);
-			g.fill(sx - tw / 2 - 3, sy + 9, sx + tw / 2 + 3, sy + 10, color);
-			g.text(mc.font, label, sx - tw / 2, sy, color, false);
+			hd.fill(sx - tw / 2 - pad, sy, sx + tw / 2 + pad, sy + lh, 0xC8101018);
+			hd.fill(sx - tw / 2 - pad, sy + lh, sx + tw / 2 + pad, sy + lh + Math.max(1, hd.u(0.75)), color);
+			hd.text(SMALL, label, sx - tw / 2, sy, color);
 		}
 	}
 
-	/** Tableau du jour, en haut à droite : nominations, voix, et qui est sur le billot. */
-	private static void drawToday(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int top) {
+	/** Tableau du jour, en haut à droite : nominations, voix, et qui est sur le billot. top en pixels réels. */
+	private static void drawToday(Hd hd, Minecraft mc, JsonObject v, int top) {
 		JsonObject day = ClientState.obj(v, "today");
 		if (day == null || !"DAY".equals(ClientState.phase()) || mc.gui.screen() != null) {
 			return;
@@ -334,11 +390,12 @@ public final class Hud {
 		}
 		// Encadré en haut à DROITE (le chat est à gauche), lignes repliées à la largeur permise.
 		String title = "Accusations du jour";
-		int sw = mc.getWindow().getGuiScaledWidth();
-		int maxW = Math.max(120, Math.min(250, sw / 2 - 20));
-		java.util.List<net.minecraft.util.FormattedCharSequence> seqs = new java.util.ArrayList<>();
-		java.util.List<Integer> colors = new java.util.ArrayList<>();
-		int width = mc.font.width(title);
+		HdStyle titleStyle = HdStyle.SECTION.size(9);
+		int sw = hd.screenWidth();
+		int maxW = hd.u(Math.max(120, Math.min(250, mc.getWindow().getGuiScaledWidth() / 2 - 20)));
+		List<String> texts = new java.util.ArrayList<>();
+		List<Integer> colors = new java.util.ArrayList<>();
+		int width = hd.width(titleStyle, title);
 		for (String[] l : lines) {
 			int c = switch (l[1]) {
 				case "red" -> 0xFFE05A4A;
@@ -346,43 +403,69 @@ public final class Hud {
 				case "gray" -> 0xFF9A9090;
 				default -> Theme.PARCH;
 			};
-			for (var seq : mc.font.split(net.minecraft.network.chat.Component.literal(l[0]), maxW)) {
-				seqs.add(seq);
+			for (String part : hd.wrap(SMALL, l[0], maxW)) {
+				texts.add(part);
 				colors.add(c);
-				width = Math.max(width, mc.font.width(seq));
+				width = Math.max(width, HdGlyphs.width(hd, SMALL, part));
 			}
 		}
-		int x = sw - width - 9;
+		int pitch = pitch(hd);
+		int pad = hd.u(6);
+		int x = sw - width - hd.u(11);
 		int y = top;
-		int h = 16 + seqs.size() * 10;
-		g.fill(x - 4, y - 4, x + width + 4, y + h, 0xD01B1214);
-		g.outline(x - 4, y - 4, width + 8, h + 4, Theme.BRONZE);
-		g.text(mc.font, title, x, y, Theme.GOLD, false);
-		g.fill(x, y + 10, x + width, y + 11, 0x80B08D57);
-		y += 14;
-		for (int i = 0; i < seqs.size(); i++) {
-			g.text(mc.font, seqs.get(i), x, y, colors.get(i), false);
-			y += 10;
+		int titleH = hd.lineHeight(titleStyle);
+		int h = titleH + hd.u(4) + (texts.size() - 1) * pitch + hd.lineHeight(SMALL);
+		hd.sprite(HdSprites.INFOBULLE, x - pad, y - pad, width + 2 * pad, h + 2 * pad);
+		hd.text(titleStyle, title, x, y, Theme.GOLD);
+		hd.fill(x, y + titleH + hd.u(1), x + width, y + titleH + hd.u(1) + Math.max(1, hd.u(0.5)), 0x80B08D57);
+		y += titleH + hd.u(4);
+		for (int i = 0; i < texts.size(); i++) {
+			HdGlyphs.text(hd, SMALL, texts.get(i), x, y, colors.get(i));
+			y += pitch;
 		}
 	}
 
 	/**
-	 * Texte centré qui passe à la ligne s'il est plus large que l'écran. Avec up, les lignes
-	 * supplémentaires montent (pour les messages du bas de l'écran). Renvoie la hauteur occupée.
+	 * Texte centré qui passe à la ligne s'il est plus large que l'écran. Avec up, les lignes supplémentaires
+	 * montent (pour les messages du bas de l'écran). w en unités d'interface, y et le retour en pixels réels.
 	 */
-	private static int centered(GuiGraphicsExtractor g, Minecraft mc, String text, int w, int y, int color, boolean up) {
-		var lines = mc.font.split(net.minecraft.network.chat.Component.literal(text), Math.max(80, w - 24));
-		int lh = mc.font.lineHeight + 1;
+	private static int centered(Hd hd, String text, int w, int y, int color, boolean up) {
+		List<String> lines = hd.wrap(MESSAGE, text, hd.u(Math.max(80, w - 40)));
+		int lh = pitch(hd) + hd.u(1);
 		int top = up ? y - (lines.size() - 1) * lh : y;
-		for (int i = 0; i < lines.size(); i++) {
-			var line = lines.get(i);
-			g.text(mc.font, line, w / 2 - mc.font.width(line) / 2, top + i * lh, color, true);
+		int cx = hd.px(w / 2);
+		// Une plaque sombre sous le message : il se lit sur n'importe quel décor, et ne se mêle plus aux textes posés
+		// dans le monde (accueil du hub, panneaux), qu'il recouvre au lieu de s'y superposer.
+		int widest = 0;
+		for (String line : lines) {
+			widest = Math.max(widest, HdGlyphs.width(hd, MESSAGE, line));
 		}
-		return lines.size() * lh;
+		int padX = hd.u(7);
+		int padY = hd.u(2.5);
+		hd.sprite(HdSprites.INFOBULLE, cx - widest / 2 - padX, top - padY, widest + 2 * padX,
+			(lines.size() - 1) * lh + hd.lineHeight(MESSAGE) + 2 * padY, 0xF0FFFFFF);
+		for (int i = 0; i < lines.size(); i++) {
+			String line = lines.get(i);
+			HdGlyphs.textShadow(hd, MESSAGE, line, cx - HdGlyphs.width(hd, MESSAGE, line) / 2, top + i * lh, color, SHADOW);
+		}
+		return lines.size() * lh + hd.u(4);
 	}
 
-	/** Voix du joueur, en bas à gauche : niveau choisi (touche B), et règle du Conseil. */
-	private static void drawVoice(GuiGraphicsExtractor g, Minecraft mc, JsonObject v, int h) {
+	/**
+	 * Messages du bas de l'écran, empilés vers le haut depuis bottom (pixels réels) sans se recouvrir. Renvoie le
+	 * nouveau bas de la pile.
+	 */
+	private static int stackUp(Hd hd, String text, int w, int bottom, int color) {
+		List<String> lines = hd.wrap(MESSAGE, text, hd.u(Math.max(80, w - 40)));
+		int lh = pitch(hd) + hd.u(1);
+		int height = (lines.size() - 1) * lh + hd.lineHeight(MESSAGE);
+		int top = bottom - height;
+		centered(hd, text, w, top, color, false);
+		return top - hd.u(2.5) - hd.u(4);
+	}
+
+	/** Voix du joueur, en bas à droite de la barre d'objets : niveau choisi (touche B), et règle du Conseil. */
+	private static void drawVoice(Hd hd, Minecraft mc, JsonObject v, int w, int h) {
 		int me = ClientState.num(v, "mySeat", -1);
 		if (me < 0 || mc.gui.screen() != null || !"DAY".equals(ClientState.phase())) {
 			return;
@@ -421,10 +504,69 @@ public final class Hud {
 			return;
 		}
 		// À droite de la barre d'objets : le chat (à gauche) et les consignes (au-dessus) restent libres.
-		int tw = mc.font.width(text);
-		int x = Math.max(g.guiWidth() / 2 + 96, g.guiWidth() - tw - 8);
-		g.fill(x - 3, h - 19, x + tw + 3, h - 7, 0xC01B1214);
-		g.text(mc.font, text, x, h - 17, color, false);
+		int tw = hd.width(STRIP, text);
+		int x = Math.max(hd.px(w / 2 + 96), hd.px(w) - tw - hd.u(9));
+		int top = hd.px(h - 21);
+		int bh = hd.u(15);
+		hd.sprite(HdSprites.INFOBULLE, x - hd.u(5), top, tw + hd.u(10), bh);
+		hd.textMiddle(STRIP, text, x, top, bh, color);
+	}
+
+	/** Bandeau de phase, en haut au centre : lune ou soleil, puis « Nuit 2 », « Jour 3 »... */
+	private static void drawPhase(Hd hd, String phase, String label, int w) {
+		int icon = hd.u(12);
+		int gap = hd.u(4);
+		int tw = hd.width(STRIP, label);
+		int content = icon + gap + tw;
+		int bw = content + hd.u(30);
+		int bh = hd.u(16);
+		int cx = hd.px(w / 2);
+		int y = hd.px(4);
+		hd.sprite(HdSprites.BANDEAU, cx - bw / 2, y, bw, bh);
+		int x = cx - content / 2;
+		hd.image(Theme.tex(phase.equals("NIGHT") ? "moon" : "sun"), x, y + (bh - icon) / 2, icon, icon, -1);
+		hd.textShadow(STRIP, label, x + icon + gap, y + (bh - hd.lineHeight(STRIP)) / 2, 0xFFF3D98E, 0xC0140A0C);
+	}
+
+	/**
+	 * Le vote en cours : bandeau (sablier, défense ou compte des voix, jauge du seuil), horloge, et ta main.
+	 * Renvoie le bas de ce qui a été dessiné, en pixels réels.
+	 */
+	private static int drawVote(Hd hd, Minecraft mc, JsonObject vote, int w) {
+		boolean defense = "DEFENSE".equals(ClientState.str(vote, "stage"));
+		int count = ClientState.num(vote, "count", 0);
+		int threshold = Math.max(1, ClientState.num(vote, "threshold", 1));
+		String text = defense
+			? ClientState.str(vote, "nominee") + " se défend (" + ClientState.num(vote, "defenseLeft", 0) + " s)"
+			: "Vote sur " + ClientState.str(vote, "nominee") + " : " + count + " voix, seuil " + threshold;
+		int icon = hd.u(12);
+		int vw = hd.width(STRIP, text) + hd.u(28);
+		int vx = hd.px(w / 2) - vw / 2;
+		int vy = hd.px(23);
+		int vh = hd.u(16);
+		hd.sprite(HdSprites.INFOBULLE, vx, vy, vw, vh);
+		hd.fill(vx + hd.u(2.5), vy + hd.u(2.5), vx + vw - hd.u(2.5), vy + vh - hd.u(2.5), 0x705A1E2A);
+		hd.image(Theme.tex("hourglass"), vx + hd.u(5), vy + (vh - icon) / 2, icon, icon, -1);
+		hd.textMiddle(STRIP, text, vx + hd.u(20), vy, vh, Theme.PARCH);
+		if (!defense) {
+			// Jauge : la part du seuil déjà atteinte, rouge quand il est atteint.
+			float frac = Math.min(1f, count / (float) threshold);
+			int gx = vx + hd.u(3);
+			int gw = vw - hd.u(6);
+			int gy = vy + vh - hd.u(3);
+			hd.fill(gx, gy, gx + (int) (gw * frac), gy + Math.max(1, hd.u(1)), count >= threshold ? Theme.EVIL : Theme.GOLD);
+		}
+		int y = hd.px(44);
+		if (!defense) {
+			y = drawClock(hd, mc, vote, w, y);
+		}
+		if (ClientState.bool(vote, "canVote")) {
+			boolean up = ClientState.bool(vote, "myHand");
+			String hand = up ? "✋ Ta main est levée. H ou plume (clic droit) pour la baisser"
+				: "Ta main est baissée. H ou plume (clic droit) pour la lever";
+			y += centered(hd, hand, w, y, up ? 0xFF8FD18F : Theme.PARCH, false);
+		}
+		return y;
 	}
 
 	private static void draw(GuiGraphicsExtractor g) {
@@ -432,8 +574,11 @@ public final class Hud {
 		String phase = ClientState.phase();
 		int w = g.guiWidth();
 		int h = g.guiHeight();
+		// Un écran de Valcombe ouvert (menu, invite, pupitre) passe devant : l'affichage en jeu n'y glisse pas ses textes,
+		// qui se mêleraient au bandeau et au panneau de l'écran sous son voile. Le chat et les écrans du jeu les gardent.
+		boolean screenOpen = mc.gui.screen() instanceof fr.valcombe.client.screen.BaseScreen;
 
-		// Voile de nuit qui s'installe doucement
+		// Voile de nuit qui s'installe doucement (plein écran, sans texte : en unités d'interface)
 		float target = phase.equals("NIGHT") ? 1f : 0f;
 		veil += (target - veil) * 0.05f;
 		if (veil > 0.01f) {
@@ -446,38 +591,39 @@ public final class Hud {
 
 		// Réveil : le voile s'éclaircit et « Tu te réveilles » s'affiche en grand.
 		long since = System.currentTimeMillis() - wakeAt;
-		if (since < 2600) {
-			float t = since / 2600f;
-			int alpha = (int) ((1 - t) * 220);
+		float wake = since < 2600 ? since / 2600f : -1f;
+		if (wake >= 0) {
+			int alpha = (int) ((1 - wake) * 220);
 			g.fill(0, 0, w, h, (alpha << 24) | 0x05030A);
-			int textAlpha = (int) (255 * Math.min(1f, (1 - t) * 2));
-			if (textAlpha > 8) {
-				String wake = "Tu te réveilles";
-				g.pose().pushMatrix();
-				g.pose().scale(2.5f, 2.5f);
-				g.text(mc.font, wake, (int) (w / 2.5f / 2 - mc.font.width(wake) / 2f), (int) (h / 2.5f / 2 - 8),
-					(textAlpha << 24) | 0xD9B45A, true);
-				g.pose().popMatrix();
-			}
 		}
-		drawCard(g, mc, w, h);
+		if (screenOpen) {
+			return;
+		}
+		try (Hd hd = Hd.begin(g)) {
+			drawHudText(hd, mc, phase, w, h);
+			if (wake >= 0) {
+				int textAlpha = (int) (255 * Math.min(1f, (1 - wake) * 2));
+				if (textAlpha > 8) {
+					HdStyle big = HdStyle.GRAND_TITRE.size(24);
+					hd.textShadow(big, "Tu te réveilles", hd.px(w / 2) - hd.width(big, "Tu te réveilles") / 2,
+						hd.px(h / 2) - hd.lineHeight(big) / 2 - hd.u(8), alpha(textAlpha, 0xD9B45A), alpha(textAlpha * 3 / 4, 0x140A0C));
+				}
+			}
+			// La carte de rôle passe par-dessus tout le reste : rien ne s'écrit sur elle.
+			drawCard(hd, w, h);
+		}
+	}
+
+	/** Tout ce qui s'écrit sur l'affichage en jeu, dans un contexte haute résolution déjà ouvert. */
+	private static void drawHudText(Hd hd, Minecraft mc, String phase, int w, int h) {
+		// Messages du bas, empilés vers le haut au-dessus de la barre d'objets.
+		int bottom = hd.px(h - 47);
 		// Le serveur n'a pas la même version du mod : des écrans et des commandes ne marcheront pas.
 		String other = ClientState.serverVersionMismatch();
-		if (other != null) {
-			String t = "Le serveur a une autre version du mod Valcombe (serveur : " + other + ", vous : "
-				+ ClientState.modVersion() + "). L'hôte doit le mettre à jour.";
-			var lines = mc.font.split(net.minecraft.network.chat.Component.literal(t), Math.max(80, w - 30));
-			int lw = 0;
-			for (var l : lines) {
-				lw = Math.max(lw, mc.font.width(l));
-			}
-			int top = h - 96 - (lines.size() - 1) * 10;
-			g.fill(w / 2 - lw / 2 - 6, top - 3, w / 2 + lw / 2 + 6, h - 82, 0xE0801818);
-			for (int i = 0; i < lines.size(); i++) {
-				g.text(mc.font, lines.get(i), w / 2 - mc.font.width(lines.get(i)) / 2, top + i * 10, 0xFFFFFFFF, false);
-			}
-		}
 		if (phase.equals("LOBBY")) {
+			if (other != null) {
+				drawVersionWarning(hd, other, w, bottom);
+			}
 			return;
 		}
 		JsonObject v = ClientState.view();
@@ -487,84 +633,48 @@ public final class Hud {
 			case "READY" -> "La partie va commencer";
 			default -> "";
 		};
-		int tw = mc.font.width(label) + 30;
-		int x = w / 2 - tw / 2;
-		g.fill(x, 4, x + tw, 20, 0xD01B1214);
-		g.outline(x, 4, tw, 16, Theme.BRONZE);
-		Theme.image(g, Theme.tex(phase.equals("NIGHT") ? "moon" : "sun"), x + 4, 6, 12, 12, 16, 16);
-		g.text(mc.font, label, x + 20, 8, Theme.GOLD, false);
+		drawPhase(hd, phase, label, w);
 
+		// En haut, sous le bandeau de phase : le vote en cours (ou l'étape de la nuit pour le Conteur), puis les
+		// messages pour tous, les uns sous les autres.
+		int y = hd.px(24);
 		JsonObject vote = ClientState.obj(v, "vote");
 		if (vote != null) {
-			boolean defense = "DEFENSE".equals(ClientState.str(vote, "stage"));
-			int count = ClientState.num(vote, "count", 0);
-			int threshold = Math.max(1, ClientState.num(vote, "threshold", 1));
-			String text = defense
-				? ClientState.str(vote, "nominee") + " se défend (" + ClientState.num(vote, "defenseLeft", 0) + " s)"
-				: "Vote sur " + ClientState.str(vote, "nominee") + " : " + count + " voix, seuil " + threshold;
-			int vw = mc.font.width(text) + 26;
-			int vx = w / 2 - vw / 2;
-			g.fill(vx, 24, vx + vw, 38, 0xD05A1E2A);
-			g.outline(vx, 24, vw, 14, Theme.GOLD);
-			Theme.image(g, Theme.tex("hourglass"), vx + 4, 25, 12, 12, 16, 16);
-			g.text(mc.font, text, vx + 20, 27, Theme.PARCH, false);
-			if (!defense) {
-				float frac = Math.min(1f, count / (float) threshold);
-				g.fill(vx + 1, 37, vx + 1 + (int) ((vw - 2) * frac), 38, count >= threshold ? Theme.EVIL : Theme.GOLD);
-			}
-			int y = 42;
-			if (!defense) {
-				y = drawClock(g, mc, vote, w, y);
-			}
-			if (ClientState.bool(vote, "canVote")) {
-				boolean up = ClientState.bool(vote, "myHand");
-				String hand = up ? "✋ Ta main est levée. H ou plume (clic droit) pour la baisser"
-					: "Ta main est baissée. H ou plume (clic droit) pour la lever";
-				centered(g, mc, hand, w, y, up ? 0xFF8FD18F : Theme.PARCH, false);
-			}
+			y = drawVote(hd, mc, vote, w);
 		}
-		drawToday(g, mc, v, vote == null ? 28 : 84);
-		drawVoice(g, mc, v, h);
-		drawStorytellerRoles(g, mc, v, w, h);
+		JsonObject ns = ClientState.obj(v, "nightStep");
+		if (ns != null) {
+			y = Math.max(y, drawNightStep(hd, ns, w) + hd.u(5));
+		}
 		// Conteur : joueurs déconnectés
 		var absents = v.getAsJsonArray("absents");
 		if (absents != null && !absents.isEmpty()) {
 			StringBuilder names = new StringBuilder();
 			absents.forEach(e -> names.append(names.length() == 0 ? "" : ", ").append(e.getAsString()));
 			String t = "Absents : " + names + " (fiche du joueur : le faire relayer)";
-			centered(g, mc, t, w, 42, 0xFFE05A4A, false);
+			y += centered(hd, t, w, y + hd.u(3), 0xFFE05A4A, false) + hd.u(3);
 		}
-		// Partie en pause : tout le monde le voit
-		if (ClientState.bool(v, "paused") && mc.gui.screen() == null) {
-			centered(g, mc, "⏸ Partie en pause", w, 54, 0xFFE8C36A, true);
+		// Partie en pause, ou en suspens (ses joueurs l'attendent au hub) : tout le monde le voit
+		if (ClientState.bool(v, "suspended")) {
+			JsonObject game = ClientState.obj(v, "partie");
+			String name = game == null ? null : ClientState.str(game, "nom");
+			y += centered(hd, "⏸ Partie" + (name == null || name.isEmpty() ? "" : " « " + name + " »")
+				+ " en suspens : elle reprendra où elle en est", w, y + hd.u(3), 0xFFE8C36A, false) + hd.u(3);
+		} else if (ClientState.bool(v, "paused")) {
+			y += centered(hd, "⏸ Partie en pause", w, y + hd.u(3), 0xFFE8C36A, false) + hd.u(3);
 		}
-		// Nuit d'attente : ceux qui dorment savent quoi faire
-		if (phase.equals("NIGHT") && ClientState.obj(v, "prompt") == null && !ClientState.bool(v, "isStoryteller")
-				&& ClientState.num(v, "mySeat", -1) >= 0 && mc.gui.screen() == null) {
-			String t = "Tu dors… Le Conteur réveille chacun à son tour. (J : ton carnet)";
-			centered(g, mc, t, w, h - 60, 0xFFB8A6C8, true);
-		}
-		// Conteur, la nuit : qui est réveillé et ce qu'on attend
-		JsonObject ns = ClientState.obj(v, "nightStep");
-		if (ns != null) {
-			String who = ClientState.str(ns, "player");
-			String wait = ClientState.str(ns, "waiting");
-			String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
-				+ (wait == null || wait.isEmpty() ? "" : " : " + wait);
-			int nw = mc.font.width(t) + 12;
-			g.fill(w / 2 - nw / 2, 24, w / 2 + nw / 2, 38, 0xD02A1840);
-			g.outline(w / 2 - nw / 2, 24, nw, 14, 0xFFB08CD8);
-			g.text(mc.font, t, w / 2 - nw / 2 + 6, 27, 0xFFE8DCF8, false);
-		}
-		// Conversation privée entre joueurs, et invitation en attente
-		String talk = ClientState.str(v, "talkingWith");
-		String invite = ClientState.str(v, "talkInvite");
-		if (talk != null && !talk.isEmpty()) {
-			String t = "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)";
-			centered(g, mc, t, w, h - 84, 0xFFC8A8F0, true);
-		} else if (invite != null && !invite.isEmpty()) {
-			String t = invite + " veut te parler en privé (touche J pour répondre)";
-			centered(g, mc, t, w, h - 84, Theme.GOLD, true);
+		// Le tableau du jour se pose sous tout cela, à droite.
+		drawToday(hd, mc, v, Math.max(vote != null ? hd.px(84) : hd.px(30), y + hd.u(8)));
+		drawVoice(hd, mc, v, w, h);
+		drawStorytellerRoles(hd, mc, v);
+
+		// En bas, du plus bas au plus haut : l'action qui attend (ou le sommeil), l'aparté, la conversation privée, la
+		// version du serveur.
+		if (ClientState.obj(v, "prompt") != null) {
+			bottom = stackUp(hd, "Une action t'attend (touche J)", w, bottom, Theme.GOLD);
+		} else if (phase.equals("NIGHT") && !ClientState.bool(v, "isStoryteller") && ClientState.num(v, "mySeat", -1) >= 0) {
+			// Nuit d'attente : ceux qui dorment savent quoi faire
+			bottom = stackUp(hd, "Tu dors… Le Conteur réveille chacun à son tour. (J : ton carnet)", w, bottom, 0xFFB8A6C8);
 		}
 		// Aparté avec le Conteur (vocal seul à seul)
 		String aside = ClientState.str(v, "aside");
@@ -572,11 +682,53 @@ public final class Hud {
 		if (aside != null && !aside.isEmpty() && (aside.equals(me) || ClientState.bool(v, "isStoryteller"))) {
 			String t = aside.equals(me) ? "En aparté avec le Conteur : vous seuls vous entendez"
 				: "En aparté avec " + aside + " (accroupi + clic droit au bâton pour finir)";
-			centered(g, mc, t, w, h - 72, 0xFFC8A8F0, true);
+			bottom = stackUp(hd, t, w, bottom, 0xFFC8A8F0);
 		}
-		if (ClientState.obj(v, "prompt") != null && mc.gui.screen() == null) {
-			String hint = "Une action t'attend (touche J)";
-			centered(g, mc, hint, w, h - 60, Theme.GOLD, true);
+		// Conversation privée entre joueurs, et invitation en attente
+		String talk = ClientState.str(v, "talkingWith");
+		String invite = ClientState.str(v, "talkInvite");
+		if (talk != null && !talk.isEmpty()) {
+			bottom = stackUp(hd, "En privé avec " + talk + " : vous seuls vous entendez (menu J pour revenir)", w, bottom, 0xFFC8A8F0);
+		} else if (invite != null && !invite.isEmpty()) {
+			bottom = stackUp(hd, invite + " veut te parler en privé (touche J pour répondre)", w, bottom, Theme.GOLD);
+		}
+		if (other != null) {
+			drawVersionWarning(hd, other, w, bottom);
+		}
+	}
+
+	/** Conteur, la nuit : qui est réveillé et ce qu'on attend, sous le bandeau de phase. Renvoie le bas du bandeau. */
+	private static int drawNightStep(Hd hd, JsonObject ns, int w) {
+		String who = ClientState.str(ns, "player");
+		String wait = ClientState.str(ns, "waiting");
+		String t = "Réveil : " + ClientState.str(ns, "title") + (who == null || who.isEmpty() ? "" : " (" + who + ")")
+			+ (wait == null || wait.isEmpty() ? "" : " : " + wait);
+		t = hd.ellipsize(STRIP, t, hd.u(w - 20));
+		int nw = hd.width(STRIP, t) + hd.u(14);
+		int ny = hd.px(23);
+		int nh = hd.u(16);
+		int nx = hd.px(w / 2) - nw / 2;
+		hd.sprite(HdSprites.INFOBULLE, nx, ny, nw, nh, 0xFFC8B0F0);
+		hd.fill(nx + hd.u(2.5), ny + hd.u(2.5), nx + nw - hd.u(2.5), ny + nh - hd.u(2.5), 0x702A1840);
+		hd.textMiddle(STRIP, t, nx + hd.u(7), ny, nh, 0xFFE8DCF8);
+		return ny + nh;
+	}
+
+	/** Bandeau rouge : le serveur a une autre version du mod. Posé au-dessus de bottom (pixels réels). */
+	private static void drawVersionWarning(Hd hd, String other, int w, int bottom) {
+		String t = "Le serveur a une autre version du mod Valcombe (serveur : " + other + ", vous : "
+			+ ClientState.modVersion() + "). L'hôte doit le mettre à jour.";
+		List<String> lines = hd.wrap(MESSAGE, t, hd.u(Math.max(80, w - 40)));
+		int lw = 0;
+		for (String l : lines) {
+			lw = Math.max(lw, hd.width(MESSAGE, l));
+		}
+		int lh = pitch(hd) + hd.u(1);
+		int top = bottom - hd.u(4) - lines.size() * lh;
+		int cx = hd.px(w / 2);
+		hd.fill(cx - lw / 2 - hd.u(7), top - hd.u(3), cx + lw / 2 + hd.u(7), bottom, 0xE0801818);
+		for (int i = 0; i < lines.size(); i++) {
+			hd.textCentered(MESSAGE, lines.get(i), cx, top + i * lh, 0xFFFFFFFF);
 		}
 	}
 }

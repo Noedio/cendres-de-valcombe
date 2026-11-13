@@ -5,9 +5,34 @@
 	"name": "Valcombe — tests en jeu",
 	"environment": "*",
 	"entrypoints": {
-		"fabric-client-gametest": ["fr.valcombe.gametest.ScreensGameTest"]
+		"fabric-client-gametest": [
+			"fr.valcombe.gametest.ScreensGameTest",
+			"fr.valcombe.gametest.WorldEditGameTest",
+			"fr.valcombe.gametest.AdminApiGameTest",
+			"fr.valcombe.gametest.TexturesGameTest",
+			"fr.valcombe.gametest.HdGameTest",
+			"fr.valcombe.gametest.MapPlacerGameTest",
+			"fr.valcombe.gametest.HubGameTest",
+			"fr.valcombe.gametest.BackupsGameTest",
+			"fr.valcombe.gametest.PlayerScreensHdGameTest",
+			"fr.valcombe.gametest.StorytellerHdGameTest",
+			"fr.valcombe.gametest.SeatRingGameTest",
+			"fr.valcombe.gametest.PartieWorldGameTest",
+			"fr.valcombe.gametest.EnvoiPartieGameTest",
+			"fr.valcombe.gametest.BuildWorkshopGameTest",
+			"fr.valcombe.gametest.StructuresWorkshopGameTest",
+			"fr.valcombe.gametest.MultiPartiesGameTest",
+			"fr.valcombe.gametest.SuspensGameTest",
+			"fr.valcombe.gametest.PartiesGameTest",
+			"fr.valcombe.gametest.AtelierCarteGameTest",
+			"fr.valcombe.gametest.AteliersFinitionsGameTest",
+			"fr.valcombe.gametest.AtelierHdGameTest",
+			"fr.valcombe.gametest.RecetteGameTest",
+			"fr.valcombe.gametest.WorldsGameTest"
+		]
 	},
 	"depends": {
-		"valcombe": "*"
+		"valcombe": "*",
+		"worldedit": "*"
 	}
 }

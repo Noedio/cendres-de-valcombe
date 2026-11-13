@@ -152,7 +152,7 @@ final class Desk {
 	final Set<String> awake = new LinkedHashSet<>();
 
 	String wake(String target, boolean on) {
-		Game g = s.requireGame();
+		Game g = s.requireLive();
 		if (g.phase() != Game.Phase.NIGHT) {
 			throw new GameException("On ne réveille un joueur que la nuit.");
 		}
@@ -185,7 +185,7 @@ final class Desk {
 	}
 
 	String ask(String target, int count) {
-		Game g = s.requireGame();
+		Game g = s.requireLive();
 		if (s.storyteller == null) {
 			throw new GameException("Il faut un Conteur pour poser une question à un joueur.");
 		}
@@ -282,7 +282,7 @@ final class Desk {
 	// Montrer une information à un joueur
 	// ------------------------------------------------------------------
 	String show(String target, String text) {
-		Game g = s.requireGame();
+		Game g = s.requireLive();
 		String name = g.player(s.seatByName(target)).name;
 		String t = text.trim();
 		if (t.isEmpty() || t.length() > 200) {
@@ -322,7 +322,7 @@ final class Desk {
 	private int speechToken;
 
 	private void requireDay() {
-		Game g = s.requireGame();
+		Game g = s.requireLive();
 		if (g.phase() != Game.Phase.DAY || g.dayOver()) {
 			throw new GameException("Le temps de parole, c'est de jour.");
 		}
@@ -386,6 +386,20 @@ final class Desk {
 		s.announce("La parole est à " + name + " (" + speechSeconds + " secondes).");
 		tick(token);
 		return "";
+	}
+
+	/**
+	 * Reprend un temps de parole enregistré (redémarrage du serveur) : name parle encore left secondes. Le minuteur revient
+	 * à l'écran avec les autres (Session.restoreTimer).
+	 */
+	void resumeSpeech(String name, int left) {
+		if (name == null || left <= 0 || s.game == null) {
+			return;
+		}
+		int token = ++speechToken;
+		speaker = name;
+		speechLeft = left;
+		tick(token);
 	}
 
 	private void tick(int token) {

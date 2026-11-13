@@ -10,12 +10,13 @@ Pour installer le jeu, voir [INSTALLATION.md](INSTALLATION.md). Pour héberger u
 2. [Les mots de la table et ceux du jeu](#2-les-mots-de-la-table-et-ceux-du-jeu)
 3. [Combien de rôles de chaque camp](#3-combien-de-rôles-de-chaque-camp)
 4. [Les touches et les objets](#4-les-touches-et-les-objets)
-5. [Une partie, pas à pas](#5-une-partie-pas-à-pas)
-6. [Parler, chuchoter, se cacher](#6-parler-chuchoter-se-cacher)
-7. [Les 26 rôles de la table](#7-les-26-rôles-de-la-table)
-8. [Ce que le jeu fait autrement que la feuille](#8-ce-que-le-jeu-fait-autrement-que-la-feuille)
-9. [Conseils pour bien jouer](#9-conseils-pour-bien-jouer)
-10. [Pour le MJ : préparer une partie de la table](#10-pour-le-mj-préparer-une-partie-de-la-table)
+5. [En arrivant : le hub et les parties](#5-en-arrivant--le-hub-et-les-parties)
+6. [Une partie, pas à pas](#6-une-partie-pas-à-pas)
+7. [Parler, chuchoter, se cacher](#7-parler-chuchoter-se-cacher)
+8. [Les 26 rôles de la table](#8-les-26-rôles-de-la-table)
+9. [Ce que le jeu fait autrement que la feuille](#9-ce-que-le-jeu-fait-autrement-que-la-feuille)
+10. [Conseils pour bien jouer](#10-conseils-pour-bien-jouer)
+11. [Pour le MJ : préparer une partie de la table](#11-pour-le-mj--préparer-une-partie-de-la-table)
 
 ## 1. Le jeu en une minute
 
@@ -61,7 +62,7 @@ Il y a toujours **un seul Diablotin** ; les autres « Démons » sont des Sbires
 
 | Touche ou objet | À quoi ça sert |
 | --- | --- |
-| **J** | Le menu de Valcombe : rejoindre, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique |
+| **J** | Le menu de Valcombe : s'inscrire, carnet, fiches des rôles, chuchoter, parler en privé, annoncer un rôle, chronique, « Mondes » ; au hub, « Parties » |
 | **K** | Revoir sa carte de rôle |
 | **H** | Lever ou baisser la main pendant un vote |
 | **G** | Faire un signe (oui, non, question…) |
@@ -71,19 +72,40 @@ Il y a toujours **un seul Diablotin** ; les autres « Démons » sont des Sbires
 
 Les touches se changent dans les options de Minecraft (raccourcis clavier), rubrique « Les Cendres de Valcombe ».
 
-## 5. Une partie, pas à pas
+## 5. En arrivant : le hub et les parties
+
+Un serveur de Valcombe peut faire jouer **plusieurs parties en même temps**, chacune dans son propre village : la **Partie principale**, et parfois des **parties d'essai** ouvertes par le MJ (pour une deuxième table, ou pour répéter une carte). Elles sont séparées : on ne voit, n'entend et ne joue que la partie du village où l'on se trouve.
+
+**Le hub.** En vous connectant, vous arrivez au hub, la salle d'accueil commune. Si vous êtes assis à une partie en cours, vous retrouvez directement votre place.
+
+- **La dalle dorée** (« S'inscrire ») vous inscrit à la Partie principale, la **rouge** retire votre inscription. Ce sont les mêmes dalles que dans la salle d'attente de chaque village.
+- **Le tableau des parties** montre une fiche par partie : où elle en est (salon ouvert, nuit 2, en pause…), ses places (une pastille dorée par joueur), son MJ. **Cliquez sur une fiche** pour la rejoindre ou la regarder.
+- **Les portes**, sur les côtés, mènent aux villages des parties ; leur nom et ce qui s'y passe sont écrits au-dessus.
+- **Le mur du fond** montre les rôles du script de la Partie principale.
+
+**L'écran « Parties »** (menu J au hub, ou une fiche cliquée) : choisissez une partie, puis
+
+- **Rejoindre** : vous êtes inscrit au salon et conduit au village. Si vous y jouez déjà, le bouton dit **Y retourner**. Grisé, il dit pourquoi au survol (partie commencée, salon plein…).
+- **Regarder** : vous entrez dans le village en spectateur, invisible, et vous allez où vous voulez. Vous ne voyez pas les rôles et vous n'entendez pas les joueurs. Menu J › **Arrêter de regarder** vous ramène au hub.
+
+**Le menu « Mondes »** (menu J) liste le hub et les villages où vous pouvez aller ; vous y retrouvez l'endroit où vous les aviez quittés. `/vc hub` ramène au hub. Pendant une partie où vous êtes assis, vous restez au village jusqu'à la fin.
+
+**Une partie mise en suspens.** Le MJ peut interrompre une partie pour la reprendre plus tard (le soir même ou un autre jour) : tout s'arrête là où on en était, et chacun est renvoyé au hub, sa place gardée. À la reprise, un lien **[Y aller]** s'affiche dans le chat : cliquez dessus et vous retrouvez votre trône ; la partie repart quand tout le monde est revenu. Une partie en cours survit aussi à un redémarrage du serveur.
+
+## 6. Une partie, pas à pas
 
 ### La mise en place
 
-1. Dans la **salle d'attente**, marchez sur la dalle **dorée** pour vous inscrire (la **rouge** pour vous désinscrire).
+1. Inscrivez-vous (dalle dorée du hub ou de la salle d'attente, tableau des parties, ou menu J › « S'inscrire »). Au début de la partie, chacun est emmené à sa place.
 2. Le MJ lance la partie. Avec un MJ humain, il vous reçoit chacun votre tour dans la **salle de convocation** : vous découvrez votre rôle face à lui, il vous l'explique, personne d'autre n'entend. Sans MJ humain, une carte tombe à l'écran et se retourne.
 3. Chacun s'assoit sur son **trône**, en cercle autour de la place. L'ordre des trônes compte : « voisins » et « assis côte à côte » se lisent sur ce cercle.
 
 ### La nuit
 
 - La nuit tombe : brume, lanternes bleues, chacun dort dans sa maison.
-- **Première nuit** : le Diablotin ne tue personne. Les Sbires apprennent qui est le Diablotin, et le Diablotin apprend ses Sbires et ses trois bluffs. Avec nos règles, c'est vrai dès 5 joueurs (voir section 8).
+- **Première nuit** : le Diablotin ne tue personne. Les Sbires apprennent qui est le Diablotin, et le Diablotin apprend ses Sbires et ses trois bluffs. Avec nos règles, c'est vrai dès 5 joueurs (voir section 9).
 - Quand votre tour vient, un écran « Tu te réveilles » s'ouvre : cliquez sur un ou deux jetons de joueurs, ou lisez votre information, puis « Je me rendors ». Avec un MJ humain, vous pouvez lui parler à ce moment, seuls au vocal.
+- Sur ces écrans, les jetons sont rangés en cercle dans l'ordre des trônes, et le nom de chaque joueur s'écrit à l'extérieur du cercle, à côté de son jeton. Quand la place manque (beaucoup de joueurs, longs pseudos), un nom est raccourci ou caché : survolez le jeton pour le lire en entier.
 - Les autres voient « Tu dors… » et peuvent relire leur carnet.
 
 ### Le jour
@@ -108,15 +130,16 @@ Un mort reste à la table : il écoute, il parle (sauf pendant le Conseil, où u
 
 Quand un camp gagne, chaque jeton se retourne et la veillée révèle les rôles un à un. La chronique de la partie se relit dans le menu J.
 
-## 6. Parler, chuchoter, se cacher
+## 7. Parler, chuchoter, se cacher
 
+- **Le vocal est propre à chaque partie** : on n'entend que les joueurs de son village, jamais une autre table. Les spectateurs n'entendent pas les joueurs.
 - **Touche B** : chuchoter (quelques blocs), parler, ou crier (tout le village).
 - **Chuchoter** (menu J) : le village voit à qui vous chuchotez, pas ce que vous dites.
 - **Parler en privé** : invitez un joueur, puis vous êtes seuls au vocal.
 - **Les maisons et les recoins** entre les maisons sont des salles privées. Dans un recoin, votre nom ne se voit pas depuis la place.
 - **Pendant le Conseil**, tout le village s'entend ; les morts se taisent sauf si un vivant leur donne la parole (menu J › Donner la parole…).
 
-## 7. Les 26 rôles de la table
+## 8. Les 26 rôles de la table
 
 Chaque ligne donne le nom de la feuille, le nom dans le jeu et ce que fait le rôle en jeu. Le texte exact est aussi sur votre carte (touche K) et dans les fiches (menu J › Fiches des rôles).
 
@@ -161,7 +184,7 @@ Chaque ligne donne le nom de la feuille, le nom dans le jeu et ce que fait le r�
 | Sorcière | La Sorcière | Chaque nuit, maudit un joueur : s'il est accusé au Conseil suivant, il meurt à la fin du Conseil, après les votes. Le pouvoir s'éteint à 3 vivants. |
 | Diablotin | La Goule | Chaque nuit sauf la première, tue un joueur. S'il se tue lui-même, un Sbire devient le Diablotin. Reçoit trois bluffs. |
 
-## 8. Ce que le jeu fait autrement que la feuille
+## 9. Ce que le jeu fait autrement que la feuille
 
 La feuille, la liste des rôles et les fiches d'attribution ne disent pas toujours la même chose. Voici les écarts relevés en les comparant entre elles et au jeu. **En gras**, ceux qui changent vraiment une partie.
 
@@ -183,7 +206,7 @@ Ce que le jeu ajoute et que la feuille ne dit pas : le vote unique des morts, le
 
 Les deux écarts en gras viennent des règles officielles de Blood on the Clocktower. Le jeu les propose désormais comme règles de la table : le scénario « La Table de Valcombe » les coche, et le MJ peut les changer dans le Pupitre du Conteur › Réglages de la partie (« Héritière sans seuil », « Infos du mal dès 5 ») ou dans l'Atelier.
 
-## 9. Conseils pour bien jouer
+## 10. Conseils pour bien jouer
 
 **Dans le camp du village**
 
@@ -200,10 +223,12 @@ Les deux écarts en gras viennent des règles officielles de Blood on the Clockt
 - Fleuriste en jeu ? Lever la main au Conseil peut vous trahir.
 - Sorcière : maudissez celui que le village va accuser.
 
-## 10. Pour le MJ : préparer une partie de la table
+## 11. Pour le MJ : préparer une partie de la table
 
-- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue, la victoire du mal majoritaire, l'Héritière sans seuil et le mal qui se connaît dès 5 joueurs. Choisissez-le dans l'Atelier ou dans le jeu (menu J › Pupitre du Conteur › Éditer le script › Scénarios…).
+- **Le scénario « La Table de Valcombe »** joue exactement nos règles : les 26 rôles ci-dessus, toutes les accusations puis les votes, la majorité absolue, la victoire du mal majoritaire, l'Héritière sans seuil et le mal qui se connaît dès 5 joueurs. Choisissez-le dans l'Atelier (la page web, ou en jeu : menu J › Atelier › Rôles et scénarios, fiche du scénario, « Choisir pour une partie… ») ou dans le jeu (menu J › Panneau du Conteur, qui ouvre le Pupitre du Conteur › Éditer le script › Scénarios…).
 - **Le temps de discussion** et la durée du Conseil se règlent dans le Pupitre du Conteur › « Durées et minuteurs… ».
 - **Choisir les rôles soi-même** : au salon, Pupitre du Conteur › « Imposer des rôles… » ; avant la première nuit, onglet Nuit › « Distribution des rôles… » montre le rôle de chacun, à changer d'un clic.
 - **Les groupes de rôles** : dans l'éditeur de script (Pupitre du Conteur › Éditer le script), la colonne de droite propose les groupes : cliquez sur le nom pour passer d'un groupe à l'autre (ses jetons sont soulignés d'or), puis « + » (ajouter au script), « − » (retirer) ou « Seul » (le script devient le groupe). « Ranger… » enregistre le script en cours comme groupe. Les groupes se créent aussi dans l'Atelier web et voyagent dans les fichiers `.valcombe` (onglet Partage).
 - **La feuille du MJ** (rôle reçu, noms reçus, leurre, faux rôle du Bourré…) est tenue par le jeu : le Grimoire et le journal de la nuit gardent tout.
+- **Deux tables le même soir** : un opérateur crée une partie d'essai (menu J au hub › « Parties » › « Créer une partie d'essai ») ; elle a son village, son MJ, son scénario et son vocal. Chaque MJ mène la partie du village où il se trouve.
+- **Interrompre la partie** : Pupitre du Conteur › onglet Partie › « Mettre en suspens » (un second clic confirme). Tout le monde va au hub ; « Reprendre la partie en suspens » rappelle chacun à sa place. Le pas à pas est dans le [tutoriel](TUTORIEL.md#6-plusieurs-parties-en-même-temps).

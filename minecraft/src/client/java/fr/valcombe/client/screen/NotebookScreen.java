@@ -6,7 +6,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.ui.Theme;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdGlyphButton;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdTabs;
+import fr.valcombe.client.hd.HdText;
+import fr.valcombe.client.hd.HdTextField;
 import fr.valcombe.rules.Role;
 
 import java.io.IOException;
@@ -18,20 +24,20 @@ import java.util.List;
 import java.util.Map;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.network.chat.Component;
 
 /**
  * Carnet du joueur, gardé seulement sur ce PC. Onglet « Joueurs » : pour chacun, le rôle qu'il annonce,
  * ta confiance (?, confiance, doute, suspect), le rôle que tu lui prêtes et une note. Onglet « Indices » :
  * ce que tu as appris la nuit (noté tout seul) et tes propres indices.
  */
-public class NotebookScreen extends BaseScreen {
+public class NotebookScreen extends HdScreen {
 	private static final Gson GSON = new Gson();
 	static final String[] TRUST = {"?", "Confiance", "Doute", "Suspect"};
 	private static final int[] TRUST_COLORS = {0xFF6B5B4B, 0xFF2E6B2E, 0xFF8A6A12, 0xFF8E1F1F};
 	private static final int ROW = 20;
+	/** Clés des champs : la saisie en cours et le focus survivent aux reconstructions (une vue du serveur arrive souvent). */
+	private static final String NOTE_KEY = "carnet.note.";
+	private static final String CLUE_KEY = "carnet.indice";
 
 	/** Ce que le carnet sait d'un joueur. */
 	static final class Page {
@@ -169,15 +175,12 @@ public class NotebookScreen extends BaseScreen {
 		if (lockedByDay()) {
 			return;
 		}
-		var tabA = button(px + 14, py + 8, 90, "Joueurs", () -> {
-			cluesTab = false;
-			rebuildWidgets();
-		});
-		var tabB = button(px + 108, py + 8, 90, "Indices (" + data().indices.size() + ")", () -> {
-			cluesTab = true;
-			rebuildWidgets();
-		});
-		(cluesTab ? tabB : tabA).disabled();
+		addRenderableWidget(new HdTabs(px + 14, py + 8, pw - 28, 16, List.of("Joueurs", "Indices (" + data().indices.size() + ")"),
+			cluesTab ? 1 : 0).onChange(i -> {
+				cluesTab = i == 1;
+				scroll = 0;
+				rebuildSoon();
+			}));
 		if (cluesTab) {
 			buildClues();
 		} else {
@@ -196,25 +199,27 @@ public class NotebookScreen extends BaseScreen {
 			button(x, y, 62, TRUST[p.trust], () -> {
 				p.trust = (p.trust + 1) % TRUST.length;
 				save();
-				rebuildWidgets();
-			});
+				rebuildSoon();
+			}).key("carnet.confiance." + name).tooltip("Ta confiance en " + name + " : un clic passe à la suivante.");
 			Role guess = roleOf(p.guess);
 			button(x + 66, y, 96, guess == null ? "Rôle prêté…" : guess.displayName,
 				() -> minecraft.gui.setScreen(new NotebookGuessScreen(name)));
-			EditBox box = new EditBox(font, x + 166, y + 1, pw - 14 - (x + 166 - px) - 14, 16, Component.literal(name));
-			box.setMaxLength(160);
-			box.setValue(p.note == null ? "" : p.note);
-			box.setResponder(text -> {
-				p.note = text;
-				save();
-			});
-			addRenderableWidget(box);
+			// La note, enregistrée à chaque frappe ; la clé garde le curseur et le focus quand l'écran se reconstruit.
+			addRenderableWidget(new HdTextField(x + 166, y, pw - 14 - (x + 166 - px) - 14, 18, name)
+				.maxLength(160).value(p.note == null ? "" : p.note).hint("Note…").key(NOTE_KEY + name)
+				.responder(text -> {
+					p.note = text;
+					save();
+				}));
 			y += ROW;
 		}
 		button(px + 14, py + ph - 26, 120, "Tout effacer", () -> {
+			for (String name : data().joueurs.keySet()) {
+				HdTextField.forget(NOTE_KEY + name);
+			}
 			data().joueurs.clear();
 			save();
-			rebuildWidgets();
+			rebuildSoon();
 		});
 	}
 
@@ -224,28 +229,30 @@ public class NotebookScreen extends BaseScreen {
 		int y = py + 46;
 		for (int i = scroll; i < clues.size() && i < scroll + visible() - 1; i++) {
 			int index = i;
-			button(px + pw - 36, y, 22, "×", () -> {
+			addRenderableWidget(new HdGlyphButton(px + pw - 36, y, 22, 18, "×", () -> {
 				clues.remove(index);
 				save();
-				rebuildWidgets();
-			});
+				rebuildSoon();
+			})).tooltip("Effacer cet indice");
 			y += ROW;
 		}
-		EditBox add = new EditBox(font, px + 14, py + ph - 50, pw - 120, 16, Component.literal("indice"));
-		add.setMaxLength(200);
-		addRenderableWidget(add);
-		button(px + pw - 100, py + ph - 51, 86, "Noter", () -> {
-			String text = add.getValue().trim();
+		HdTextField add = addRenderableWidget(new HdTextField(px + 14, py + ph - 51, pw - 120, 18, "indice")
+			.maxLength(200).hint("Un indice à noter…").key(CLUE_KEY));
+		Runnable note = () -> {
+			String text = add.value().trim();
 			if (!text.isEmpty()) {
 				String night = ClientState.phase().equals("LOBBY") ? "" : "Jour " + ClientState.num(view(), "day", 0) + " : ";
 				addClue(night + text);
-				rebuildWidgets();
+				HdTextField.forget(CLUE_KEY);
+				rebuildSoon();
 			}
-		});
+		};
+		add.onEnter(note);
+		button(px + pw - 100, py + ph - 51, 86, "Noter", note);
 		button(px + 14, py + ph - 26, 120, "Effacer les indices", () -> {
 			clues.clear();
 			save();
-			rebuildWidgets();
+			rebuildSoon();
 		});
 	}
 
@@ -257,43 +264,52 @@ public class NotebookScreen extends BaseScreen {
 	}
 
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
+		HdStyle dense = HdText.SERRE;
+		int pitch = hd.u(HdText.PAS);
+		int left = hd.px(px + 14);
+		int width = hd.px(pw - 28);
 		if (lockedByDay()) {
-			Theme.paragraph(g, font, "Le carnet ne s'ouvre que la nuit : c'est le moment de réfléchir à ce que tu as entendu "
-				+ "pendant la journée.", px + 14, py + 40, pw - 28, Theme.INK);
+			hd.paragraph(HdStyle.TEXTE, "Le carnet ne s'ouvre que la nuit : c'est le moment de réfléchir à ce que tu as entendu "
+				+ "pendant la journée.", left, hd.px(py + 40), width, Hd.INK);
 			return;
 		}
 		if (cluesTab) {
-			Theme.ink(g, font, "Ce que tu as appris la nuit est noté tout seul. Ajoute tes propres indices.", px + 14, py + 32, Theme.ASH);
+			HdText.line(hd, dense, "Ce que tu as appris la nuit est noté tout seul. Ajoute tes propres indices.", left, hd.px(py + 30),
+				width, Hd.INK_SOFT);
 			List<String> clues = data().indices;
 			if (clues.isEmpty()) {
-				Theme.paragraph(g, font, "Aucun indice pour l'instant.", px + 14, py + 50, pw - 28, Theme.INK);
+				HdText.paragraph(hd, HdStyle.TEXTE, "Aucun indice pour l'instant.", left, hd.px(py + 50), width, Hd.INK, pitch);
 			}
-			int y = py + 51;
+			int y = py + 46;
 			for (int i = scroll; i < clues.size() && i < scroll + visible() - 1; i++) {
-				String c = clues.get(i);
-				String shown = font.plainSubstrByWidth(c, pw - 60);
-				g.text(font, shown + (shown.length() < c.length() ? "…" : ""), px + 14, y, Theme.INK, false);
+				// Un indice par ligne, raccourci avant son bouton « × » (son texte entier reste dans le fichier du carnet).
+				HdText.line(hd, HdStyle.TEXTE.size(10.5f), clues.get(i), left, hd.px(y) + (hd.u(18) - hd.lineHeight(HdStyle.TEXTE.size(10.5f))) / 2,
+					hd.px(pw - 60), Hd.INK);
 				y += ROW;
 			}
 			return;
 		}
-		Theme.ink(g, font, "Joueur et rôle annoncé, confiance, rôle que tu lui prêtes, note", px + 14, py + 32, Theme.ASH);
+		HdText.line(hd, dense, "Joueur et rôle annoncé, confiance, rôle que tu lui prêtes, note", left, hd.px(py + 30), width,
+			Hd.INK_SOFT);
 		List<String> names = players();
 		if (names.isEmpty()) {
-			Theme.paragraph(g, font, "Le carnet se remplit pendant une partie : une ligne par joueur. Rien à noter pour l'instant.",
-				px + 14, py + 50, pw - 28, Theme.INK);
+			HdText.paragraph(hd, HdStyle.TEXTE, "Le carnet se remplit pendant une partie : une ligne par joueur. Rien à noter pour l'instant.",
+				left, hd.px(py + 50), width, Hd.INK, hd.u(13));
 		}
-		int y = py + 47;
+		int y = py + 46;
+		HdStyle nameStyle = HdStyle.FORT.size(10);
+		HdStyle claimStyle = HdStyle.PETIT.size(8.5f);
 		for (int i = scroll; i < names.size() && i < scroll + visible(); i++) {
 			String name = names.get(i);
 			Page p = page(name);
-			String label = name.length() > 11 ? name.substring(0, 10) + "…" : name;
-			g.text(font, label, px + 14, y, TRUST_COLORS[p.trust], false);
+			// Nom dans la couleur de ta confiance, rôle qu'il annonce dessous ; sans rôle annoncé, le nom se centre sur
+			// la hauteur des boutons de sa ligne.
 			String claim = claimOf(name);
+			int nameTop = claim.isEmpty() ? hd.px(y) + (hd.u(18) - hd.lineHeight(nameStyle)) / 2 : hd.px(y) - hd.u(2);
+			HdText.line(hd, nameStyle, name, left, nameTop, hd.px(112), TRUST_COLORS[p.trust]);
 			if (!claim.isEmpty()) {
-				String c = font.plainSubstrByWidth("« " + claim + " »", 112);
-				g.text(font, c, px + 14, y + 9, Theme.ASH, false);
+				HdText.line(hd, claimStyle, "« " + claim + " »", left, hd.px(y + 8), hd.px(112), Hd.INK_SOFT);
 			}
 			y += ROW;
 		}

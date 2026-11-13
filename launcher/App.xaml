@@ -261,6 +261,95 @@
       </Setter>
     </Style>
 
+    <!-- Champ secret (clé d'administration) : même allure qu'un champ de texte -->
+    <Style TargetType="PasswordBox">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Padding" Value="9,3"/>
+      <Setter Property="MinHeight" Value="34"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="{StaticResource Field}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource FieldLine}"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="CaretBrush" Value="{StaticResource Gold}"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource Gold}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="PasswordBox">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" CornerRadius="7">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Gold}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Tuile de chiffre (page Serveur) : un panneau plus léger que la carte -->
+    <Style x:Key="Tile" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Card}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardLine}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="16,12"/>
+      <Setter Property="Margin" Value="6,0,6,14"/>
+    </Style>
+
+    <!-- Petite étiquette arrondie (« opérateur », « Bientôt ») -->
+    <Style x:Key="Badge" TargetType="Border">
+      <Setter Property="Background" Value="#26E2BD63"/>
+      <Setter Property="BorderBrush" Value="#66E2BD63"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="9"/>
+      <Setter Property="Padding" Value="8,1,8,2"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Console du serveur : lignes serrées, sélection possible pour copier -->
+    <Style x:Key="ConsoleLine" TargetType="ListBoxItem">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="Bd" Background="Transparent" Padding="8,1">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#33E2BD63"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ConsoleList" TargetType="ListBox">
+      <Setter Property="Background" Value="#E60C080B"/>
+      <Setter Property="BorderBrush" Value="{StaticResource FieldLine}"/>
+      <Setter Property="FontFamily" Value="Consolas"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="SelectionMode" Value="Extended"/>
+      <Setter Property="ItemContainerStyle" Value="{StaticResource ConsoleLine}"/>
+      <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+      <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBox">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="0,5">
+              <ScrollViewer x:Name="Scroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="True">
+                <ItemsPresenter/>
+              </ScrollViewer>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- Case à cocher : un interrupteur -->
     <Style TargetType="CheckBox">
       <Setter Property="FontSize" Value="13"/>

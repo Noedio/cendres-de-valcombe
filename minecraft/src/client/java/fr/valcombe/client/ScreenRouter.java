@@ -26,6 +26,16 @@ public final class ScreenRouter {
 			}
 			return;
 		}
+		if (which.startsWith("structures:")) {
+			// Pupitre de l'atelier structures : l'écran de l'atelier sur cette parcelle (vide : celui de l'accueil)
+			mc.gui.setScreen(new fr.valcombe.client.screen.StructuresWorkshopScreen(which.substring("structures:".length())));
+			return;
+		}
+		if (which.startsWith("parties:")) {
+			// Tableau des parties du hub : la fiche cliquée, dans l'écran « Parties »
+			mc.gui.setScreen(new fr.valcombe.client.screen.PartiesScreen(which.substring("parties:".length())));
+			return;
+		}
 		if (which.startsWith("seat:")) {
 			// Bâton du Conteur : la ligne du grimoire du joueur visé
 			mc.gui.setScreen(new fr.valcombe.client.screen.SeatScreen(which.substring(5)));
@@ -33,8 +43,12 @@ public final class ScreenRouter {
 		}
 		Screen s = switch (which) {
 			case "storyteller" -> new StorytellerScreen();
-			case "atelier" -> new fr.valcombe.client.screen.AtelierScreen();
+			case "atelier" -> fr.valcombe.client.screen.atelier.AtelierPage.open();
 			case "sheets" -> new SheetsScreen();
+			case "mondes" -> new fr.valcombe.client.screen.WorldsScreen();
+			case "parties" -> new fr.valcombe.client.screen.PartiesScreen();
+			case "atelier-carte" -> new fr.valcombe.client.screen.MapWorkshopScreen();
+			case "atelier-carte-ouvrir" -> new fr.valcombe.client.screen.MapWorkshopOpenScreen();
 			case "prompt" -> ClientState.obj(ClientState.view(), "prompt") != null ? promptScreen() : new MainScreen();
 			default -> new MainScreen();
 		};

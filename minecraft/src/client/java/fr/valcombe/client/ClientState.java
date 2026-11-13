@@ -71,22 +71,9 @@ public final class ClientState {
 		}
 	}
 
-	private static JsonObject preview;
-	private static int[] previewColors = new int[0];
-
-	/** Aperçu vu de dessus d'une carte, demandé par l'écran de l'Atelier (« vc carte apercu ») ; null tant qu'aucun n'est arrivé. */
-	public static JsonObject preview() {
-		return preview;
-	}
-
-	/** Les couleurs de l'aperçu, une par case, ligne par ligne (vide si la carte n'a pas d'image). */
-	public static int[] previewColors() {
-		return previewColors;
-	}
-
+	/** Maquettes 3D des structures (« Voir en 3D ») et fantôme de la structure en main : le canal des aperçus. */
 	public static void applyPreview(String json) {
 		JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-		// Maquettes et fantôme des structures passent par le même canal que l'aperçu des cartes.
 		String kind = str(o, "kind");
 		if ("maquette".equals(kind)) {
 			Maquette.received(o);
@@ -95,20 +82,7 @@ public final class ClientState {
 		}
 		if ("fantome".equals(kind) || "fantomeA".equals(kind)) {
 			Ghost.received(o);
-			return;
 		}
-		int[] colors = new int[0];
-		String pixels = str(o, "pixels");
-		if (pixels != null) {
-			byte[] raw = java.util.Base64.getDecoder().decode(pixels);
-			colors = new int[raw.length / 3];
-			for (int i = 0; i < colors.length; i++) {
-				colors[i] = 0xFF000000 | (raw[3 * i] & 255) << 16 | (raw[3 * i + 1] & 255) << 8 | raw[3 * i + 2] & 255;
-			}
-		}
-		preview = o;
-		previewColors = colors;
-		version++; // l'écran ouvert se redessine avec l'aperçu
 	}
 
 	public static void send(String command) {
@@ -134,19 +108,46 @@ public final class ClientState {
 	}
 
 	/**
-	 * Version du mod sur le serveur, ou null si elle est identique à celle du joueur. Un serveur
-	 * d'avant la 0.5.3 n'envoie pas sa version : il est forcément différent.
+	 * Version du mod sur le serveur, ou null si elle est identique à celle du joueur (voir VersionCheck : jamais en
+	 * partie solo, et seulement d'après une vue reçue du serveur de la connexion en cours). Un serveur d'avant la
+	 * 0.5.3 n'envoie pas sa version : il est forcément différent.
 	 */
 	public static String serverVersionMismatch() {
-		if (view == null || !view.has("phase")) {
-			return null;
+		return VersionCheck.mismatch(serverViewSeen, serverModVersion, modVersion(),
+			net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer());
+	}
+
+	/**
+	 * Le serveur de la connexion en cours est-il un serveur de Valcombe (il a envoyé une vue de partie) ? Une partie
+	 * solo avec le mod en est un aussi.
+	 */
+	public static boolean onValcombeServer() {
+		return serverViewSeen;
+	}
+
+	/** Une vue est arrivée du serveur pendant cette connexion, et la version du mod qu'elle annonçait. */
+	private static boolean serverViewSeen;
+	private static String serverModVersion;
+
+	/** Une vue envoyée par le serveur (et non posée par le client lui-même) : on retient aussi sa version du mod. */
+	public static void receive(String json) {
+		apply(json);
+		if (view.has("phase")) {
+			serverViewSeen = true;
+			serverModVersion = str(view, "modVersion");
 		}
-		String server = str(view, "modVersion");
-		String mine = modVersion();
-		if (server != null && server.equals(mine)) {
-			return null;
-		}
-		return server == null ? "plus ancienne" : server;
+	}
+
+	/**
+	 * Connexion à un serveur, ou déconnexion : la vue et la version de l'ancien serveur sont oubliées (sans quoi
+	 * l'affichage en jeu montrerait sa partie, et son bandeau de version, jusqu'à la première vue du nouveau).
+	 */
+	public static void forgetServer() {
+		serverViewSeen = false;
+		serverModVersion = null;
+		view = new JsonObject();
+		lastPromptKey = "";
+		version++;
 	}
 
 	public static String str(JsonObject o, String key) {

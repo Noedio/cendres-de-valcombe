@@ -7,13 +7,18 @@ import com.google.gson.JsonObject;
 import fr.valcombe.rules.GameException;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -27,13 +32,34 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 
 /**
  * Catalogue de structures à poser sur une carte : celles que le mod fournit (bâties par le code du
- * village généré, jamais écrites sur le disque) et celles de l'utilisateur (sélection enregistrée,
- * fichier importé, pack reçu). Fichiers : config/valcombe/creations/structures/<id>.json et <id>.nbt
- * (format des structures de Minecraft, lisible par un bloc de structure).
+ * village généré) et celles de l'utilisateur (sélection enregistrée, fichier importé, pack reçu, parcelle de
+ * l'atelier structures). Fichiers, dans config/valcombe/creations/structures :
+ * <ul>
+ * <li>{@code <id>.json} et {@code <id>.nbt} : les structures de l'utilisateur (format des structures de Minecraft,
+ * lisible par un bloc de structure) ;</li>
+ * <li>{@code surcharges/<id>.json} et {@code surcharges/<id>.nbt} : une structure fournie modifiée dans l'atelier
+ * structures. Elle remplace l'originale <b>partout</b> : village généré (voir {@link Village#setPieces}), éditeur
+ * de carte, Atelier web et en jeu, cartes qui la posent. « Revenir à l'originale » ({@link #revert}) la retire ;</li>
+ * <li>{@code corbeille/} : ce qu'on supprime ou qu'on abandonne (structure de l'utilisateur supprimée, surcharge
+ * retirée) n'est jamais effacé : les fichiers y sont déplacés, datés, et se remettent à la main en cas de regret.</li>
+ * </ul>
+ *
+ * <h2>API publique (pour les autres parties du mod)</h2>
+ * <ul>
+ * <li>Lire : {@link #list()}, {@link #def(String)}, {@link #ids(boolean)}, {@link #exists(String)},
+ * {@link #isBuiltin(String)}, {@link #isOverridden(String)}, {@link #signature(String)}.</li>
+ * <li>Enregistrer une construction d'un monde : {@link #saveFromWorld} (structure de l'utilisateur) et
+ * {@link #overrideFromWorld} (structure fournie modifiée). C'est l'entrée de « Sélection WorldEdit → structure du
+ * catalogue » et de l'atelier structures.</li>
+ * <li>Revenir à l'originale : {@link #revert(String)}. Renommer, choisir le repère, supprimer : {@link #rename},
+ * {@link #setMark}, {@link #delete}.</li>
+ * </ul>
+ * Fil du serveur pour tout ce qui lit ou écrit des blocs.
  */
 public final class StructureStore {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -50,6 +76,16 @@ public final class StructureStore {
 	/** Nombre de structures de l'utilisateur. */
 	static final int MAX_COUNT = 300;
 	public static final List<String> MARKS = List.of("", "maison", "salle");
+	/**
+	 * Les rayons du catalogue, dans l'ordre de l'Atelier : maisons et salles, pour la place, décor, vos structures. Une
+	 * structure de l'utilisateur va dans « perso » sauf si on lui en choisit un autre (sélection WorldEdit rangée
+	 * dans un rayon) ; elle reste alors à l'utilisateur (renommable, supprimable).
+	 */
+	public static final List<String> CATEGORIES = List.of("maisons", "place", "decor", "perso");
+	/** Dossier des structures fournies modifiées, et dossier de la corbeille (sous le dossier des structures). */
+	static final String OVERRIDES = "surcharges";
+	static final String TRASH = "corbeille";
+	private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
 	/** Fiche d'une structure. */
 	public static final class Def {
@@ -65,8 +101,28 @@ public final class StructureStore {
 		public int[] ancre = new int[3];
 		/** Nombre de blocs posés (l'air compte, pas les cases vides). */
 		public int blocs;
-		/** Fournie par le mod : ni modifiable, ni supprimable. */
+		/** Fournie par le mod : ni supprimable, ni renommable ; elle se modifie dans l'atelier structures. */
 		public boolean fournie;
+		/** Fournie, et modifiée dans l'atelier structures : c'est la version modifiée qui sert partout. */
+		public boolean modifiee;
+		/** Date de la modification (« 2026-11-13 21:04 »), pour une structure fournie modifiée ; null sinon. */
+		public String modifieeLe;
+
+		/** Une copie de cette fiche (les fiches des structures fournies ne sont jamais changées sur place). */
+		Def copy() {
+			Def d = new Def();
+			d.id = id;
+			d.nom = nom;
+			d.categorie = categorie;
+			d.repere = repere;
+			d.taille = taille.clone();
+			d.ancre = ancre.clone();
+			d.blocs = blocs;
+			d.fournie = fournie;
+			d.modifiee = modifiee;
+			d.modifieeLe = modifieeLe;
+			return d;
+		}
 	}
 
 	/** Une structure fournie : quel morceau du village, dans quel thème. */
@@ -98,6 +154,18 @@ public final class StructureStore {
 		new Builtin("carre-de-simples", "Carré de simples", "decor", "", "simples", "monastere", 0),
 		new Builtin("tonneaux", "Tonneaux et poteau d'amarrage", "decor", "", "tonneaux", "port", 0));
 
+	/** Les structures fournies par identifiant (sans bâtir leurs blocs : utilisable sans Minecraft lancé). */
+	private static final Map<String, Builtin> BUILTIN_BY_ID = new LinkedHashMap<>();
+
+	static {
+		for (Builtin b : BUILTINS) {
+			BUILTIN_BY_ID.put(b.id(), b);
+		}
+	}
+
+	/** Morceaux du village bâtis de la même façon quel que soit le thème (ni la palette ni le thème n'y entrent). */
+	private static final List<String> THEME_FREE = List.of("etal", "simples", "pavillon", "banc");
+
 	private final Path dir;
 	private MinecraftServer server;
 	/** Structures fournies, bâties à la première demande (il faut les blocs du jeu, donc un serveur démarré). */
@@ -105,6 +173,10 @@ public final class StructureStore {
 	private final Map<String, Clip> builtinClips = new LinkedHashMap<>();
 	/** Fiches de l'utilisateur, relues du disque à la première demande. */
 	private Map<String, Def> user;
+	/** Fiches des structures fournies modifiées (surcharges), relues du disque à la première demande. */
+	private Map<String, Def> overrides;
+	/** Blocs des surcharges déjà lus : le village en demande plusieurs fois les mêmes pendant qu'il se bâtit. */
+	private final Map<String, Clip> overrideClips = new HashMap<>();
 	/** La dernière structure de l'utilisateur lue : l'aperçu et la pose la redemandent coup sur coup. */
 	private String lastId;
 	private Clip lastClip;
@@ -113,8 +185,13 @@ public final class StructureStore {
 		this.dir = creationsDir.resolve("structures");
 	}
 
+	/**
+	 * Branche le catalogue sur le serveur. Le village généré lui demande dès lors, pour chacun de ses morceaux, s'il
+	 * a été modifié dans l'atelier structures (voir {@link #piece}).
+	 */
 	public void setServer(MinecraftServer server) {
 		this.server = server;
+		Village.setPieces(server == null ? null : this::piece);
 	}
 
 	private HolderLookup.RegistryLookup<Block> blocks() {
@@ -160,9 +237,12 @@ public final class StructureStore {
 						try {
 							Def d = GSON.fromJson(Files.readString(f, StandardCharsets.UTF_8), Def.class);
 							if (d != null && d.id != null && d.id.matches(ID) && f.getFileName().toString().equals(d.id + ".json")
-								&& Files.exists(dir.resolve(d.id + ".nbt")) && !builtins().containsKey(d.id)) {
+								&& Files.exists(dir.resolve(d.id + ".nbt")) && !BUILTIN_BY_ID.containsKey(d.id)) {
 								d.fournie = false;
-								d.categorie = "perso";
+								d.modifiee = false;
+								d.modifieeLe = null;
+								// Rayon choisi à l'enregistrement, gardé dans la fiche ; « Vos structures » sinon.
+								d.categorie = CATEGORIES.contains(d.categorie) ? d.categorie : "perso";
 								defs.put(d.id, checked(d));
 							}
 						} catch (IOException | RuntimeException e) {
@@ -178,16 +258,63 @@ public final class StructureStore {
 		return user;
 	}
 
-	/** Relit le dossier (des fichiers y ont été déposés à la main). */
+	/** Les fiches des structures fournies modifiées : seulement celles dont les deux fichiers sont là. */
+	private Map<String, Def> overrides() {
+		if (overrides == null) {
+			Map<String, Def> defs = new LinkedHashMap<>();
+			Path in = dir.resolve(OVERRIDES);
+			if (Files.isDirectory(in)) {
+				try (Stream<Path> s = Files.list(in)) {
+					for (Path f : s.filter(p -> p.toString().endsWith(".json")).sorted().toList()) {
+						try {
+							Def d = GSON.fromJson(Files.readString(f, StandardCharsets.UTF_8), Def.class);
+							if (d != null && d.id != null && BUILTIN_BY_ID.containsKey(d.id) && f.getFileName().toString().equals(d.id + ".json")
+								&& Files.exists(in.resolve(d.id + ".nbt"))) {
+								defs.put(d.id, checked(d));
+							}
+						} catch (IOException | RuntimeException e) {
+							ValcombeMod.LOG.warn("Structure fournie modifiée illisible {}", f, e);
+						}
+					}
+				} catch (IOException e) {
+					ValcombeMod.LOG.warn("Dossier des structures modifiées illisible {}", in, e);
+				}
+			}
+			overrides = defs;
+		}
+		return overrides;
+	}
+
+	/** Relit le dossier (des fichiers y ont été déposés ou retirés à la main). */
 	public void reload() {
 		user = null;
+		overrides = null;
+		overrideClips.clear();
 		lastId = null;
 		lastClip = null;
 	}
 
+	/** La fiche telle qu'on la montre : pour une structure fournie modifiée, la taille, l'ancre et les blocs de sa version modifiée. */
+	private Def effective(Def original) {
+		Def o = overrides().get(original.id);
+		if (o == null) {
+			return original;
+		}
+		Def d = original.copy();
+		d.taille = o.taille.clone();
+		d.ancre = o.ancre.clone();
+		d.blocs = o.blocs;
+		d.modifiee = true;
+		d.modifieeLe = o.modifieeLe;
+		return d;
+	}
+
 	/** Tout le catalogue : les structures fournies dans leur ordre, puis celles de l'utilisateur par nom. */
 	public List<Def> list() {
-		List<Def> out = new ArrayList<>(builtins().values());
+		List<Def> out = new ArrayList<>();
+		for (Def d : builtins().values()) {
+			out.add(effective(d));
+		}
 		List<Def> mine = new ArrayList<>(user().values());
 		mine.sort(Comparator.comparing(d -> d.nom.toLowerCase(Locale.ROOT)));
 		out.addAll(mine);
@@ -198,46 +325,124 @@ public final class StructureStore {
 	public List<String> ids(boolean mineOnly) {
 		List<String> out = new ArrayList<>();
 		if (!mineOnly) {
-			out.addAll(builtins().keySet());
+			out.addAll(BUILTIN_BY_ID.keySet());
 		}
 		out.addAll(user().keySet());
 		return out;
 	}
 
+	/** Cet identifiant est-il au catalogue (fournie ou de l'utilisateur) ? */
+	public boolean exists(String id) {
+		return id != null && (BUILTIN_BY_ID.containsKey(id) || id.matches(ID) && user().containsKey(id));
+	}
+
+	/** Cet identifiant est-il celui d'une structure fournie par le mod ? (Sans Minecraft lancé.) */
+	public static boolean isBuiltin(String id) {
+		return id != null && BUILTIN_BY_ID.containsKey(id);
+	}
+
+	/** Cette structure fournie a-t-elle été modifiée dans l'atelier structures (une surcharge la remplace) ? */
+	public boolean isOverridden(String id) {
+		return isBuiltin(id) && overrides().containsKey(id);
+	}
+
 	public Def def(String id) {
 		checkId(id);
-		Def d = builtins().get(id);
-		if (d == null) {
-			d = user().get(id);
+		// Les fiches fournies ne sont calculées que pour une structure fournie (il y faut les blocs de Minecraft).
+		Def d = isBuiltin(id) ? builtins().get(id) : null;
+		if (d != null) {
+			return effective(d);
 		}
+		d = user().get(id);
 		if (d == null) {
 			throw new GameException("Structure introuvable : " + id + ". Voir le catalogue : /vc structure liste.");
 		}
 		return d;
 	}
 
-	/** Les blocs d'une structure du catalogue. */
+	/** La fiche d'origine d'une structure fournie, même modifiée ; une GameException pour une autre. */
+	public Def originalDef(String id) {
+		Def d = isBuiltin(id) ? builtins().get(id) : null;
+		if (d == null) {
+			throw new GameException("« " + id + " » n'est pas une structure fournie par le mod.");
+		}
+		return d;
+	}
+
+	/**
+	 * Une empreinte de la version actuelle d'une structure : elle change à chaque enregistrement, modification ou
+	 * retour à l'originale (taille et date des fichiers). Vide si la structure n'existe pas. L'atelier structures s'en
+	 * sert pour voir qu'une structure a changé ailleurs (éditeur, Atelier web, pack reçu).
+	 */
+	public String signature(String id) {
+		if (isBuiltin(id)) {
+			return isOverridden(id) ? "surcharge:" + fileStamp(dir.resolve(OVERRIDES).resolve(id + ".nbt")) : "fournie";
+		}
+		if (id == null || !id.matches(ID) || !user().containsKey(id)) {
+			return "";
+		}
+		return "perso:" + fileStamp(dir.resolve(id + ".nbt"));
+	}
+
+	private static String fileStamp(Path f) {
+		try {
+			return Files.size(f) + ":" + Files.getLastModifiedTime(f).toMillis();
+		} catch (IOException e) {
+			return "?";
+		}
+	}
+
+	/** Les blocs d'une structure du catalogue (pour une structure fournie modifiée : sa version modifiée). */
 	Clip clip(String id) {
 		Def d = def(id);
 		if (d.fournie) {
-			return builtinClips.get(id);
+			return d.modifiee ? overrideClip(id) : builtinClips.get(id);
 		}
 		if (id.equals(lastId)) {
 			return lastClip;
 		}
-		Clip clip;
-		try {
-			Path f = dir.resolve(id + ".nbt");
-			if (Files.size(f) > MAX_BYTES) {
-				throw new GameException("Structure « " + d.nom + " » : fichier trop gros.");
-			}
-			clip = read(Files.readAllBytes(f));
-		} catch (IOException e) {
-			throw new GameException("Structure « " + d.nom + " » illisible : " + e.getMessage());
-		}
+		Clip clip = readFile(dir.resolve(id + ".nbt"), d.nom);
 		lastId = id;
 		lastClip = clip;
 		return clip;
+	}
+
+	/** Nombre de blocs d'une structure du catalogue qui ne sont pas de l'air (fiches, tests en jeu). */
+	public int solidCount(String id) {
+		Clip c = clip(id);
+		int n = 0;
+		for (int k : c.cells) {
+			if (k != Clip.EMPTY && !c.palette.get(k).isAir()) {
+				n++;
+			}
+		}
+		return n;
+	}
+
+	/** Les blocs d'origine d'une structure fournie, même modifiée. */
+	Clip originalClip(String id) {
+		originalDef(id);
+		return builtinClips.get(id);
+	}
+
+	private Clip overrideClip(String id) {
+		Clip c = overrideClips.get(id);
+		if (c == null) {
+			c = readFile(dir.resolve(OVERRIDES).resolve(id + ".nbt"), BUILTIN_BY_ID.get(id).nom() + " (modifiée)");
+			overrideClips.put(id, c);
+		}
+		return c;
+	}
+
+	private Clip readFile(Path f, String nom) {
+		try {
+			if (Files.size(f) > MAX_BYTES) {
+				throw new GameException("Structure « " + nom + " » : fichier trop gros.");
+			}
+			return read(Files.readAllBytes(f));
+		} catch (IOException e) {
+			throw new GameException("Structure « " + nom + " » illisible : " + e.getMessage());
+		}
 	}
 
 	/** Lit une structure dans les bornes du catalogue ; un fichier qui en sort est refusé. */
@@ -251,6 +456,51 @@ public final class StructureStore {
 		Clip clip = Clip.read(tag, blocks(), MAX_SIDE, MAX_HEIGHT, MAX_SIDE);
 		checkSize(clip.width, clip.height, clip.length);
 		return clip;
+	}
+
+	// ------------------------------------------------------------------
+	// Les morceaux du village généré
+	// ------------------------------------------------------------------
+	/**
+	 * La structure fournie qui correspond à un morceau du village généré (sorte, thème, variante), ou null. Dans
+	 * l'ordre : la même sorte, le même thème et la même variante ; la même sorte et le même thème ; et, pour une sorte
+	 * qui n'a qu'une structure fournie (la salle de convocation, le pavillon...) ou qui se bâtit pareil dans tous les
+	 * thèmes (les étals...), celle-là. Exemple : la maison numéro 3 d'un village du monastère (variante 1) prend la
+	 * « Cellule du monastère ».
+	 */
+	static String builtinFor(String kind, String theme, int variant) {
+		boolean themeFree = THEME_FREE.contains(kind);
+		for (Builtin b : BUILTINS) {
+			if (b.kind().equals(kind) && (themeFree || b.theme().equals(theme)) && b.variant() == variant) {
+				return b.id();
+			}
+		}
+		for (Builtin b : BUILTINS) {
+			if (b.kind().equals(kind) && (themeFree || b.theme().equals(theme))) {
+				return b.id();
+			}
+		}
+		List<Builtin> same = BUILTINS.stream().filter(b -> b.kind().equals(kind)).toList();
+		return same.size() == 1 ? same.get(0).id() : null;
+	}
+
+	/**
+	 * Ce que le village généré bâtit à la place d'un de ses morceaux : la version modifiée de la structure fournie
+	 * qui lui correspond (voir {@link #builtinFor}), ou null s'il garde le sien. Une surcharge illisible est
+	 * signalée dans le journal, et le village garde son morceau d'origine.
+	 */
+	Village.Piece piece(String kind, String theme, int variant) {
+		String id = builtinFor(kind, theme, variant);
+		if (id == null || !isOverridden(id)) {
+			return null;
+		}
+		try {
+			Def d = overrides().get(id);
+			return new Village.Piece(overrideClip(id), d.ancre[0], d.ancre[1], d.ancre[2]);
+		} catch (RuntimeException e) {
+			ValcombeMod.LOG.warn("Structure modifiée « {} » illisible : le village garde l'originale", id, e);
+			return null;
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -297,11 +547,12 @@ public final class StructureStore {
 		return d;
 	}
 
-	private void requireEditable(String id) {
+	private static void requireEditable(String id) {
 		checkId(id);
-		if (builtins().containsKey(id)) {
-			throw new GameException("« " + builtins().get(id).nom + " » est fournie avec le mod : elle ne se modifie pas. "
-				+ "Choisissez un autre identifiant.");
+		Builtin b = BUILTIN_BY_ID.get(id);
+		if (b != null) {
+			throw new GameException("« " + b.nom() + " » est fournie avec le mod : elle se modifie dans l'atelier structures "
+				+ "(/vc structures atelier). Pour une structure à vous, choisissez un autre identifiant.");
 		}
 	}
 
@@ -313,6 +564,17 @@ public final class StructureStore {
 	 * se tiendront les pieds de celui qui se trouve sur le bloc visé ; null : le milieu de la base.
 	 */
 	String save(String id, String nom, Clip clip, BlockPos ancre, String repere) {
+		return save(id, nom, clip, ancre, repere, null);
+	}
+
+	/**
+	 * Comme {@link #save(String, String, Clip, BlockPos, String)}, rangée dans ce rayon du catalogue (voir
+	 * {@link #CATEGORIES}) ; null : celui de la structure qu'elle remplace, ou « perso » pour une nouvelle.
+	 */
+	String save(String id, String nom, Clip clip, BlockPos ancre, String repere, String categorie) {
+		if (categorie != null && !CATEGORIES.contains(categorie)) {
+			throw new GameException("Rayon inconnu : « " + categorie + " » (" + String.join(", ", CATEGORIES) + ").");
+		}
 		requireEditable(id);
 		checkSize(clip.width, clip.height, clip.length);
 		boolean existed = user().containsKey(id);
@@ -323,6 +585,8 @@ public final class StructureStore {
 		d.id = id;
 		d.nom = nom == null || nom.isBlank() ? id : nom;
 		d.repere = repere;
+		Def previous = user().get(id);
+		d.categorie = categorie != null ? categorie : previous != null ? previous.categorie : "perso";
 		describe(d, clip);
 		d.ancre = ancre == null ? null : new int[] {ancre.getX(), ancre.getY(), ancre.getZ()};
 		checked(d);
@@ -338,6 +602,135 @@ public final class StructureStore {
 		lastClip = clip;
 		return "Structure « " + d.nom + " » " + (existed ? "remplacée" : "ajoutée au catalogue") + " (" + clip.dims() + ", " + d.blocs
 			+ " blocs).";
+	}
+
+	/**
+	 * Enregistre la version modifiée d'une structure fournie : elle la remplace partout (village généré, éditeur,
+	 * Atelier web, cartes qui la posent) jusqu'à {@link #revert}. ancre : la case des pieds (voir {@link Def#ancre}) ;
+	 * null : le milieu de la base. Son nom, son rayon et son repère restent ceux de l'originale.
+	 */
+	String saveOverride(String id, Clip clip, BlockPos ancre) {
+		Def original = originalDef(id);
+		checkSize(clip.width, clip.height, clip.length);
+		Def d = original.copy();
+		describe(d, clip);
+		d.ancre = ancre == null ? null : new int[] {ancre.getX(), ancre.getY(), ancre.getZ()};
+		checked(d);
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		try {
+			NbtIo.writeCompressed(clip.toStructure(), out);
+		} catch (IOException e) {
+			throw new GameException("Enregistrement impossible : " + e.getMessage());
+		}
+		writeOverride(d, out.toByteArray());
+		overrideClips.put(id, clip);
+		return "« " + original.nom + " » modifiée (" + clip.dims() + ", " + d.blocs + " blocs) : cette version remplace l'originale "
+			+ "partout, village généré compris. « Revenir à l'originale » la restaure.";
+	}
+
+	/**
+	 * Écrit les fichiers d'une structure fournie modifiée (la fiche et ses blocs, déjà au format des structures de
+	 * Minecraft). Logique de fichiers seule : utilisable sans Minecraft lancé.
+	 */
+	void writeOverride(Def meta, byte[] nbt) {
+		if (!isBuiltin(meta.id)) {
+			throw new GameException("« " + meta.id + " » n'est pas une structure fournie par le mod.");
+		}
+		Def d = meta.copy();
+		d.fournie = true;
+		d.modifiee = true;
+		d.modifieeLe = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+		checked(d);
+		Path in = dir.resolve(OVERRIDES);
+		try {
+			Files.createDirectories(in);
+			// Les blocs d'abord, la fiche ensuite : une fiche n'est lue que si ses blocs sont là.
+			Path tmp = in.resolve(d.id + ".nbt.tmp");
+			Files.write(tmp, nbt);
+			Files.move(tmp, in.resolve(d.id + ".nbt"), StandardCopyOption.REPLACE_EXISTING);
+			Files.writeString(in.resolve(d.id + ".json"), GSON.toJson(d), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new GameException("Enregistrement impossible : " + e.getMessage());
+		}
+		overrides().put(d.id, d);
+		overrideClips.remove(d.id);
+	}
+
+	/**
+	 * Revenir à l'originale : la version modifiée d'une structure fournie est retirée (ses fichiers vont à la
+	 * corbeille), l'originale sert de nouveau partout.
+	 */
+	public String revert(String id) {
+		Builtin b = BUILTIN_BY_ID.get(id);
+		if (b == null) {
+			throw new GameException("« " + id + " » n'est pas une structure fournie : il n'y a pas d'originale à retrouver.");
+		}
+		if (!isOverridden(id)) {
+			throw new GameException("« " + b.nom() + " » n'a pas été modifiée : c'est déjà l'originale.");
+		}
+		Path in = dir.resolve(OVERRIDES);
+		toTrash(in.resolve(id + ".json"), in.resolve(id + ".nbt"));
+		overrides().remove(id);
+		overrideClips.remove(id);
+		return "« " + b.nom() + " » est revenue à l'originale, partout. La version modifiée est gardée dans la corbeille.";
+	}
+
+	/** Déplace ces fichiers dans la corbeille, datés (rien n'est jamais effacé). */
+	private void toTrash(Path... files) {
+		Path trash = dir.resolve(TRASH);
+		String stamp = LocalDateTime.now().format(STAMP);
+		try {
+			Files.createDirectories(trash);
+			for (Path f : files) {
+				if (Files.exists(f)) {
+					Files.move(f, trash.resolve(stamp + "-" + f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+				}
+			}
+		} catch (IOException e) {
+			throw new GameException("Déplacement dans la corbeille impossible : " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Garde dans la corbeille une copie datée de la version actuelle d'une structure, qui reste en place : l'atelier
+	 * structures s'en sert avant d'enregistrer une parcelle par-dessus une version changée ailleurs. Renvoie faux s'il
+	 * n'y a rien à copier (structure fournie jamais modifiée, structure inconnue).
+	 */
+	public boolean backup(String id) {
+		Path json;
+		Path nbt;
+		if (isBuiltin(id)) {
+			if (!isOverridden(id)) {
+				return false;
+			}
+			json = dir.resolve(OVERRIDES).resolve(id + ".json");
+			nbt = dir.resolve(OVERRIDES).resolve(id + ".nbt");
+		} else {
+			checkId(id);
+			json = dir.resolve(id + ".json");
+			nbt = dir.resolve(id + ".nbt");
+		}
+		if (!Files.exists(nbt)) {
+			return false;
+		}
+		Path trash = dir.resolve(TRASH);
+		String stamp = LocalDateTime.now().format(STAMP);
+		try {
+			Files.createDirectories(trash);
+			for (Path f : List.of(json, nbt)) {
+				if (Files.exists(f)) {
+					Files.copy(f, trash.resolve(stamp + "-" + f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+				}
+			}
+		} catch (IOException e) {
+			throw new GameException("Copie dans la corbeille impossible : " + e.getMessage());
+		}
+		return true;
+	}
+
+	/** Le dossier de la corbeille des structures (pour le dire à l'opérateur et pour les tests). */
+	public Path trashDir() {
+		return dir.resolve(TRASH);
 	}
 
 	private Def mine(String id) {
@@ -381,20 +774,126 @@ public final class StructureStore {
 			: "« " + d.nom + " » posera son repère de " + (r.equals("maison") ? "maison" : "salle de convocation") + ".";
 	}
 
+	/**
+	 * Copie une structure du catalogue (fournie, modifiée ou à vous) en une structure à vous, rangée dans « Vos
+	 * structures » : même blocs, même ancre, même repère. nom vide : « &lt;nom&gt; (copie) ». L'identifiant est tiré du nom
+	 * (numéroté s'il est pris). Une structure fournie d'origine a besoin du serveur (ses blocs sont bâtis par le mod) ;
+	 * les autres sont copiées fichier pour fichier.
+	 */
+	public String duplicate(String id, String nom) {
+		Def src = def(id);
+		String n = nom == null || nom.isBlank()
+			? (src.nom.length() > 42 ? src.nom.substring(0, 42).strip() : src.nom) + " (copie)" : nom.strip();
+		if (n.length() > 50) {
+			throw new GameException("Nom de structure : 1 à 50 caractères.");
+		}
+		if (user().size() >= MAX_COUNT) {
+			throw new GameException("Le catalogue compte déjà " + MAX_COUNT + " structures : supprimez-en avant d'en ajouter.");
+		}
+		String copy = freeId(n, x -> false);
+		Path from = !src.fournie ? dir.resolve(id + ".nbt") : src.modifiee ? dir.resolve(OVERRIDES).resolve(id + ".nbt") : null;
+		if (from == null) {
+			BlockPos anchor = src.ancre == null ? null : new BlockPos(src.ancre[0], src.ancre[1], src.ancre[2]);
+			save(copy, n, clip(id), anchor, src.repere, "perso");
+		} else {
+			Def d = src.copy();
+			d.id = copy;
+			d.nom = n;
+			d.categorie = "perso";
+			d.fournie = false;
+			d.modifiee = false;
+			d.modifieeLe = null;
+			try {
+				Files.createDirectories(dir);
+				Files.copy(from, dir.resolve(copy + ".nbt"));
+			} catch (IOException e) {
+				throw new GameException("Copie impossible : " + e.getMessage());
+			}
+			writeDef(d);
+			user().put(copy, checked(d));
+		}
+		return "« " + src.nom + " » copiée : « " + n + " » (identifiant « " + copy + " »), dans « Vos structures ».";
+	}
+
+	/** Retire une structure de l'utilisateur du catalogue ; ses fichiers vont à la corbeille. */
 	public String delete(String id) {
 		Def d = mine(id);
-		try {
-			Files.deleteIfExists(dir.resolve(id + ".json"));
-			Files.deleteIfExists(dir.resolve(id + ".nbt"));
-		} catch (IOException e) {
-			throw new GameException("Suppression impossible : " + e.getMessage());
-		}
+		toTrash(dir.resolve(id + ".json"), dir.resolve(id + ".nbt"));
 		user().remove(id);
 		if (id.equals(lastId)) {
 			lastId = null;
 			lastClip = null;
 		}
-		return "Structure « " + d.nom + " » supprimée du catalogue.";
+		return "Structure « " + d.nom + " » supprimée du catalogue (gardée dans la corbeille).";
+	}
+
+	// ------------------------------------------------------------------
+	// Enregistrer une construction d'un monde (API publique)
+	// ------------------------------------------------------------------
+	/** La boîte [a, b] de ce monde, bornes comprises, avec le contenu des blocs sans rien de dangereux. */
+	private static Clip captureBox(ServerLevel level, BlockPos a, BlockPos b) {
+		BlockPos min = new BlockPos(Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ()));
+		BlockPos max = new BlockPos(Math.max(a.getX(), b.getX()), Math.max(a.getY(), b.getY()), Math.max(a.getZ(), b.getZ()));
+		int w = max.getX() - min.getX() + 1;
+		int h = max.getY() - min.getY() + 1;
+		int l = max.getZ() - min.getZ() + 1;
+		checkSize(w, h, l);
+		return safe(Clip.capture(level, min, w, h, l));
+	}
+
+	/** Le même volume, sans les données des blocs de commande et sans commandes au clic (ce qui part dans un fichier). */
+	static Clip safe(Clip clip) {
+		Map<Integer, CompoundTag> data = new HashMap<>();
+		clip.data.forEach((i, tag) -> {
+			CompoundTag t = Clip.safeData(clip.palette.get(clip.cells[i]), tag);
+			if (t != null) {
+				data.put(i, t);
+			}
+		});
+		return new Clip(clip.width, clip.height, clip.length, clip.palette, clip.cells, data);
+	}
+
+	/** Les pieds relatifs au coin le plus bas de la boîte [a, b], ou null s'ils n'y sont pas (une case au-dessus permise). */
+	private static BlockPos feetIn(BlockPos a, BlockPos b, BlockPos feet) {
+		if (feet == null) {
+			return null;
+		}
+		int x0 = Math.min(a.getX(), b.getX());
+		int y0 = Math.min(a.getY(), b.getY());
+		int z0 = Math.min(a.getZ(), b.getZ());
+		boolean in = feet.getX() >= x0 && feet.getX() <= Math.max(a.getX(), b.getX()) && feet.getZ() >= z0
+			&& feet.getZ() <= Math.max(a.getZ(), b.getZ()) && feet.getY() >= y0 && feet.getY() <= Math.max(a.getY(), b.getY()) + 1;
+		return in ? feet.offset(-x0, -y0, -z0) : null;
+	}
+
+	/**
+	 * Range dans le catalogue, comme structure de l'utilisateur, ce que contient la boîte [a, b] de ce monde (bornes
+	 * comprises, dans n'importe quel ordre). Remplace la structure de même identifiant. Fil du serveur.
+	 *
+	 * @param id     identifiant (2 à 30 lettres minuscules, chiffres ou tirets) ; jamais celui d'une structure fournie
+	 *               (pour celles-là : {@link #overrideFromWorld})
+	 * @param nom    nom affiché (vide : l'identifiant)
+	 * @param feet   où se tiendront les pieds de celui qui pose la structure (position du monde), ou null : le milieu de
+	 *               la base. Hors de la boîte, il est ignoré.
+	 * @param repere « maison », « salle » ou « » (aucun)
+	 * @return le message à montrer au joueur
+	 */
+	public String saveFromWorld(ServerLevel level, BlockPos a, BlockPos b, String id, String nom, BlockPos feet, String repere) {
+		requireEditable(id);
+		String r = repere == null || repere.equals("aucun") ? "" : repere;
+		if (!MARKS.contains(r)) {
+			throw new GameException("Repère : maison, salle ou aucun.");
+		}
+		return save(id, nom, captureBox(level, a, b), feetIn(a, b, feet), r);
+	}
+
+	/**
+	 * Enregistre ce que contient la boîte [a, b] de ce monde comme version modifiée d'une structure fournie : elle la
+	 * remplace partout jusqu'à {@link #revert}. Mêmes paramètres que {@link #saveFromWorld}. Fil du serveur.
+	 */
+	public String overrideFromWorld(ServerLevel level, BlockPos a, BlockPos b, String id, BlockPos feet) {
+		originalDef(id);
+		return saveOverride(id, captureBox(level, a, b), feetIn(a, b, feet));
 	}
 
 	// ------------------------------------------------------------------
@@ -412,6 +911,20 @@ public final class StructureStore {
 	}
 
 	/**
+	 * Un identifiant libre tiré d'un nom (« Tour d'essai » → « tour-d-essai »), numéroté s'il est déjà pris par une
+	 * structure du catalogue ou par taken (« tour-d-essai-2 »).
+	 */
+	public String freeId(String name, java.util.function.Predicate<String> taken) {
+		String base = slug(name);
+		String id = base;
+		String root = base.length() > 26 ? base.substring(0, 26).replaceAll("-+$", "") : base;
+		for (int n = 2; exists(id) || taken.test(id); n++) {
+			id = root + "-" + n;
+		}
+		return id;
+	}
+
+	/**
 	 * Ajoute au catalogue une construction faite ailleurs, sans toucher à la carte. id et nom peuvent
 	 * être vides : ils sont alors tirés du nom du fichier.
 	 */
@@ -425,7 +938,7 @@ public final class StructureStore {
 		if (id == null || id.isBlank()) {
 			// Un identifiant tiré du nom du fichier ne remplace jamais une structure déjà rangée : il reçoit un numéro.
 			String base = useId.length() > 26 ? useId.substring(0, 26) : useId;
-			for (int n = 2; builtins().containsKey(useId) || user().containsKey(useId); n++) {
+			for (int n = 2; BUILTIN_BY_ID.containsKey(useId) || user().containsKey(useId); n++) {
 				useId = base + "-" + n;
 			}
 		}

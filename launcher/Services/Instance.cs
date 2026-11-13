@@ -65,7 +65,10 @@ public static class Instance
         progress.Report(("Prêt à jouer.", 1));
     }
 
-    /// <summary>Télécharge les mods manquants ou modifiés, retire ceux qui ne sont plus dans la version.</summary>
+    /// <summary>
+    /// Télécharge les mods manquants ou modifiés, retire ceux qui ne sont plus dans la version. Le joueur reçoit
+    /// tous les mods du manifeste (« both » et « client »), WorldEdit compris : la liste vient de la version publiée.
+    /// </summary>
     public static async Task SyncModsAsync(Release release, string modsDir, IProgress<(string, double)> progress,
         bool repair, CancellationToken ct = default)
     {

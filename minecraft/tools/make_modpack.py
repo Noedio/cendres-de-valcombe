@@ -5,9 +5,13 @@ Lancer depuis le dossier minecraft, après ./gradlew build :
 
 Produit dans dist/ :
   - Valcombe-<version>.mrpack : à importer dans Modrinth App ou Prism Launcher.
-    Les mods publiés (Fabric API, Simple Voice Chat) y sont référencés par leur
+    Les mods publiés (Fabric API, Simple Voice Chat, WorldEdit) y sont référencés par leur
     adresse Modrinth et leurs empreintes ; le mod Valcombe est inclus tel quel.
+  - valcombe-pack.json : le manifeste lu par le launcher (mods des joueurs et du serveur qu'il installe).
   - serveur-valcombe/ : les mods du serveur, des réglages de départ, un script de lancement.
+
+Fantasy (la bibliothèque qui crée les mondes pendant que le serveur tourne) est incluse dans le jar
+du mod Valcombe : elle n'apparaît ni dans le modpack, ni dans le manifeste, ni dans le dossier serveur.
 """
 import hashlib
 import json
@@ -74,10 +78,17 @@ def modrinth_file(project, game_version, version_number, loader="fabric"):
     raise SystemExit(f"Version {version_number} introuvable pour {project} sur Modrinth.")
 
 
-def gradle_cache_jar(name_part):
+def gradle_cache_jar(expected_sha1):
+    """Le jar du cache Gradle dont l'empreinte SHA-1 est celle publiée sur Modrinth, ou None.
+
+    Gradle range chaque fichier téléchargé dans <groupe>/<module>/<version>/<sha1>/ : on le retrouve donc
+    par son empreinte, quel que soit son nom (le dépôt Maven de Modrinth et le CDN ne nomment pas les
+    fichiers pareil, par exemple worldedit-7.4.6.jar et worldedit-mod-7.4.6.jar). L'empreinte est
+    recalculée avant de répondre.
+    """
     cache = Path.home() / ".gradle" / "caches" / "modules-2" / "files-2.1"
-    for p in cache.rglob(f"*{name_part}*.jar"):
-        if "sources" not in p.name:
+    for p in cache.glob(f"*/*/*/{expected_sha1}/*.jar"):
+        if not p.name.endswith("-sources.jar") and sha1(p) == expected_sha1:
             return p
     return None
 
@@ -95,9 +106,13 @@ def main():
         raise SystemExit(f"{jar} est introuvable : lancez d'abord ./gradlew build.")
     DIST.mkdir(exist_ok=True)
 
+    # Mods des joueurs et du serveur (« both » dans le manifeste) : le launcher les installe des deux côtés.
+    # WorldEdit sert à construire dans les ateliers ; il est réservé aux opérateurs par défaut, et le mod
+    # Valcombe lui retire la navigation par objet quand un outil de carte est en main (ToolPriority).
     mods = {
         "Fabric API": modrinth_file("fabric-api", mc, p["fabric_api_version"]),
         "Simple Voice Chat": modrinth_file("simple-voice-chat", mc, p["voicechat_version"]),
+        "WorldEdit": modrinth_file("worldedit", mc, p["worldedit_version"]),
     }
     client_mods = {label: modrinth_file(slug, mc, ver) for label, (slug, ver) in CLIENT_MODS.items()}
     extras = {}
@@ -202,12 +217,11 @@ def main():
         if old.name not in keep:
             old.unlink()
     shutil.copy2(jar, server / "mods" / jar.name)
+    # Les mods publiés sont dans le cache Gradle (build.gradle les charge pour les lancements de développement).
     for label, m in mods.items():
-        cached = gradle_cache_jar(m["filename"].replace(".jar", "").replace("voicechat-", "simple-voice-chat-"))
-        if cached is None:
-            cached = gradle_cache_jar(m["filename"].replace(".jar", ""))
+        cached = gradle_cache_jar(m["sha1"])
         target = server / "mods" / m["filename"]
-        if cached and sha1(cached) == m["sha1"]:
+        if cached:
             shutil.copy2(cached, target)
             print(f"  {label} : copié depuis le cache Gradle (empreinte vérifiée)")
         else:
@@ -226,18 +240,37 @@ def main():
             "generate-structures=false\n"
             + FLAT_WORLD,
             encoding="utf-8")
+    # Les deux scripts de lancement relancent le serveur quand l'API d'administration l'a demandé :
+    # POST /admin/redemarrer pose le drapeau config/valcombe/redemarrer puis arrête le serveur (docs/ADMIN-API.md).
     (server / "demarrer.bat").write_text(
         "@echo off\r\n"
         "rem Lance le serveur. Il faut Java 25 et le fichier fabric-server-launch.jar (voir INSTALLATION.md).\r\n"
+        "rem Après un arrêt, le relance si l'API d'administration l'a demandé (drapeau config\\valcombe\\redemarrer).\r\n"
+        "cd /d \"%~dp0\"\r\n"
+        ":lancer\r\n"
+        "if exist config\\valcombe\\redemarrer del config\\valcombe\\redemarrer\r\n"
         "java -Xmx4G -jar fabric-server-launch.jar nogui\r\n"
+        "if exist config\\valcombe\\redemarrer (\r\n"
+        "  echo Redemarrage demande par l'API d'administration : relance du serveur.\r\n"
+        "  timeout /t 2 /nobreak >nul\r\n"
+        "  goto lancer\r\n"
+        ")\r\n"
         "pause\r\n", encoding="utf-8")
     # Serveur loué sous Linux (voir HEBERGEMENT.md) : lancement, service systemd, sauvegardes.
     linux = {
         "demarrer.sh": (
             "#!/bin/sh\n"
             "# Lance le serveur (Java 25 et fabric-server-launch.jar requis, voir HEBERGEMENT.md).\n"
+            "# Après un arrêt, le relance si l'API d'administration l'a demandé (drapeau config/valcombe/redemarrer).\n"
             "cd \"$(dirname \"$0\")\"\n"
-            "exec java -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"),
+            "while :; do\n"
+            "  rm -f config/valcombe/redemarrer\n"
+            "  \"${VALCOMBE_JAVA:-java}\" -Xms1G -Xmx${VALCOMBE_RAM:-4G} -jar fabric-server-launch.jar nogui\n"
+            "  code=$?\n"
+            "  [ -f config/valcombe/redemarrer ] || exit $code\n"
+            "  echo \"Redémarrage demandé par l'API d'administration : relance du serveur.\"\n"
+            "  sleep 2\n"
+            "done\n"),
         "sauvegarder.sh": (
             "#!/bin/sh\n"
             "# Sauvegarde le monde et les réglages de Valcombe ; garde les 14 dernières archives.\n"
@@ -257,6 +290,8 @@ def main():
             "ExecStart=/opt/valcombe/demarrer.sh\n"
             "Restart=on-failure\n"
             "RestartSec=10\n"
+            "# Le temps d'enregistrer les mondes et la partie en cours, puis de faire la sauvegarde d'arrêt.\n"
+            "TimeoutStopSec=600\n"
             "\n"
             "[Install]\n"
             "WantedBy=multi-user.target\n"),

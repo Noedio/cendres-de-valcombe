@@ -35,16 +35,36 @@ public final class CreationStore {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
 	private final Path dir;
-	private final Session session;
+	/**
+	 * Les sessions de toutes les parties du serveur : les créations (rôles, scénarios, groupes) sont communes, chacune
+	 * reçoit les mêmes. Une partie ouverte plus tard les reçoit à sa création ({@link #applyTo}).
+	 */
+	private final java.util.function.Supplier<List<Session>> sessions;
 	private final List<RoleDef> roles = new ArrayList<>();
 	private final List<ScenarioDef> scenarios = new ArrayList<>();
 	/** Groupes de rôles de l'Atelier : nom → identifiants des rôles (intégrés ou créés), pour les ranger. */
 	private final java.util.Map<String, List<String>> groups = new java.util.LinkedHashMap<>();
 	private MapStore maps;
 
+	/** Pour une seule session (tests). */
 	public CreationStore(Path configDir, Session session) {
+		this(configDir, () -> List.of(session));
+	}
+
+	public CreationStore(Path configDir, java.util.function.Supplier<List<Session>> sessions) {
 		this.dir = configDir.resolve("valcombe").resolve("creations");
-		this.session = session;
+		this.sessions = sessions;
+	}
+
+	/** Donne à cette session (une partie qui vient d'ouvrir) les scénarios et groupes de rôles de l'Atelier. */
+	public synchronized void applyTo(Session s) {
+		s.setRoleGroups(groups);
+		s.setScenarios(scenarios);
+	}
+
+	private List<Session> sessions() {
+		List<Session> all = sessions.get();
+		return all == null ? List.of() : all;
 	}
 
 	public void setMaps(MapStore maps) {
@@ -98,7 +118,7 @@ public final class CreationStore {
 				parseGroups(o).forEach(groups::put);
 			}
 		}
-		session.setRoleGroups(groups);
+		sessions().forEach(s -> s.setRoleGroups(groups));
 		apply();
 		LOG.info("Atelier : {} rôle(s) et {} scénario(s) créés", roles.size(), scenarios.size());
 	}
@@ -129,7 +149,7 @@ public final class CreationStore {
 		roles.sort(Comparator.comparing(d -> d.id));
 		scenarios.sort(Comparator.comparing(d -> d.nom.toLowerCase()));
 		Role.defineCustom(roles);
-		session.setScenarios(scenarios);
+		sessions().forEach(s -> s.setScenarios(scenarios));
 	}
 
 	/**
@@ -242,7 +262,7 @@ public final class CreationStore {
 		}
 		groups.clear();
 		groups.putAll(next);
-		session.setRoleGroups(groups);
+		sessions().forEach(s -> s.setRoleGroups(groups));
 	}
 
 	/** Groupes valides : 50 au plus, noms de 1 à 40 caractères, 60 rôles au plus par groupe, sans doublon. */
@@ -287,15 +307,20 @@ public final class CreationStore {
 		throw new GameException("Plus de place : " + Role.CUSTOM_SLOTS + " rôles créés au plus. Supprimez-en un.");
 	}
 
-	/** Le rôle est-il utilisé par la partie en cours ? */
+	/** Le rôle est-il utilisé par une partie en cours (l'une quelconque des parties du serveur) ? */
 	private boolean inPlay(String id) {
-		var g = session.game();
-		if (g == null) {
+		Role r = Role.parse(id);
+		if (r == null) {
 			return false;
 		}
-		Role r = Role.parse(id);
-		return r != null && (session.script().contains(r)
-			|| g.players().stream().anyMatch(p -> p.role() == r || p.believed() == r));
+		for (Session session : sessions()) {
+			var g = session.game();
+			if (g != null && (session.script().contains(r)
+				|| g.players().stream().anyMatch(p -> p.role() == r || p.believed() == r))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public synchronized String saveRole(RoleDef d) {
@@ -379,15 +404,19 @@ public final class CreationStore {
 	public synchronized String deleteScenario(String id) {
 		ScenarioDef old = scenarios.stream().filter(x -> x.id.equals(id)).findFirst()
 			.orElseThrow(() -> new GameException("Scénario inconnu : " + id));
-		boolean chosen = session.scenario() != null && session.scenario().id.equals(id);
-		if (chosen && session.game() != null) {
-			throw new GameException("Ce scénario est celui de la partie en cours : supprimez-le après la partie.");
+		boolean chosen = false;
+		for (Session session : sessions()) {
+			boolean here = session.scenario() != null && session.scenario().id.equals(id);
+			if (here && session.game() != null) {
+				throw new GameException("Ce scénario est celui d'une partie en cours : supprimez-le après la partie.");
+			}
+			chosen |= here;
 		}
 		remove("scenarios", id);
 		scenarios.remove(old);
 		apply();
 		// Supprimé alors qu'il était choisi : la prochaine partie ne garde pas un scénario qui n'existe plus.
-		session.scenarioDeleted(id);
+		sessions().forEach(s -> s.scenarioDeleted(id));
 		return "Scénario « " + old.nom + " » supprimé." + (chosen ? " Il était choisi pour la prochaine partie : plus de scénario." : "");
 	}
 

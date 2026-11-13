@@ -49,6 +49,9 @@
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE774;"/><TextBlock Text="Héberger une partie"/>
                 <Ellipse x:Name="NavHostDot" Width="8" Height="8" Fill="{StaticResource Good}" Margin="8,1,0,0" Visibility="Collapsed"/></StackPanel>
             </RadioButton>
+            <RadioButton Style="{StaticResource Nav}" x:Name="NavServer" Checked="Navigate" Tag="Server">
+              <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE968;"/><TextBlock Text="Serveur"/></StackPanel>
+            </RadioButton>
             <RadioButton Style="{StaticResource Nav}" x:Name="NavAtelier" Checked="Navigate" Tag="Atelier">
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource NavIcon}" Text="&#xE70F;"/><TextBlock Text="L'Atelier"/></StackPanel>
             </RadioButton>
@@ -272,6 +275,875 @@
             </StackPanel>
           </ScrollViewer>
 
+          <!-- Serveur : piloter le serveur de ce PC ou un serveur distant, par l'API d'administration du mod -->
+          <Grid x:Name="PageServer" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Titre et choix du serveur -->
+            <DockPanel Margin="0,0,0,12">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <ComboBox x:Name="SrvPicker" Width="290" SelectionChanged="SrvPicked" ToolTip="Le serveur à piloter"/>
+                <Button x:Name="SrvEditButton" Style="{StaticResource Ghost}" Content="&#xE70F;" FontFamily="{StaticResource Icons}" FontSize="13"
+                        Click="SrvEdit" Margin="8,0,0,0" Padding="11,9" ToolTip="Modifier ce serveur distant"/>
+                <Button x:Name="SrvAddButton" Style="{StaticResource Ghost}" Click="SrvAdd" Margin="8,0,0,0" Padding="12,8"
+                        ToolTip="Enregistrer un serveur loué (SSH) ou un serveur distant à piloter depuis ce PC">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Ajouter un serveur"/>
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Serveur" Margin="0" VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- État et commandes de marche -->
+            <Border x:Name="SrvStateCard" Grid.Row="1" Style="{StaticResource CardBox}" Padding="20,14">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                  <Ellipse x:Name="SrvDot" DockPanel.Dock="Left" Width="12" Height="12" Fill="#8A8080" Margin="0,8,12,0" VerticalAlignment="Top"/>
+                  <StackPanel>
+                    <TextBlock x:Name="SrvTitle" FontFamily="{StaticResource Title}" FontSize="20" Foreground="{StaticResource Ink}" Text="Serveur arrêté"/>
+                    <TextBlock x:Name="SrvDetail" Style="{StaticResource Hint}" Margin="0,3,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+                  <Button x:Name="SrvStartButton" Style="{StaticResource Wax}" Click="SrvStart" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="SrvStartText" Text="Démarrer"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvRestartButton" Style="{StaticResource Ghost}" Click="SrvRestart" Margin="8,0,0,0"
+                          ToolTip="Arrêt propre (le monde et la partie sont enregistrés), puis relance">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="Redémarrer"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvStopButton" Style="{StaticResource Ghost}" Click="SrvStop" Margin="8,0,0,0"
+                          ToolTip="Arrêt propre : le monde et la partie en cours sont enregistrés">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="Arrêter"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvUpdateButton" Style="{StaticResource Ghost}" Click="SrvUpdate" Margin="8,0,0,0" Visibility="Collapsed"
+                          BorderBrush="{StaticResource Gold}">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE777;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"
+                                 Foreground="{StaticResource Gold}"/>
+                      <TextBlock x:Name="SrvUpdateText" Text="Mettre à jour"/>
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="SrvRetryButton" Style="{StaticResource Ghost}" Content="Réessayer" Click="SrvRetry" Margin="8,0,0,0"
+                          Visibility="Collapsed"/>
+                </WrapPanel>
+              </Grid>
+            </Border>
+
+            <!-- Onglets -->
+            <WrapPanel x:Name="SrvTabs" Grid.Row="2" Margin="0,0,0,12">
+              <RadioButton GroupName="srvtab" Tag="apercu" Content="Vue d'ensemble" IsChecked="True" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="console" Content="Console" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="reglages" Content="Réglages" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="parties" Content="Parties" Checked="SrvTabChanged"/>
+              <RadioButton GroupName="srvtab" Tag="sauvegardes" Content="Sauvegardes" Checked="SrvTabChanged"/>
+            </WrapPanel>
+
+            <!-- Vue d'ensemble : chiffres, joueurs connectés, mondes -->
+            <ScrollViewer x:Name="SrvOverview" Grid.Row="3" VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="0,0,10,0">
+                <UniformGrid x:Name="SrvTiles" Columns="5" Margin="-6,0,-6,0"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock x:Name="SrvPlayersTitle" Style="{StaticResource H2}" Text="Joueurs connectés"/>
+                      <StackPanel x:Name="SrvPlayersList"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Mondes"/>
+                      <StackPanel x:Name="SrvWorldsList"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Console en direct -->
+            <Border x:Name="SrvConsolePanel" Grid.Row="3" Style="{StaticResource CardBox}" Margin="0" Padding="16,12" Visibility="Collapsed">
+              <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource Ghost}" Content="Copier" Click="SrvCopyConsole" Padding="12,4" Margin="8,0,0,0"
+                            ToolTip="Copie les lignes choisies (ou toute la console) dans le presse-papiers"/>
+                    <Button Style="{StaticResource Ghost}" Content="Vider l'affichage" Click="SrvClearConsole" Padding="12,4" Margin="8,0,0,0"
+                            ToolTip="Efface les lignes affichées ici ; la console du serveur n'est pas touchée"/>
+                  </StackPanel>
+                  <TextBlock x:Name="SrvConsoleInfo" Style="{StaticResource Hint}" Margin="0" VerticalAlignment="Center"/>
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="/" FontFamily="Consolas" FontSize="15" Foreground="{StaticResource Gold}" VerticalAlignment="Center" Margin="2,0,8,0"/>
+                    <TextBox x:Name="SrvCommandBox" Grid.Column="1" FontFamily="Consolas" PreviewKeyDown="SrvCommandKey"
+                             ToolTip="Une commande du serveur (list, say, whitelist, vc…). Flèches haut et bas : commandes précédentes."/>
+                    <Button Grid.Column="2" Style="{StaticResource Wax}" Content="Envoyer" Click="SrvSendCommand" Margin="10,0,0,0" Padding="16,7"/>
+                  </Grid>
+                  <TextBlock x:Name="SrvCommandResult" Style="{StaticResource Hint}" Margin="0,6,0,0" Visibility="Collapsed" FontFamily="Consolas" FontSize="12"/>
+                </StackPanel>
+                <ListBox x:Name="SrvConsoleList" Style="{StaticResource ConsoleList}" PreviewKeyDown="SrvConsoleKey">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock TextWrapping="Wrap" LineHeight="17">
+                        <Run Text="{Binding Time, Mode=OneWay}" Foreground="#7D7068"/>
+                        <Run Text="{Binding Text, Mode=OneWay}" Foreground="{Binding Brush, Mode=OneWay}"/>
+                      </TextBlock>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
+            </Border>
+
+            <!-- Réglages -->
+            <ScrollViewer x:Name="SrvSettingsPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <!-- Résultat du dernier changement, point par point (en haut : on le voit sans défiler) -->
+                <Border x:Name="SrvResultsBox" Style="{StaticResource CardBox}" Padding="20,10" Visibility="Collapsed">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="10" Background="Transparent"
+                            Foreground="{StaticResource ParchDark}" BorderThickness="0" Cursor="Hand" Width="28" VerticalAlignment="Top"
+                            Click="SrvHideResults" ToolTip="Masquer"/>
+                    <StackPanel x:Name="SrvResults"/>
+                  </DockPanel>
+                </Border>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource CardBox}">
+                    <StackPanel x:Name="SrvAccessBox">
+                      <TextBlock Style="{StaticResource H2}" Text="Qui peut entrer"/>
+                      <TextBlock x:Name="SrvAccessHint" Style="{StaticResource Hint}" Visibility="Collapsed"/>
+                      <CheckBox x:Name="SrvWhitelistBox" Margin="0,2,0,0" Click="SrvWhitelistToggled">
+                        <TextBlock>Seuls les joueurs de la liste blanche entrent</TextBlock>
+                      </CheckBox>
+                      <TextBlock Style="{StaticResource Label}" Text="Liste blanche"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SrvWhitelistName" MaxLength="16" KeyDown="SrvWhitelistKey" ToolTip="Pseudo Minecraft à inscrire"/>
+                        <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Ajouter" Click="SrvWhitelistAdd" Margin="10,0,0,0"/>
+                      </Grid>
+                      <WrapPanel x:Name="SrvWhitelistPanel" Margin="0,10,0,0"/>
+                      <TextBlock Style="{StaticResource Label}" Text="Opérateurs"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SrvOpName" MaxLength="16" KeyDown="SrvOpKey" ToolTip="Pseudo Minecraft du nouvel opérateur"/>
+                        <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Ajouter" Click="SrvOpAdd" Margin="10,0,0,0"/>
+                      </Grid>
+                      <WrapPanel x:Name="SrvOpsPanel" Margin="0,10,0,0"/>
+                      <TextBlock Style="{StaticResource Hint}" Text="Un opérateur peut devenir Conteur, lancer les parties, construire et taper les commandes du serveur."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Annonce et capacité"/>
+                      <TextBlock Style="{StaticResource Label}" Margin="0,0,0,5" Text="Message d'accueil"/>
+                      <TextBox x:Name="SrvWelcomeBox" MaxLength="60"/>
+                      <TextBlock x:Name="SrvWelcomeHint" Style="{StaticResource Hint}"/>
+                      <TextBlock Style="{StaticResource Label}" Text="Prochaine soirée"/>
+                      <TextBox x:Name="SrvEveningBox" MaxLength="60" ToolTip="Par exemple : vendredi 21 h"/>
+                      <TextBlock Style="{StaticResource Hint}" Text="Annoncée dans la liste des serveurs de Minecraft et sur l'accueil du launcher. Vide : rien d'annoncé."/>
+                      <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="14"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource Label}" Text="Joueurs au plus"/>
+                          <TextBox x:Name="SrvMaxPlayersBox" MaxLength="4"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Style="{StaticResource Label}" Text="Port du jeu"/>
+                          <TextBox x:Name="SrvPortBox" MaxLength="5"/>
+                        </StackPanel>
+                      </Grid>
+                      <StackPanel x:Name="SrvMemoryBox">
+                        <TextBlock Style="{StaticResource Label}" x:Name="SrvMemoryLabel"/>
+                        <Slider x:Name="SrvMemorySlider" Minimum="2" Maximum="8" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="SrvMemoryChanged"/>
+                      </StackPanel>
+                      <TextBlock x:Name="SrvSettingsNote" Style="{StaticResource Hint}"/>
+                      <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="SrvSaveButton" Style="{StaticResource Wax}" Content="Enregistrer" Click="SrvSaveSettings" Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource Ghost}" Content="Annuler les changements" Click="SrvResetSettings"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Parties : le tableau des parties du serveur, leur mise en suspens, la création et la suppression des parties d'essai (MainWindow.Parties.cs) -->
+            <ScrollViewer x:Name="SrvGamesPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <!-- Ce qui vient de se passer (partie créée, mise en suspens, refus...) -->
+                <Border x:Name="GmNotice" Style="{StaticResource CardBox}" Padding="18,10" Visibility="Collapsed">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="10" Background="Transparent"
+                            Foreground="{StaticResource ParchDark}" BorderThickness="0" Cursor="Hand" Width="28" VerticalAlignment="Top"
+                            Click="GmHideNotice" ToolTip="Masquer"/>
+                    <TextBlock x:Name="GmNoticeIcon" DockPanel.Dock="Left" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,2,12,0" VerticalAlignment="Top"/>
+                    <TextBlock x:Name="GmNoticeText" Style="{StaticResource Hint}" Margin="0,1,0,0" Foreground="{StaticResource Parch}"/>
+                  </DockPanel>
+                </Border>
+
+                <!-- Confirmation d'une suppression -->
+                <Border x:Name="GmConfirm" Style="{StaticResource CardBox}" BorderBrush="#99D8605A" Visibility="Collapsed">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                      <TextBlock DockPanel.Dock="Left" Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="20" Foreground="{StaticResource Bad}"
+                                 Margin="0,3,12,0" VerticalAlignment="Top"/>
+                      <TextBlock x:Name="GmConfirmTitle" FontFamily="{StaticResource Title}" FontSize="19" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <TextBlock x:Name="GmConfirmText" Style="{StaticResource Hint}" Margin="32,4,0,4"/>
+                    <WrapPanel Margin="32,8,0,0">
+                      <Button Style="{StaticResource Wax}" Click="GmConfirmDelete" Margin="0,0,10,8">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Supprimer la partie et son monde"/>
+                        </StackPanel>
+                      </Button>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler" Click="GmCancelDelete" Margin="0,0,10,8"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="272"/>
+                  </Grid.ColumnDefinitions>
+
+                  <!-- Le tableau des parties -->
+                  <Border Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource H2}" Text="Parties" Margin="0,0,0,2"/>
+                      <TextBlock x:Name="GmSummary" Style="{StaticResource Hint}" Margin="0,0,12,0"/>
+                      <StackPanel x:Name="GmList" Margin="0,8,0,0"/>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Nouvelle partie d'essai -->
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}" Padding="20,14" VerticalAlignment="Top">
+                    <StackPanel x:Name="GmCreateBox">
+                      <TextBlock Style="{StaticResource H2}" Text="Nouvelle partie d'essai" Margin="0,0,0,2"/>
+                      <TextBlock Style="{StaticResource Hint}"
+                                 Text="Un monde neuf où le village de Valcombe se pose en une à deux minutes. Les joueurs la rejoignent au tableau des parties du hub."/>
+                      <TextBlock Style="{StaticResource Label}" Text="Nom"/>
+                      <TextBox x:Name="GmNameBox" MaxLength="40" KeyDown="GmNameKey" ToolTip="Par exemple : Essai du mardi (40 caractères au plus)"/>
+                      <WrapPanel Margin="0,10,0,0">
+                        <Button x:Name="GmCreateButton" Style="{StaticResource Wax}" Click="GmCreate" Padding="14,7">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="GmCreateText" Text="Créer la partie"/>
+                          </StackPanel>
+                        </Button>
+                      </WrapPanel>
+                      <TextBlock Style="{StaticResource Label}" Text="Bon à savoir" Margin="0,16,0,2"/>
+                      <TextBlock Style="{StaticResource Hint}"
+                                 Text="Chaque partie a ses joueurs, son Conteur, son vocal et sa sauvegarde. En suspens, elle reprend où elle en est, même après un redémarrage. Une partie lancée ne se supprime pas : /vc arreter dans son monde d'abord."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Sauvegardes : les archives du serveur, la sauvegarde à la demande, la restauration et les réglages (MainWindow.Backups.cs) -->
+            <ScrollViewer x:Name="SrvBackupsPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <!-- Ce qui vient de se passer (sauvegarde finie, archive téléchargée, refus...) -->
+                <Border x:Name="BkNotice" Style="{StaticResource CardBox}" Padding="18,10" Visibility="Collapsed">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="10" Background="Transparent"
+                            Foreground="{StaticResource ParchDark}" BorderThickness="0" Cursor="Hand" Width="28" VerticalAlignment="Top"
+                            Click="BkHideNotice" ToolTip="Masquer"/>
+                    <Button x:Name="BkNoticeAction" DockPanel.Dock="Right" Style="{StaticResource Ghost}" Click="BkNoticeActionClick" Padding="12,5"
+                            Margin="12,0,4,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                    <TextBlock x:Name="BkNoticeIcon" DockPanel.Dock="Left" FontFamily="{StaticResource Icons}" FontSize="15" Margin="0,2,12,0" VerticalAlignment="Top"/>
+                    <TextBlock x:Name="BkNoticeText" Style="{StaticResource Hint}" Margin="0,1,0,0" Foreground="{StaticResource Parch}"/>
+                  </DockPanel>
+                </Border>
+
+                <!-- Confirmation d'une restauration : ce qui sera perdu, ce qui est gardé, le redémarrage -->
+                <Border x:Name="BkConfirm" Style="{StaticResource CardBox}" BorderBrush="#99D8605A" Visibility="Collapsed">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                      <TextBlock DockPanel.Dock="Left" Text="&#xE777;" FontFamily="{StaticResource Icons}" FontSize="20" Foreground="{StaticResource Gold}"
+                                 Margin="0,3,12,0" VerticalAlignment="Top"/>
+                      <TextBlock x:Name="BkConfirmTitle" FontFamily="{StaticResource Title}" FontSize="19" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <StackPanel x:Name="BkConfirmPoints" Margin="32,6,0,4"/>
+                    <WrapPanel Margin="32,10,0,0">
+                      <Button x:Name="BkConfirmRestart" Style="{StaticResource Wax}" Click="BkConfirmRestore" Tag="redemarrer" Margin="0,0,10,8">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="&#xE777;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                          <TextBlock Text="Restaurer et redémarrer"/>
+                        </StackPanel>
+                      </Button>
+                      <Button x:Name="BkConfirmLater" Style="{StaticResource Ghost}" Content="Au prochain démarrage seulement" Click="BkConfirmRestore" Tag="plus-tard"
+                              Margin="0,0,10,8" ToolTip="La restauration attend que le serveur redémarre (par vous, ou à son prochain lancement)"/>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler" Click="BkCancelConfirm" Margin="0,0,10,8"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Restauration prévue au prochain démarrage -->
+                <Border x:Name="BkPlanned" Style="{StaticResource CardBox}" Background="#2BE2BD63" BorderBrush="#80E2BD63" Padding="18,12" Visibility="Collapsed">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="&#xE823;" FontFamily="{StaticResource Icons}" FontSize="18" Foreground="{StaticResource Gold}"
+                               Margin="0,2,14,0" VerticalAlignment="Top"/>
+                    <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                      <Button x:Name="BkPlannedRestart" Style="{StaticResource Wax}" Content="Redémarrer maintenant" Click="BkRestartForRestore" Padding="14,6" Margin="0,0,10,0"/>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler la restauration" Click="BkCancelRestore" Padding="14,6"/>
+                    </WrapPanel>
+                    <StackPanel>
+                      <TextBlock x:Name="BkPlannedTitle" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                      <TextBlock x:Name="BkPlannedText" Style="{StaticResource Hint}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+
+                <!-- Dernière restauration : ce qui s'est passé, et le chemin du retour -->
+                <Border x:Name="BkRestored" Style="{StaticResource CardBox}" Padding="18,12" Visibility="Collapsed">
+                  <DockPanel>
+                    <TextBlock x:Name="BkRestoredIcon" DockPanel.Dock="Left" FontFamily="{StaticResource Icons}" FontSize="18" Margin="0,2,14,0" VerticalAlignment="Top"/>
+                    <Button x:Name="BkUndoButton" DockPanel.Dock="Right" Style="{StaticResource Ghost}" Click="BkUndoRestore" Padding="12,5" Margin="12,0,0,0"
+                            VerticalAlignment="Center" ToolTip="Restaure l'archive faite juste avant cette restauration">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Revenir à l'état d'avant"/>
+                      </StackPanel>
+                    </Button>
+                    <StackPanel>
+                      <TextBlock x:Name="BkRestoredTitle" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                      <TextBlock x:Name="BkRestoredText" Style="{StaticResource Hint}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="272"/>
+                  </Grid.ColumnDefinitions>
+
+                  <!-- Les archives -->
+                  <Border Style="{StaticResource CardBox}" Padding="20,14">
+                    <StackPanel>
+                      <DockPanel>
+                        <Button x:Name="BkNowButton" DockPanel.Dock="Right" Style="{StaticResource Wax}" Click="BkBackupNow" Padding="14,7" VerticalAlignment="Top"
+                                ToolTip="Une sauvegarde manuelle des mondes et des créations, tout de suite, sans arrêter le jeu">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74E;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="BkNowText" Text="Sauvegarder maintenant"/>
+                          </StackPanel>
+                        </Button>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource H2}" Text="Sauvegardes" Margin="0,0,0,2"/>
+                          <TextBlock x:Name="BkSummary" Style="{StaticResource Hint}" Margin="0,0,12,0"/>
+                        </StackPanel>
+                      </DockPanel>
+
+                      <!-- La sauvegarde en cours -->
+                      <Border x:Name="BkJob" Background="#1AE2BD63" BorderBrush="#40E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,10"
+                              Margin="0,10,0,2" Visibility="Collapsed">
+                        <StackPanel>
+                          <DockPanel>
+                            <TextBlock x:Name="BkJobPercent" DockPanel.Dock="Right" FontFamily="{StaticResource Title}" FontSize="16" Foreground="{StaticResource Gold}"/>
+                            <TextBlock x:Name="BkJobTitle" FontSize="13.5" FontWeight="SemiBold" Foreground="{StaticResource Ink}" TextTrimming="CharacterEllipsis"/>
+                          </DockPanel>
+                          <ProgressBar x:Name="BkJobBar" Maximum="100" Margin="0,8,0,6"/>
+                          <TextBlock x:Name="BkJobDetail" Style="{StaticResource Hint}" Margin="0"/>
+                        </StackPanel>
+                      </Border>
+
+                      <StackPanel x:Name="BkList" Margin="0,10,0,0"/>
+                      <WrapPanel Margin="0,4,0,0">
+                        <Button x:Name="SrvBackupFolderButton" Style="{StaticResource Ghost}" Click="BkOpenFolder" Padding="12,5" Margin="0,0,10,0"
+                                ToolTip="Le dossier backups du serveur de ce PC, dans l'Explorateur">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE838;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Ouvrir le dossier des sauvegardes"/>
+                          </StackPanel>
+                        </Button>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Réglages des sauvegardes automatiques -->
+                  <Border Grid.Column="2" Style="{StaticResource CardBox}" Padding="20,14" VerticalAlignment="Top">
+                    <StackPanel x:Name="BkSettingsBox">
+                      <TextBlock Style="{StaticResource H2}" Text="Automatiques" Margin="0,0,0,2"/>
+                      <TextBlock x:Name="BkNext" Style="{StaticResource Hint}" Margin="0,0,0,2"/>
+                      <StackPanel x:Name="BkSettingsFields">
+                        <CheckBox x:Name="BkAutoBox" Click="BkSettingsEdited">
+                          <TextBlock>Sauvegarder automatiquement</TextBlock>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource Label}" Text="Fréquence"/>
+                        <ComboBox x:Name="BkIntervalBox" SelectionChanged="BkSettingsEdited" ToolTip="Délai après la dernière sauvegarde, quelle qu'en soit la sorte"/>
+                        <TextBlock Style="{StaticResource Label}" Text="Archives automatiques gardées"/>
+                        <TextBox x:Name="BkKeepBox" MaxLength="3" TextChanged="BkSettingsEdited" ToolTip="De 1 à 500"/>
+                        <TextBlock x:Name="BkKeepHint" Style="{StaticResource Hint}"
+                                   Text="Au-delà, les plus anciennes sont effacées. Les sauvegardes manuelles ne comptent pas et restent jusqu'à ce que vous les effaciez."/>
+                        <CheckBox x:Name="BkAtStopBox" Margin="0,4,0,0" Click="BkSettingsEdited">
+                          <TextBlock>Une sauvegarde à chaque arrêt</TextBlock>
+                        </CheckBox>
+                        <CheckBox x:Name="BkDuringGameBox" Click="BkSettingsEdited">
+                          <TextBlock>Même pendant une partie</TextBlock>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource Hint}" Margin="48,2,0,0"
+                                   Text="Sinon, elle attend la fin de la partie : pas d'à-coup en plein vote."/>
+                        <WrapPanel Margin="0,10,0,0">
+                          <Button x:Name="BkSaveButton" Style="{StaticResource Wax}" Content="Enregistrer" Click="BkSaveSettings" Padding="14,7" Margin="0,0,8,0"/>
+                          <Button x:Name="BkResetButton" Style="{StaticResource Ghost}" Content="Annuler" Click="BkResetSettings" Padding="12,7"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="BkSettingsResult" Style="{StaticResource Hint}" Margin="0,8,0,0" Visibility="Collapsed"/>
+                      </StackPanel>
+                      <TextBlock x:Name="BkSettingsNote" Style="{StaticResource Hint}" Foreground="{StaticResource Gold}" Visibility="Collapsed"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Ajouter ou modifier un serveur distant -->
+            <ScrollViewer x:Name="SrvFormPanel" Grid.Row="1" Grid.RowSpan="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+                <Border Style="{StaticResource CardBox}">
+                  <StackPanel MaxWidth="680" HorizontalAlignment="Left">
+                    <TextBlock x:Name="SrvFormTitle" Style="{StaticResource H2}" Text="Ajouter un serveur distant"/>
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="Le launcher pilote le serveur par l'API d'administration du mod Valcombe (version 0.14 ou plus récente). Elle répond sur le port de la tablette du serveur."/>
+                    <TextBlock Style="{StaticResource Label}" Text="Nom"/>
+                    <TextBox x:Name="SrvFormName" MaxLength="40" ToolTip="Par exemple : VPS de la guilde"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="150"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Style="{StaticResource Label}" Text="Adresse du serveur"/>
+                        <TextBox x:Name="SrvFormHost" ToolTip="Nom ou adresse IP, sans port (par exemple : vps.exemple.fr)"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Label}" Text="Port de l'API"/>
+                        <TextBox x:Name="SrvFormPort" MaxLength="5" ToolTip="Le port de la tablette du serveur : 25570 s'il n'a pas été changé"/>
+                      </StackPanel>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Label}" Text="Clé d'administration"/>
+                    <PasswordBox x:Name="SrvFormKey"/>
+                    <TextBlock x:Name="SrvFormKeyHint" Style="{StaticResource Hint}"/>
+                    <Border Background="#1AE2BD63" BorderBrush="#40E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,10,0,0">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{StaticResource Gold}"
+                                   Margin="0,2,12,0" VerticalAlignment="Top"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0" Foreground="{StaticResource Parch}"
+                                   Text="Accès direct. Par défaut, un serveur n'accepte l'API que depuis sa propre machine : l'accès direct n'aboutit que si ce PC le rejoint par un réseau privé ou un VPN, et que adminLocalOnly vaut false dans config/valcombe/admin.json. L'API parle HTTP sans chiffrement : la clé circule en clair, n'enregistrez donc jamais ainsi une adresse joignable par Internet. Pour un serveur loué chez un hébergeur, préférez « Serveur loué » : le launcher passe alors par un tunnel SSH chiffré et lit la clé lui-même."/>
+                      </DockPanel>
+                    </Border>
+                    <WrapPanel Margin="0,16,0,0">
+                      <Button Style="{StaticResource Wax}" Content="Enregistrer" Click="SrvFormSave" Margin="0,0,10,8"/>
+                      <Button x:Name="SrvFormTestButton" Style="{StaticResource Ghost}" Content="Tester la connexion" Click="SrvFormTest" Margin="0,0,10,8"/>
+                      <Button Style="{StaticResource Ghost}" Content="Annuler" Click="SrvFormCancel" Margin="0,0,10,8"/>
+                      <Button x:Name="SrvFormRemoveButton" Style="{StaticResource Ghost}" Content="Retirer ce serveur" Click="SrvFormRemove" Margin="0,0,10,8"
+                              Foreground="{StaticResource Bad}"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="SrvFormResult" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Ajouter un serveur : le choix, puis le parcours guidé d'un serveur loué par SSH (MainWindow.Vps.cs) -->
+            <ScrollViewer x:Name="VpsPanel" Grid.Row="1" Grid.RowSpan="3" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+              <StackPanel Margin="0,0,10,0">
+
+                <!-- Le choix : serveur loué ou accès direct -->
+                <StackPanel x:Name="VpsChoice">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="14"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource CardBox}" BorderBrush="#80E2BD63">
+                      <DockPanel>
+                        <Button DockPanel.Dock="Bottom" Style="{StaticResource Wax}" Click="VpsStartNew" HorizontalAlignment="Left" Margin="0,12,0,0">
+                          <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE968;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Enregistrer un serveur loué"/>
+                          </StackPanel>
+                        </Button>
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Style="{StaticResource H2}" Text="Serveur loué (VPS)" Margin="0,0,10,0"/>
+                            <Border Style="{StaticResource Badge}">
+                              <TextBlock Text="Conseillé" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource Gold}"/>
+                            </Border>
+                          </StackPanel>
+                          <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
+                                     Text="Un serveur Linux chez un hébergeur (Debian ou Ubuntu). Le launcher s'y connecte par SSH, y installe Valcombe, le démarre, le sauvegarde et le met à jour : rien à taper dans un terminal."/>
+                          <TextBlock Style="{StaticResource Hint}"
+                                     Text="Tout passe par SSH, chiffré : seuls les ports du jeu et du vocal sont ouverts au public. Il vous faut l'adresse du serveur et son compte (mot de passe ou clé), donnés par l'hébergeur."/>
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource CardBox}">
+                      <DockPanel>
+                        <Button DockPanel.Dock="Bottom" Style="{StaticResource Ghost}" Content="Accès direct" Click="VpsChooseDirect" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource H2}" Text="Accès direct à l'API" Margin="0,0,0,6"/>
+                          <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
+                                     Text="Un serveur Valcombe déjà en place, que ce PC joint par un réseau privé ou un VPN : vous donnez son adresse et sa clé d'administration."/>
+                          <TextBlock Style="{StaticResource Hint}"
+                                     Text="L'API parle sans chiffrement : à réserver à un réseau de confiance. Le launcher ne peut alors ni démarrer, ni installer, ni mettre à jour ce serveur."/>
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
+                  </Grid>
+                  <Button Style="{StaticResource Ghost}" Content="Annuler" Click="VpsCancel" HorizontalAlignment="Left"/>
+                </StackPanel>
+
+                <!-- Le parcours -->
+                <Border x:Name="VpsWizard" Style="{StaticResource CardBox}" Padding="22,16">
+                  <StackPanel>
+                    <DockPanel>
+                      <TextBlock x:Name="VpsStepCount" DockPanel.Dock="Right" Style="{StaticResource Hint}" Margin="0" VerticalAlignment="Center"/>
+                      <TextBlock x:Name="VpsTitle" Style="{StaticResource H2}" Margin="0" Text="Enregistrer un serveur loué"/>
+                    </DockPanel>
+                    <UniformGrid x:Name="VpsSteps" Rows="1" Margin="0,12,0,4"/>
+                    <Border Height="1" Background="#33E2BD63" Margin="0,10,0,4"/>
+
+                    <!-- 1. Adresse -->
+                    <StackPanel x:Name="VpsStepAddress">
+                      <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
+                                 Text="L'adresse et le port SSH figurent dans l'e-mail de livraison ou le panneau de votre hébergeur (OVH, Scaleway, Hetzner, IONOS...). Le port est 22, sauf mention contraire."/>
+                      <TextBlock Style="{StaticResource Label}" Text="Nom de la fiche"/>
+                      <TextBox x:Name="VpsName" MaxLength="40" ToolTip="Pour vous y retrouver : « VPS de la guilde », « Serveur du vendredi »"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="14"/>
+                          <ColumnDefinition Width="130"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource Label}" Text="Adresse du serveur"/>
+                          <TextBox x:Name="VpsHost" ToolTip="Un nom (vps.exemple.fr) ou une adresse IP (203.0.113.42)"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Style="{StaticResource Label}" Text="Port SSH"/>
+                          <TextBox x:Name="VpsSshPort" MaxLength="5" Text="22"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+
+                    <!-- 2. Compte -->
+                    <StackPanel x:Name="VpsStepAccount" Visibility="Collapsed">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="220"/>
+                          <ColumnDefinition Width="20"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,5" Text="Compte"/>
+                          <TextBox x:Name="VpsUser" MaxLength="32" Text="root"/>
+                          <TextBlock Style="{StaticResource Hint}" Text="root, ou le compte de l'hébergeur (debian, ubuntu...) s'il a sudo."/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Style="{StaticResource Label}" Margin="0,4,0,5" Text="Identification"/>
+                          <WrapPanel>
+                            <RadioButton x:Name="VpsAuthPassword" GroupName="vpsauth" Content="Mot de passe" IsChecked="True" Checked="VpsAuthChanged" Margin="0,0,8,0"/>
+                            <RadioButton x:Name="VpsAuthKey" GroupName="vpsauth" Content="Clé privée" Checked="VpsAuthChanged" Margin="0"/>
+                          </WrapPanel>
+                          <StackPanel x:Name="VpsPasswordPanel">
+                            <TextBlock Style="{StaticResource Label}" Text="Mot de passe"/>
+                            <PasswordBox x:Name="VpsPassword"/>
+                            <TextBlock x:Name="VpsPasswordHint" Style="{StaticResource Hint}"/>
+                          </StackPanel>
+                          <StackPanel x:Name="VpsKeyPanel" Visibility="Collapsed">
+                            <TextBlock Style="{StaticResource Label}" Text="Fichier de la clé privée"/>
+                            <Grid>
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                              </Grid.ColumnDefinitions>
+                              <TextBox x:Name="VpsKeyFile" IsReadOnly="True" Foreground="{StaticResource Parch}"
+                                       ToolTip="id_ed25519, id_rsa (OpenSSH) ou un fichier .ppk de PuTTY"/>
+                              <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Choisir..." Click="VpsPickKey" Margin="10,0,0,0" Padding="14,6"/>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Label}" Text="Phrase de passe de la clé (si elle en a une)"/>
+                            <PasswordBox x:Name="VpsPassphrase"/>
+                            <TextBlock x:Name="VpsKeyHint" Style="{StaticResource Hint}"/>
+                          </StackPanel>
+                          <CheckBox x:Name="VpsSudoToggle" Click="VpsSudoToggled" Margin="0,6,0,0">
+                            <TextBlock>sudo demande un mot de passe à part</TextBlock>
+                          </CheckBox>
+                          <PasswordBox x:Name="VpsSudo" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="Le mot de passe que sudo demande à ce compte"/>
+                        </StackPanel>
+                      </Grid>
+                      <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
+                                 Text="Mot de passe, clé et phrase de passe sont gardés chiffrés sur ce PC (DPAPI de Windows) : seul votre compte Windows peut les relire, et le launcher ne les envoie qu'à ce serveur, par SSH."/>
+                    </StackPanel>
+
+                    <!-- 3. Empreinte du serveur -->
+                    <StackPanel x:Name="VpsStepKey" Visibility="Collapsed">
+                      <StackPanel x:Name="VpsKeyNew">
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
+                                   Text="Première connexion à ce serveur. Pour être sûr de parler au bon serveur, et pas à quelqu'un qui se ferait passer pour lui, comparez l'empreinte de sa clé à celle que donne votre hébergeur. Elles doivent être identiques, caractère pour caractère."/>
+                        <Border Background="{StaticResource Field}" BorderBrush="#80E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,8,0,4">
+                          <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" Content="Copier" Click="VpsCopyFingerprint" Padding="12,4" VerticalAlignment="Center"/>
+                            <StackPanel>
+                              <TextBlock x:Name="VpsKeyAlgo" Style="{StaticResource Hint}" Margin="0,0,0,2"/>
+                              <TextBlock x:Name="VpsFingerprint" FontFamily="Consolas" FontSize="15" Foreground="{StaticResource Gold}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                          </DockPanel>
+                        </Border>
+                        <TextBlock Style="{StaticResource Label}" Text="Où trouver la bonne empreinte"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,2"
+                                   Text="Dans le panneau de l'hébergeur ou l'e-mail de livraison du serveur ; sinon, dans la console de secours de l'hébergeur, avec la commande :"/>
+                        <TextBox IsReadOnly="True" FontFamily="Consolas" FontSize="12.5" Text="ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" Margin="0,4,0,6"/>
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Une fois acceptée, l'empreinte est retenue : si un jour ce serveur en présente une autre, le launcher refusera net de s'y connecter."/>
+                      </StackPanel>
+                      <Border x:Name="VpsKeyChanged" Background="#26D8605A" BorderBrush="#99D8605A" BorderThickness="1" CornerRadius="8" Padding="16,12" Visibility="Collapsed">
+                        <StackPanel>
+                          <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="18" Foreground="{StaticResource Bad}"
+                                       Margin="0,2,12,0" VerticalAlignment="Top"/>
+                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Ink}" TextWrapping="Wrap"
+                                       Text="Connexion refusée : la clé de ce serveur a changé"/>
+                          </DockPanel>
+                          <TextBlock x:Name="VpsKeyChangedText" Style="{StaticResource Hint}" Foreground="{StaticResource Parch}" Margin="30,6,0,0" FontFamily="Consolas" FontSize="12"/>
+                          <TextBlock Style="{StaticResource Hint}" Margin="30,4,0,0"
+                                     Text="Si vous venez de réinstaller ce serveur, ou d'en changer chez l'hébergeur, c'est attendu : oubliez l'ancienne empreinte, puis confirmez la nouvelle. Sinon, n'allez pas plus loin : quelqu'un se fait peut-être passer pour votre serveur."/>
+                          <Button Style="{StaticResource Ghost}" Foreground="{StaticResource Bad}" Click="VpsForgetKey" HorizontalAlignment="Left" Margin="30,8,0,0" Padding="12,5"
+                                  Content="J'ai réinstallé ce serveur : oublier l'ancienne empreinte"/>
+                        </StackPanel>
+                      </Border>
+                    </StackPanel>
+
+                    <!-- 4. Système -->
+                    <StackPanel x:Name="VpsStepSystem" Visibility="Collapsed">
+                      <TextBlock x:Name="VpsSystemIntro" Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"/>
+                      <StackPanel x:Name="VpsSystemList" Margin="0,6,0,0"/>
+                      <StackPanel x:Name="VpsSudoRetry" Visibility="Collapsed" Margin="0,6,0,0">
+                        <TextBlock Style="{StaticResource Label}" Text="Mot de passe sudo"/>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <PasswordBox x:Name="VpsSudoRetryBox"/>
+                          <Button Grid.Column="1" Style="{StaticResource Ghost}" Content="Réessayer" Click="VpsRetrySudo" Margin="10,0,0,0" Padding="14,6"/>
+                        </Grid>
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- 5. Installation -->
+                    <StackPanel x:Name="VpsStepInstall" Visibility="Collapsed">
+                      <StackPanel x:Name="VpsInstallOptions">
+                        <TextBlock x:Name="VpsInstallIntro" Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"/>
+                        <Grid Margin="0,2,0,0">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="110"/>
+                          </Grid.ColumnDefinitions>
+                          <StackPanel>
+                            <TextBlock x:Name="VpsMemoryLabel" Style="{StaticResource Label}" Text="Mémoire pour Minecraft"/>
+                            <Slider x:Name="VpsMemory" Minimum="1" Maximum="16" IsSnapToTickEnabled="True" TickFrequency="0.5" Value="4" ValueChanged="VpsMemoryChanged"/>
+                            <TextBlock x:Name="VpsMemoryHint" Style="{StaticResource Hint}"/>
+                          </StackPanel>
+                          <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource Label}" Text="Port du jeu"/>
+                            <TextBox x:Name="VpsGamePort" MaxLength="5" Text="25565"/>
+                          </StackPanel>
+                          <StackPanel Grid.Column="4">
+                            <TextBlock Style="{StaticResource Label}" Text="Chat vocal (UDP)"/>
+                            <TextBox x:Name="VpsVoicePort" MaxLength="5" Text="24454"/>
+                          </StackPanel>
+                        </Grid>
+                        <CheckBox x:Name="VpsFirewall" IsChecked="True" Margin="0,2,0,0">
+                          <TextBlock>Ouvrir ces deux ports dans le pare-feu du serveur (ufw ou firewalld, s'il est actif)</TextBlock>
+                        </CheckBox>
+                        <Button x:Name="VpsAdvancedToggle" Style="{StaticResource Ghost}" Click="VpsToggleAdvanced" HorizontalAlignment="Left" Padding="12,4" Margin="0,10,0,0"
+                                Content="Options avancées"/>
+                        <StackPanel x:Name="VpsAdvanced" Visibility="Collapsed">
+                          <Grid>
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="*"/>
+                              <ColumnDefinition Width="12"/>
+                              <ColumnDefinition Width="130"/>
+                              <ColumnDefinition Width="12"/>
+                              <ColumnDefinition Width="130"/>
+                              <ColumnDefinition Width="12"/>
+                              <ColumnDefinition Width="110"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                              <TextBlock Style="{StaticResource Label}" Text="Dossier du serveur"/>
+                              <TextBox x:Name="VpsInstallDir" ToolTip="Hors des dossiers du système, par exemple /opt/valcombe ou /srv/valcombe"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                              <TextBlock Style="{StaticResource Label}" Text="Compte du serveur"/>
+                              <TextBox x:Name="VpsServiceUser" MaxLength="32" ToolTip="Compte système dédié, jamais root"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                              <TextBlock Style="{StaticResource Label}" Text="Nom du service"/>
+                              <TextBox x:Name="VpsServiceName" MaxLength="64" ToolTip="Le service systemd (valcombe.service)"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="6">
+                              <TextBlock Style="{StaticResource Label}" Text="Port de l'API"/>
+                              <TextBox x:Name="VpsAdminPort" MaxLength="5" ToolTip="Vide : celui du mod (25570)"/>
+                            </StackPanel>
+                          </Grid>
+                          <TextBlock Style="{StaticResource Hint}"
+                                     Text="Le port de l'API n'est jamais ouvert au public : le launcher y passe par le tunnel SSH. Laissez-le vide pour garder celui du mod (25570)."/>
+                        </StackPanel>
+                        <Border Background="#1AE2BD63" BorderBrush="#66E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,12,0,0">
+                          <StackPanel>
+                            <CheckBox x:Name="VpsEula" Margin="0" Click="VpsEulaClicked">
+                              <TextBlock>J'ai lu et j'accepte le
+                                <Hyperlink NavigateUri="https://aka.ms/MinecraftEULA" RequestNavigate="VpsOpenEula" Foreground="{StaticResource Gold}">contrat d'utilisation de Minecraft (EULA)</Hyperlink>
+                                pour ce serveur.</TextBlock>
+                            </CheckBox>
+                            <TextBlock Style="{StaticResource Hint}" Margin="48,4,0,0"
+                                       Text="Mojang demande à celui qui fait tourner un serveur de l'accepter. Le launcher l'inscrit dans eula.txt, sur le serveur."/>
+                          </StackPanel>
+                        </Border>
+                      </StackPanel>
+                      <StackPanel x:Name="VpsProgressBox" Visibility="Collapsed">
+                        <DockPanel>
+                          <TextBlock x:Name="VpsProgressPercent" DockPanel.Dock="Right" FontFamily="{StaticResource Title}" FontSize="16" Foreground="{StaticResource Gold}"/>
+                          <TextBlock x:Name="VpsProgressText" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Ink}" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                        <ProgressBar x:Name="VpsProgress" Maximum="1" Margin="0,8,0,6"/>
+                        <TextBlock x:Name="VpsProgressDetail" Style="{StaticResource Hint}"/>
+                        <ListBox x:Name="VpsLog" Style="{StaticResource ConsoleList}" Height="132" Margin="0,4,0,0">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{StaticResource Parch}" LineHeight="17"/>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- 6. Joueurs -->
+                    <StackPanel x:Name="VpsStepPlayers" Visibility="Collapsed">
+                      <TextBlock Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"
+                                 Text="Le serveur est en ligne et sa fiche est enregistrée. Dernière touche : qui le commande, et qui peut y entrer."/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="230"/>
+                          <ColumnDefinition Width="20"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Style="{StaticResource Label}" Text="Premier opérateur (vous)"/>
+                          <TextBox x:Name="VpsOp" MaxLength="16" ToolTip="Votre pseudo Minecraft, tel qu'il s'affiche en jeu"/>
+                          <TextBlock Style="{StaticResource Hint}" Text="Il pourra devenir Conteur, lancer les parties, construire et taper les commandes du serveur."/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Style="{StaticResource Label}" Text="Liste blanche"/>
+                          <TextBox x:Name="VpsWhitelist" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="58" VerticalContentAlignment="Top" Padding="9,7"
+                                   ToolTip="Les pseudos de vos joueurs, séparés par des virgules, des espaces ou des retours à la ligne"/>
+                          <TextBlock Style="{StaticResource Hint}" Text="Les pseudos de vos joueurs, séparés par des virgules ou des espaces. D'autres s'ajoutent plus tard, onglet Réglages."/>
+                          <CheckBox x:Name="VpsWhitelistOn" IsChecked="True" Margin="0,2,0,0">
+                            <TextBlock>Seuls les joueurs de la liste blanche entrent</TextBlock>
+                          </CheckBox>
+                        </StackPanel>
+                      </Grid>
+                      <StackPanel x:Name="VpsPlayersResults" Margin="0,8,0,0"/>
+                    </StackPanel>
+
+                    <!-- Terminé -->
+                    <StackPanel x:Name="VpsStepDone" Visibility="Collapsed">
+                      <DockPanel Margin="0,4,0,0">
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE73E;" FontFamily="{StaticResource Icons}" FontSize="26" Foreground="{StaticResource Good}"
+                                   Margin="0,2,16,0" VerticalAlignment="Top"/>
+                        <StackPanel>
+                          <TextBlock x:Name="VpsDoneTitle" FontFamily="{StaticResource Title}" FontSize="20" Foreground="{StaticResource Ink}" TextWrapping="Wrap"/>
+                          <TextBlock x:Name="VpsDoneText" Style="{StaticResource Hint}" FontSize="13" Foreground="{StaticResource Parch}"/>
+                        </StackPanel>
+                      </DockPanel>
+                      <TextBlock Style="{StaticResource Label}" Text="Adresse à donner à vos joueurs" Margin="42,10,0,5"/>
+                      <Border Background="{StaticResource Field}" BorderBrush="#80E2BD63" BorderThickness="1" CornerRadius="8" Padding="14,8" Margin="42,0,0,0"
+                              HorizontalAlignment="Left" MinWidth="360">
+                        <DockPanel>
+                          <Button DockPanel.Dock="Right" Style="{StaticResource Ghost}" Content="Copier" Click="VpsCopyAddress" Padding="12,4" Margin="16,0,0,0"/>
+                          <TextBlock x:Name="VpsAddress" FontFamily="Consolas" FontSize="16" Foreground="{StaticResource Gold}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                      </Border>
+                    </StackPanel>
+
+                    <!-- Message (erreur, attente) et boutons -->
+                    <Border x:Name="VpsMessageBox" CornerRadius="8" BorderThickness="1" Padding="14,9" Margin="0,14,0,0" Visibility="Collapsed">
+                      <DockPanel>
+                        <TextBlock x:Name="VpsMessageIcon" DockPanel.Dock="Left" FontFamily="{StaticResource Icons}" FontSize="14" Margin="0,2,12,0" VerticalAlignment="Top"/>
+                        <TextBlock x:Name="VpsMessage" Style="{StaticResource Hint}" Margin="0" Foreground="{StaticResource Parch}"/>
+                      </DockPanel>
+                    </Border>
+                    <WrapPanel Margin="0,14,0,0">
+                      <Button x:Name="VpsPrimary" Style="{StaticResource Wax}" Click="VpsPrimaryClick" Margin="0,0,10,6">
+                        <TextBlock x:Name="VpsPrimaryText" Text="Continuer"/>
+                      </Button>
+                      <Button x:Name="VpsSecondary" Style="{StaticResource Ghost}" Click="VpsSecondaryClick" Margin="0,0,10,6" Visibility="Collapsed"/>
+                      <Button x:Name="VpsBack" Style="{StaticResource Ghost}" Content="Retour" Click="VpsBackClick" Margin="0,0,10,6"/>
+                      <Button x:Name="VpsCancelButton" Style="{StaticResource Ghost}" Content="Annuler" Click="VpsCancel" Margin="0,0,10,6"/>
+                      <Button x:Name="VpsRemove" Style="{StaticResource Ghost}" Foreground="{StaticResource Bad}" Content="Retirer ce serveur" Click="VpsRemoveClick"
+                              Margin="0,0,10,6" Visibility="Collapsed"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+
           <!-- L'Atelier -->
           <ScrollViewer x:Name="PageAtelier" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="0,0,10,0">
@@ -338,10 +1210,21 @@
                              Text="Le bien (Citadins et Étrangers) gagne quand le Démon meurt. Le mal (le Démon et ses Sbires) gagne quand il ne reste que deux vivants. Le mal se connaît ; le bien doit deviner qui ment."/>
                   <TextBlock Style="{StaticResource H2}" Text="Une journée à Valcombe" Margin="0,12,0,6"/>
                   <TextBlock Style="{StaticResource Hint}"
-                             Text="La nuit, chacun dort chez soi ; quand vient ton tour, un écran s'ouvre pour utiliser ton pouvoir. Le jour, on discute, on se parle en privé, puis on accuse. L'accusé se défend, et l'aiguille dorée fait le tour du cercle : lève la main avant qu'elle passe devant toi. Le joueur sur le billot à la fin du jour est exécuté."/>
+                             Text="La nuit, chacun dort chez soi ; quand vient ton tour, un écran s'ouvre pour utiliser ton pouvoir. Le jour, on discute, on se parle en privé, puis le Conseil se réunit : chacun accuse d'abord qui il veut, puis on vote pour chaque accusé. L'aiguille dorée fait le tour du cercle : lève la main avant qu'elle passe devant toi. Le joueur sur le billot à la fin du jour est exécuté."/>
                   <TextBlock Style="{StaticResource H2}" Text="Les morts" Margin="0,12,0,6"/>
                   <TextBlock Style="{StaticResource Hint}"
                              Text="Un mort reste dans la partie : il parle, il écoute, et il garde un seul vote, signalé par le cierge sur sa coiffe."/>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="En arrivant : le hub"/>
+                  <TextBlock Style="{StaticResource Hint}"
+                             Text="En te connectant, tu arrives au hub, la salle d'accueil du serveur. Plusieurs parties peuvent s'y jouer en même temps, chacune dans son village, avec son Conteur et son vocal : on n'entend jamais une autre table."/>
+                  <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                             Text="Le tableau des parties montre chacune d'elles : clique sur une fiche (ou menu J, « Parties ») pour la rejoindre, ou pour la regarder en spectateur, sans voir les rôles. La dalle dorée t'inscrit à la Partie principale ; les portes mènent aux villages ; menu J, « Mondes », pour aller d'un monde à l'autre."/>
+                  <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                             Text="Si le Conteur met la partie en suspens, tout le monde revient au hub, sa place gardée. À la reprise, clique sur [Y aller] dans le chat pour retrouver ton trône."/>
                 </StackPanel>
               </Border>
               <Border Style="{StaticResource CardBox}">
@@ -355,9 +1238,10 @@
                     <Grid.RowDefinitions>
                       <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                       <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                      <RowDefinition/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="J"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Menu du jeu : ton rôle, tes actions, ton carnet"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Menu du jeu : ton rôle, tes actions, ton carnet, les mondes ; au hub, les parties"/>
                     <TextBlock Grid.Row="1" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="H"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Lever ou baisser la main pendant un vote"/>
                     <TextBlock Grid.Row="2" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="G"/>
@@ -375,7 +1259,9 @@
                     <TextBlock Grid.Row="8" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="Menu › Parler en privé"/>
                     <TextBlock Grid.Row="8" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Inviter un joueur : vous ne vous entendez plus qu'à deux, jusqu'à la cloche"/>
                     <TextBlock Grid.Row="9" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="Menu › Demander la parole"/>
-                    <TextBlock Grid.Row="9" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Le Conteur vous donne la parole à votre tour ; une barre montre votre temps"/>
+                    <TextBlock Grid.Row="9" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Le Conteur te donne la parole à ton tour ; une barre montre ton temps"/>
+                    <TextBlock Grid.Row="10" Style="{StaticResource Label}" Margin="0,4" Foreground="{StaticResource Gold}" Text="B"/>
+                    <TextBlock Grid.Row="10" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4" Text="Portée de ta voix : chuchoter, parler ou crier"/>
                   </Grid>
                 </StackPanel>
               </Border>

@@ -3,7 +3,11 @@ package fr.valcombe.client.screen;
 import com.google.gson.JsonObject;
 
 import fr.valcombe.client.ClientState;
-import fr.valcombe.client.ui.Theme;
+import fr.valcombe.client.hd.Hd;
+import fr.valcombe.client.hd.HdFonts;
+import fr.valcombe.client.hd.HdScreen;
+import fr.valcombe.client.hd.HdStyle;
+import fr.valcombe.client.hd.HdText;
 import fr.valcombe.rules.Role;
 
 import java.util.ArrayList;
@@ -11,13 +15,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-
 /**
  * Prêter un rôle à des joueurs : le Jongleur (cinq hypothèses, la deuxième nuit) et le Bavard (une hypothèse,
  * après le Conseil). On choisit un joueur, puis le rôle qu'on lui prête ; « Valider » envoie le tout.
  */
-public class GuessScreen extends BaseScreen {
+public class GuessScreen extends HdScreen {
 	/** Hypothèses en cours : joueur → rôle (gardées tant que l'invite est la même). */
 	private static final Map<String, String> picks = new LinkedHashMap<>();
 	private static String pickingFor;
@@ -77,32 +79,39 @@ public class GuessScreen extends BaseScreen {
 					}
 					picks.put(pickingFor, r.name());
 					pickingFor = null;
-					rebuildWidgets();
+					rebuildSoon();
 				});
 			}
 			button(px + 14, py + ph - 26, 120, "Aucun rôle", () -> {
 				picks.remove(pickingFor);
 				pickingFor = null;
-				rebuildWidgets();
+				rebuildSoon();
 			});
 			button(px + pw - 94, py + ph - 26, 80, "Retour", () -> {
 				pickingFor = null;
-				rebuildWidgets();
+				rebuildSoon();
 			});
 			return;
 		}
 		List<String> players = strings(p, "players");
-		int colW = (pw - 36) / 2;
-		int rows = Math.max(1, (ph - 90) / 20);
-		for (int i = 0; i < players.size() && i < rows * 2; i++) {
+		// Les joueurs commencent sous la consigne (une ou deux lignes), avec un écart : elle ne touche jamais les boutons.
+		int top = py + 20 + textLines(p) * HdText.PAS + 6;
+		int rows = Math.max(1, (py + ph - 32 - top) / 20);
+		// Deux colonnes, trois si la table est trop grande pour deux, quatre en dernier recours (consigne sur deux lignes
+		// et 20 joueurs dans 427 x 240 : trois colonnes n'en montraient que 18) : chaque joueur a son bouton.
+		int cols = Math.min(4, Math.max(2, (players.size() + rows - 1) / rows));
+		int colW = (pw - 28 - (cols - 1) * 8) / cols;
+		int scale = Hd.guiScale();
+		for (int i = 0; i < players.size() && i < rows * cols; i++) {
 			String name = players.get(i);
 			Role r = NotebookScreen.roleOf(picks.get(name));
 			int x = px + 14 + (i / rows) * (colW + 8);
-			int y = py + 44 + (i % rows) * 20;
-			var b = button(x, y, colW, name + " : " + (r == null ? "?" : r.displayName), () -> {
+			int y = top + (i % rows) * 20;
+			String label = name + " : " + (r == null ? "?" : r.displayName);
+			var b = button(x, y, colW, label, () -> {
 				pickingFor = name;
-				rebuildWidgets();
-			});
+				rebuildSoon();
+			}).tooltip(HdFonts.width(HdStyle.BOUTON, scale, label) > (colW - 10) * scale ? label : null);
 			if (r == null && picks.size() >= count && count > 1) {
 				b.disabled(); // déjà assez d'hypothèses : en retirer une d'abord
 			}
@@ -117,17 +126,30 @@ public class GuessScreen extends BaseScreen {
 		}
 	}
 
+	/** Lignes de la consigne (deux au plus) à la largeur du panneau. */
+	private int textLines(JsonObject p) {
+		String text = ClientState.str(p, "text");
+		if (text == null || text.isEmpty()) {
+			return 0;
+		}
+		int s = Hd.guiScale();
+		return Math.min(2, HdFonts.wrap(HdText.SERRE, s, text, (pw - 28) * s).size());
+	}
+
 	@Override
-	protected void drawContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	protected void drawHd(Hd hd) {
 		JsonObject p = prompt();
 		if (p == null) {
 			return;
 		}
 		if (pickingFor != null) {
-			Theme.ink(g, font, "Quel rôle prêtes-tu à " + pickingFor + " ?", px + 14, py + 14, Theme.ASH);
+			HdText.line(hd, HdText.SERRE, "Quel rôle prêtes-tu à " + pickingFor + " ?", hd.px(px + 14), hd.px(py + 13), hd.px(pw - 28),
+				Hd.INK_SOFT);
 			return;
 		}
-		Theme.ink(g, font, ClientState.str(p, "title"), px + 14, py + 12, Theme.WINE);
-		Theme.paragraph(g, font, ClientState.str(p, "text"), px + 14, py + 24, pw - 28, Theme.INK);
+		// Titre de l'invite, puis sa consigne (deux lignes au plus : les joueurs commencent dessous).
+		HdText.line(hd, HdStyle.FORT, ClientState.str(p, "title"), hd.px(px + 14), hd.px(py + 7), hd.px(pw - 28), Hd.WINE);
+		HdText.paragraph(hd, HdText.SERRE, ClientState.str(p, "text"), hd.px(px + 14), hd.px(py + 20), hd.px(pw - 28), Hd.INK,
+			hd.u(HdText.PAS), hd.px(24));
 	}
 }

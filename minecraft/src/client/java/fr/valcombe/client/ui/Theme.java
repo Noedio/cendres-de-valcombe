@@ -32,7 +32,22 @@ public final class Theme {
 	public static final Identifier PARCHMENT = tex("parchment");
 	public static final Identifier PANEL = tex("panel");
 
-	/** Image entière étirée dans le rectangle. */
+	/*
+	 * Taille réelle, en pixels, des textures haute résolution dessinées par tools/make_assets.py
+	 * (constantes ICONE, JETON, HUD et MARQUEUR du script). Elles sont affichées plus petites que
+	 * leur taille réelle, avec un filtrage lisse demandé par leur fichier .png.mcmeta : la taille à
+	 * l'écran ne dépend que du rectangle passé à image().
+	 */
+	/** Disques de siège (token_good, token_evil, token_neutral) et calques (token_dead, token_selected, token_hover). */
+	public static final int TOKEN_TEX = 128;
+	/** Emblèmes des rôles (roles/*.png). */
+	public static final int ICON_TEX = 128;
+	/** Lune, soleil et sablier de l'affichage en jeu. */
+	public static final int HUD_TEX = 128;
+	/** Marqueurs du grimoire (marker_*.png). */
+	public static final int MARKER_TEX = 96;
+
+	/** Image entière étirée dans le rectangle (texW, texH : taille réelle de la texture). */
 	public static void image(GuiGraphicsExtractor g, Identifier id, int x, int y, int w, int h, int texW, int texH) {
 		g.blit(RenderPipelines.GUI_TEXTURED, id, x, y, 0, 0, w, h, texW, texH, texW, texH);
 	}
@@ -110,15 +125,15 @@ public final class Theme {
 		int x = cx - size / 2;
 		int y = cy - size / 2;
 		String disc = team == null ? "token_neutral" : team.equals("EVIL") ? "token_evil" : "token_good";
-		image(g, tex(disc), x, y, size, size, 32, 32);
+		image(g, tex(disc), x, y, size, size, TOKEN_TEX, TOKEN_TEX);
 		if (roleId != null) {
 			int is = size * 22 / 32;
 			fr.valcombe.rules.Role r = fr.valcombe.rules.Role.parse(roleId);
 			String icon = r != null ? r.icon : roleId.toLowerCase(java.util.Locale.ROOT);
-			image(g, tex("roles/" + icon), cx - is / 2, cy - is / 2, is, is, 32, 32);
+			image(g, tex("roles/" + icon), cx - is / 2, cy - is / 2, is, is, ICON_TEX, ICON_TEX);
 		}
 		if (!alive) {
-			image(g, tex("token_dead"), x, y, size, size, 32, 32);
+			image(g, tex("token_dead"), x, y, size, size, TOKEN_TEX, TOKEN_TEX);
 		}
 		if (team != null && fr.valcombe.client.ClientConfig.get().daltonien && size >= 16) {
 			// Mode daltonien : un triangle pour le mal, un rond pour le bien, en plus de la couleur.
@@ -129,13 +144,14 @@ public final class Theme {
 			g.text(font, mark, x + size - 8, y + 1, evil ? 0xFFFF8080 : 0xFFA0C8FF, false);
 		}
 		if (selected) {
-			image(g, tex("token_selected"), x, y, size, size, 32, 32);
+			image(g, tex("token_selected"), x, y, size, size, TOKEN_TEX, TOKEN_TEX);
 		} else if (hovered) {
-			image(g, tex("token_hover"), x, y, size, size, 32, 32);
+			image(g, tex("token_hover"), x, y, size, size, TOKEN_TEX, TOKEN_TEX);
 		}
 	}
 
+	/** Marqueur du grimoire, 10 × 10 à l'écran. */
 	public static void marker(GuiGraphicsExtractor g, String name, int x, int y) {
-		image(g, tex("marker_" + name), x, y, 10, 10, 12, 12);
+		image(g, tex("marker_" + name), x, y, 10, 10, MARKER_TEX, MARKER_TEX);
 	}
 }

@@ -34,7 +34,7 @@ final class Social {
 
 	/** Le Conteur prend un joueur à part (vocal seul à seul), ou met fin à l'aparté (target null). */
 	public String setAside(String target) {
-		Game g = ses.requireGame();
+		Game g = ses.requireLive();
 		if (ses.storyteller == null) {
 			throw new GameException("Pas de Conteur dans cette partie.");
 		}
@@ -159,7 +159,7 @@ final class Social {
 
 	/** Invite un joueur à parler en privé (vocal seul à seul), le jour. */
 	public String inviteTalk(String from, String to) {
-		Game g = ses.requireGame();
+		Game g = ses.requireLive();
 		if (g.phase() != Game.Phase.DAY) {
 			throw new GameException("On ne parle en privé que de jour.");
 		}

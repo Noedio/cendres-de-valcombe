@@ -5,6 +5,7 @@ import fr.valcombe.net.ValcombeNet;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.Identifier;
@@ -22,14 +23,24 @@ public final class ValcombeClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.ViewPayload.TYPE,
-			(payload, context) -> context.client().execute(() -> ClientState.apply(payload.json())));
+			(payload, context) -> context.client().execute(() -> ClientState.receive(payload.json())));
+		// Chaque connexion repart d'une vue vide : rien de la partie (ni de la version) du serveur précédent.
+		ClientPlayConnectionEvents.INIT.register((handler, client) -> client.execute(ClientState::forgetServer));
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(ClientState::forgetServer));
 		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.OpenPayload.TYPE,
 			(payload, context) -> context.client().execute(() -> ScreenRouter.open(payload.screen())));
 		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.PreviewPayload.TYPE,
 			(payload, context) -> context.client().execute(() -> ClientState.applyPreview(payload.json())));
+		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.SelectionPayload.TYPE,
+			(payload, context) -> context.client().execute(() -> BuildSelection.received(payload)));
+		// Vignettes de l'Atelier en jeu : textures faites à l'arrivée, oubliées à la déconnexion (un autre serveur a d'autres cartes).
+		ClientPlayNetworking.registerGlobalReceiver(ValcombeNet.VignettePayload.TYPE,
+			(payload, context) -> context.client().execute(() -> Vignettes.received(payload)));
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(Vignettes::forget));
 
 		Hud.register();
 		Ghost.register();
+		BuildSelection.register();
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("valcombe", "main"));
 		menuKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.menu", InputConstants.KEY_J, category));
 		handKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.valcombe.hand", InputConstants.KEY_H, category));
