@@ -34,6 +34,7 @@ public final class WorldSetup {
 				GameRules.SHOW_ADVANCEMENT_MESSAGES, GameRules.SHOW_DEATH_MESSAGES, GameRules.LOCATOR_BAR)) {
 			r.set(rule, false, server);
 		}
+		quiet(level);
 		r.set(GameRules.KEEP_INVENTORY, true, server);
 		r.set(GameRules.IMMEDIATE_RESPAWN, true, server);
 		r.set(GameRules.RANDOM_TICK_SPEED, 0, server);
@@ -41,6 +42,20 @@ public final class WorldSetup {
 		server.setDifficulty(Difficulty.PEACEFUL, true);
 		run(level, "weather clear");
 		day(level);
+	}
+
+	/**
+	 * Pas d'annonce de progrès Minecraft (« X a obtenu le progrès… ») dans ce monde de Valcombe, quelle que soit sa
+	 * sorte (hub, partie, atelier) : la règle announceAdvancements est mise à faux pour ce monde et pour le serveur
+	 * (dans cette version de Minecraft, un monde lit les règles du serveur ; un monde Fantasy peut avoir les siennes).
+	 * Le gestionnaire de mondes l'appelle à chaque ouverture ; les bulles de progrès, elles, sont masquées côté client.
+	 */
+	public static void quiet(ServerLevel level) {
+		MinecraftServer server = level.getServer();
+		level.getGameRules().set(GameRules.SHOW_ADVANCEMENT_MESSAGES, false, server);
+		if (server.getGameRules() != level.getGameRules()) {
+			server.getGameRules().set(GameRules.SHOW_ADVANCEMENT_MESSAGES, false, server);
+		}
 	}
 
 	/** Midi dans ce monde (son horloge à lui : les autres mondes gardent leur heure). */

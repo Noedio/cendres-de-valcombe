@@ -2,161 +2,405 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#120c0f">
 <title>Atelier de Valcombe</title>
 <style>
+	/* L'Atelier de Valcombe : cire, or et parchemin sombre, comme les écrans du jeu. */
 	:root {
-		--bg: #140d10;
-		--panel: #22161a;
-		--panel-2: #2c1d22;
-		--line: #4a3238;
-		--ink: #efe3c8;
-		--muted: #b8a68a;
+		--bg: #120c0f;
+		--bg-2: #170f13;
+		--panel: #1e1418;
+		--panel-2: #281b20;
+		--panel-3: #33232a;
+		--line: #3f2b32;
+		--line-2: #5a3e47;
+		--ink: #f2e7cf;
+		--muted: #bba98d;
+		--faint: #8f7d6b;
 		--gold: #d9b45a;
+		--gold-2: #f0d48c;
 		--wine: #7a2433;
+		--wine-2: #9b3346;
 		--good: #5a8fd6;
 		--evil: #d0484a;
-		--ok: #6fb37a;
-		--radius: 12px;
+		--ok: #7cc48d;
+		--warn: #e9a95e;
+		--radius: 14px;
+		--serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+		--sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+		--gutter: clamp(12px, 3vw, 28px);
 	}
 	* { box-sizing: border-box; }
-	html, body { margin: 0; background: var(--bg); color: var(--ink); }
-	body { font: 15px/1.45 Georgia, "Times New Roman", serif; padding: 14px 16px 40px; max-width: 1200px; margin: 0 auto; }
-	header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-	h1 { font-size: 1.35rem; margin: 4px 0; color: var(--gold); }
-	h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 18px 0 8px; font-weight: normal; }
-	h2 { margin: 0 0 10px; color: var(--gold); font-weight: normal; font-size: 1.1rem; }
-	.state { font-size: .85rem; color: var(--muted); }
-	nav { display: flex; gap: 6px; margin: 12px 0 4px; flex-wrap: wrap; }
-	nav button.on { background: var(--wine); border-color: #a3404f; }
+	html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+	body {
+		margin: 0; color: var(--ink); background:
+			radial-gradient(1200px 500px at 15% -10%, rgba(122, 36, 51, .22), transparent 60%),
+			radial-gradient(900px 400px at 100% 0%, rgba(217, 180, 90, .07), transparent 55%), var(--bg);
+		background-attachment: fixed;
+		font: 16px/1.5 var(--sans); min-height: 100vh;
+	}
+	h1, h2, h3, .serif { font-family: var(--serif); font-weight: normal; }
+	h2 { margin: 0 0 12px; color: var(--gold); font-size: 1.25rem; letter-spacing: .01em; }
+	h3 { font-family: var(--sans); font-size: .78rem; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+	code { color: var(--gold-2); font-size: .92em; }
+	a { color: var(--gold-2); }
+	.hidden { display: none !important; }
+	.hint { color: var(--muted); font-size: .9rem; }
+	.faint { color: var(--faint); }
+
+	/* ---------------------------------------------------------------- En-tête et onglets */
+	.top {
+		position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+		background: linear-gradient(rgba(18, 12, 15, .94), rgba(18, 12, 15, .86)); border-bottom: 1px solid var(--line);
+	}
+	.top-in { max-width: 1280px; margin: 0 auto; padding: 10px var(--gutter) 0; }
+	.brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+	.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 260px; }
+	.seal { width: 44px; height: 44px; border-radius: 50%; flex: none; display: grid; place-items: center;
+		background: radial-gradient(circle at 35% 30%, #a83a4c, var(--wine) 60%, #4d1520); box-shadow: inset 0 0 0 2px rgba(240, 212, 140, .55), 0 2px 8px rgba(0, 0, 0, .5); }
+	.seal img { width: 28px; height: 28px; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .5)); }
+	.brand h1 { margin: 0; font-size: 1.45rem; color: var(--gold-2); line-height: 1.15; }
+	.brand .sub { font-size: .85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.aim { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+	.aim label { margin: 0; color: var(--muted); font-size: .85rem; }
+	.aim select { width: auto; min-width: 200px; max-width: 64vw; }
+	.tabs { display: flex; gap: 4px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; }
+	.tabs::-webkit-scrollbar { display: none; }
+	.tabs button {
+		flex: 1 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
+		background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 10px 10px 0 0; color: var(--muted);
+		font: 600 .98rem var(--sans); padding: 8px 16px;
+	}
+	.tabs button svg { width: 20px; height: 20px; flex: none; opacity: .85; }
+	.tabs button:hover { color: var(--ink); background: rgba(255, 255, 255, .03); }
+	.tabs button.on { color: var(--gold-2); border-bottom-color: var(--gold); background: linear-gradient(transparent, rgba(217, 180, 90, .08)); }
+	main { max-width: 1280px; margin: 0 auto; padding: 18px var(--gutter) 64px; }
+
+	/* ---------------------------------------------------------------- Contrôles */
 	button {
-		font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
-		border-radius: 10px; padding: 8px 13px; min-height: 40px; cursor: pointer;
+		font: 500 .95rem var(--sans); color: var(--ink); background: var(--panel-2); border: 1px solid var(--line-2);
+		border-radius: 10px; padding: 9px 15px; min-height: 44px; cursor: pointer; touch-action: manipulation;
+		transition: background .15s, border-color .15s, transform .05s;
 	}
-	button.main { background: var(--wine); border-color: #a3404f; }
-	button.danger { border-color: var(--evil); color: #ffd7d7; }
-	button:disabled { opacity: .45; cursor: default; }
+	button:hover:not(:disabled) { background: var(--panel-3); border-color: #7a5862; }
+	button:active:not(:disabled) { transform: translateY(1px); }
+	button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .tile:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+	button.main { background: linear-gradient(#8d2b3c, var(--wine)); border-color: #b0475a; color: #fff4dc; }
+	button.main:hover:not(:disabled) { background: linear-gradient(#a1344a, #86283a); }
+	button.gold { background: linear-gradient(#e4c171, #c99d3f); border-color: #f0d48c; color: #2a1a0c; font-weight: 600; }
+	button.danger { border-color: #8e3a3c; color: #ffcfcf; }
+	button.danger:hover:not(:disabled) { background: #3a1a1d; }
+	button.ghost { background: none; }
+	button:disabled { opacity: .45; cursor: not-allowed; }
+	button.icon { min-width: 44px; padding: 0; display: inline-grid; place-items: center; font-size: 1.3rem; line-height: 1; }
 	input, select, textarea {
-		font: inherit; color: var(--ink); background: #1a1013; border: 1px solid var(--line); border-radius: 8px;
-		padding: 7px 9px; width: 100%;
+		font: 16px var(--sans); color: var(--ink); background: #170f12; border: 1px solid var(--line-2); border-radius: 10px;
+		padding: 9px 11px; width: 100%; min-height: 44px;
 	}
-	textarea { min-height: 64px; resize: vertical; }
-	label { display: block; color: var(--muted); font-size: .85rem; margin: 10px 0 4px; }
-	label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: .95rem; margin: 6px 0; }
-	label.check input { width: auto; }
-	.cols { display: grid; grid-template-columns: minmax(230px, 320px) 1fr; gap: 16px; align-items: start; }
-	.cols.wide { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-	@media (max-width: 760px) { .cols, .cols.wide { grid-template-columns: 1fr; } }
-	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+	input[type=checkbox] { width: 20px; height: 20px; min-height: 0; accent-color: var(--gold); }
+	input[type=file] { padding: 8px; }
+	textarea { min-height: 72px; resize: vertical; }
+	label { display: block; color: var(--muted); font-size: .88rem; margin: 12px 0 5px; }
+	label.check { display: flex; gap: 10px; align-items: center; color: var(--ink); font-size: .95rem; margin: 6px 0; }
+	label.check input { width: 20px; flex: none; }
+	.bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+	.bar > select { width: auto; flex: 0 1 260px; min-width: 180px; }
+	.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 12px; }
+
+	/* ---------------------------------------------------------------- Bandeaux, puces, compteurs */
+	.lede { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
+	.lede h2 { margin: 0; font-size: 1.5rem; }
+	.lede p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+	.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+	.search { position: relative; flex: 1 1 220px; max-width: 360px; }
+	.search input { padding-left: 38px; }
+	.search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--faint); }
+	.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+	.chip-btn { min-height: 40px; padding: 6px 14px; border-radius: 999px; background: transparent; font-size: .9rem; }
+	.chip-btn.on { background: rgba(217, 180, 90, .14); border-color: var(--gold); color: var(--gold-2); }
+	.tag { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 9px; font-size: .78rem; line-height: 1.5;
+		background: rgba(255, 255, 255, .06); border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
+	.tag.gold { color: #2a1a0c; background: var(--gold); border-color: var(--gold-2); font-weight: 600; }
+	.tag.wine { color: #ffe3e3; background: var(--wine); border-color: var(--wine-2); }
+	.tag.blue { color: #dbe9ff; background: #233a5c; border-color: #3a5f93; }
+	.tag.ok { color: #d7f3dd; background: #1f3a27; border-color: #356b45; }
+	.tag.warn { color: #ffe2bf; background: #4a2d12; border-color: #8a5a2a; }
+	.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: currentColor; }
+	.count { color: var(--faint); font-size: .88rem; margin-left: auto; }
+	.empty { border: 1px dashed var(--line-2); border-radius: var(--radius); padding: 28px 20px; text-align: center; color: var(--muted); background: rgba(255, 255, 255, .015); }
+	.empty strong { display: block; color: var(--ink); font-family: var(--serif); font-size: 1.15rem; font-weight: normal; margin-bottom: 4px; }
+	.note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line);
+		background: rgba(217, 180, 90, .06); color: var(--muted); font-size: .9rem; margin: 0 0 16px; }
+	.note svg { width: 20px; height: 20px; flex: none; color: var(--gold); margin-top: 1px; }
+
+	/* ---------------------------------------------------------------- Vignettes et tuiles */
+	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr)); gap: 16px; }
+	.tile {
+		display: flex; flex-direction: column; text-align: left; padding: 0; overflow: hidden; border-radius: var(--radius);
+		background: var(--panel); border: 1px solid var(--line); min-height: 0; font: inherit; color: inherit; cursor: pointer;
+		box-shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 6px 18px rgba(0, 0, 0, .25);
+	}
+	.tile:hover:not(:disabled) { border-color: #7a5862; background: var(--panel); transform: translateY(-1px); }
+	.tile .body { padding: 11px 13px 13px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+	.tile .name { font-family: var(--serif); font-size: 1.08rem; color: var(--ink); line-height: 1.25; }
+	.tile .meta { font-size: .84rem; color: var(--muted); }
+	.tile .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: auto; }
+	.thumb { position: relative; aspect-ratio: 16 / 10; overflow: hidden; display: grid; place-items: center;
+		background: radial-gradient(120% 90% at 50% 20%, #2f2026, #1a1115 70%); border-bottom: 1px solid var(--line); }
+	.thumb::before { content: ""; position: absolute; inset: 0; opacity: .5;
+		background-image: linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px);
+		background-size: 22px 22px; }
+	.thumb img { position: relative; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; }
+	.thumb.carte img { object-fit: cover; }
+	.thumb img.pixel { image-rendering: pixelated; }
+	.thumb.ready img { opacity: 1; }
+	.thumb .wait { position: absolute; width: 34px; height: 34px; color: var(--line-2); }
+	.thumb.ready .wait { display: none; }
+	.thumb .over { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 5px; flex-wrap: wrap; z-index: 1; }
+	.shelf { margin-bottom: 26px; }
+	.shelf-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+	.shelf-head h3 { margin: 0; font-family: var(--serif); text-transform: none; letter-spacing: .01em; font-size: 1.15rem; color: var(--gold); font-weight: normal; }
+
+	/* ---------------------------------------------------------------- Parties */
+	.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+	.game { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+	.game.aimed { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(217, 180, 90, .35), 0 8px 24px rgba(0, 0, 0, .3); }
+	.game .thumb { aspect-ratio: 21 / 8; }
+	.game .head { padding: 12px 14px 0; display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+	.game .head .name { font-family: var(--serif); font-size: 1.2rem; }
+	.game dl { margin: 10px 14px 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: .9rem; }
+	.game dt { color: var(--faint); }
+	.game dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+	.game .actions { padding: 12px 14px 14px; margin-top: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+	.game .why { margin: 10px 14px 0; font-size: .85rem; color: var(--warn); }
+	.status { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-2); white-space: nowrap; }
+	.status.ouverte { color: #cfe8d5; border-color: #356b45; background: #1b3022; }
+	.status.en-cours { color: #ffe0e0; border-color: var(--wine-2); background: #3a1820; }
+	.status.en-pause { color: #ffe9c2; border-color: #8a5a2a; background: #3b2611; }
+	.status.suspendue { color: #dbe4f7; border-color: #3a5f93; background: #1c2a40; }
+
+	/* ---------------------------------------------------------------- Fenêtres */
+	dialog {
+		border: 1px solid var(--line-2); border-radius: 18px; padding: 0; color: var(--ink); background: var(--panel);
+		width: min(760px, calc(100vw - 24px)); max-height: min(92vh, 980px); box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+	}
+	dialog.small { width: min(520px, calc(100vw - 24px)); }
+	dialog::backdrop { background: rgba(8, 5, 6, .72); backdrop-filter: blur(3px); }
+	.sheet-in { display: flex; flex-direction: column; max-height: inherit; }
+	.sheet-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+	.sheet-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 1.35rem; }
+	.sheet-body { overflow: auto; padding: 16px 20px 20px; -webkit-overflow-scrolling: touch; }
+	.sheet-foot { padding: 12px 20px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+	.detail-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+	.detail-top .thumb { border-radius: 12px; border: 1px solid var(--line); aspect-ratio: 4 / 3; }
+	.detail-top .thumb img { object-fit: contain; }
+	.sheet-body:focus { outline: none; }
+	.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: .95rem; }
+	.facts dt { color: var(--faint); }
+	.facts dd { margin: 0; }
+	.checks { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; font-size: .92rem; }
+	.checks li { display: flex; gap: 8px; align-items: flex-start; }
+	.checks li::before { content: "✔"; color: var(--ok); flex: none; width: 1.2em; text-align: center; }
+	.checks li.no::before { content: "!"; color: #2a1a0c; background: var(--warn); border-radius: 50%; width: 1.2em; height: 1.2em; font-size: .78em; display: grid; place-items: center; margin-top: .2em; font-weight: 700; }
+	.action { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 12px; background: var(--bg-2); }
+	.action .t { font-weight: 600; margin-bottom: 2px; }
+	.action .bar { margin-top: 10px; }
+	.action select { width: auto; flex: 1 1 220px; }
+	.why { color: var(--warn); font-size: .88rem; margin-top: 8px; }
+	.choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+	.choice button { text-align: left; padding: 14px; min-height: 92px; display: block; }
+	.choice button b { display: block; font-family: var(--serif); font-weight: normal; font-size: 1.12rem; color: var(--gold-2); margin-bottom: 4px; }
+	.choice button span { color: var(--muted); font-size: .88rem; }
+	.choice button.on { border-color: var(--gold); background: rgba(217, 180, 90, .1); }
+
+	/* ---------------------------------------------------------------- Message, activité */
+	.toast { position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); z-index: 50; opacity: 0; pointer-events: none;
+		max-width: min(680px, calc(100vw - 24px)); padding: 12px 16px; border-radius: 12px; border: 1px solid #356b45; background: #15281b; color: #dff5e4;
+		box-shadow: 0 16px 40px rgba(0, 0, 0, .55); transition: opacity .2s, transform .2s; white-space: pre-wrap; font-size: .95rem; }
+	.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+	.toast.err { border-color: #8e3a3c; background: #2e1416; color: #ffd9d9; }
+	.toast.busy { border-color: var(--line-2); background: var(--panel-2); color: var(--ink); }
+	.people { display: flex; gap: 6px; flex-wrap: wrap; }
+	.person { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line-2); font-size: .88rem; }
+	.person i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: .72rem; font-weight: 700; color: #2a1a0c; background: var(--gold); }
+	.journal { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: .9rem; color: var(--muted); }
+	.journal li { padding: 8px 10px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); }
+	#activityBtn .n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 10px; background: var(--gold); color: #2a1a0c; font-size: .75rem; font-weight: 700; padding: 0 5px; }
+
+	/* ---------------------------------------------------------------- Rôles et scénarios (formulaires d'édition) */
+	.subtabs { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); margin-bottom: 16px; flex-wrap: wrap; }
+	.subtabs button { min-height: 40px; border: 0; background: none; color: var(--muted); padding: 6px 16px; }
+	.subtabs button.on { background: var(--panel-3); color: var(--gold-2); }
+	.cols { display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr); gap: 16px; align-items: start; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
 	.list { display: flex; flex-direction: column; gap: 6px; }
 	.item { display: flex; gap: 10px; align-items: center; text-align: left; width: 100%; }
-	.item.sel { outline: 2px solid var(--gold); }
-	.item .sub { color: var(--muted); font-size: .8rem; }
-	.token { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none;
-		background: #e8d9b5; border: 3px solid var(--good); }
+	.item.sel { outline: 2px solid var(--gold); background: var(--panel-3); }
+	.item .sub { color: var(--muted); font-size: .82rem; }
+	.token { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; background: #e8d9b5; border: 3px solid var(--good); }
 	.token.EVIL, .token.SBIRE, .token.DEMON { border-color: var(--evil); }
-	.token img { width: 26px; height: 26px; }
-	.big { width: 84px; height: 84px; border-width: 5px; }
-	.big img { width: 60px; height: 60px; }
-	.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-	.emblems { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; }
-	.emblems button { padding: 4px; min-height: 0; width: 44px; height: 44px; background: #e8d9b5; }
-	.emblems button.on { outline: 3px solid var(--gold); }
-	.emblems img { width: 32px; height: 32px; display: block; }
-	.preview { display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
+	.token img { width: 27px; height: 27px; }
+	.big { width: 88px; height: 88px; border-width: 5px; }
+	.big img { width: 62px; height: 62px; }
+	.emblems { display: grid; grid-template-columns: repeat(auto-fill, 46px); gap: 6px; }
+	.emblems button { padding: 4px; min-height: 0; width: 46px; height: 46px; background: #e8d9b5; border-color: #b9a77c; }
+	.emblems button:hover:not(:disabled) { background: #f3e7c8; }
+	.emblems button.on { outline: 3px solid var(--gold); outline-offset: 1px; }
+	.emblems img { width: 34px; height: 34px; display: block; }
+	.preview { display: flex; gap: 14px; align-items: center; margin-top: 14px; padding: 12px; border: 1px dashed var(--line-2); border-radius: 12px; }
 	.preview .t { color: var(--muted); }
 	.msg { margin-top: 10px; min-height: 1.4em; white-space: pre-wrap; }
 	.msg.err { color: #ffb0b0; }
 	.msg.ok { color: #a6dfb0; }
-	.bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
-	.pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; }
-	.pick label.check { font-size: .9rem; margin: 2px 0; }
-	.pick img { width: 22px; height: 22px; background: #e8d9b5; border-radius: 50%; padding: 2px; }
-	.camp { color: var(--gold); margin: 12px 0 4px; }
+	.pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 2px 12px; }
+	.pick label.check { font-size: .92rem; margin: 3px 0; }
+	.pick img { width: 24px; height: 24px; background: #e8d9b5; border-radius: 50%; padding: 2px; }
+	.camp { color: var(--gold); margin: 14px 0 4px; font-family: var(--serif); font-size: 1.05rem; }
 	.meter { height: 14px; border-radius: 7px; overflow: hidden; display: flex; background: var(--panel-2); margin: 8px 0; }
 	.meter .g { background: var(--good); }
 	.meter .e { background: var(--evil); }
-	.hint { color: var(--muted); font-size: .85rem; }
-	.hidden { display: none !important; }
 	.order { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 	.order .line { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: .92rem; }
 	.order .line span { flex: 1; }
-	.order .line button { padding: 2px 8px; min-height: 0; }
+	.order .line button { padding: 2px 10px; min-height: 34px; }
 	.repart { border-collapse: collapse; font-size: .9rem; }
 	.repart th, .repart td { padding: 2px 6px; text-align: center; }
-	.repart input { width: 56px; }
+	.repart input { width: 60px; min-height: 36px; padding: 4px 6px; }
 	.repart tr.bad td:first-child { color: #ff8a80; }
 	.weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px 14px; font-size: .88rem; margin-top: 8px; }
 	.weights .hi { color: #ffd27a; }
-	.plan { width: 100%; max-width: 620px; aspect-ratio: 1; background: #1b1418; border: 1px solid var(--line, #4a3238); border-radius: 10px; display: block; margin: 8px 0; touch-action: none; user-select: none; }
-	.plan image { image-rendering: pixelated; }
-	.plan [data-m] { cursor: pointer; }
-	.plan.adding { cursor: crosshair; }
-	.plan text { pointer-events: none; font-family: inherit; font-weight: bold; }
-	.tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-	.tools button { padding: 6px 10px; min-height: 0; display: flex; align-items: center; gap: 6px; }
-	.tools button.on { outline: 2px solid var(--gold); background: var(--panel-2); }
-	.dot { display: inline-block; width: 12px; height: 12px; border: 1px solid #140d10; flex: none; }
-	.dot.seat { background: #d9b45a; border-radius: 50%; }
-	.dot.house { background: #6fb37a; }
-	.dot.center { background: #5cc8e0; border-radius: 50%; }
-	.dot.room { background: #c58be6; transform: rotate(45deg); }
-	.dot.player { background: #fff; border-radius: 50%; width: 8px; height: 8px; }
-	.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .85rem; color: var(--muted); align-items: center; }
-	.legend span { display: flex; align-items: center; gap: 6px; }
-	.sel { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: .92rem; }
-	.sel .bar { margin-top: 6px; }
-	.checks { font-size: .9rem; margin: 6px 0; }
-	.checks .ok { color: #9ad6a3; }
-	.checks .no { color: #ffb37a; }
-	code { color: var(--gold); }
-	.steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-	.step { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 10px;
-		border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
-	.step .num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
-		border: 2px solid var(--gold); color: var(--gold); font-weight: bold; }
-	.step.done .num { background: var(--gold); color: #1b1214; }
-	.step .title { color: var(--ink); font-size: 1.05rem; }
-	.step .bar { margin-top: 6px; }
-	.lock { background: #4a2a10; border: 1px solid var(--gold); border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; }
-	.journal { margin: 0; padding-left: 18px; color: var(--muted); font-size: .88rem; }
-	.badge { display: inline-block; background: var(--wine); border-radius: 999px; padding: 2px 9px; margin: 2px; font-size: .85rem; }
+	.lock { background: #4a2a10; border: 1px solid var(--gold); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+	.aimed-note { font-size: .9rem; color: var(--muted); margin: 6px 0 0; }
+
+	@media (max-width: 860px) {
+		.cols { grid-template-columns: 1fr; }
+		.detail-top { grid-template-columns: 1fr; }
+		.detail-top .thumb { aspect-ratio: 16 / 9; }
+	}
+	@media (max-width: 560px) {
+		.brand h1 { font-size: 1.2rem; }
+		.seal { width: 38px; height: 38px; }
+		.aim select { min-width: 0; max-width: none; flex: 1; }
+		.aim { width: 100%; }
+		.tabs button { padding: 8px 10px; font-size: .9rem; }
+		.tabs button .long, .tabs button svg { display: none; }
+		.grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+		.tile .body { padding: 9px 10px 11px; }
+		.tile .name { font-size: .98rem; }
+		dialog { width: 100vw; max-width: 100vw; max-height: 94vh; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+	}
+	@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<header>
-	<h1>Atelier de Valcombe</h1>
-	<div class="state" id="state">Connexion…</div>
-</header>
-<nav>
-	<button data-tab="accueil" class="on">Accueil</button>
-	<button data-tab="roles">Rôles</button>
-	<button data-tab="scenarios">Scénarios</button>
-	<button data-tab="cartes">Cartes</button>
-	<button data-tab="structures">Structures</button>
-	<button data-tab="partage">Partage</button>
-</nav>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="i-map" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z M9 4v13.5 M15 6.5V20"/></symbol>
+	<symbol id="i-cube" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3 20 7.5v9L12 21l-8-4.5v-9z M4 7.5 12 12l8-4.5 M12 12v9"/></symbol>
+	<symbol id="i-games" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 3v4 M12 17v4 M3 12h4 M17 12h4 M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></symbol>
+	<symbol id="i-mask" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 5c5 2 11 2 16 0 1 7-2 13-8 14C6 18 3 12 4 5z M8.5 10.5c1 .8 2 .8 3 0 M12.5 10.5c1 .8 2 .8 3 0 M9.5 15c1.6 1.2 3.4 1.2 5 0"/></symbol>
+	<symbol id="i-search" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13z M15.5 15.5 20 20"/></symbol>
+	<symbol id="i-info" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 11v6 M12 7.5v.01"/></symbol>
+	<symbol id="i-wait" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M12 3 20 7.5v9L12 21l-8-4.5v-9z M4 7.5 12 12l8-4.5 M12 12v9"/></symbol>
+</svg>
 
-<!-- Accueil -->
-<section id="tab-accueil">
-	<div class="cols">
-		<div class="card">
-			<h2>Préparer une soirée, pas à pas</h2>
-			<ol class="steps" id="steps"></ol>
+<header class="top">
+	<div class="top-in">
+		<div class="brand-row">
+			<div class="brand">
+				<div class="seal"><img src="/atelier/embleme/e_cloche.png" alt=""></div>
+				<div style="min-width:0">
+					<h1>Atelier de Valcombe</h1>
+					<div class="sub" id="state">Connexion…</div>
+				</div>
+			</div>
+			<div class="aim">
+				<label for="aimSel">Partie visée</label>
+				<select id="aimSel" aria-label="Partie visée par la page"></select>
+				<button id="activityBtn" class="ghost" type="button" aria-haspopup="dialog">Activité <span class="n" id="presentN">1</span></button>
+			</div>
 		</div>
-		<div class="card">
-			<h2>Dans l'Atelier</h2>
-			<div id="presence"></div>
-			<p class="hint">Chaque opérateur ouvre son propre lien avec <code>/vc atelier</code> : préparez la soirée à plusieurs, en même temps. La page se met à jour toute seule, et une création ouverte par quelqu'un d'autre est signalée.</p>
-			<h3>Dernières modifications</h3>
-			<ul class="journal" id="journal"></ul>
-		</div>
+		<nav class="tabs" role="tablist">
+			<button data-tab="cartes" class="on" role="tab"><svg><use href="#i-map"/></svg>Cartes</button>
+			<button data-tab="structures" role="tab"><svg><use href="#i-cube"/></svg>Structures</button>
+			<button data-tab="parties" role="tab"><svg><use href="#i-games"/></svg>Parties</button>
+			<button data-tab="rs" role="tab"><svg><use href="#i-mask"/></svg><span>Rôles <span class="long">et scénarios</span></span></button>
+		</nav>
 	</div>
+</header>
+
+<main>
+<!-- Cartes -->
+<section id="tab-cartes">
+	<div class="lede">
+		<div>
+			<h2>Bibliothèque de cartes</h2>
+			<p>Chaque carte se bâtit dans son atelier, dans le jeu, avec WorldEdit et les outils de repères : elle s'y enregistre toute seule. D'ici, on l'envoie à une partie, on l'ouvre dans un atelier, on la copie.</p>
+		</div>
+		<button class="gold" id="newMap" type="button">Nouvelle carte</button>
+	</div>
+	<div class="toolbar">
+		<div class="search"><svg><use href="#i-search"/></svg><input id="mapSearch" type="search" placeholder="Chercher une carte" aria-label="Chercher une carte"></div>
+		<div class="chips" id="mapFilters">
+			<button class="chip-btn on" data-f="toutes" type="button">Toutes</button>
+			<button class="chip-btn" data-f="atelier" type="button">En atelier</button>
+			<button class="chip-btn" data-f="generees" type="button">Villages générés</button>
+			<button class="chip-btn" data-f="main" type="button">Faites à la main</button>
+		</div>
+		<span class="count" id="mapCount"></span>
+	</div>
+	<div class="grid" id="mapGrid"></div>
 </section>
 
+<!-- Structures -->
+<section id="tab-structures" class="hidden">
+	<div class="lede">
+		<div>
+			<h2>Catalogue de structures</h2>
+			<p>Maisons, monuments et décor. Dans l'atelier des structures, chacune a sa parcelle : on la modifie sur place, puis « Enregistrer » à son pupitre. Une structure fournie modifiée remplace l'originale partout.</p>
+		</div>
+		<div class="bar" style="margin:0">
+			<button id="stImportBtn" type="button">Importer un fichier</button>
+			<button class="gold" id="stGo" type="button">Aller à l'atelier des structures</button>
+		</div>
+	</div>
+	<div class="toolbar">
+		<div class="search"><svg><use href="#i-search"/></svg><input id="stSearch" type="search" placeholder="Chercher une structure" aria-label="Chercher une structure"></div>
+		<div class="chips" id="stFilters">
+			<button class="chip-btn on" data-f="toutes" type="button">Toutes</button>
+			<button class="chip-btn" data-f="maisons" type="button">Maisons et salles</button>
+			<button class="chip-btn" data-f="place" type="button">Pour la place</button>
+			<button class="chip-btn" data-f="decor" type="button">Décor</button>
+			<button class="chip-btn" data-f="perso" type="button">Vos structures</button>
+		</div>
+		<span class="count" id="stCount"></span>
+	</div>
+	<div id="stShelves"></div>
+</section>
+
+<!-- Parties -->
+<section id="tab-parties" class="hidden">
+	<div class="lede">
+		<div>
+			<h2>Parties du serveur</h2>
+			<p>Chaque partie a son monde, sa carte, son Conteur et ses joueurs. La partie visée reçoit les scénarios choisis ici et les parties d'essai ; une carte s'envoie à n'importe laquelle, entre deux parties.</p>
+		</div>
+		<button class="gold" id="newGame" type="button">Créer une partie d'essai</button>
+	</div>
+	<div class="games" id="gameGrid"></div>
+</section>
+
+<!-- Rôles et scénarios -->
+<section id="tab-rs" class="hidden">
+	<div class="subtabs" role="tablist">
+		<button data-sub="roles" class="on" type="button">Rôles</button>
+		<button data-sub="scenarios" type="button">Scénarios</button>
+		<button data-sub="partage" type="button">Partage</button>
+	</div>
 <!-- Rôles -->
-<section id="tab-roles" class="hidden">
+<div id="sub-roles">
 	<div class="cols">
 		<div class="card">
 			<h2>Rôles créés</h2>
@@ -240,10 +484,10 @@
 			<div class="msg" id="roleMsg"></div>
 		</div>
 	</div>
-</section>
+</div>
 
 <!-- Scénarios -->
-<section id="tab-scenarios" class="hidden">
+<div id="sub-scenarios" class="hidden">
 	<div class="cols">
 		<div class="card">
 			<h2>Scénarios</h2>
@@ -333,6 +577,7 @@
 				<button class="danger" id="delSc">Supprimer</button>
 			</div>
 			<h3>Tester et jouer</h3>
+			<p class="aimed-note" id="scAim"></p>
 			<div class="bar" style="margin-top:0">
 				<label style="margin:0">Joueurs (5 à 16)</label><input id="tJoueurs" type="number" min="5" max="16" value="8" style="width:80px">
 				<button id="simulate">Simuler 200 parties</button>
@@ -348,126 +593,10 @@
 			<div class="msg" id="scMsg"></div>
 		</div>
 	</div>
-</section>
-
-<!-- Cartes -->
-<section id="tab-cartes" class="hidden">
-	<div class="cols wide">
-		<div class="card">
-			<h2>Bibliothèque de cartes</h2>
-			<div class="row">
-				<div><label>Envoyer à</label><select id="sendTo"></select></div>
-			</div>
-			<p class="hint">« Envoyer à la partie » remet le monde choisi à neuf, plat et vide, puis y pose la carte : il ne reste rien de l'ancienne, quelle que soit sa taille. Chaque monde de partie porte sa propre carte. Les joueurs présents attendent au hub pendant la pose (une barre la suit), puis un lien les y ramène.</p>
-			<p class="hint">« Ouvrir dans un atelier » pose la carte dans un monde à elle, pour la retoucher en jeu avec WorldEdit et ses outils de repères (trônes, maisons, centre, salle de convocation). Elle s'y enregistre toute seule dans la bibliothèque, avec des versions pour revenir en arrière ; l'atelier se gère depuis le jeu (Menu J › Mondes).</p>
-			<div class="list" id="mapList"></div>
-			<p class="hint" id="curMap"></p>
-			<h2 style="margin-top:16px" id="planTitle">Plan de la carte actuelle</h2>
-			<div class="tools" id="planTools">
-				<button data-tool="move" class="on">Déplacer</button>
-				<button data-tool="siege"><i class="dot seat"></i>+ Trône</button>
-				<button data-tool="maison"><i class="dot house"></i>+ Maison</button>
-				<button data-tool="centre"><i class="dot center"></i>Centre</button>
-				<button data-tool="salle"><i class="dot room"></i>Salle de convocation</button>
-				<button data-tool="gomme">Gomme</button>
-				<button id="zoomOut" title="Voir toute la carte">Zoom −</button>
-				<button id="zoomIn" title="Voir la place de plus près">Zoom +</button>
-			</div>
-			<p class="hint" id="planHelp"></p>
-			<svg class="plan" id="planView" viewBox="-100 -100 200 200" role="img" aria-label="Plan vu de dessus"></svg>
-			<div class="legend">
-				<span><i class="dot seat"></i>Trône</span>
-				<span><i class="dot house"></i>Maison</span>
-				<span><i class="dot center"></i>Centre de la place</span>
-				<span><i class="dot room"></i>Salle de convocation</span>
-				<span><i class="dot player"></i>Joueur connecté</span>
-				<span>Trait : le trône et la maison du même numéro vont ensemble</span>
-			</div>
-			<div class="sel" id="planSel"></div>
-			<div class="bar" id="planBar">
-				<button id="sortMarks">Renuméroter dans le sens des aiguilles d'une montre</button>
-				<button id="undoMark">Annuler la dernière modification des repères</button>
-			</div>
-			<div class="msg" id="planMsg"></div>
-			<div class="checks" id="planChecks"></div>
-			<p class="hint">Vu de dessus, le nord en haut. Le joueur du trône 1 dort dans la maison 1, celui du trône 2 dans la maison 2, et ainsi de suite : les numéros suivent l'ordre du cercle.</p>
-		</div>
-		<div class="card">
-			<h2>Enregistrer la carte actuelle</h2>
-			<div class="row">
-				<div><label>Nom</label><input id="mNom" maxlength="50" placeholder="Le Port aux Brumes"></div>
-				<div><label>Identifiant</label><input id="mId" maxlength="30" placeholder="port-aux-brumes"></div>
-			</div>
-			<div class="bar"><button class="main" id="saveMap">Enregistrer</button></div>
-			<h2 style="margin-top:20px">Générer un village</h2>
-			<div class="row">
-				<div><label>Trônes (5 à 20)</label><input id="gPlaces" type="number" min="5" max="20" value="16"></div>
-				<div><label>Taille</label><select id="gTaille"><option value="0">Petite</option><option value="1" selected>Normale</option><option value="2">Grande</option></select></div>
-				<div><label>Thème</label><select id="gTheme"></select></div>
-			</div>
-			<label class="check"><input type="checkbox" id="gMaisons" checked> Avec des maisons (la nuit, chacun chez soi)</label>
-			<div class="bar"><button id="genMap">Envoyer un village généré à la partie</button></div>
-			<h2 style="margin-top:20px">Importer une construction</h2>
-			<p class="hint">Une place faite ailleurs : schématique WorldEdit (<code>.schem</code>), Litematica (<code>.litematic</code>) ou structure Minecraft (<code>.nbt</code>), jusqu'à 320 × 128 × 320 blocs. Elle est posée au centre du monde choisi, remis à neuf ; posez ensuite les trônes et les maisons en mode construction, puis enregistrez-la ici.</p>
-			<input type="file" id="impSchem" accept=".schem,.schematic,.litematic,.nbt">
-			<div class="bar"><button id="importSchem">Envoyer la construction à la partie</button></div>
-			<h2 style="margin-top:20px">Construire à la main</h2>
-			<div class="bar" style="margin-top:0">
-				<button class="main" id="buildMode">Entrer en mode construction (pour moi, dans le jeu)</button>
-				<button id="blankMap">Nouvelle carte vide (monde neuf)</button>
-			</div>
-			<p class="hint">Le mode construction (dans le jeu : <code>/vc carte construction</code>) passe en créatif et donne sept outils : trône, maison, centre, salle de convocation et gomme pour les repères, sélection et structure pour bâtir (onglet Structures). Clic droit sur un bloc : poser le repère. Clic droit sur un repère déjà posé : le prendre, puis cliquer là où le reposer. Accroupi avec l'outil maison ou salle : bâtir la construction d'un coup (la gomme la retire avec son repère). Chaque repère porte une étiquette à son numéro, et un trait de lumière relie le trône et la maison qui vont ensemble quand on s'en approche. Tout ce que vous posez dans le jeu apparaît sur le plan, et inversement. Ensuite, enregistrez la carte ici.</p>
-			<p class="hint">« Nouvelle carte vide » remet le monde choisi à neuf et y déclare une carte sans repères, la place au centre du sol plat : il n'y a plus qu'à bâtir et à poser les repères.</p>
-			<h2 style="margin-top:20px">Autres actions</h2>
-			<div class="bar" style="margin-top:0">
-				<button id="hallMap">Rebâtir la salle d'attente</button>
-				<button class="danger" id="clearWorld">Vider le monde (jouer sans carte)</button>
-			</div>
-			<div class="msg" id="mapMsg"></div>
-		</div>
-	</div>
-</section>
-
-<!-- Structures -->
-<section id="tab-structures" class="hidden">
-	<div class="cols wide">
-		<div class="card">
-			<h2>Catalogue de structures</h2>
-			<p class="hint">Des maisons, des monuments et du décor à poser sur la carte, en mode construction. « Prendre en main » met la structure dans votre main, dans le jeu : un contour montre où elle ira, clic droit la pose, accroupi + clic droit la tourne, clic gauche la retourne.</p>
-			<div id="stList"></div>
-		</div>
-		<div class="card">
-			<h2>Dans le jeu</h2>
-			<p class="hint" id="stState"></p>
-			<div class="bar" style="margin-top:0">
-				<button id="stTurn">Tourner d'un quart de tour</button>
-				<button id="stFlip">Retourner</button>
-				<button class="main" id="stPlace">Poser à mes pieds</button>
-			</div>
-			<div class="bar">
-				<button id="edUndo">Annuler la dernière opération</button>
-				<button id="edRedo">Rétablir</button>
-			</div>
-			<h2 style="margin-top:20px">Enregistrer la sélection</h2>
-			<p class="hint">Dans un atelier du jeu, la baguette de construction (WorldEdit) pose les deux coins de la sélection (clic gauche, clic droit). Tenez-vous dans la sélection à l'endroit qui devra se trouver sur le bloc visé à la pose, puis enregistrez-la ici (ou <code>/vc structures depuis-selection &lt;id&gt; "&lt;nom&gt;"</code>).</p>
-			<div class="row">
-				<div><label>Nom</label><input id="stNom" maxlength="50" placeholder="La Tour du guet"></div>
-				<div><label>Identifiant</label><input id="stId" maxlength="30" placeholder="tour-du-guet"></div>
-				<div><label>Repère posé avec elle</label>
-					<select id="stMark"><option value="">Aucun</option><option value="maison">Maison (là où l'on dort)</option><option value="salle">Salle de convocation</option></select></div>
-			</div>
-			<div class="bar"><button class="main" id="stSave">Enregistrer la sélection dans le catalogue</button></div>
-			<h2 style="margin-top:20px">Importer une construction</h2>
-			<p class="hint">Un fichier <code>.schem</code>, <code>.litematic</code> ou <code>.nbt</code> (128 × 128 × 128 blocs au plus) rejoint le catalogue ; la carte n'est pas touchée.</p>
-			<input type="file" id="stFile" accept=".schem,.schematic,.litematic,.nbt">
-			<div class="bar"><button id="stImport">Ajouter au catalogue</button></div>
-			<div class="msg" id="stMsg"></div>
-		</div>
-	</div>
-</section>
+</div>
 
 <!-- Partage -->
-<section id="tab-partage" class="hidden">
+<div id="sub-partage" class="hidden">
 	<div class="cols">
 		<div class="card">
 			<h2>Exporter</h2>
@@ -483,7 +612,41 @@
 			<div class="msg" id="shareMsg"></div>
 		</div>
 	</div>
+</div>
 </section>
+</main>
+
+<!-- Fiche d'une carte ou d'une structure -->
+<dialog id="detail" aria-labelledby="detailTitle">
+	<div class="sheet-in">
+		<div class="sheet-head"><h2 id="detailTitle"></h2><button class="icon ghost" type="button" data-close aria-label="Fermer">×</button></div>
+		<div class="sheet-body" id="detailBody" tabindex="-1" autofocus></div>
+	</div>
+</dialog>
+
+<!-- Question, confirmation ou petit formulaire -->
+<dialog id="ask" class="small" aria-labelledby="askTitle">
+	<form method="dialog" class="sheet-in" id="askForm">
+		<div class="sheet-head"><h2 id="askTitle"></h2><button class="icon ghost" type="button" data-close aria-label="Fermer">×</button></div>
+		<div class="sheet-body" id="askBody"></div>
+		<div class="sheet-foot"><button type="button" data-close>Annuler</button><button class="main" id="askOk" type="submit">Valider</button></div>
+	</form>
+</dialog>
+
+<!-- Activité : qui est là, ce qui a changé -->
+<dialog id="activity" class="small" aria-labelledby="activityTitle">
+	<div class="sheet-in">
+		<div class="sheet-head"><h2 id="activityTitle">Dans l'Atelier</h2><button class="icon ghost" type="button" data-close aria-label="Fermer">×</button></div>
+		<div class="sheet-body" tabindex="-1" autofocus>
+			<div class="people" id="presence"></div>
+			<p class="hint">Chaque opérateur ouvre son propre lien avec <code>/vc atelier</code> : on prépare la soirée à plusieurs, en même temps. La page se met à jour toute seule, et un rôle ou un scénario ouvert par quelqu'un d'autre est signalé.</p>
+			<h3>Dernières modifications</h3>
+			<ul class="journal" id="journal"></ul>
+		</div>
+	</div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 "use strict";
@@ -525,6 +688,11 @@ function slug(s) {
 		.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
 }
 
+/** Pour chercher sans tenir compte des accents ni des majuscules. */
+function norm(s) {
+	return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 function evil(camp) { return camp === "SBIRE" || camp === "DEMON"; }
 
 function tokenHtml(icon, camp, big) {
@@ -535,6 +703,38 @@ function tokenHtml(icon, camp, big) {
 	img.alt = "";
 	t.appendChild(img);
 	return t;
+}
+
+/** Un élément, ses classes et son texte (ou ses enfants). */
+function el(tag, cls, content) {
+	const e = document.createElement(tag);
+	if (cls) e.className = cls;
+	if (content === undefined || content === null) return e;
+	if (Array.isArray(content)) e.append(...content.filter(x => x !== null && x !== undefined && x !== false));
+	else if (content instanceof Node) e.appendChild(content);
+	else e.textContent = content;
+	return e;
+}
+
+function tag(text, kind) {
+	return el("span", "tag" + (kind ? " " + kind : ""), text);
+}
+
+function button(label, fn, cls, title) {
+	const b = el("button", cls || "", label);
+	b.type = "button";
+	if (title) b.title = title;
+	b.onclick = fn;
+	return b;
+}
+
+/** « 1 291 » : les milliers séparés comme en français. */
+function num(n) {
+	return Number(n).toLocaleString("fr-FR");
+}
+
+function plural(n, one, many) {
+	return num(n) + " " + (n > 1 ? many : one);
 }
 
 /** Nombre entier d'un champ ; vide ou hors bornes, on le dit avant d'envoyer quoi que ce soit au serveur. */
@@ -552,45 +752,157 @@ async function fileB64(f) {
 	return btoa(bin);
 }
 
-/** Un chantier était en cours au dernier rafraîchissement : sa fin est annoncée, et la vue de dessus refaite. */
-let wasBusy = false;
-/** Une simulation a réussi pendant cette visite (étape « Tester » de l'accueil). */
-let simulated = false;
+// ---------------------------------------------------------------- Message en bas de l'écran
+let toastTimer = 0;
 
+/** Un message en bas de l'écran : vert quand ça a marché, rouge sinon, neutre pendant l'attente. */
+function toast(text, kind) {
+	const t = $("toast");
+	t.textContent = text;
+	t.className = "toast show" + (kind === false ? " err" : kind === "busy" ? " busy" : "");
+	clearTimeout(toastTimer);
+	if (kind !== "busy") toastTimer = setTimeout(() => t.classList.remove("show"), kind === false ? 11000 : 6500);
+}
+$("toast").onclick = () => $("toast").classList.remove("show");
+
+/** Une action du serveur : message d'attente, réponse en message, puis tout est relu. */
+async function act(path, body, busyText) {
+	toast(busyText || "Un instant…", "busy");
+	try {
+		const said = await api(path, body);
+		toast(said || "C'est fait.", true);
+		await load();
+		return true;
+	} catch (e) {
+		toast(e.message, false);
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------- Fenêtres
+for (const d of document.querySelectorAll("dialog")) {
+	d.addEventListener("click", e => {
+		if (e.target.closest("[data-close]")) { e.preventDefault(); d.close(); }
+		// Un clic sur le fond (hors de la fenêtre) la ferme aussi.
+		else if (e.target === d) d.close();
+	});
+}
+
+/**
+ * Une question dans une fenêtre de la page : un texte, des champs (texte, nombre, liste, case, fichier), un bouton.
+ * Renvoie les valeurs des champs (par identifiant), ou null si on a annulé.
+ */
+function ask({ title, text, fields = [], ok = "Valider", danger = false }) {
+	return new Promise(resolve => {
+		const dlg = $("ask");
+		$("askTitle").textContent = title;
+		const body = $("askBody");
+		body.innerHTML = "";
+		if (text) body.appendChild(el("p", "", text)).style.margin = "0 0 6px";
+		const inputs = {};
+		const grid = el("div", "row");
+		for (const f of fields) {
+			let input;
+			if (f.type === "select") {
+				input = el("select");
+				for (const [v, label] of f.options) input.add(new Option(label, v));
+				if (f.value !== undefined) input.value = f.value;
+			} else if (f.type === "checkbox") {
+				input = el("input");
+				input.type = "checkbox";
+				input.checked = !!f.value;
+				const l = el("label", "check", [input, document.createTextNode(" " + f.label)]);
+				l.style.gridColumn = "1 / -1";
+				grid.appendChild(l);
+				inputs[f.id] = input;
+				continue;
+			} else {
+				input = el("input");
+				input.type = f.type || "text";
+				if (f.value !== undefined) input.value = f.value;
+				for (const k of ["min", "max", "maxLength", "placeholder", "accept"]) if (f[k] !== undefined) input[k] = f[k];
+				if (f.required) input.required = true;
+			}
+			input.id = "ask-" + f.id;
+			const wrap = el("div", "", [el("label", "", f.label)]);
+			wrap.firstChild.htmlFor = input.id;
+			wrap.appendChild(input);
+			if (f.wide) wrap.style.gridColumn = "1 / -1";
+			grid.appendChild(wrap);
+			inputs[f.id] = input;
+		}
+		if (fields.length) body.appendChild(grid);
+		const okBtn = $("askOk");
+		okBtn.textContent = ok;
+		okBtn.className = danger ? "danger" : "main";
+		let done = false;
+		const finish = v => { if (!done) { done = true; resolve(v); } };
+		$("askForm").onsubmit = e => {
+			e.preventDefault();
+			const out = {};
+			for (const [k, i] of Object.entries(inputs)) out[k] = i.type === "checkbox" ? i.checked : i.type === "file" ? i.files[0] : i.value;
+			finish(out);
+			dlg.close();
+		};
+		dlg.onclose = () => finish(null);
+		dlg.showModal();
+		const first = body.querySelector("input:not([type=checkbox]), select");
+		if (first) setTimeout(() => first.focus(), 30);
+		else okBtn.focus();
+	});
+}
+
+// ---------------------------------------------------------------- Données
 function received(text) {
 	data = JSON.parse(text);
-	$("state").textContent = (data.partieEnCours ? "Partie en cours" : "Salon")
-		+ (data.scenarioActuel ? " · scénario : « " + (data.scenarioActuelNom || data.scenarioActuel) + " »" : "");
-	for (const [id, lo, hi] of [["tJoueurs", data.joueursMin, data.joueursMax], ["gPlaces", data.tronesMin, data.tronesMax]]) {
-		$(id).min = lo;
-		$(id).max = hi;
-	}
-	if (wasBusy && !data.chantier) {
-		planView.at = 0;
-		fetchPlanView(true);
-		msg("mapMsg", "Chantier terminé : la carte est à jour.", true);
-	}
-	wasBusy = !!data.chantier;
+	const aim = data.partie;
+	const g = aim && (data.parties || []).find(p => p.id === aim.id);
+	$("state").textContent = !aim ? "Aucune partie sur ce serveur"
+		: aim.nom + " · " + (g ? g.statutNom.toLowerCase() + (g.scenario ? " · scénario « " + g.scenario + " »" : "") : "");
+	$("tJoueurs").min = data.joueursMin;
+	$("tJoueurs").max = data.joueursMax;
 }
 
 async function load() {
 	try {
 		received(await api("donnees"));
-		renderRoles();
-		// Les rôles cochés dans le scénario ouvert sont gardés, même pas encore enregistrés : seule la liste est refaite.
-		renderScenarios(false);
-		renderGroupSelect();
-		renderRolePicker(currentPicked());
-		renderMaps();
-		renderStructures();
-		renderShare();
-		renderHome();
+		renderAll(false);
 	} catch (e) {
 		$("state").textContent = e.message;
 	}
 }
 
-// ---------------------------------------------------------------- Accueil
+/** Actualisation régulière : listes, présence, journal ; les formulaires en cours ne sont pas touchés. */
+async function refresh() {
+	if (document.hidden) return;
+	try {
+		received(await api("donnees"));
+		renderAll(true);
+	} catch (e) {
+		$("state").textContent = e.message;
+	}
+}
+
+function renderAll(periodic) {
+	renderAim();
+	renderActivity();
+	renderMaps();
+	renderStructures();
+	renderGames();
+	renderDetail();
+	renderRoles();
+	// Les rôles cochés dans le scénario ouvert sont gardés, même pas encore enregistrés : seule la liste est refaite.
+	renderScenarios(false);
+	if (!periodic) {
+		renderGroupSelect();
+		renderRolePicker(currentPicked());
+		renderShare();
+	}
+	renderLocks();
+	renderAimNote();
+}
+
+// ---------------------------------------------------------------- Rôles et scénarios
 const EXEMPLES = {
 	guetteur: { nom: "Le Guetteur", camp: "CITADIN", embleme: "e_oeil", premiereNuit: "jamais", autresNuits: "apres:veilleuse",
 		texte: "Chaque nuit sauf la première, désigne deux joueurs : tu apprends combien d'entre eux sont mauvais.",
@@ -622,83 +934,6 @@ const EXEMPLES = {
 		pouvoir: { type: "compte", nombre: 2, aussi: [{ type: "protection" }] }, rappels: ["protégé"] },
 };
 
-function go(tab) {
-	document.querySelector('nav button[data-tab="' + tab + '"]').click();
-}
-
-function renderHome() {
-	const steps = $("steps");
-	steps.innerHTML = "";
-	const cur = data.carteActuelle;
-	const items = [
-		{ done: data.roles.length > 0, title: "1. Inventer des rôles (facultatif)",
-			text: data.roles.length ? data.roles.length + " rôle(s) créé(s). Les 25 rôles intégrés restent disponibles."
-				: "Les 25 rôles intégrés suffisent pour jouer. Pour inventer les vôtres, partez d'un exemple.",
-			buttons: [["Créer un rôle", () => { go("roles"); editRole(null); }], ["Partir d'un exemple", () => { go("roles"); editRole(null); $("rExemple").focus(); }]] },
-		{ done: data.scenarios.length > 0, title: "2. Composer un scénario",
-			text: data.scenarios.length ? data.scenarios.length + " scénario(s). Un scénario regroupe les rôles, la carte, les réglages et les règles."
-				: "Choisissez les rôles de la soirée (partez des Cendres ou des Brumes), puis les réglages et un texte d'ouverture.",
-			buttons: [["Composer un scénario", () => { go("scenarios"); editSc(null); }]] },
-		{ done: !!cur && cur.sieges >= 5, title: "3. Choisir la carte",
-			text: cur ? data.carteResume + " " + data.cartes.length + " carte(s) dans la bibliothèque."
-				: "Aucune carte sur le serveur : générez un village, importez une construction ou partez d'une carte vide.",
-			buttons: [["Gérer les cartes", () => go("cartes")]] },
-		{ done: simulated, title: "4. Tester",
-			text: "Simulez 200 parties pour vérifier l'équilibre, ou lancez une partie d'essai avec des joueurs fictifs.",
-			buttons: [["Tester un scénario", () => go("scenarios")]] },
-		{ done: !!data.scenarioActuel, title: "5. Jouer",
-			text: data.scenarioActuel ? "Prochaine partie : « " + (data.scenarioActuelNom || data.scenarioActuel) + " ». Lancez-la depuis le jeu."
-				: "Choisissez le scénario de la prochaine partie (onglet Scénarios), puis lancez la partie dans le jeu.",
-			buttons: [] },
-	];
-	for (const it of items) {
-		const li = document.createElement("li");
-		li.className = "step" + (it.done ? " done" : "");
-		const num = document.createElement("div");
-		num.className = "num";
-		num.textContent = it.done ? "✓" : it.title[0];
-		const body = document.createElement("div");
-		const t = document.createElement("div");
-		t.className = "title";
-		t.textContent = it.title;
-		const p = document.createElement("div");
-		p.className = "hint";
-		p.textContent = it.text;
-		body.append(t, p);
-		if (it.buttons.length) {
-			const bar = document.createElement("div");
-			bar.className = "bar";
-			for (const [label, fn] of it.buttons) {
-				const b = document.createElement("button");
-				b.textContent = label;
-				b.onclick = fn;
-				bar.appendChild(b);
-			}
-			body.appendChild(bar);
-		}
-		li.append(num, body);
-		steps.appendChild(li);
-	}
-	const pres = $("presence");
-	pres.innerHTML = "";
-	for (const n of data.presents || []) {
-		const b = document.createElement("span");
-		b.className = "badge";
-		b.textContent = n + (n === data.moi ? " (vous)" : "");
-		pres.appendChild(b);
-	}
-	const j = $("journal");
-	j.innerHTML = "";
-	for (const line of data.journal || []) {
-		const li = document.createElement("li");
-		li.textContent = line;
-		j.appendChild(li);
-	}
-	if (!(data.journal || []).length) {
-		j.innerHTML = "<li>Rien pour l'instant.</li>";
-	}
-}
-
 /** Signale qu'une autre personne a ouvert la même création. */
 function renderLocks() {
 	const others = key => (data.editions[key] || "").split(", ").filter(n => n && n !== data.moi);
@@ -708,26 +943,6 @@ function renderLocks() {
 	const sc = editingSc ? others("scenario:" + editingSc) : [];
 	$("scLock").classList.toggle("hidden", sc.length === 0);
 	$("scLock").textContent = "✎ " + sc.join(", ") + " modifie aussi ce scénario : le dernier enregistrement l'emporte.";
-}
-
-function announceEditing() {
-	api("edition", editingRole && !$("tab-roles").classList.contains("hidden") ? "role:" + editingRole
-		: editingSc && !$("tab-scenarios").classList.contains("hidden") ? "scenario:" + editingSc : "").catch(() => {});
-}
-
-/** Actualisation régulière : listes, présence, journal ; les formulaires en cours ne sont pas touchés. */
-async function refresh() {
-	try {
-		received(await api("donnees"));
-		renderHome();
-		renderRoles();
-		renderScenarios(false);
-		renderMaps();
-		renderStructures();
-		renderLocks();
-	} catch (e) {
-		$("state").textContent = e.message;
-	}
 }
 
 /** Remplit le formulaire avec une fiche modèle (exemple ou rôle intégré), comme un nouveau rôle. */
@@ -1400,7 +1615,6 @@ $("simulate").onclick = async () => {
 		const r = JSON.parse(await api("simuler", { roles: currentPicked(),
 			joueurs: intField("tJoueurs", "Joueurs", data.joueursMin, data.joueursMax), parties: 200, scenario: scForm() }));
 		$("simOut").classList.remove("hidden");
-		if (!r.probleme) { simulated = true; renderHome(); }
 		$("simRoles").innerHTML = "";
 		if (r.probleme) {
 			$("simG").style.width = "0"; $("simE").style.width = "0";
@@ -1446,545 +1660,14 @@ async function play(trial) {
 $("useSc").onclick = () => play(false);
 $("trial").onclick = () => play(true);
 
-// ---------------------------------------------------------------- Cartes
-function renderMaps() {
-	const list = $("mapList");
-	list.innerHTML = "";
-	if (!data.cartes.length) list.innerHTML = '<p class="hint">Aucune carte enregistrée.</p>';
-	for (const m of data.cartes) {
-		const c = document.createElement("div");
-		c.className = "card";
-		c.style.padding = "10px";
-		const t = document.createElement("div");
-		t.textContent = m.nom;
-		const s = document.createElement("div");
-		s.className = "sub hint";
-		s.textContent = m.sieges + " trônes · " + m.maisons + " maisons · " + (m.genere ? "village généré (" + m.theme + ")" : "faite à la main")
-			+ (data.carteActuelle && data.carteActuelle.id === m.id ? " · en place" + (data.carteActuelle.modifiee ? ", retouchée depuis" : "") : "")
-			+ " · " + Math.max(1, Math.round(m.octets / 1024)) + " Ko";
-		const bar = document.createElement("div");
-		bar.className = "bar";
-		const load_ = document.createElement("button");
-		load_.className = "main";
-		load_.textContent = "Envoyer à la partie";
-		load_.onclick = () => mapAction("carte/envoyer", Object.assign({ id: m.id }, target()),
-			"Envoyer « " + m.nom + " » à « " + targetName() + " » ?" + replaceNote());
-		const del = document.createElement("button");
-		del.className = "danger";
-		del.textContent = "Supprimer";
-		del.onclick = () => mapAction("carte/supprimer", m.id, "Supprimer « " + m.nom + " » de la bibliothèque ?");
-		const see = document.createElement("button");
-		see.textContent = "Voir le plan";
-		see.onclick = () => { shownMap = m.id; planSel = null; renderPlan(); };
-		const ren = document.createElement("button");
-		ren.textContent = "Renommer";
-		ren.onclick = () => {
-			const nom = prompt("Nouveau nom de la carte :", m.nom);
-			if (nom && nom.trim()) mapAction("carte/renommer", { id: m.id, nom: nom.trim() });
-		};
-		const dup = document.createElement("button");
-		dup.textContent = "Dupliquer";
-		dup.onclick = () => {
-			// Le serveur trouve un identifiant libre (« port-copie », « port-copie-2 »…), comme /vc carte copier.
-			const nom = prompt("Nom de la copie :", m.nom + " (copie)");
-			if (nom && nom.trim()) mapAction("carte/dupliquer", { id: m.id, nom: nom.trim() });
-		};
-		load_.disabled = data.partieEnCours || data.chantier;
-		// L'atelier carte : un monde à elle, où l'on bâtit (WorldEdit) et pose ses repères ; un seul atelier par carte.
-		const shop = document.createElement("button");
-		shop.textContent = m.atelier ? "Rouvrir son atelier" : "Ouvrir dans un atelier";
-		shop.title = m.atelier
-			? "Cette carte est déjà dans son atelier : on y retrouve le travail en cours (Menu J › Mondes, ou /vc atelier carte aller " + m.id + ")."
-			: "Pose la carte dans un monde à elle, pour la retoucher avec WorldEdit et ses outils de repères ; elle s'y enregistre toute seule.";
-		shop.onclick = () => mapAction("carte/atelier", { id: m.id });
-		bar.append(see, load_, shop, ren, dup, del);
-		c.append(t, s, bar);
-		list.appendChild(c);
-	}
-	renderPlan();
-	const cur = data.carteActuelle;
-	$("curMap").textContent = data.carteResume
-		+ (data.chantier ? " Un chantier est en cours : la carte change dès qu'il est fini." : "");
-	// Pendant un chantier ou une partie, rien de ce qui change la carte n'est proposé.
-	const locked = !!data.chantier || !!data.partieEnCours;
-	for (const id of ["genMap", "importSchem", "saveMap", "blankMap", "hallMap", "clearWorld"]) $(id).disabled = locked;
-	$("saveMap").disabled = locked || !cur;
-	$("hallMap").disabled = locked || !cur;
-	// Les mondes de partie où envoyer une carte : celui de la partie du serveur d'abord, le choix fait est gardé.
-	const to = $("sendTo");
-	const keep = to.value;
-	to.innerHTML = "";
-	for (const w of data.mondesPartie || []) {
-		to.add(new Option(w.nom + (w.partie ? " (la partie du serveur)" : " (" + w.sorte + ")"), w.id));
-	}
-	if (keep && [...to.options].some(o => o.value === keep)) to.value = keep;
-	to.disabled = !to.options.length;
-	$("buildMode").textContent = data.constructeur ? "Quitter le mode construction" : "Entrer en mode construction (pour moi, dans le jeu)";
-	$("buildMode").disabled = !data.enJeu || (!!data.partieEnCours && !data.constructeur);
-	$("buildMode").title = data.enJeu ? "" : "Connectez-vous au jeu : le mode construction se passe là-bas.";
-	// La carte actuelle vient de la bibliothèque : son nom et son identifiant sont proposés pour l'enregistrer de nouveau.
-	if (cur && cur.id && !$("mNom").value && !$("mId").value) {
-		$("mNom").value = cur.nom;
-		$("mId").value = cur.id;
-	}
-	const th = $("gTheme");
-	if (!th.options.length) for (const t of data.themes) th.add(new Option(t, t));
-}
-
-let shownMap = "";
-/** Outil du plan (move, siege, maison, centre, salle, gomme), repère choisi, repère qu'on fait glisser. */
-let planTool = "move";
-let planSel = null;
-let planDrag = null;
-/** Grossissement du plan autour du centre de la place (1 : toute la carte). */
-let planZoom = 1;
-/** Vue de dessus déjà reçue : pour quelle carte, son adresse, et quand. */
-let planView = { key: null, url: null, at: 0 };
-
-const PLAN_HELP = {
-	move: "Cliquez sur un repère pour le choisir ; faites-le glisser pour le déplacer.",
-	siege: "Cliquez sur le plan pour y poser un trône.",
-	maison: "Cliquez sur le plan pour y poser une maison (là où un joueur dort la nuit).",
-	centre: "Cliquez sur le plan : le centre de la place sera là.",
-	salle: "Cliquez sur le plan : la salle de convocation sera là (le Conteur y reçoit un joueur à l'écart).",
-	gomme: "Cliquez sur un repère pour le retirer.",
-};
-const KIND = { siege: "Trône", maison: "Maison", centre: "Centre de la place", salle: "Salle de convocation" };
-
-/** La carte que montre le plan, et si on peut la modifier (seulement la carte actuelle, hors partie et hors chantier). */
-function planMap() {
-	const lib = data.cartes.find(x => x.id === shownMap);
-	return { lib, m: lib || data.carteActuelle, editable: !lib && !!data.carteActuelle && !data.partieEnCours && !data.chantier };
-}
-
-/** Va chercher la vue de dessus (au plus toutes les 20 secondes pour la carte actuelle, qui change quand on bâtit). */
-async function fetchPlanView(force) {
-	const key = shownMap;
-	const fresh = planView.key === key && (key !== "" || Date.now() - planView.at < 20000);
-	if (fresh && !force) return;
-	planView.key = key;
-	planView.at = Date.now();
-	try {
-		const r = await api("carte/vue", key, true);
-		const url = URL.createObjectURL(await r.blob());
-		if (planView.key !== key) { URL.revokeObjectURL(url); return; }
-		if (planView.url) URL.revokeObjectURL(planView.url);
-		planView.url = url;
-	} catch (e) {
-		if (planView.key === key && !fresh) {
-			if (planView.url) URL.revokeObjectURL(planView.url);
-			planView.url = null;
-		}
-	}
-	if (!planDrag) renderPlan(true);
-}
-
-/** Plan vu de dessus de la carte actuelle ou d'une carte de la bibliothèque, avec sa liste de contrôle. */
-function renderPlan(noFetch) {
-	if (planDrag) return; // on ne redessine pas sous la souris pendant un déplacement
-	const { lib, m, editable } = planMap();
-	const svg = $("planView");
-	svg.innerHTML = "";
-	$("planChecks").innerHTML = "";
-	$("planTitle").textContent = lib ? "Plan de « " + lib.nom + " »" : "Plan de la carte actuelle";
-	$("planTools").classList.toggle("hidden", !editable);
-	$("planBar").classList.toggle("hidden", !editable);
-	$("planHelp").textContent = editable ? PLAN_HELP[planTool]
-		: lib ? "Carte de la bibliothèque : chargez-la pour la modifier."
-		: data.partieEnCours ? "Une partie est en cours : la carte ne se modifie pas."
-		: data.chantier ? "Un chantier est en cours dans le jeu." : "";
-	svg.classList.toggle("adding", editable && planTool !== "move" && planTool !== "gomme");
-	if (!m || !m.plan) {
-		$("planSel").classList.add("hidden");
-		$("planChecks").textContent = "Aucune carte à montrer : générez un village ou importez une construction.";
-		return;
-	}
-	if (!noFetch) fetchPlanView(false);
-	const NS = "http://www.w3.org/2000/svg";
-	const add = (tag, attrs, text, parent) => {
-		const e = document.createElementNS(NS, tag);
-		for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-		if (text !== undefined) e.textContent = text;
-		(parent || svg).appendChild(e);
-		return e;
-	};
-	const r = Math.max(12, m.rayon || 12);
-	const k = 184 / (2 * r + 1); // un bloc sur le plan
-	svg.dataset.k = k;
-	if (planView.url && planView.key === shownMap) {
-		add("image", { href: planView.url, x: -92, y: -92, width: 184, height: 184, preserveAspectRatio: "none", opacity: 0.8 });
-	}
-	add("rect", { x: -92, y: -92, width: 184, height: 184, fill: "none", stroke: "#4a3238", "stroke-dasharray": "3 3" });
-	const seats = m.plan.sieges;
-	const houses = m.plan.maisons;
-	const size = Math.max(3.2, Math.min(5.5, 1.6 * k)) / Math.pow(planZoom, 0.75);
-	const span = 200 / planZoom;
-	svg.setAttribute("viewBox", (-span / 2) + " " + (-span / 2) + " " + span + " " + span);
-	const on = (type, i) => planSel && planSel.type === type && planSel.index === i;
-	// Le trône et la maison du même numéro vont ensemble : un trait les relie.
-	for (let i = 0; i < Math.min(seats.length, houses.length); i++) {
-		const strong = on("siege", i) || on("maison", i);
-		add("line", { x1: seats[i][0] * k, y1: seats[i][2] * k, x2: houses[i][0] * k, y2: houses[i][2] * k,
-			stroke: strong ? "#ffe9a8" : "#d9b45a", "stroke-width": strong ? 1.3 : 0.5, "stroke-opacity": strong ? 1 : 0.55 });
-	}
-	const mark = (type, i, x, z, shape) => {
-		const g = add("g", { "data-m": type + ":" + i, transform: "translate(" + x * k + " " + z * k + ")" });
-		const stroke = on(type, i) ? "#ffffff" : "#140d10";
-		const sw = on(type, i) ? 1.2 : 0.6;
-		if (shape === "circle") add("circle", { r: size, fill: type === "siege" ? "#d9b45a" : "#5cc8e0", stroke, "stroke-width": sw }, undefined, g);
-		else if (shape === "square") add("rect", { x: -size, y: -size, width: 2 * size, height: 2 * size, fill: "#6fb37a", stroke, "stroke-width": sw }, undefined, g);
-		else add("rect", { x: -size, y: -size, width: 2 * size, height: 2 * size, fill: "#c58be6", stroke, "stroke-width": sw, transform: "rotate(45)" }, undefined, g);
-		const label = type === "siege" || type === "maison" ? String(i + 1) : type === "centre" ? "✚" : "✉";
-		add("text", { y: size * 0.4, "text-anchor": "middle", "font-size": size * 1.15, fill: "#140d10" }, label, g);
-		add("title", {}, (KIND[type] + (type === "siege" || type === "maison" ? " " + (i + 1) : "")), g);
-		return g;
-	};
-	houses.forEach((h, i) => mark("maison", i, h[0], h[2], "square"));
-	mark("centre", 0, 0, 0, "circle");
-	if (m.plan.salle) mark("salle", 0, m.plan.salle[0], m.plan.salle[2], "diamond");
-	seats.forEach((s, i) => mark("siege", i, s[0], s[2], "circle"));
-	for (const p of m.plan.joueurs || []) {
-		if (Math.abs(p[1]) > r || Math.abs(p[2]) > r) continue;
-		const c = add("circle", { cx: p[1] * k, cy: p[2] * k, r: 1.6, fill: "#ffffff", stroke: "#140d10", "stroke-width": 0.5, "pointer-events": "none" });
-		add("text", { x: p[1] * k, y: p[2] * k - 2.6, "text-anchor": "middle", "font-size": 3.6 / Math.pow(planZoom, 0.75), fill: "#ffffff", stroke: "#140d10", "stroke-width": 0.25 }, p[0]);
-	}
-	add("text", { x: 0, y: -span / 2 + 6 / planZoom, "text-anchor": "middle", "font-size": 6 / planZoom, fill: "#b8a68a" }, "N");
-	renderPlanSel(m, editable);
-	// Liste de contrôle : ce qu'il faut pour jouer sur cette carte.
-	// La liste est faite par le serveur : la même que dans l'écran de l'Atelier en jeu.
-	for (const c of m.controle || []) {
-		const d = document.createElement("div");
-		d.className = c.ok ? "ok" : "no";
-		d.textContent = (c.ok ? "✔ " : "⚠ ") + c.texte;
-		$("planChecks").appendChild(d);
-	}
-	if (lib) {
-		const back = document.createElement("button");
-		back.textContent = "Revenir à la carte actuelle";
-		back.onclick = () => { shownMap = ""; planSel = null; renderPlan(); };
-		$("planChecks").appendChild(back);
-	}
-}
-
-/** Sous le plan : ce qu'est le repère choisi, avec quoi il va, et ce qu'on peut en faire. */
-function renderPlanSel(m, editable) {
-	const box = $("planSel");
-	box.innerHTML = "";
-	const s = planSel;
-	const count = s && (s.type === "siege" ? m.plan.sieges.length : s.type === "maison" ? m.plan.maisons.length : s.type === "salle" ? (m.plan.salle ? 1 : 0) : 1);
-	if (!s || s.index >= count) {
-		planSel = null;
-		box.classList.add("hidden");
-		return;
-	}
-	box.classList.remove("hidden");
-	const n = s.index + 1;
-	const t = document.createElement("div");
-	t.textContent = s.type === "siege" ? "Trône " + n + (n <= m.plan.maisons.length ? " : son joueur dort dans la maison " + n + "." : " : pas de maison n° " + n + " : son joueur partagera une maison ou restera sur son trône.")
-		: s.type === "maison" ? "Maison " + n + (n <= m.plan.sieges.length ? " : c'est celle du joueur du trône " + n + "." : " : pas de trône n° " + n + " : elle ne sert à personne.")
-		: s.type === "centre" ? "Centre de la place : les joueurs regardent vers lui, et le plan est mesuré depuis ce point."
-		: "Salle de convocation : le Conteur y reçoit un joueur à l'écart, pour lui remettre et lui expliquer son rôle.";
-	const bar = document.createElement("div");
-	bar.className = "bar";
-	if (!shownMap && !data.partieEnCours && data.enJeu) {
-		const go = document.createElement("button");
-		go.textContent = "Aller le voir dans le jeu";
-		go.onclick = () => planAction("carte/aller", { type: s.type, index: s.index });
-		bar.appendChild(go);
-	}
-	if (editable && (s.type === "maison" || s.type === "salle")) {
-		// Comme l'outil tenu accroupi dans le jeu : la maison ou la salle est bâtie d'un coup sur son repère.
-		const build = document.createElement("button");
-		build.textContent = s.type === "maison" ? "Bâtir une maison ici" : "Bâtir la salle ici";
-		build.onclick = () => planAction("carte/batir", { type: s.type, index: s.index });
-		bar.appendChild(build);
-	}
-	if (editable && s.type !== "centre") {
-		const del = document.createElement("button");
-		del.className = "danger";
-		del.textContent = "Retirer";
-		del.onclick = () => { planSel = null; planAction("carte/repere", { action: "retirer", type: s.type, index: s.index }); };
-		bar.appendChild(del);
-	}
-	box.append(t, bar);
-}
-
-async function planAction(path, body) {
-	try {
-		msg("planMsg", await api(path, body), true);
-		planView.at = 0;
-		await load();
-	} catch (e) {
-		msg("planMsg", e.message);
-		renderPlan(true);
-	}
-}
-
-/** Le bloc sous la souris : [est, sud] comptés depuis le centre de la place. */
-function planPoint(e) {
-	const svg = $("planView");
-	const pt = svg.createSVGPoint();
-	pt.x = e.clientX;
-	pt.y = e.clientY;
-	const p = pt.matrixTransform(svg.getScreenCTM().inverse());
-	const k = parseFloat(svg.dataset.k) || 1;
-	return [Math.round(p.x / k), Math.round(p.y / k)];
-}
-
-for (const b of document.querySelectorAll("#planTools button[data-tool]")) {
-	b.onclick = () => {
-		planTool = b.dataset.tool;
-		for (const x of document.querySelectorAll("#planTools button[data-tool]")) x.classList.toggle("on", x === b);
-		renderPlan(true);
-	};
-}
-$("zoomIn").onclick = () => { planZoom = Math.min(6, planZoom * 1.5); renderPlan(true); };
-$("zoomOut").onclick = () => { planZoom = Math.max(1, planZoom / 1.5); renderPlan(true); };
-
-$("planView").addEventListener("pointerdown", e => {
-	const { m, editable } = planMap();
-	if (!m || !m.plan) return;
-	const hit = e.target.closest ? e.target.closest("[data-m]") : null;
-	const [x, z] = planPoint(e);
-	if (hit) {
-		const [type, index] = hit.dataset.m.split(":");
-		const picked = { type, index: parseInt(index, 10) };
-		if (editable && planTool === "gomme") {
-			if (type === "centre") { msg("planMsg", "Le centre de la place ne se retire pas : déplacez-le."); return; }
-			planSel = null;
-			planAction("carte/repere", { action: "retirer", type, index: picked.index });
-			return;
-		}
-		planSel = picked;
-		renderPlan(true);
-		if (editable && planTool === "move") {
-			const el = $("planView").querySelector('[data-m="' + type + ":" + index + '"]');
-			planDrag = { ...picked, el, x0: x, z0: z, x, z, ox: 0, oz: 0 };
-			const pos = type === "siege" ? m.plan.sieges[picked.index] : type === "maison" ? m.plan.maisons[picked.index] : type === "salle" ? m.plan.salle : [0, 0, 0];
-			planDrag.ox = pos[0];
-			planDrag.oz = pos[2];
-			$("planView").setPointerCapture(e.pointerId);
-		}
-		return;
-	}
-	if (!editable || planTool === "move" || planTool === "gomme") {
-		if (planSel) { planSel = null; renderPlan(true); }
-		return;
-	}
-	planSel = null;
-	planAction("carte/repere", { action: "ajouter", type: planTool, x, z });
-});
-
-$("planView").addEventListener("pointermove", e => {
-	if (!planDrag) return;
-	const [x, z] = planPoint(e);
-	planDrag.x = x;
-	planDrag.z = z;
-	const k = parseFloat($("planView").dataset.k) || 1;
-	const nx = planDrag.ox + x - planDrag.x0;
-	const nz = planDrag.oz + z - planDrag.z0;
-	planDrag.el.setAttribute("transform", "translate(" + nx * k + " " + nz * k + ")");
-});
-
-function planDrop() {
-	const d = planDrag;
-	if (!d) return;
-	planDrag = null;
-	const dx = d.x - d.x0;
-	const dz = d.z - d.z0;
-	if (dx === 0 && dz === 0) return;
-	planAction("carte/repere", { action: "deplacer", type: d.type, index: d.index, x: d.ox + dx, z: d.oz + dz });
-}
-$("planView").addEventListener("pointerup", planDrop);
-$("planView").addEventListener("pointercancel", () => { planDrag = null; renderPlan(true); });
-$("sortMarks").onclick = () => planAction("carte/ordonner", "");
-
-async function mapAction(path, body, question) {
-	if (question && !confirm(question)) return;
-	msg("mapMsg", "En cours…", true);
-	try {
-		msg("mapMsg", await api(path, body), true);
-		load();
-	} catch (e) { msg("mapMsg", e.message); }
-}
-
-$("mNom").oninput = () => { $("mId").value = slug($("mNom").value); };
-/** Le monde de partie choisi dans « Envoyer à » (rien : celui de la partie du serveur). */
-function target() {
-	const v = $("sendTo").value;
-	return v ? { monde: v } : {};
-}
-function targetName() {
-	const w = (data.mondesPartie || []).find(x => x.id === $("sendTo").value);
-	return w ? w.nom : "la partie";
-}
-/** Ce qu'il advient du monde choisi, et de sa carte, quand on lui en envoie une autre. */
-function replaceNote() {
-	const w = (data.mondesPartie || []).find(x => x.id === $("sendTo").value);
-	const cur = data.carteActuelle;
-	return " Le monde est remis à neuf, plat et vide : il ne restera rien de sa carte actuelle."
-		+ ((!w || w.partie) && cur && cur.modifiee ? " Retouchée à la main, elle sera d'abord sauvegardée dans la bibliothèque." : "")
-		+ " Les joueurs présents attendent au hub pendant la pose.";
-}
-$("importSchem").onclick = async () => {
-	const f = $("impSchem").files[0];
-	if (!f) { msg("mapMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
-	if (!confirm("Envoyer la construction « " + f.name + " » à « " + targetName() + " » ?" + replaceNote())) return;
-	await mapAction("carte/importer", Object.assign({ fichier: f.name, donnees: await fileB64(f) }, target()));
-};
-$("buildMode").onclick = () => mapAction("construction", "");
-$("undoMark").onclick = () => planAction("carte/annuler", "");
-$("saveMap").onclick = () => {
-	const id = $("mId").value.trim();
-	const known = data.cartes.find(x => x.id === id);
-	mapAction("carte/enregistrer", { id, nom: $("mNom").value.trim() },
-		known ? "Une carte est déjà rangée sous l'identifiant « " + id + " » (« " + known.nom + " ») : la remplacer ?" : undefined);
-};
-$("genMap").onclick = () => {
-	try {
-		mapAction("carte/generer", Object.assign({
-			places: intField("gPlaces", "Trônes", data.tronesMin, data.tronesMax), taille: parseInt($("gTaille").value, 10),
-			theme: $("gTheme").value, maisons: $("gMaisons").checked,
-		}, target()), "Envoyer un village généré à « " + targetName() + " » ?" + replaceNote());
-	} catch (e) { msg("mapMsg", e.message); }
-};
-$("blankMap").onclick = () => mapAction("carte/nouvelle", target(), "Envoyer une carte vide à « " + targetName()
-	+ " » ? La place sera au centre du sol plat, sans repères." + replaceNote());
-$("hallMap").onclick = () => mapAction("carte/salle", "");
-$("clearWorld").onclick = () => mapAction("carte/vider", target(), "Vider « " + targetName() + " » ? On y jouera sans carte, "
-	+ "autour du Conteur." + replaceNote());
-
-// ---------------------------------------------------------------- Structures
-const SHELVES = [["maisons", "Maisons et salles"], ["place", "Pour la place"], ["decor", "Décor"], ["perso", "Vos structures"]];
-let structuresShown = "";
-
-function renderStructures() {
-	const ed = data.editeur || {};
-	// La sélection est celle de WorldEdit : largeur, hauteur, longueur, montrée en L × l × h.
-	const sel = ed.selection ? "sélection WorldEdit de L " + ed.selection[0] + " × l " + ed.selection[2] + " × h " + ed.selection[1]
-		: ed.worldedit ? "aucune sélection WorldEdit" : "WorldEdit sert dans les ateliers";
-	const held = ed.structure ? (data.structures.find(x => x.id === ed.structure) || { nom: ed.structure }).nom : null;
-	$("stState").textContent = !data.enJeu ? "Connectez-vous au jeu : l'éditeur agit là où vous vous trouvez."
-		: !ed.construction ? "Vous n'êtes pas en mode construction : « Prendre en main » vous y fera entrer (" + sel + ")."
-		: "Mode construction : " + sel + ". "
-			+ (held ? "En main : « " + held + " »" + (ed.orientation ? " (" + ed.orientation + ")" : "") + "." : "Aucune structure en main.");
-	for (const id of ["stTurn", "stFlip", "stPlace"]) $(id).disabled = !held;
-	$("edUndo").textContent = "Annuler la dernière opération" + (ed.annulables ? " (" + ed.annulables + ")" : "");
-	$("edUndo").disabled = !ed.annulables;
-	$("edRedo").disabled = !ed.retablissables;
-	$("stSave").disabled = !ed.selection;
-	// La liste n'est refaite que si le catalogue a changé : un rafraîchissement ne défait pas un clic en cours.
-	const key = JSON.stringify(data.structures) + "|" + ed.structure;
-	if (key === structuresShown) return;
-	structuresShown = key;
-	const box = $("stList");
-	box.innerHTML = "";
-	for (const [shelf, title] of SHELVES) {
-		const items = data.structures.filter(x => x.categorie === shelf);
-		const h = document.createElement("div");
-		h.className = "camp";
-		h.textContent = title;
-		box.appendChild(h);
-		if (!items.length) {
-			const p = document.createElement("p");
-			p.className = "hint";
-			p.textContent = "Aucune pour l'instant : enregistrez une sélection ou importez un fichier.";
-			box.appendChild(p);
-		}
-		const list = document.createElement("div");
-		list.className = "list";
-		for (const s of items) {
-			const c = document.createElement("div");
-			c.className = "card";
-			c.style.padding = "8px 10px";
-			const t = document.createElement("div");
-			t.textContent = s.nom + (ed.structure === s.id ? "  ★ en main" : "");
-			const sub = document.createElement("div");
-			sub.className = "sub hint";
-			sub.textContent = s.taille.join(" × ") + " · " + s.blocs + " blocs"
-				+ (s.repere === "maison" ? " · pose un repère de maison" : s.repere === "salle" ? " · pose la salle de convocation" : "")
-				+ (s.modifiee ? " · modifiée dans l'atelier structures" + (s.modifieeLe ? " le " + s.modifieeLe : "") : "")
-				+ (s.fournie ? "" : " · " + s.id);
-			const bar = document.createElement("div");
-			bar.className = "bar";
-			const take = document.createElement("button");
-			take.textContent = "Prendre en main";
-			take.onclick = async () => {
-				// La pose se fait en mode construction : on y entre au besoin.
-				try {
-					if (!data.constructeur) await api("construction", "");
-					msg("stMsg", await api("structure/prendre", s.id), true);
-				} catch (e) { msg("stMsg", e.message); }
-				load();
-			};
-			bar.appendChild(take);
-			if (s.modifiee) {
-				const back = document.createElement("button");
-				back.textContent = "Revenir à l'originale";
-				back.title = "La version modifiée dans l'atelier structures va à la corbeille ; l'originale sert de nouveau partout.";
-				back.onclick = () => structAction("structure/originale", s.id, "Revenir à l'originale de « " + s.nom + " » ? "
-					+ "Elle remplacera la version modifiée partout (village généré, éditeur).");
-				bar.appendChild(back);
-			}
-			if (!s.fournie) {
-				const ren = document.createElement("button");
-				ren.textContent = "Renommer";
-				ren.onclick = () => {
-					const nom = prompt("Nouveau nom de la structure :", s.nom);
-					if (nom && nom.trim()) structAction("structure/renommer", { id: s.id, nom: nom.trim() });
-				};
-				const mark = document.createElement("button");
-				mark.textContent = "Repère : " + (s.repere || "aucun");
-				mark.title = "Le repère posé avec la structure : aucun, maison, salle de convocation";
-				mark.onclick = () => structAction("structure/repere",
-					{ id: s.id, repere: s.repere === "" ? "maison" : s.repere === "maison" ? "salle" : "aucun" });
-				const del = document.createElement("button");
-				del.className = "danger";
-				del.textContent = "Supprimer";
-				del.onclick = () => structAction("structure/supprimer", s.id, "Supprimer « " + s.nom + " » du catalogue ?");
-				bar.append(ren, mark, del);
-			}
-			c.append(t, sub, bar);
-			list.appendChild(c);
-		}
-		box.appendChild(list);
-	}
-}
-
-async function structAction(path, body, question) {
-	if (question && !confirm(question)) return;
-	try {
-		msg("stMsg", await api(path, body), true);
-	} catch (e) { msg("stMsg", e.message); }
-	load();
-}
-
-$("stTurn").onclick = () => structAction("structure/tourner", "");
-$("stFlip").onclick = () => structAction("structure/retourner", "");
-$("stPlace").onclick = () => structAction("structure/poser", "");
-$("edUndo").onclick = () => structAction("edition/annuler", "");
-$("edRedo").onclick = () => structAction("edition/retablir", "");
-$("stNom").oninput = () => { $("stId").value = slug($("stNom").value); };
-$("stSave").onclick = () => {
-	const id = $("stId").value.trim();
-	const known = data.structures.find(x => x.id === id);
-	structAction("structure/enregistrer", { id, nom: $("stNom").value.trim() || id, repere: $("stMark").value },
-		known ? "Une structure porte déjà l'identifiant « " + id + " » (« " + known.nom + " ») : la remplacer ?" : undefined);
-};
-$("stImport").onclick = async () => {
-	const f = $("stFile").files[0];
-	if (!f) { msg("stMsg", "Choisissez un fichier .schem, .litematic ou .nbt."); return; }
-	structAction("structure/importer", { fichier: f.name, donnees: await fileB64(f) });
-};
-
 // ---------------------------------------------------------------- Partage
 function renderShare() {
 	const box = $("expList");
 	box.innerHTML = "";
-	const groups = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes],
+	const kinds = [["roles", "Rôles", data.roles], ["scenarios", "Scénarios", data.scenarios], ["cartes", "Cartes", data.cartes],
 		["structures", "Structures", data.structures.filter(x => !x.fournie)],
 		["groupes", "Groupes de rôles", Object.keys(groups()).map(n => ({ id: n, nom: n + " (" + groups()[n].length + " rôles)" }))]];
-	for (const [key, title, items] of groups) {
+	for (const [key, title, items] of kinds) {
 		const h = document.createElement("div");
 		h.className = "camp";
 		h.textContent = title;
@@ -2033,20 +1716,654 @@ $("import").onclick = async () => {
 		load();
 	} catch (e) { msg("shareMsg", e.message); }
 };
+// ---------------------------------------------------------------- Vignettes
+/**
+ * Vignettes reçues du serveur (« carte:port-aux-brumes » → empreinte, adresse de l'image, images qui l'attendent).
+ * Elles sont redemandées quand l'empreinte change (carte enregistrée de nouveau, structure modifiée) ; quatre à la fois
+ * au plus, pour ne pas encombrer le serveur.
+ */
+const thumbs = new Map();
+const thumbQueue = [];
+let thumbBusy = 0;
+const SVG = "http://www.w3.org/2000/svg";
 
-// ---------------------------------------------------------------- Onglets
-for (const b of document.querySelectorAll("nav button")) {
+function icon(name, cls) {
+	const s = document.createElementNS(SVG, "svg");
+	if (cls) s.setAttribute("class", cls);
+	const u = document.createElementNS(SVG, "use");
+	u.setAttribute("href", "#" + name);
+	s.appendChild(u);
+	return s;
+}
+
+/** Le cadre d'une vignette ; l'image y apparaît dès qu'elle est arrivée. */
+function thumbBox(kind, id, sig, alt) {
+	const box = el("div", "thumb " + kind);
+	box.appendChild(icon("i-wait", "wait"));
+	const img = el("img");
+	img.alt = alt || "";
+	img.decoding = "async";
+	img.onload = () => {
+		// Un aperçu vu de dessus enregistré avec la carte compte un pixel par bloc : il reste net, en gros pixels.
+		img.classList.toggle("pixel", img.naturalWidth > 0 && img.naturalWidth < 300);
+		box.classList.add("ready");
+	};
+	box.appendChild(img);
+	if (!id) return box;
+	const key = kind + ":" + id;
+	let t = thumbs.get(key);
+	if (!t || t.sig !== sig) {
+		t = { sig, url: t ? t.url : null, imgs: new Set() };
+		thumbs.set(key, t);
+		thumbQueue.push([kind, id, t]);
+		pumpThumbs();
+	}
+	if (t.url) img.src = t.url;
+	t.imgs.add(img);
+	return box;
+}
+
+function pumpThumbs() {
+	while (thumbBusy < 4 && thumbQueue.length) {
+		const [kind, id, t] = thumbQueue.shift();
+		thumbBusy++;
+		api("vignette/" + kind + "/" + id + ".png", undefined, true)
+			.then(r => r.blob())
+			.then(blob => {
+				const url = URL.createObjectURL(blob);
+				if (thumbs.get(kind + ":" + id) !== t) { URL.revokeObjectURL(url); return; }
+				const before = t.url;
+				t.url = url;
+				for (const img of t.imgs) if (img.isConnected) img.src = url;
+				t.imgs = new Set([...t.imgs].filter(img => img.isConnected));
+				if (before && before !== url) setTimeout(() => URL.revokeObjectURL(before), 3000);
+			})
+			.catch(() => {})
+			.finally(() => { thumbBusy--; pumpThumbs(); });
+	}
+}
+
+function empty(title, text) {
+	const d = el("div", "empty", [el("strong", "", title), document.createTextNode(text)]);
+	d.style.gridColumn = "1 / -1";
+	return d;
+}
+
+// ---------------------------------------------------------------- Partie visée, activité, onglets
+let aimShown = "";
+
+/** La partie que vise la page : choisie dans la liste du haut, ou celle où l'on se trouve dans le jeu. */
+function renderAim() {
+	const sel = $("aimSel");
+	const aim = data.partie;
+	const key = JSON.stringify([aim, (data.parties || []).map(p => [p.id, p.nom, p.statutNom])]);
+	if (key === aimShown || document.activeElement === sel) return;
+	aimShown = key;
+	sel.innerHTML = "";
+	sel.add(new Option(aim && !aim.choisie ? "Celle où je suis : " + aim.nom : "Celle où je suis", ""));
+	for (const p of data.parties || []) sel.add(new Option(p.nom + " · " + p.statutNom.toLowerCase(), p.id));
+	sel.value = aim && aim.choisie ? aim.id : "";
+	sel.disabled = !(data.parties || []).length;
+}
+
+$("aimSel").onchange = () => aimAt($("aimSel").value);
+
+async function aimAt(id) {
+	try {
+		toast(await api("partie", id), true);
+		aimShown = "";
+		await load();
+	} catch (e) { toast(e.message, false); }
+}
+
+function renderActivity() {
+	const people = data.presents || [];
+	$("presentN").textContent = people.length || 1;
+	const pres = $("presence");
+	pres.innerHTML = "";
+	for (const n of people) pres.appendChild(el("span", "person", [el("i", "", n.slice(0, 1).toUpperCase()), document.createTextNode(n + (n === data.moi ? " (vous)" : ""))]));
+	const j = $("journal");
+	j.innerHTML = "";
+	for (const line of data.journal || []) j.appendChild(el("li", "", line));
+	if (!(data.journal || []).length) j.appendChild(el("li", "", "Rien pour l'instant."));
+}
+$("activityBtn").onclick = () => $("activity").showModal();
+
+let currentTab = "cartes";
+let currentSub = "roles";
+
+function go(tab) {
+	currentTab = tab;
+	if (tab !== "cartes") wantedTarget = "";
+	for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("on", b.dataset.tab === tab);
+	for (const s of document.querySelectorAll("main > section")) s.classList.toggle("hidden", s.id !== "tab-" + tab);
+	try { localStorage.setItem("valcombe-atelier-onglet", tab); } catch (e) { /* stockage indisponible : sans mémoire */ }
+	if (data) announceEditing();
+}
+
+function goSub(sub) {
+	currentSub = sub;
+	for (const b of document.querySelectorAll(".subtabs button")) b.classList.toggle("on", b.dataset.sub === sub);
+	for (const id of ["roles", "scenarios", "partage"]) $("sub-" + id).classList.toggle("hidden", id !== sub);
+	try { localStorage.setItem("valcombe-atelier-sous-onglet", sub); } catch (e) { /* stockage indisponible : sans mémoire */ }
+	if (data) announceEditing();
+}
+
+for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => go(b.dataset.tab);
+for (const b of document.querySelectorAll(".subtabs button")) b.onclick = () => goSub(b.dataset.sub);
+
+/** Ce que l'opérateur a ouvert dans l'éditeur, pour le signaler aux autres. */
+function announceEditing() {
+	const rs = currentTab === "rs";
+	api("edition", rs && currentSub === "roles" && editingRole ? "role:" + editingRole
+		: rs && currentSub === "scenarios" && editingSc ? "scenario:" + editingSc : "").catch(() => {});
+}
+
+/** Sous « Tester et jouer » : où vont la partie d'essai et le scénario choisi. */
+function renderAimNote() {
+	const aim = data.partie;
+	const g = aim && (data.parties || []).find(p => p.id === aim.id);
+	$("scAim").textContent = !aim ? "Aucune partie sur ce serveur."
+		: "Partie visée : « " + aim.nom + " »" + (g ? " (" + g.statutNom.toLowerCase() + ")" : "")
+			+ ". La partie d'essai et le scénario choisi s'y appliquent ; changez-la en haut de la page.";
+}
+
+// ---------------------------------------------------------------- Cartes
+let mapFilter = "toutes";
+let mapsShown = "";
+/** La partie proposée d'abord dans la fiche d'une carte (« Envoyer une carte » depuis une partie). */
+let wantedTarget = "";
+
+/** Les thèmes des villages générés, tels qu'on les écrit. */
+const THEMES = { gothique: "gothique", monastere: "monastère", port: "du port" };
+
+function themeName(t) {
+	return THEMES[t] || t;
+}
+
+function mapSig(m) {
+	return [m.octets, m.sieges, m.maisons, m.rayon, m.nom].join(":");
+}
+
+function partiesWithMap(id) {
+	return (data.parties || []).filter(p => p.carteId === id);
+}
+
+function mapIssues(m) {
+	return (m.controle || []).filter(c => !c.ok).length;
+}
+
+function renderMaps() {
+	const q = norm($("mapSearch").value.trim());
+	const list = data.cartes.filter(m => (!q || norm(m.nom + " " + m.id).includes(q))
+		&& (mapFilter === "toutes" || mapFilter === "atelier" && m.atelier || mapFilter === "generees" && m.genere
+			|| mapFilter === "main" && !m.genere));
+	const key = JSON.stringify([list, (data.parties || []).map(p => [p.nom, p.carteId]), q, mapFilter]);
+	if (key === mapsShown) return;
+	mapsShown = key;
+	$("mapCount").textContent = list.length === data.cartes.length ? plural(data.cartes.length, "carte", "cartes")
+		: list.length + " sur " + data.cartes.length;
+	const grid = $("mapGrid");
+	grid.innerHTML = "";
+	if (!data.cartes.length) {
+		grid.appendChild(empty("Aucune carte dans la bibliothèque", "« Nouvelle carte » ouvre un atelier dans le jeu : une carte vierge, ou un village généré à retoucher."));
+		return;
+	}
+	if (!list.length) {
+		grid.appendChild(empty("Aucune carte ne correspond", "Changez la recherche ou le filtre."));
+		return;
+	}
+	for (const m of list) grid.appendChild(mapTile(m));
+}
+
+function mapTile(m) {
+	const t = el("button", "tile");
+	t.type = "button";
+	const th = thumbBox("carte", m.id, mapSig(m), "Vue de dessus de « " + m.nom + " »");
+	const over = el("div", "over");
+	if (m.atelier) over.appendChild(tag(m.atelierPret ? "En atelier" : "Atelier en préparation", "gold"));
+	for (const p of partiesWithMap(m.id)) over.appendChild(tag("En place : " + p.nom, "blue"));
+	th.appendChild(over);
+	const issues = mapIssues(m);
+	t.append(th, el("div", "body", [
+		el("div", "name", m.nom),
+		el("div", "meta", plural(m.sieges, "trône", "trônes") + " · " + plural(m.maisons, "maison", "maisons")),
+		el("div", "tags", [tag(m.genere ? "Village " + themeName(m.theme) : "Faite à la main"),
+			issues ? tag(plural(issues, "point à revoir", "points à revoir"), "warn") : tag("Prête à jouer", "ok")]),
+	]));
+	t.onclick = () => openDetail("carte", m.id);
+	return t;
+}
+
+$("mapSearch").oninput = renderMaps;
+for (const b of document.querySelectorAll("#mapFilters button")) {
 	b.onclick = () => {
-		for (const x of document.querySelectorAll("nav button")) x.classList.toggle("on", x === b);
-		for (const s of document.querySelectorAll("section")) s.classList.toggle("hidden", s.id !== "tab-" + b.dataset.tab);
-		if (data) announceEditing();
+		mapFilter = b.dataset.f;
+		for (const x of document.querySelectorAll("#mapFilters button")) x.classList.toggle("on", x === b);
+		renderMaps();
 	};
 }
+
+// ---------------------------------------------------------------- Structures
+const SHELVES = [["maisons", "Maisons et salles"], ["place", "Pour la place"], ["decor", "Décor"], ["perso", "Vos structures"]];
+const MARKS = { maison: "Pose une maison", salle: "Pose la salle de convocation" };
+let stFilter = "toutes";
+let stShown = "";
+
+function stSig(s) {
+	return s.signature + ":" + s.taille.join("x");
+}
+
+/** « L 11 × l 9 × h 7 » : est-ouest, nord-sud, hauteur (comme la sélection 3D dans le jeu). */
+function dims(t) {
+	return "L " + t[0] + " × l " + t[2] + " × h " + t[1];
+}
+
+function shelfName(c) {
+	const s = SHELVES.find(x => x[0] === c);
+	return s ? s[1] : c;
+}
+
+function renderStructures() {
+	const q = norm($("stSearch").value.trim());
+	const match = s => !q || norm(s.nom + " " + s.id).includes(q);
+	const key = JSON.stringify([data.structures, q, stFilter]);
+	if (key === stShown) return;
+	stShown = key;
+	const box = $("stShelves");
+	box.innerHTML = "";
+	let shown = 0;
+	for (const [shelf, title] of SHELVES) {
+		if (stFilter !== "toutes" && stFilter !== shelf) continue;
+		const items = data.structures.filter(s => s.categorie === shelf && match(s));
+		if (!items.length && (q || shelf !== "perso")) continue;
+		shown += items.length;
+		const grid = el("div", "grid");
+		if (!items.length) {
+			grid.appendChild(empty("Aucune structure à vous pour l'instant",
+				"Dans l'atelier des structures, « Nouvelle structure » au pupitre d'accueil ouvre une parcelle vide. On peut aussi importer un fichier .schem, .litematic ou .nbt."));
+		}
+		for (const s of items) grid.appendChild(stTile(s));
+		box.appendChild(el("div", "shelf", [el("div", "shelf-head", [el("h3", "", title), el("span", "faint", items.length ? plural(items.length, "structure", "structures") : "")]), grid]));
+	}
+	$("stCount").textContent = plural(data.structures.length, "structure", "structures");
+	if (!shown && q) box.appendChild(empty("Aucune structure ne correspond", "Changez la recherche ou le rayon."));
+}
+
+function stTile(s) {
+	const t = el("button", "tile");
+	t.type = "button";
+	const th = thumbBox("structure", s.id, stSig(s), "« " + s.nom + " » en perspective");
+	const over = el("div", "over");
+	if (s.modifiee) over.appendChild(tag("Modifiée", "gold"));
+	if (s.conflit) over.appendChild(tag("Changée ailleurs", "warn"));
+	th.appendChild(over);
+	t.append(th, el("div", "body", [
+		el("div", "name", s.nom),
+		el("div", "meta", dims(s.taille) + " · " + plural(s.blocs, "bloc", "blocs")),
+		el("div", "tags", [s.repere ? tag(MARKS[s.repere] || s.repere, "wine") : null, tag(s.fournie ? "Fournie" : "À vous")]),
+	]));
+	t.onclick = () => openDetail("structure", s.id);
+	return t;
+}
+
+$("stSearch").oninput = renderStructures;
+for (const b of document.querySelectorAll("#stFilters button")) {
+	b.onclick = () => {
+		stFilter = b.dataset.f;
+		for (const x of document.querySelectorAll("#stFilters button")) x.classList.toggle("on", x === b);
+		renderStructures();
+	};
+}
+
+$("stGo").onclick = () => act("structure/atelier", "", "En route vers l'atelier des structures…");
+$("stImportBtn").onclick = async () => {
+	const v = await ask({ title: "Importer une construction", ok: "Ajouter au catalogue",
+		text: "Un fichier .schem (WorldEdit), .litematic (Litematica) ou .nbt (structure Minecraft), 128 × 128 × 128 blocs au plus. Il rejoint « Vos structures » ; aucune carte n'est touchée.",
+		fields: [{ id: "f", label: "Fichier", type: "file", accept: ".schem,.schematic,.litematic,.nbt", wide: true, required: true },
+			{ id: "nom", label: "Nom (facultatif : celui du fichier)", maxLength: 50, wide: true }] });
+	if (!v || !v.f) return;
+	act("structure/importer", { fichier: v.f.name, donnees: await fileB64(v.f), nom: v.nom.trim() }, "Lecture du fichier…");
+};
+
+// ---------------------------------------------------------------- Parties
+let gamesShown = "";
+
+function renderGames() {
+	const key = JSON.stringify([data.parties, data.cartes.map(m => [m.id, mapSig(m)])]);
+	if (key === gamesShown) return;
+	gamesShown = key;
+	const grid = $("gameGrid");
+	grid.innerHTML = "";
+	if (!(data.parties || []).length) {
+		grid.appendChild(empty("Aucune partie sur ce serveur", "Les mondes de Valcombe ne sont pas disponibles : voir le journal du serveur."));
+		return;
+	}
+	for (const p of data.parties) grid.appendChild(gameCard(p));
+}
+
+function gameCard(p) {
+	const card = el("article", "game" + (p.visee ? " aimed" : ""));
+	const lib = data.cartes.find(m => m.id === p.carteId);
+	card.appendChild(thumbBox("carte", lib ? lib.id : "", lib ? mapSig(lib) : "", lib ? "Vue de dessus de « " + lib.nom + " »" : ""));
+	card.appendChild(el("div", "head", [
+		el("div", "", [el("div", "name", p.nom), p.sorte !== p.nom ? el("div", "hint", p.sorte) : null]),
+		el("span", "status " + p.statut, [el("span", "dot"), document.createTextNode(p.statutNom)]),
+	]));
+	const dl = el("dl");
+	const fact = (k, v) => dl.append(el("dt", "", k), el("dd", "", v));
+	fact("Carte", p.carte);
+	fact("Scénario", p.scenario ? "« " + p.scenario + " »" : "Aucun : script et réglages libres");
+	fact("En ce moment", p.etat + " · " + plural(p.presents, "joueur", "joueurs") + " dans son monde");
+	fact("Conteur", p.conteur || "Personne pour l'instant");
+	card.appendChild(dl);
+	if (p.envoi) card.appendChild(el("div", "why", "Reçoit " + p.envoi + " : une barre suit la pose dans le jeu."));
+	const actions = el("div", "actions");
+	actions.appendChild(p.visee ? tag("Visée par la page", "gold") : button("Viser cette partie", () => aimAt(p.id), "",
+		"Les scénarios choisis et les parties d'essai de la page iront à cette partie."));
+	const blocked = (b) => { b.disabled = !!p.bloque; if (p.bloque) b.title = p.bloque; return b; };
+	actions.appendChild(blocked(button("Envoyer une carte", () => {
+		wantedTarget = p.id;
+		go("cartes");
+		toast("Choisissez une carte : sa fiche propose de l'envoyer à « " + p.nom + " ».", true);
+	}, "main")));
+	actions.appendChild(blocked(button("Village généré", () => sendVillage(p))));
+	actions.appendChild(blocked(button("Construction importée", () => sendImport(p))));
+	actions.appendChild(blocked(button("Vider le monde", () => clearWorld(p), "danger")));
+	if (p.enJeu) {
+		actions.appendChild(p.suspendue ? button("Reprendre", () => act("partie/reprendre", p.id, "Reprise…"))
+			: button("Mettre en suspens", () => suspend(p)));
+	}
+	card.appendChild(actions);
+	if (p.bloque && !p.envoi) card.appendChild(el("div", "why", p.bloque)).style.margin = "-6px 14px 14px";
+	return card;
+}
+
+const REPLACE = " Son monde est remis à neuf, plat et vide : il ne restera rien de sa carte actuelle (retouchée à la main, elle est d'abord sauvegardée dans la bibliothèque). Les joueurs présents attendent au hub pendant la pose.";
+
+async function sendVillage(p) {
+	const v = await ask({ title: "Village généré pour « " + p.nom + " »", ok: "Envoyer le village", text: "Un village de Valcombe bâti d'un coup." + REPLACE,
+		fields: [{ id: "places", label: "Trônes (" + data.tronesMin + " à " + data.tronesMax + ")", type: "number", min: data.tronesMin, max: data.tronesMax, value: 12 },
+			{ id: "taille", label: "Taille", type: "select", options: [["0", "Petite"], ["1", "Normale"], ["2", "Grande"]], value: "1" },
+			{ id: "theme", label: "Thème", type: "select", options: data.themes.map(t => [t, themeName(t)]) },
+			{ id: "maisons", label: "Avec des maisons (la nuit, chacun chez soi)", type: "checkbox", value: true }] });
+	if (!v) return;
+	act("carte/generer", { monde: p.id, places: v.places === "" ? null : parseInt(v.places, 10), taille: parseInt(v.taille, 10),
+		theme: v.theme, maisons: v.maisons }, "Envoi du village…");
+}
+
+async function sendImport(p) {
+	const v = await ask({ title: "Construction pour « " + p.nom + " »", ok: "Envoyer la construction",
+		text: "Une place faite ailleurs : .schem, .litematic ou .nbt, jusqu'à 320 × 128 × 320 blocs, posée au centre. Il faudra y poser les trônes et les maisons." + REPLACE,
+		fields: [{ id: "f", label: "Fichier", type: "file", accept: ".schem,.schematic,.litematic,.nbt", wide: true, required: true }] });
+	if (!v || !v.f) return;
+	act("carte/importer", { monde: p.id, fichier: v.f.name, donnees: await fileB64(v.f) }, "Envoi de la construction…");
+}
+
+async function clearWorld(p) {
+	if (!await ask({ title: "Vider « " + p.nom + " » ?", ok: "Vider le monde", danger: true,
+		text: "On y jouera sans carte, autour du Conteur." + REPLACE })) return;
+	act("carte/vider", { monde: p.id }, "Remise à neuf…");
+}
+
+async function suspend(p) {
+	if (!await ask({ title: "Mettre « " + p.nom + " » en suspens ?", ok: "Mettre en suspens",
+		text: "Son horloge s'arrête et ses joueurs vont au hub. Elle reprendra où elle en est, même après un redémarrage du serveur." })) return;
+	act("partie/suspendre", p.id, "Mise en suspens…");
+}
+
+$("newGame").onclick = async () => {
+	const v = await ask({ title: "Créer une partie d'essai", ok: "Créer",
+		text: "Une partie à part, dans son propre monde, pour essayer une carte ou un scénario sans gêner la partie principale. La page la vise aussitôt.",
+		fields: [{ id: "nom", label: "Nom", maxLength: 40, placeholder: "Essai du soir", wide: true, required: true }] });
+	if (!v) return;
+	if (await act("partie/creer", { nom: v.nom.trim() }, "Création du monde…")) aimShown = "";
+};
+
+// ---------------------------------------------------------------- Fiche d'une carte ou d'une structure
+/** Ce que montre la fiche ouverte : { kind: "carte" | "structure" | "nouvelle", id }, ou null. */
+let detail = null;
+/** La partie choisie dans la fiche d'une carte pour l'envoi (elle ne change pas la partie visée). */
+let detailTarget = "";
+let detailShown = "";
+let newKind = "vierge";
+
+function openDetail(kind, id) {
+	detail = { kind, id };
+	detailTarget = wantedTarget || (data.partie ? data.partie.id : "");
+	detailShown = "";
+	renderDetail();
+	if (!$("detail").open) $("detail").showModal();
+}
+
+$("detail").addEventListener("close", () => { detail = null; detailShown = ""; });
+
+function renderDetail() {
+	if (!detail) return;
+	const item = detail.kind === "carte" ? data.cartes.find(m => m.id === detail.id)
+		: detail.kind === "structure" ? data.structures.find(s => s.id === detail.id) : {};
+	if (!item) {
+		$("detail").close();
+		return;
+	}
+	const key = JSON.stringify([detail, item, detail.kind === "carte" ? data.parties : null, data.enJeu, detailTarget, newKind]);
+	if (key === detailShown) return;
+	// Pas de refonte sous les doigts pendant qu'on remplit la fiche « Nouvelle carte », ni pendant qu'on choisit une
+	// partie dans la liste (sur une tablette, la refaire fermerait le sélecteur ouvert) : ce sera fait à la suite.
+	if (detail.kind === "nouvelle" && detailShown) return;
+	const body = $("detailBody");
+	const focus = document.activeElement;
+	if (detailShown && focus && focus.tagName === "SELECT" && body.contains(focus)) return;
+	detailShown = key;
+	const scroll = body.scrollTop;
+	body.innerHTML = "";
+	if (detail.kind === "carte") mapDetail(item, body);
+	else if (detail.kind === "structure") stDetail(item, body);
+	else newMapForm(body);
+	body.scrollTop = scroll;
+}
+
+function facts(rows) {
+	const dl = el("dl", "facts");
+	for (const [k, v] of rows) if (v !== null && v !== undefined && v !== "") dl.append(el("dt", "", k), el("dd", "", v));
+	return dl;
+}
+
+function action(title, text, controls, why) {
+	return el("div", "action", [el("div", "t", title), text ? el("div", "hint", text) : null, el("div", "bar", controls), why ? el("div", "why", why) : null]);
+}
+
+function mapDetail(m, body) {
+	$("detailTitle").textContent = m.nom;
+	const side = 2 * m.rayon + 1;
+	const inPlace = partiesWithMap(m.id).map(p => p.nom).join(", ");
+	const checks = el("ul", "checks");
+	for (const c of m.controle || []) checks.appendChild(el("li", c.ok ? "" : "no", c.texte));
+	body.appendChild(el("div", "detail-top", [
+		thumbBox("carte", m.id, mapSig(m), "Vue de dessus de « " + m.nom + " »"),
+		el("div", "", [facts([["Trônes", num(m.sieges)], ["Maisons", num(m.maisons)],
+			["Sorte", m.genere ? "Village généré, thème " + themeName(m.theme) : "Faite à la main"], ["Zone", side + " × " + side + " blocs"],
+			["En place dans", inPlace], ["Identifiant", m.id], ["Fichier", num(Math.max(1, Math.round(m.octets / 1024))) + " Ko"]]),
+			el("h3", "", "Pour y jouer"), checks]),
+	]));
+
+	// Envoyer à une partie : chacune a son état, une partie en cours ailleurs ne bloque pas l'envoi.
+	const parties = data.parties || [];
+	const sel = el("select");
+	sel.setAttribute("aria-label", "Partie qui recevra la carte");
+	for (const p of parties) sel.add(new Option(p.nom + " · " + p.statutNom.toLowerCase() + (p.visee ? " (visée)" : ""), p.id));
+	if (parties.some(p => p.id === detailTarget)) sel.value = detailTarget;
+	sel.onchange = () => { detailTarget = sel.value; sel.blur(); renderDetail(); };
+	const target = parties.find(p => p.id === sel.value);
+	const why = !target ? "Aucune partie sur ce serveur." : target.carteId === m.id && !target.bloque
+		? "Elle y est déjà en place : l'envoyer de nouveau la repose à neuf." : target.bloque;
+	const send = button("Envoyer à la partie", () => sendMap(m, target), "main");
+	send.disabled = !target || !!target.bloque;
+	body.appendChild(action("Envoyer à une partie", "Le monde de la partie est remis à neuf, plat et vide, puis la carte y est posée. "
+		+ "Les joueurs présents attendent au hub pendant la pose.", [sel, send], why));
+
+	// L'atelier de la carte, dans le jeu.
+	if (m.atelier) {
+		const goBtn = button("Y aller dans le jeu", () => act("carte/atelier/aller", m.id, "En route…"), "gold");
+		goBtn.disabled = !data.enJeu;
+		body.appendChild(action("Son atelier est ouvert" + (m.atelierNom ? " : « " + m.atelierNom + " »" : ""),
+			(m.atelierPret ? "On y retrouve le travail en cours." : "La carte y est en cours de pose : une barre suit l'avancement dans le jeu.")
+				+ " Elle s'y enregistre toute seule ; « Enregistrer », les versions et « Fermer l'atelier » sont à l'écran de l'atelier (Menu J).",
+			[goBtn], data.enJeu ? null : "Connectez-vous au jeu pour y aller."));
+	} else {
+		body.appendChild(action("Retoucher dans un atelier", "La carte est posée dans un monde à elle : on la retouche en jeu avec WorldEdit et les outils de "
+			+ "repères (trônes, maisons, centre, salle de convocation). Elle s'y enregistre toute seule, avec des versions pour revenir en arrière.",
+			[button("Ouvrir dans un atelier", () => act("carte/atelier", { id: m.id }, "Ouverture de l'atelier…"), "gold")],
+			data.enJeu ? null : "Vous n'êtes pas dans le jeu : l'atelier s'ouvre quand même, vous irez y travailler plus tard (Menu J › Mondes)."));
+	}
+
+	body.appendChild(action("Bibliothèque", null, [
+		button("Dupliquer", () => duplicateMap(m)),
+		button("Renommer", () => renameMap(m)),
+		button("Supprimer", () => deleteMap(m), "danger"),
+	]));
+}
+
+async function sendMap(m, p) {
+	if (!p) return;
+	if (!await ask({ title: "Envoyer « " + m.nom + " » ?", ok: "Envoyer à « " + p.nom + " »", text: "La carte part à « " + p.nom + " »." + REPLACE })) return;
+	act("carte/envoyer", { id: m.id, monde: p.id }, "Envoi de la carte…");
+}
+
+async function duplicateMap(m) {
+	const v = await ask({ title: "Dupliquer « " + m.nom + " »", ok: "Dupliquer", text: "Une copie dans la bibliothèque, à retoucher sans toucher à l'originale.",
+		fields: [{ id: "nom", label: "Nom de la copie", value: m.nom + " (copie)", maxLength: 50, wide: true }] });
+	if (v && v.nom.trim()) act("carte/dupliquer", { id: m.id, nom: v.nom.trim() }, "Copie…");
+}
+
+async function renameMap(m) {
+	const v = await ask({ title: "Renommer la carte", ok: "Renommer", fields: [{ id: "nom", label: "Nouveau nom", value: m.nom, maxLength: 50, wide: true }] });
+	if (v && v.nom.trim() && v.nom.trim() !== m.nom) act("carte/renommer", { id: m.id, nom: v.nom.trim() });
+}
+
+async function deleteMap(m) {
+	if (!await ask({ title: "Supprimer « " + m.nom + " » ?", ok: "Supprimer", danger: true,
+		text: "Elle quitte la bibliothèque. Les parties où elle est en place la gardent jusqu'au prochain envoi." })) return;
+	if (await act("carte/supprimer", m.id)) $("detail").close();
+}
+
+function stDetail(s, body) {
+	$("detailTitle").textContent = s.nom;
+	const origin = s.fournie ? (s.modifiee ? "Fournie, modifiée dans l'atelier" + (s.modifieeLe ? " le " + s.modifieeLe : "") : "Fournie avec le mod") : "À vous";
+	body.appendChild(el("div", "detail-top", [
+		thumbBox("structure", s.id, stSig(s), "« " + s.nom + " » en perspective"),
+		el("div", "", [facts([["Mesures", dims(s.taille)], ["Blocs", num(s.blocs)], ["Rayon", shelfName(s.categorie)],
+			["Repère", s.repere ? MARKS[s.repere] : "Aucun"], ["Origine", origin],
+			["Parcelle", s.parcelle ? "Dans l'atelier des structures" + (s.conflit ? ", changée ailleurs pendant qu'on la modifiait" : "")
+				: data.atelierStructures ? "Pas encore : elle sera posée à la prochaine visite" : "L'atelier des structures n'est pas encore ouvert"],
+			["Identifiant", s.id]])]),
+	]));
+	const see = button("Voir dans l'atelier", () => act("structure/atelier", s.id, "En route vers sa parcelle…"), "gold");
+	see.disabled = !data.enJeu;
+	body.appendChild(action("La modifier", "Vous êtes conduit devant sa parcelle, dans l'atelier des structures : modifiez-la sur place avec WorldEdit, "
+		+ "puis « Enregistrer » à son pupitre." + (s.fournie ? " Modifiée, une structure fournie remplace l'originale partout (villages générés compris)." : ""),
+		[see], data.enJeu ? null : "Connectez-vous au jeu pour y aller."));
+	const gestures = [button("Dupliquer", () => duplicateSt(s))];
+	if (!s.fournie) {
+		gestures.push(button("Renommer", () => renameSt(s)));
+		gestures.push(button("Repère posé avec elle", () => markSt(s)));
+		gestures.push(button("Supprimer", () => deleteSt(s), "danger"));
+	}
+	if (s.modifiee) gestures.push(button("Revenir à l'originale", () => revertSt(s), "danger"));
+	body.appendChild(action("Catalogue", s.fournie ? "Une copie rejoint « Vos structures » : on la modifie sans toucher à la fournie." : null, gestures));
+}
+
+async function duplicateSt(s) {
+	const v = await ask({ title: "Dupliquer « " + s.nom + " »", ok: "Dupliquer", text: "La copie rejoint « Vos structures », avec les mêmes blocs et le même repère.",
+		fields: [{ id: "nom", label: "Nom de la copie", value: s.nom + " (copie)", maxLength: 50, wide: true }] });
+	if (v && v.nom.trim()) act("structure/dupliquer", { id: s.id, nom: v.nom.trim() }, "Copie…");
+}
+
+async function renameSt(s) {
+	const v = await ask({ title: "Renommer la structure", ok: "Renommer", fields: [{ id: "nom", label: "Nouveau nom", value: s.nom, maxLength: 50, wide: true }] });
+	if (v && v.nom.trim() && v.nom.trim() !== s.nom) act("structure/renommer", { id: s.id, nom: v.nom.trim() });
+}
+
+async function markSt(s) {
+	const v = await ask({ title: "Repère posé avec « " + s.nom + " »", ok: "Choisir",
+		text: "Quand on pose la structure sur une carte, ce repère est posé avec elle.",
+		fields: [{ id: "r", label: "Repère", type: "select", value: s.repere || "aucun", wide: true,
+			options: [["aucun", "Aucun"], ["maison", "Une maison (là où un joueur dort)"], ["salle", "La salle de convocation"]] }] });
+	if (v) act("structure/repere", { id: s.id, repere: v.r });
+}
+
+async function deleteSt(s) {
+	if (!await ask({ title: "Supprimer « " + s.nom + " » ?", ok: "Supprimer", danger: true, text: "Elle quitte le catalogue et part à la corbeille du serveur." })) return;
+	if (await act("structure/supprimer", s.id)) $("detail").close();
+}
+
+async function revertSt(s) {
+	if (!await ask({ title: "Revenir à l'originale ?", ok: "Revenir à l'originale", danger: true,
+		text: "La version modifiée de « " + s.nom + " » part à la corbeille ; l'originale sert de nouveau partout (villages générés, cartes qui la posent), et sa parcelle suit." })) return;
+	act("structure/originale", s.id);
+}
+
+// ---------------------------------------------------------------- Nouvelle carte (dans un atelier du jeu)
+$("newMap").onclick = () => openDetail("nouvelle", "");
+
+function newMapForm(body) {
+	$("detailTitle").textContent = "Nouvelle carte";
+	body.appendChild(el("p", "hint", "La carte s'ouvre dans son atelier, un monde à elle dans le jeu, et rejoint la bibliothèque. On y bâtit avec WorldEdit et on y pose les repères."));
+	const pick = (k, title, text) => {
+		const b = button("", () => { newKind = k; detailShown = ""; renderDetail(); }, newKind === k ? "on" : "");
+		b.append(el("b", "", title), el("span", "", text));
+		return b;
+	};
+	body.appendChild(el("div", "choice", [
+		pick("vierge", "Carte vierge", "Un sol plat et nu : vous bâtissez tout."),
+		pick("village", "Village généré", "Un village de Valcombe bâti d'un coup, à retoucher."),
+	]));
+	const form = el("div", "row");
+	const field = (label, input) => { const d = el("div", "", [el("label", "", label), input]); form.appendChild(d); return input; };
+	const name = field("Nom de la carte", el("input"));
+	name.maxLength = 50;
+	name.placeholder = newKind === "village" ? "Village gothique 12 (si vide)" : "Le Port aux Brumes";
+	let seats, size, theme, houses;
+	if (newKind === "village") {
+		seats = field("Trônes (" + data.tronesMin + " à " + data.tronesMax + ")", el("input"));
+		seats.type = "number"; seats.min = data.tronesMin; seats.max = data.tronesMax; seats.value = 12;
+		size = field("Taille", el("select"));
+		for (const [v, t] of [["0", "Petite"], ["1", "Normale"], ["2", "Grande"]]) size.add(new Option(t, v));
+		size.value = "1";
+		theme = field("Thème", el("select"));
+		for (const t of data.themes) theme.add(new Option(themeName(t), t));
+		const c = el("input");
+		c.type = "checkbox";
+		c.checked = true;
+		houses = c;
+		const l = el("label", "check", [c, document.createTextNode(" Avec des maisons (la nuit, chacun chez soi)")]);
+		l.style.gridColumn = "1 / -1";
+		form.appendChild(l);
+	}
+	body.appendChild(form);
+	const open = button("Ouvrir dans un atelier", async () => {
+		const nom = name.value.trim();
+		if (newKind === "vierge" && !nom) { toast("Donnez un nom à la carte.", false); name.focus(); return; }
+		const done = newKind === "vierge" ? await act("carte/atelier/nouvelle", { nom }, "Ouverture de l'atelier…")
+			: await act("carte/atelier/village", { nom, places: seats.value === "" ? null : parseInt(seats.value, 10), taille: parseInt(size.value, 10),
+				theme: theme.value, maisons: houses.checked }, "Construction du village…");
+		if (done) $("detail").close();
+	}, "gold");
+	body.appendChild(el("div", "bar", [open]));
+}
+
+// ---------------------------------------------------------------- Démarrage
+try {
+	const t = localStorage.getItem("valcombe-atelier-onglet");
+	if (t && $("tab-" + t)) go(t);
+	const s = localStorage.getItem("valcombe-atelier-sous-onglet");
+	if (s && $("sub-" + s)) goSub(s);
+} catch (e) { /* stockage indisponible : on part du premier onglet */ }
 
 if (!token) {
 	$("state").textContent = "Lien incomplet : ouvrez le lien donné par /vc atelier dans le jeu.";
 } else {
-	load().then(() => { editRole(null); editSc(null); renderHome(); renderLocks(); });
+	load().then(() => { editRole(null); editSc(null); renderLocks(); });
 	setInterval(refresh, 5000);
 }
 </script>

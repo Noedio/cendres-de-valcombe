@@ -189,6 +189,17 @@ public final class Workshop {
 		return "Carte actuelle : " + origin + ". " + cur.get("sieges") + " trônes, " + cur.get("maisons") + " maisons.";
 	}
 
+	/** La carte actuelle en quelques mots, pour une ligne de liste (la fiche d'une partie de l'Atelier web). */
+	public static String brief(Map<String, Object> cur) {
+		if (cur == null) {
+			return "Aucune carte sur le serveur.";
+		}
+		String nom = (String) cur.get("nom");
+		return (!nom.isEmpty() ? "« " + nom + " »" : (Boolean) cur.get("genere") ? "Village généré" : "Carte faite à la main")
+			+ ((Boolean) cur.get("modifiee") && !nom.isEmpty() ? ", retouchée" : "") + " · " + cur.get("sieges") + " trônes · "
+			+ cur.get("maisons") + " maisons";
+	}
+
 	// ------------------------------------------------------------------
 	// Écran en jeu
 	// ------------------------------------------------------------------

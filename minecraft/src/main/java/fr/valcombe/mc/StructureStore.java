@@ -762,6 +762,47 @@ public final class StructureStore {
 			: "« " + d.nom + " » posera son repère de " + (r.equals("maison") ? "maison" : "salle de convocation") + ".";
 	}
 
+	/**
+	 * Copie une structure du catalogue (fournie, modifiée ou à vous) en une structure à vous, rangée dans « Vos
+	 * structures » : même blocs, même ancre, même repère. nom vide : « &lt;nom&gt; (copie) ». L'identifiant est tiré du nom
+	 * (numéroté s'il est pris). Une structure fournie d'origine a besoin du serveur (ses blocs sont bâtis par le mod) ;
+	 * les autres sont copiées fichier pour fichier.
+	 */
+	public String duplicate(String id, String nom) {
+		Def src = def(id);
+		String n = nom == null || nom.isBlank()
+			? (src.nom.length() > 42 ? src.nom.substring(0, 42).strip() : src.nom) + " (copie)" : nom.strip();
+		if (n.length() > 50) {
+			throw new GameException("Nom de structure : 1 à 50 caractères.");
+		}
+		if (user().size() >= MAX_COUNT) {
+			throw new GameException("Le catalogue compte déjà " + MAX_COUNT + " structures : supprimez-en avant d'en ajouter.");
+		}
+		String copy = freeId(n, x -> false);
+		Path from = !src.fournie ? dir.resolve(id + ".nbt") : src.modifiee ? dir.resolve(OVERRIDES).resolve(id + ".nbt") : null;
+		if (from == null) {
+			BlockPos anchor = src.ancre == null ? null : new BlockPos(src.ancre[0], src.ancre[1], src.ancre[2]);
+			save(copy, n, clip(id), anchor, src.repere, "perso");
+		} else {
+			Def d = src.copy();
+			d.id = copy;
+			d.nom = n;
+			d.categorie = "perso";
+			d.fournie = false;
+			d.modifiee = false;
+			d.modifieeLe = null;
+			try {
+				Files.createDirectories(dir);
+				Files.copy(from, dir.resolve(copy + ".nbt"));
+			} catch (IOException e) {
+				throw new GameException("Copie impossible : " + e.getMessage());
+			}
+			writeDef(d);
+			user().put(copy, checked(d));
+		}
+		return "« " + src.nom + " » copiée : « " + n + " » (identifiant « " + copy + " »), dans « Vos structures ».";
+	}
+
 	/** Retire une structure de l'utilisateur du catalogue ; ses fichiers vont à la corbeille. */
 	public String delete(String id) {
 		Def d = mine(id);

@@ -191,6 +191,61 @@ public final class Vignettes {
 		});
 	}
 
+	/**
+	 * La vignette de cette clé pour l'Atelier web ({@code carte:<id>} ou {@code structure:<id>}), en deux temps : ce
+	 * qu'il faut lire de la bibliothèque ou du catalogue, sur le fil du serveur (maintenant), puis l'image, rendue par
+	 * le Supplier, qui se fait sur le fil de la page (peindre et compresser ne retient pas les ticks du serveur). Les
+	 * mêmes images que l'Atelier en jeu, avec la même mémoire : une vignette déjà faite et toujours juste est rendue
+	 * telle quelle. Null si la carte ou la structure n'existe pas (ou sans vignettes sur ce serveur) ; le Supplier rend
+	 * null si l'image n'a pas pu se faire.
+	 */
+	static java.util.function.Supplier<byte[]> job(String key) {
+		Vignettes v = current;
+		if (v == null || key == null || !(key.startsWith("carte:") || key.startsWith("structure:"))) {
+			return null;
+		}
+		String stamp = stampOf(key);
+		if (stamp.isEmpty()) {
+			return null;
+		}
+		Made made = v.cache.get(key);
+		if (made != null && made.stamp().equals(stamp)) {
+			byte[] png = made.png();
+			return () -> png;
+		}
+		Maker maker;
+		if (key.startsWith("structure:")) {
+			int[] size = new int[3];
+			int[] cells;
+			try {
+				cells = structureColors(key.substring("structure:".length()), size);
+			} catch (RuntimeException e) {
+				ValcombeMod.LOG.warn("Vignette de structure impossible : {}", e.toString());
+				return () -> null;
+			}
+			if (cells == null) {
+				return null;
+			}
+			maker = () -> encode(isometric(size[0], size[1], size[2], cells));
+		} else {
+			String id = key.substring("carte:".length());
+			maker = () -> v.mapImage(id);
+		}
+		return () -> {
+			byte[] png = safely(maker);
+			if (png.length == 0) {
+				return null;
+			}
+			// Gardée pour la suite (et pour l'Atelier en jeu), sur le fil du serveur comme le reste de la mémoire.
+			v.server.execute(() -> {
+				if (current == v) {
+					v.cache.put(key, new Made(stamp, png));
+				}
+			});
+			return png;
+		};
+	}
+
 	private interface Maker {
 		byte[] make() throws Exception;
 	}

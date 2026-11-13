@@ -26,6 +26,7 @@
 			"fr.valcombe.gametest.PartiesGameTest",
 			"fr.valcombe.gametest.AtelierCarteGameTest",
 			"fr.valcombe.gametest.AtelierHdGameTest",
+			"fr.valcombe.gametest.AteliersFinitionsGameTest",
 			"fr.valcombe.gametest.WorldsGameTest"
 		]
 	},

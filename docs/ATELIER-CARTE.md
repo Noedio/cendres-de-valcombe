@@ -16,7 +16,7 @@ Un monde de Valcombe par carte en cours de travail (sorte `atelier-carte`) : pla
 | Menu J › Mondes › « Ouvrir une carte… » | onglet Bibliothèque | onglet Carte vierge | onglet Village généré | |
 | Commande (opérateurs) | `/vc atelier carte ouvrir <carte>` | `/vc atelier carte nouvelle <nom>` | `/vc atelier carte village <trônes> [<taille> <thème> <oui\|non> <nom>]` | `/vc atelier carte importer <fichier> [nom]` |
 | Atelier en jeu | Cartes › fiche de la carte › « Ouvrir dans un atelier » | Cartes › Nouvelle carte › Carte vierge | Cartes › Nouvelle carte › Village généré | Cartes › Nouvelle carte › Importer un fichier |
-| Atelier web | « Ouvrir dans un atelier » sur chaque carte (route `carte/atelier`) | | | |
+| Atelier web | « Ouvrir dans un atelier » sur la fiche de chaque carte (route `carte/atelier`) ; « Nouvelle carte » : vierge (`carte/atelier/nouvelle`) ou village généré (`carte/atelier/village`) ; « Y aller dans le jeu » (`carte/atelier/aller`) | | | |
 
 Un fichier importé est un `.schem`, `.litematic` ou `.nbt` déjà déposé dans le dossier d'import du serveur (`config/valcombe/creations/import`, entre guillemets dans la commande s'il contient des espaces) : il est lu et contrôlé avant que le monde ne soit créé, puis posé au centre par petits lots, sans repères ; la carte est à enregistrer. Une pose coupée par un arrêt reprend au démarrage (le nom du fichier est gardé dans l'état de l'atelier).
 

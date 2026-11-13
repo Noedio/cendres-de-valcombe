@@ -184,12 +184,30 @@ public class StructuresWorkshopGameTest implements FabricClientGameTest {
 			"puits posé : sa cloche, le quadrillage du sol, le pupitre");
 		check(server.computeOnServer(s -> Boolean.FALSE.equals(workshop().changes("puits"))), "aucune modification juste après la pose");
 
-		// 3. Captures : l'ensemble vu d'en haut, puis la parcelle du puits.
-		server.runCommand("gamemode spectator " + me);
-		server.runOnServer(s -> player(s, me).teleportTo(atelier(), 60, S + 75, -35, Set.of(), 0f, 45f, false));
-		ctx.waitTicks(100);
+		// 3. Captures : l'ensemble, depuis la vue d'arrivée (en vol au-dessus de l'accueil, le regard plongeant sur les
+		// rangées), puis la parcelle du puits. En créatif et non en spectateur : un spectateur ne charge pas les tronçons
+		// autour de lui, et l'image ne montrait que le ciel. On attend que tout ce qui est en vue soit dessiné.
+		double[] view = server.computeOnServer(s -> workshop().overview());
+		check(view[1] > S + 10 && view[4] >= 25 && view[4] <= 60, "vue d'arrivée en hauteur, le regard plongeant : y "
+			+ Math.round(view[1]) + ", regard " + Math.round(view[4]) + "°");
+		if (!existed) {
+			// Première visite (atelier créé à l'instant) : on y est arrivé par cette vue-là.
+			check(server.computeOnServer(s -> player(s, me).getY() > S + 8), "première visite : arrivée en l'air, au-dessus de l'accueil");
+		}
+		server.runOnServer(s -> {
+			ServerPlayer p = player(s, me);
+			p.teleportTo(atelier(), view[0], view[1], view[2], Set.of(), (float) view[3], (float) view[4], false);
+			p.getAbilities().flying = true;
+			p.onUpdateAbilities();
+		});
+		ctx.waitTicks(20);
+		try {
+			world.getConnection().waitForChunksRender();
+		} catch (RuntimeException e) {
+			System.out.println("[valcombe-test] atelier structures : tronçons pas tous dessinés à temps (" + e.getMessage() + ")");
+		}
+		ctx.waitTicks(40);
 		shot(ctx, "ensemble");
-		server.runCommand("gamemode creative " + me);
 		server.runOnServer(s -> player(s, me).teleportTo(atelier(), puits.x() + 0.5, S + 4, puits.lecternZ() - 4.5, Set.of(), 0f, 25f, false));
 		ctx.waitTicks(60);
 		shot(ctx, "parcelle");

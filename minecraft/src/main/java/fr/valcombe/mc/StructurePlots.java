@@ -336,6 +336,63 @@ final class StructurePlots {
 		return null;
 	}
 
+	/**
+	 * Un point de vue : position (x, z au centre d'un bloc, hauteur au-dessus du sol plat) et orientation à la façon de
+	 * Minecraft (yaw : 0 regarde le sud, 90 l'ouest, -90 l'est ; pitch : positif vers le bas).
+	 */
+	record View(double x, double height, double z, float yaw, float pitch) {
+	}
+
+	/**
+	 * La vue d'arrivée dans l'atelier : plongeante, au-dessus de l'accueil, un peu en retrait au nord-ouest. Le regard
+	 * est tourné vers le milieu de ce qu'on voit, et le point de vue recule (vers le nord-ouest) tant que toutes les
+	 * parcelles ne tiennent pas dans le champ d'un écran large (90° de côté à côté). La hauteur suit l'étendue de
+	 * l'atelier (assez haut pour voir loin, assez bas pour lire les panneaux de la première rangée) ; le regard plonge
+	 * assez pour que les premières parcelles soient en bas de l'image et l'horizon tout en haut.
+	 */
+	static View overview(Layout layout) {
+		int minX = X0 - 6;
+		int minZ = FIRST_Z - 4;
+		int maxX = X0 + 24;
+		int maxZ = FIRST_Z + 20;
+		for (Plot p : layout.parcelles) {
+			maxX = Math.max(maxX, p.east());
+			maxZ = Math.max(maxZ, p.z + p.rayon + 1);
+		}
+		for (Band b : layout.bandes) {
+			maxZ = Math.max(maxZ, b.southZ());
+		}
+		double x = minX - 6 + 0.5;
+		double z = minZ - 12 + 0.5;
+		// Les parcelles sont toutes dans le rectangle [minX, maxX] × [minZ, maxZ] : vu d'un point au nord-ouest, ce sont ses
+		// coins qui bordent le champ.
+		double[][] corners = {{minX, minZ}, {maxX, minZ}, {minX, maxZ}, {maxX, maxZ}};
+		double[] span = span(corners, x, z);
+		for (int step = 0; step < 200 && span[1] - span[0] > 88; step++) {
+			x -= 3;
+			z -= 3;
+			span = span(corners, x, z);
+		}
+		float yaw = (float) ((span[0] + span[1]) / 2);
+		double diag = Math.hypot(maxX - x, maxZ - z);
+		double height = Math.max(14, Math.min(36, Math.round(0.2 * diag + 8)));
+		double toCenter = Math.hypot((minX + maxX) / 2.0 - x, (minZ + maxZ) / 2.0 - z);
+		float pitch = (float) Math.max(28, Math.min(55, Math.toDegrees(Math.atan2(height, toCenter)) + 6));
+		return new View(x, height, z, yaw, pitch);
+	}
+
+	/** Les directions (yaw de Minecraft, en degrés) extrêmes sous lesquelles on voit ces points depuis (x, z) : { min, max }. */
+	private static double[] span(double[][] points, double x, double z) {
+		double min = Double.MAX_VALUE;
+		double max = -Double.MAX_VALUE;
+		for (double[] p : points) {
+			double a = Math.toDegrees(Math.atan2(-(p[0] - x), p[1] - z));
+			min = Math.min(min, a);
+			max = Math.max(max, a);
+		}
+		return new double[] {min, max};
+	}
+
 	/** Retire une parcelle de la disposition (sa place se libère pour une autre). */
 	static boolean remove(Layout layout, String id) {
 		return layout.parcelles.removeIf(p -> p.id.equals(id));

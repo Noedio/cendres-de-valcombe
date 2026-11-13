@@ -749,9 +749,11 @@ public class ScreensGameTest implements FabricClientGameTest {
 		var use = post.apply("jouer", "{\"scenario\":\"bal-masque\",\"essai\":false}");
 		check(use.statusCode() == 200 && use.body().contains("« Le Bal masqué »"), "scénario choisi : " + use.body());
 		check("bal-masque".equals(fr.valcombe.mc.games.Games.main().session().scenario().id), "scénario de la prochaine partie");
-		// Ce que la page partage avec l'écran en jeu : carte actuelle, liste de contrôle, état de l'éditeur.
-		check(data.body().contains("\"carteResume\"") && data.body().contains("\"controle\"") && data.body().contains("\"constructeur\":false")
-			&& data.body().contains("\"structures\"") && data.body().contains("\"tronesMax\":20"), "catalogue partagé avec l'écran en jeu");
+		// Ce que la page partage avec l'écran en jeu : carte actuelle, liste de contrôle, structures, et les parties avec
+		// leur état d'envoi chacune (une partie qui joue ailleurs ne grise pas l'envoi à celle-ci).
+		check(data.body().contains("\"carteResume\"") && data.body().contains("\"controle\"") && data.body().contains("\"signature\"")
+			&& data.body().contains("\"structures\"") && data.body().contains("\"tronesMax\":20") && data.body().contains("\"parties\":[{")
+			&& data.body().contains("\"bloque\""), "catalogue de la page : cartes, structures, parties");
 		// Un champ vide ou hors bornes est refusé en clair, sans rien lancer.
 		var empty = post.apply("carte/generer", "{\"places\":null,\"taille\":1,\"theme\":\"port\",\"maisons\":true}");
 		check(empty.statusCode() == 409 && empty.body().equals("Trônes : indiquez un nombre de 5 à 20."), "champ vide : " + empty.body());
@@ -764,30 +766,69 @@ public class ScreensGameTest implements FabricClientGameTest {
 		var copy = post.apply("carte/dupliquer", "{\"id\":\"village-test\",\"nom\":\"Variante\"}");
 		check(copy.statusCode() == 200 && fr.valcombe.mc.ValcombeMod.maps().exists("village-test-copie"), "copie depuis la page : " + copy.body());
 		check(post.apply("carte/supprimer", "village-test-copie").statusCode() == 200, "copie supprimée");
-		// Catalogue de structures : mode construction, structure en main, tournée, puis sortie du mode.
-		var enter = post.apply("construction", "");
-		check(enter.statusCode() == 200 && enter.body().startsWith("Mode construction :"), "mode construction depuis la page : " + enter.body());
-		var take = post.apply("structure/prendre", "banc");
-		var turn = post.apply("structure/tourner", "");
-		check(take.statusCode() == 200 && turn.statusCode() == 200, "structure en main depuis la page : " + take.body() + " / " + turn.body());
-		// Sur le plan : une maison posée, bâtie d'un coup, retirée avec sa construction ; puis le geste d'avant annulé.
-		int housesBefore = fr.valcombe.mc.games.Games.main().host().village().houseCount();
-		var add = post.apply("carte/repere", "{\"action\":\"ajouter\",\"type\":\"maison\",\"x\":6,\"z\":-52}");
-		var built = post.apply("carte/batir", "{\"type\":\"maison\",\"index\":" + housesBefore + "}");
-		check(add.statusCode() == 200 && built.statusCode() == 200, "maison bâtie depuis le plan : " + add.body() + " / " + built.body());
-		var erase = post.apply("carte/repere", "{\"action\":\"retirer\",\"type\":\"maison\",\"index\":" + housesBefore + "}");
-		check(erase.statusCode() == 200 && erase.body().contains("sa construction avec"), "retirer sur le plan retire la construction : " + erase.body());
-		var move = post.apply("carte/repere", "{\"action\":\"deplacer\",\"type\":\"siege\",\"index\":0,\"x\":3,\"z\":3}");
-		var seatMoved = fr.valcombe.mc.games.Games.main().host().village().relSeats().get(0);
-		var undo = post.apply("carte/annuler", "");
-		var seatBack = fr.valcombe.mc.games.Games.main().host().village().relSeats().get(0);
-		check(move.statusCode() == 200 && undo.statusCode() == 200 && seatMoved[0] == 3 && seatMoved[2] == 3
-			&& (seatBack[0] != 3 || seatBack[2] != 3) && fr.valcombe.mc.games.Games.main().host().village().houseCount() == housesBefore,
-			"annuler défait le dernier geste (un déplacement), pas une pose plus ancienne : " + undo.body());
-		check(post.apply("construction", "").body().startsWith("Mode construction terminé"), "sortie du mode construction");
+		// Vignettes : les mêmes que l'Atelier en jeu (fr.valcombe.mc.Vignettes) : celle d'une carte (vue de dessus avec ses
+		// repères) et celle d'une structure (vue de trois quarts), en PNG carrés de 512 pixels ; une inconnue est refusée,
+		// et sans jeton rien n'est servi.
+		java.util.function.Function<String, java.net.http.HttpResponse<byte[]>> image = path -> fetch(ctx, http,
+			java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/" + path)).header("X-Valcombe-Jeton", token).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+		var mapThumb = image.apply("vignette/carte/village-test.png");
+		var stThumb = image.apply("vignette/structure/puits.png");
+		check(mapThumb.statusCode() == 200 && mapThumb.body().length > 8 && mapThumb.body()[1] == 'P'
+			&& stThumb.statusCode() == 200 && stThumb.body()[1] == 'P', "vignettes d'une carte et d'une structure");
+		java.util.function.ToIntFunction<byte[]> pngWidth = b -> ((b[16] & 0xff) << 24) | ((b[17] & 0xff) << 16) | ((b[18] & 0xff) << 8) | (b[19] & 0xff);
+		check(pngWidth.applyAsInt(mapThumb.body()) == fr.valcombe.mc.Vignettes.SIZE && pngWidth.applyAsInt(stThumb.body()) == fr.valcombe.mc.Vignettes.SIZE,
+			"vignettes de la page faites par le serveur, comme en jeu : " + pngWidth.applyAsInt(mapThumb.body()) + " et " + pngWidth.applyAsInt(stThumb.body()));
+		try {
+			java.nio.file.Files.write(java.nio.file.Path.of("screenshots", "valcombe-atelier-web-vignette-carte.png"), mapThumb.body());
+			java.nio.file.Files.write(java.nio.file.Path.of("screenshots", "valcombe-atelier-web-vignette-structure.png"), stThumb.body());
+		} catch (java.io.IOException e) {
+			System.out.println("[valcombe-test] vignettes web non copiées : " + e);
+		}
+		check(image.apply("vignette/structure/inconnue.png").statusCode() == 404, "vignette d'une structure inconnue refusée");
+		check(fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/vignette/carte/village-test.png")).build(),
+			java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode() == 403, "pas de vignette sans le jeton de l'Atelier");
+		// Structures : une copie à soi (dans « Vos structures »), puis supprimée.
+		var stCopy = post.apply("structure/dupliquer", "{\"id\":\"banc\",\"nom\":\"Banc du test\"}");
+		check(stCopy.statusCode() == 200 && fr.valcombe.mc.ValcombeMod.structures().exists("banc-du-test")
+			&& "perso".equals(fr.valcombe.mc.ValcombeMod.structures().def("banc-du-test").categorie), "structure copiée depuis la page : " + stCopy.body());
+		check(post.apply("structure/supprimer", "banc-du-test").statusCode() == 200, "copie de la structure supprimée");
+		// Parties : une partie d'essai créée depuis la page devient la partie visée ; la partie principale reste à part.
+		String trialName = "Essai Atelier web " + (System.currentTimeMillis() % 100000);
+		var created = post.apply("partie/creer", "{\"nom\":\"" + trialName + "\"}");
+		var aimed = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/donnees"))
+			.header("X-Valcombe-Jeton", token).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+		var aimedData = com.google.gson.JsonParser.parseString(aimed.body()).getAsJsonObject();
+		String trialId = aimedData.getAsJsonObject("partie").get("id").getAsString();
+		check(created.statusCode() == 200 && aimedData.getAsJsonObject("partie").get("nom").getAsString().equals(trialName)
+			&& !trialId.equals(fr.valcombe.mc.games.Games.main().id()), "partie d'essai créée et visée : " + created.body());
+		check(post.apply("partie", "").statusCode() == 200, "la page vise de nouveau la partie où l'on est");
 		var journal = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/donnees"))
 			.header("X-Valcombe-Jeton", token).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
-		check(journal.body().contains("Mode construction terminé") && journal.body().contains("déplacé"), "le journal note la carte et le mode construction");
+		check(journal.body().contains("Banc du test") && journal.body().contains(trialName), "le journal note la structure copiée et la partie créée");
+		// La partie d'essai du test s'en va (son monde avec), comme on la supprime du menu « Parties ».
+		// Son village est d'abord posé (envoyé à la création) : la supprimer pendant la remise à neuf serait refusé.
+		var integrated = ctx.computeOnClient(mc -> mc.getSingleplayerServer());
+		java.util.function.Supplier<Boolean> trialIdle = () -> integrated.submit(() -> {
+			var r = fr.valcombe.mc.games.Games.byWorld(trialId);
+			var sender = fr.valcombe.mc.ValcombeMod.sender();
+			return r != null && (sender == null || sender.sendingTo(trialId) == null) && !r.host().busy()
+				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId);
+		}).join();
+		boolean idle = trialIdle.get();
+		for (int i = 0; i < 1200 && !idle; i += 5) {
+			ctx.waitTicks(5);
+			idle = trialIdle.get();
+		}
+		check(idle, "la partie d'essai de la page a reçu son village");
+		integrated.submit(() -> fr.valcombe.mc.games.Games.current().delete(trialId)).join();
+		boolean gone = false;
+		for (int i = 0; i < 600 && !gone; i += 5) {
+			ctx.waitTicks(5);
+			gone = integrated.submit(() -> fr.valcombe.mc.games.Games.byWorld(trialId) == null
+				&& !fr.valcombe.mc.ValcombeMod.worlds().busy(trialId)).join();
+		}
+		check(gone, "la partie d'essai de la page est supprimée");
 		// Fermer la tablette du Conteur ne ferme pas l'Atelier ; /vc atelier fermer ferme le lien de cet opérateur.
 		send(ctx, "vc tablette fermer");
 		var still = fetch(ctx, http, java.net.http.HttpRequest.newBuilder(java.net.URI.create(base + "/api/atelier/donnees"))
@@ -910,8 +951,8 @@ public class ScreensGameTest implements FabricClientGameTest {
 	}
 
 	/** Requête HTTP pendant que le jeu continue de tourner (le serveur ne répond qu'entre deux ticks). */
-	private static java.net.http.HttpResponse<String> fetch(ClientGameTestContext ctx, java.net.http.HttpClient http,
-		java.net.http.HttpRequest req, java.net.http.HttpResponse.BodyHandler<String> body) {
+	private static <T> java.net.http.HttpResponse<T> fetch(ClientGameTestContext ctx, java.net.http.HttpClient http,
+		java.net.http.HttpRequest req, java.net.http.HttpResponse.BodyHandler<T> body) {
 		var future = http.sendAsync(req, body);
 		for (int i = 0; i < 200 && !future.isDone(); i++) {
 			ctx.waitTick();

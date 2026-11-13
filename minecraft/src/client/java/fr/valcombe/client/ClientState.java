@@ -117,6 +117,14 @@ public final class ClientState {
 			net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer());
 	}
 
+	/**
+	 * Le serveur de la connexion en cours est-il un serveur de Valcombe (il a envoyé une vue de partie) ? Une partie
+	 * solo avec le mod en est un aussi.
+	 */
+	public static boolean onValcombeServer() {
+		return serverViewSeen;
+	}
+
 	/** Une vue est arrivée du serveur pendant cette connexion, et la version du mod qu'elle annonçait. */
 	private static boolean serverViewSeen;
 	private static String serverModVersion;
