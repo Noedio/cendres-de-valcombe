@@ -145,6 +145,14 @@ final class AdminApi {
 		}
 	}
 
+	/**
+	 * Réponse de l'API quand elle n'est pas ouverte : le serveur web tourne pour la tablette ou l'Atelier d'une
+	 * partie solo, mais l'administration reste fermée (ni clé regardée, ni essai compté).
+	 */
+	void closed(HttpExchange ex) throws IOException {
+		error(ex, 404, "API d'administration fermée : elle ne s'ouvre que sur un serveur dédié.");
+	}
+
 	private void route(HttpExchange ex, InetAddress from) throws IOException {
 		String path = ex.getRequestURI().getPath().substring("/admin/".length());
 		if (path.endsWith("/")) {
@@ -412,7 +420,7 @@ final class AdminApi {
 		if (cmd.length() > MAX_COMMAND) {
 			throw new AdminException(400, "Commande trop longue (" + MAX_COMMAND + " caractères au plus).");
 		}
-		if (cmd.chars().anyMatch(ch -> Character.isISOControl(ch) || ch == ' ' || ch == ' ')) {
+		if (cmd.chars().anyMatch(ch -> Character.isISOControl(ch) || ch == '\u2028' || ch == '\u2029')) {
 			throw new AdminException(400, "Une seule commande à la fois, sur une ligne.");
 		}
 		String line = cmd;

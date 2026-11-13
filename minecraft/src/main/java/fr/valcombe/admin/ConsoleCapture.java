@@ -3,6 +3,7 @@ package fr.valcombe.admin;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.LoggerContext;
@@ -12,8 +13,8 @@ import org.apache.logging.log4j.core.config.Property;
 
 /**
  * Appender log4j qui recopie chaque ligne du journal (celle que la console du serveur affiche) dans un
- * {@link ConsoleBuffer}. Il se branche sur le journal racine, au niveau que la configuration du serveur
- * a déjà choisi : on voit exactement ce que voit la console.
+ * {@link ConsoleBuffer}. Il se branche sur le journal racine, au niveau INFO comme la console : les lignes
+ * de mise au point (DEBUG, TRACE) que Fabric envoie à debug.log n'y entrent pas.
  *
  * <p>Un appender ne doit jamais écrire lui-même dans le journal (il s'appellerait en boucle) ni lever
  * d'exception : tout est rattrapé en silence.
@@ -75,7 +76,9 @@ public final class ConsoleCapture extends AbstractAppender {
 			ConsoleCapture appender = new ConsoleCapture(buffer);
 			appender.start();
 			config.addAppender(appender);
-			config.getRootLogger().addAppender(appender, null, null);
+			// Niveau INFO, celui de la console : sous Fabric, le journal racine laisse passer DEBUG (pour debug.log),
+			// et ces lignes noieraient le tampon sans rien apprendre à celui qui pilote le serveur.
+			config.getRootLogger().addAppender(appender, Level.INFO, null);
 			context.updateLoggers();
 			return true;
 		} catch (RuntimeException | LinkageError e) {

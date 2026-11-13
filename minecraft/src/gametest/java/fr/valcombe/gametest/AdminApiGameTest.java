@@ -80,6 +80,16 @@ public class AdminApiGameTest implements FabricClientGameTest {
 			check(fr.valcombe.mc.ValcombeMod.adminKey() != null, "clé d'administration prête");
 			check(key().matches("[0-9a-f]{64}"), "clé de 32 octets");
 			check(!fr.valcombe.mc.ValcombeMod.tablet().adminOpen(), "API fermée d'office en solo");
+			http = HttpClient.newHttpClient();
+			// La tablette ouverte fait tourner le serveur web, mais l'API reste fermée : 404, clé ni regardée ni comptée.
+			try {
+				fr.valcombe.mc.ValcombeMod.tablet().open(me);
+			} catch (java.io.IOException e) {
+				throw new AssertionError("tablette non ouverte", e);
+			}
+			base = "http://127.0.0.1:" + fr.valcombe.mc.ValcombeMod.tablet().port();
+			status(get(ctx, "/admin/etat", key()), 404, "API fermée tant qu'elle n'est pas ouverte");
+			fr.valcombe.mc.ValcombeMod.tablet().closeTablet();
 			int port;
 			try {
 				port = fr.valcombe.mc.ValcombeMod.tablet().openAdmin();
@@ -87,7 +97,6 @@ public class AdminApiGameTest implements FabricClientGameTest {
 				throw new AssertionError("API d'administration non ouverte", e);
 			}
 			check(port == 25591, "API sur le port de test : " + port);
-			http = HttpClient.newHttpClient();
 			base = "http://127.0.0.1:" + port;
 
 			// Clé exigée

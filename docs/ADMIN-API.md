@@ -21,7 +21,7 @@ Version du contrat : **1** (champ `api` de `GET /admin/etat`). Elle n'augmente q
 
 - L'API est servie par le **serveur web du mod**, celui de la tablette du Conteur et de l'Atelier, sur le port `tabletPort` de `config/valcombe-communaute.json` (25570 par défaut, `/vc tablette port <numéro>` pour le changer). Pas de port de plus à ouvrir.
 - Sur un **serveur dédié**, elle s'ouvre d'office au démarrage et reste ouverte jusqu'à l'arrêt. Le journal l'annonce : `API d'administration prête sur le port 25570 (requêtes de cette machine seulement)`. Si le port est déjà pris, le serveur démarre quand même et le journal le dit (`API d'administration indisponible : …`).
-- Dans une **partie solo** (serveur intégré au jeu), elle ne s'ouvre pas. Les tests en jeu l'ouvrent eux-mêmes.
+- Dans une **partie solo** (serveur intégré au jeu), elle ne s'ouvre pas : même quand la tablette ou l'Atelier font tourner le serveur web, `/admin/...` répond `404` sans regarder la clé. Les tests en jeu l'ouvrent eux-mêmes.
 - Le serveur web parle **HTTP, sans chiffrement**. C'est pourquoi, par défaut, l'API n'accepte que les requêtes de la machine elle-même (voir plus bas) : depuis un autre PC, on passe par un **tunnel SSH**, qui chiffre tout.
 
 ## La clé d'administration
@@ -95,7 +95,7 @@ Les requêtes vers `http://localhost:25570/admin/...` sur votre PC arrivent alor
 | 400 | Requête fautive : JSON invalide, champ inconnu, valeur hors bornes, paramètre illisible |
 | 401 | Clé absente ou fausse |
 | 403 | Adresse refusée (`adminLocalOnly`) |
-| 404 | Point d'accès inconnu, ou API désactivée (`enabled: false`) |
+| 404 | Point d'accès inconnu, API désactivée (`enabled: false`) ou fermée (partie solo) |
 | 405 | Mauvaise méthode ; l'en-tête `Allow` dit laquelle est attendue |
 | 409 | Impossible dans cet état (par exemple arrêter une partie solo) |
 | 413 | Corps de requête trop gros |
@@ -289,6 +289,8 @@ Tous les champs sont facultatifs, mais il en faut au moins un :
 ```
 
   `ok` est vrai si tous les points ont réussi. Ajouter un joueur déjà présent, ou retirer un joueur absent, réussit avec un message qui le dit.
+
+- Une demande qui dépasse 30 s (serveur très occupé, Mojang lent à trouver un nom) renvoie `504`, mais elle reste prévue sur le serveur et s'appliquera : relire `GET /admin/reglages` avant de la renvoyer.
 
 ### POST /admin/arreter
 

@@ -120,7 +120,7 @@ Une partie en cours est sauvegardée automatiquement et reprend après le redém
 Le mod ouvre, sur un serveur dédié, une API protégée par une clé : état du serveur (TPS, mémoire, joueurs), console en direct, commandes, liste blanche, opérateurs, message d'accueil, joueurs max, arrêt et redémarrage. Le launcher s'en servira pour piloter le serveur ; le contrat complet est dans [docs/ADMIN-API.md](docs/ADMIN-API.md).
 
 - **La clé** s'affiche dans le journal au premier démarrage (`sudo journalctl -u valcombe | grep "Clé d'administration"`). Elle est gardée dans `/opt/valcombe/config/valcombe/admin.json`. Ensuite : `/vc admin cle` (console, ou opérateur en jeu) la réaffiche, `/vc admin nouvellecle` la remplace. Elle donne tout pouvoir sur le serveur : ne la partagez pas.
-- **Elle n'écoute que la machine elle-même** : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :
+- **Elle n'accepte que la machine elle-même** (une requête venue d'ailleurs est refusée, même avec la clé) : rien à ouvrir dans le pare-feu. Depuis votre PC, passez par un tunnel SSH, puis parlez à `localhost` :
 
   ```bash
   ssh -N -L 25570:localhost:25570 utilisateur@adresse-du-vps

@@ -51,7 +51,7 @@ public final class Tablet {
 	/** API d'administration (/admin/...), servie par ce même serveur web. */
 	private AdminApi admin;
 	/** L'API d'administration est ouverte : le serveur web tourne tant que le serveur Minecraft tourne. */
-	private boolean adminOpen;
+	private volatile boolean adminOpen;
 
 	void setAtelier(Atelier atelier) {
 		this.atelier = atelier;
@@ -211,8 +211,16 @@ public final class Tablet {
 			h.createContext("/api/atelier/", ex -> atelier.api(ex, !community.tabletLocalOnly() || local(ex)));
 		}
 		if (admin != null) {
-			// Ses propres règles d'accès (clé, machine elle-même) : voir AdminApi et docs/ADMIN-API.md.
-			h.createContext("/admin/", admin::handle);
+			// Ses propres règles d'accès (clé, machine elle-même) : voir AdminApi et docs/ADMIN-API.md. Tant qu'elle
+			// n'est pas ouverte (partie solo dont la tablette tourne), elle répond 404 sans regarder la clé.
+			AdminApi api = admin;
+			h.createContext("/admin/", ex -> {
+				if (adminOpen) {
+					api.handle(ex);
+				} else {
+					api.closed(ex);
+				}
+			});
 		}
 		// Six fils : une longue opération de l'Atelier ne bloque ni le grimoire du Conteur ni le launcher qui suit la console.
 		h.setExecutor(Executors.newFixedThreadPool(6, r -> {

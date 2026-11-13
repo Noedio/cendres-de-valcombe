@@ -126,7 +126,7 @@ public final class AdminSettings {
 		}
 		for (int i = 0; i < s.length(); i++) {
 			char c = s.charAt(i);
-			if (Character.isISOControl(c) || c == ' ' || c == ' ') {
+			if (Character.isISOControl(c) || c == '\u2028' || c == '\u2029') {
 				return label + " : une seule ligne, sans caractère de contrôle";
 			}
 			if (c == '§') {
