@@ -5,7 +5,7 @@
 	"name": "Valcombe — tests en jeu",
 	"environment": "*",
 	"entrypoints": {
-		"fabric-client-gametest": ["fr.valcombe.gametest.ScreensGameTest"]
+		"fabric-client-gametest": ["fr.valcombe.gametest.ScreensGameTest", "fr.valcombe.gametest.HdGameTest"]
 	},
 	"depends": {
 		"valcombe": "*"

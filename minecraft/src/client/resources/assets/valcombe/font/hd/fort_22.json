@@ -1,0 +1,18 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "valcombe:hd/alegreya_sans_medium.ttf",
+      "size": 22,
+      "oversample": 1.0,
+      "shift": [
+        0.0,
+        15.0
+      ]
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:default"
+    }
+  ]
+}
