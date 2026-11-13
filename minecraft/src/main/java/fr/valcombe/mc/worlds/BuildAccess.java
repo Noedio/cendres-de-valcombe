@@ -1,5 +1,7 @@
 package fr.valcombe.mc.worlds;
 
+import fr.valcombe.rules.GameException;
+
 import java.util.function.Supplier;
 
 import net.minecraft.server.level.ServerPlayer;
@@ -148,6 +150,31 @@ public final class BuildAccess {
 	/** Ce joueur est-il dans un atelier où il construit ? (Mode créatif et baguette de construction.) */
 	public boolean inWorkshop(ServerPlayer p) {
 		return rights(p).workshop();
+	}
+
+	/**
+	 * Ce joueur peut-il construire dans ce monde ? C'est la question des outils d'un atelier (parcelles de l'atelier
+	 * structures, pupitres) : opérateurs et invités de l'atelier ; ailleurs, la règle générale ({@link #rights}). Un
+	 * atelier pas encore créé (null), ou un serveur sans accès installé : les opérateurs seulement.
+	 */
+	public static boolean mayBuildIn(ServerPlayer p, WorldEntry e) {
+		if (p == null) {
+			return false;
+		}
+		BuildAccess a = current;
+		if (e == null || a == null) {
+			return operator(p);
+		}
+		return a.rights(p, e).build();
+	}
+
+	/** Comme {@link #mayBuildIn}, mais une {@link GameException} (la phrase pour le joueur) si ce n'est pas permis. */
+	public static void requireBuildIn(ServerPlayer p, WorldEntry e) {
+		if (!mayBuildIn(p, e)) {
+			String where = e == null ? "ici" : "dans « " + e.nom() + " »";
+			throw new GameException("Construire " + where + " est réservé aux opérateurs et à leurs invités"
+				+ (e != null && e.sorte().workshop() ? " : un opérateur peut t'y inviter (/vc atelier inviter)." : "."));
+		}
 	}
 
 	/** Ce joueur a-t-il au moins une invitation ? Les commandes de construction lui sont alors proposées partout. */

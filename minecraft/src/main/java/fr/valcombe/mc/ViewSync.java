@@ -70,6 +70,11 @@ public final class ViewSync {
 				// Menu J, « Mondes » : les mondes où ce joueur peut aller, celui où il est, et s'il peut partir.
 				view.put("mondes", travel.view(p));
 			}
+			StructureWorkshop structures = ValcombeMod.structureWorkshop();
+			if (structures != null && structures.isWorkshop(p.level())) {
+				// Écran de l'atelier structures (pupitres) : les parcelles, celle qu'on a choisie, le dernier message.
+				view.put("atelierStructures", structures.view(p));
+			}
 			String json = GSON.toJson(view);
 			if (!json.equals(lastSent.get(name))) {
 				lastSent.put(name, json);

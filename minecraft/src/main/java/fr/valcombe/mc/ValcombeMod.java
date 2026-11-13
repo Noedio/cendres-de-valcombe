@@ -221,6 +221,13 @@ public final class ValcombeMod implements ModInitializer {
 		return mapSender;
 	}
 
+	private static StructureWorkshop structureWorkshop;
+
+	/** L'atelier structures (toutes les structures sur leurs parcelles) ; null sans les mondes de Valcombe. */
+	public static StructureWorkshop structureWorkshop() {
+		return structureWorkshop;
+	}
+
 	private static fr.valcombe.mc.hub.Travel travel;
 	private static fr.valcombe.mc.hub.Hub hub;
 
@@ -431,6 +438,8 @@ public final class ValcombeMod implements ModInitializer {
 				mapSender = sender;
 				setWorldsView(manager::adminView); // la liste des mondes de l'API d'administration (GET /admin/etat)
 				setUpHub(server, manager);
+				structureWorkshop = new StructureWorkshop(server, manager, structures);
+				manager.addListener(structureWorkshop);
 			} catch (RuntimeException | LinkageError e) {
 				LOG.error("Mondes de Valcombe indisponibles : la partie ne pourra pas se jouer (elle se joue dans un monde de partie)", e);
 			}
@@ -478,6 +487,10 @@ public final class ValcombeMod implements ModInitializer {
 				mapSender = null;
 			}
 			HOST.setSender(null);
+			if (structureWorkshop != null) {
+				structureWorkshop.stop();
+				structureWorkshop = null;
+			}
 			if (travel != null) {
 				try {
 					travel.stop(); // la position de chacun dans son monde, pour le prochain voyage
@@ -529,6 +542,10 @@ public final class ValcombeMod implements ModInitializer {
 			var pl = placer;
 			if (pl != null) {
 				guarded("les cartes des mondes", pl::tick);
+			}
+			var sw = structureWorkshop;
+			if (sw != null) {
+				guarded("l'atelier structures", sw::tick);
 			}
 			var t = travel;
 			if (t != null) {
@@ -716,6 +733,22 @@ public final class ValcombeMod implements ModInitializer {
 				}
 			}
 			return InteractionResult.SUCCESS;
+		});
+		// Pupitres de l'atelier structures : un clic droit ouvre l'écran de l'atelier sur la parcelle.
+		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, hit) -> {
+			var sw = structureWorkshop;
+			// Accroupi, le clic reste celui de Minecraft (poser un bloc contre le pupitre).
+			if (sw != null && player instanceof ServerPlayer sp && level instanceof net.minecraft.server.level.ServerLevel sl && !sp.isShiftKeyDown()) {
+				try {
+					if (sw.onUse(sp, sl, hit.getBlockPos(), hand == net.minecraft.world.InteractionHand.MAIN_HAND)) {
+						return InteractionResult.SUCCESS;
+					}
+				} catch (fr.valcombe.rules.GameException e) {
+					sp.sendSystemMessage(Gui.plain(e.getMessage(), net.minecraft.ChatFormatting.RED));
+					return InteractionResult.SUCCESS;
+				}
+			}
+			return InteractionResult.PASS;
 		});
 		net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register(ToolPriority.PHASE, (player, level, hand, hit) -> {
 			// Baguette de construction hors des ateliers : WorldEdit n'y répond pas, le joueur l'apprend et rien ne se passe.

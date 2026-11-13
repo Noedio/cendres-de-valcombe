@@ -201,6 +201,7 @@ public final class Workshop {
 			m.put("taille", d.taille);
 			m.put("repere", d.repere);
 			m.put("fournie", d.fournie);
+			m.put("modifiee", d.modifiee); // fournie, modifiée dans l'atelier structures
 			list.add(m);
 		}
 		out.put("structures", list);

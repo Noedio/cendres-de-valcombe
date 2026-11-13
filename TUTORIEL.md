@@ -305,7 +305,7 @@ On construit avec **WorldEdit**, livré avec le modpack et le serveur, **dans le
 | Annuler, rétablir | `/vc annuler [fois]`, `/vc retablir [fois]` (ou `//undo`, `//redo`) |
 
 - **Annuler** : `/vc annuler` défait **dans l'ordre** vos modifications WorldEdit et les gestes de Valcombe (poses de structures du catalogue, repères), chacun par sa propre pile : WorldEdit garde son historique, Valcombe le sien, et Valcombe tient l'ordre des gestes. `//undo`, `/vc carte annuler` et le bouton « Annuler » de l'Atelier marchent toujours : l'ordre suit. Les gestes WorldEdit sont ceux de chacun ; ceux de Valcombe (une seule carte en construction) sont communs aux opérateurs et se défont là où la carte se construit. Une modification des repères annulée ne se rétablit pas : reposez le repère.
-- **En faire une structure** : `/vc structures depuis-selection <id> "<nom>" [catégorie]`, ou le bouton « En structure… » de l'onglet WorldEdit de l'Atelier. La structure rejoint « Vos structures » et se pose ensuite avec l'outil de structure.
+- **En faire une structure** : `/vc structures depuis-selection <id> "<nom>" [catégorie]`, ou le bouton « En structure… » de l'onglet WorldEdit de l'Atelier. La structure rejoint « Vos structures », ou le rayon donné en catégorie (`maisons`, `place`, `decor`), et se pose ensuite avec l'outil de structure.
 - **Parties d'essai** : WorldEdit y est fermé ; `/vc atelier worldedit-essais oui` l'ouvre aux opérateurs (`non` le referme).
 
 ## 9. En cas de souci

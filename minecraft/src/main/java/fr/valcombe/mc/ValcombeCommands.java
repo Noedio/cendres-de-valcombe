@@ -802,6 +802,7 @@ public final class ValcombeCommands {
 		// Construction : invitations aux ateliers, « annuler » commun, baguette, sélection vers structure.
 		BuildCommands.register(root, admin);
 		BackupCommands.register(root, admin);
+		root.then(StructureWorkshopCommands.build());
 		var node = dispatcher.register(root);
 		dispatcher.register(Commands.literal("valcombe").redirect(node));
 	}

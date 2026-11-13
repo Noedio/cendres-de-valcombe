@@ -30,8 +30,8 @@ import net.minecraft.server.level.ServerPlayer;
  * </ul>
  */
 final class SelectionToStructure {
-	/** Les rayons du catalogue. */
-	static final List<String> CATEGORIES = List.of("perso", "maisons", "place", "decor");
+	/** Les rayons du catalogue (voir StructureStore.CATEGORIES). */
+	static final List<String> CATEGORIES = StructureStore.CATEGORIES;
 
 	private SelectionToStructure() {
 	}
@@ -39,7 +39,7 @@ final class SelectionToStructure {
 	/**
 	 * Enregistre la sélection WorldEdit de ce joueur dans le catalogue.
 	 *
-	 * @param categorie rayon voulu, ou null ; vérifié, et rangé avec la structure quand le catalogue le permet
+	 * @param categorie rayon du catalogue où la ranger (maisons, place, decor, perso), ou null : « Vos structures »
 	 * @param repere    repère posé avec elle : {@code maison}, {@code salle}, ou vide
 	 */
 	static String save(WorldEditLink link, StructureStore store, ServerPlayer p, String id, String nom, String categorie, String repere) {
@@ -94,16 +94,14 @@ final class SelectionToStructure {
 		BlockPos feet = p.blockPosition();
 		boolean inside = feet.getX() >= s.min().getX() && feet.getX() <= s.max().getX() && feet.getZ() >= s.min().getZ()
 			&& feet.getZ() <= s.max().getZ() && feet.getY() >= s.min().getY() && feet.getY() <= s.max().getY() + 1;
-		String saved = store.save(id, nom, stored, inside ? feet.subtract(s.min()) : null, r);
+		String saved = store.save(id, nom, stored, inside ? feet.subtract(s.min()) : null, r, cat);
 		StringBuilder out = new StringBuilder(saved);
 		out.append(inside ? " Elle sera posée par rapport à l'endroit où vous vous tenez." : " Elle sera posée par le milieu de sa base.");
 		if (shaped) {
 			out.append(" Sélection « ").append(s.shape()).append(" » : seules ses cases sont gardées.");
 		}
 		if (!cat.equals("perso")) {
-			// Le catalogue range les structures de l'utilisateur dans « Vos structures » : le rayon voulu est dit, pas gardé.
-			out.append(" Elle est rangée dans « Vos structures » (le rayon « ").append(cat)
-				.append(" » est réservé aux structures fournies pour l'instant).");
+			out.append(" Rangée dans le rayon « ").append(cat).append(" » du catalogue.");
 		}
 		return out.toString();
 	}
