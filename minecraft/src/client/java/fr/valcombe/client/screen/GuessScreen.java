@@ -97,8 +97,9 @@ public class GuessScreen extends HdScreen {
 		// Les joueurs commencent sous la consigne (une ou deux lignes), avec un écart : elle ne touche jamais les boutons.
 		int top = py + 20 + textLines(p) * HdText.PAS + 6;
 		int rows = Math.max(1, (py + ph - 32 - top) / 20);
-		// Deux colonnes, trois si la table est trop grande pour deux : chaque joueur a son bouton.
-		int cols = Math.min(3, Math.max(2, (players.size() + rows - 1) / rows));
+		// Deux colonnes, trois si la table est trop grande pour deux, quatre en dernier recours (consigne sur deux lignes
+		// et 20 joueurs dans 427 x 240 : trois colonnes n'en montraient que 18) : chaque joueur a son bouton.
+		int cols = Math.min(4, Math.max(2, (players.size() + rows - 1) / rows));
 		int colW = (pw - 28 - (cols - 1) * 8) / cols;
 		int scale = Hd.guiScale();
 		for (int i = 0; i < players.size() && i < rows * cols; i++) {

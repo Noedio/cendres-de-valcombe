@@ -26,7 +26,7 @@ public class HdToken extends AbstractButton implements HdTooltipped {
 	 */
 	static final int DEAD_LABEL = 0xFFB8AEB0;
 	/** Décalage (degrés) de chaque marqueur le long du bord, depuis le haut à droite. */
-	private static final int[] MARKER_STEPS = {0, 32, -32, 64, -64};
+	private static final int[] MARKER_STEPS = {0, 32, -32, 64, -64, 96};
 
 	/** Taille d'un marqueur (unités) sur un jeton de cette taille. */
 	static double markerSize(int tokenSize) {
